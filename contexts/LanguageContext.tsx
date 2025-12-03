@@ -14,15 +14,17 @@ const translations = {
     settings: 'Settings',
     signOut: 'Sign Out',
     systemOnline: 'System Online',
-    syncing: 'Syncing...',
+    syncing: 'Syncing Data...',
     connectionError: 'Connection Error',
-    offline: 'Offline',
+    offline: 'Offline Mode',
     notifications: 'Notifications',
     clearAll: 'Clear all',
     noNotifications: 'No notifications',
 
     // Dashboard
     overview: 'Dashboard Overview',
+    quickActions: 'Quick Actions',
+    recentActivity: 'Recent Activity',
     totalTags: 'Total Tags',
     totalVehicles: 'Total Vehicles',
     linkedTags: 'Linked Tags',
@@ -35,11 +37,12 @@ const translations = {
 
     // Tags
     tagManagement: 'Tag Management',
+    searchTags: 'Search by Name, SN, MAC or Plate...',
     deleteSelected: 'Delete Selected',
     importCSV: 'Import CSV',
     addTag: 'Add Tag',
     selectAll: 'Select All',
-    noTags: 'No tags registered. Click "Import CSV" to upload your list.',
+    noTags: 'No tags found matching your search.',
     editTag: 'Edit Tag',
     newTag: 'Register New Tag',
     tagName: 'Tag Name (Key)',
@@ -74,6 +77,7 @@ const translations = {
 
     // Map
     selectTracker: 'Select Tracker',
+    searchTracker: 'Search tracker...',
     action: 'Action',
     startTracking: 'Start Tracking',
     stop: 'Stop',
@@ -85,6 +89,8 @@ const translations = {
     noHistory: 'No location history available.',
     refresh: 'Refresh',
     exportCSV: 'CSV',
+    shareLocation: 'Share Location',
+    locationCopied: 'Location link copied to clipboard!',
 
     // Settings
     systemSettings: 'System Settings',
@@ -128,13 +134,15 @@ const translations = {
     systemOnline: 'Sistema Online',
     syncing: 'Sincronizando...',
     connectionError: 'Erro de Conexão',
-    offline: 'Offline',
+    offline: 'Modo Offline',
     notifications: 'Notificações',
     clearAll: 'Limpar tudo',
     noNotifications: 'Sem notificações',
 
     // Dashboard
     overview: 'Visão Geral',
+    quickActions: 'Ações Rápidas',
+    recentActivity: 'Atividade Recente',
     totalTags: 'Total de Tags',
     totalVehicles: 'Total de Veículos',
     linkedTags: 'Tags Vinculadas',
@@ -147,11 +155,12 @@ const translations = {
 
     // Tags
     tagManagement: 'Gerenciamento de Tags',
+    searchTags: 'Buscar por Nome, SN, MAC ou Placa...',
     deleteSelected: 'Excluir Selecionados',
     importCSV: 'Importar CSV',
     addTag: 'Adicionar Tag',
     selectAll: 'Selecionar Todos',
-    noTags: 'Nenhuma tag registrada. Clique em "Importar CSV".',
+    noTags: 'Nenhuma tag encontrada para sua busca.',
     editTag: 'Editar Tag',
     newTag: 'Registrar Nova Tag',
     tagName: 'Nome da Tag (Chave)',
@@ -186,6 +195,7 @@ const translations = {
 
     // Map
     selectTracker: 'Selecionar Rastreador',
+    searchTracker: 'Buscar rastreador...',
     action: 'Ação',
     startTracking: 'Iniciar Rastreio',
     stop: 'Parar',
@@ -197,6 +207,8 @@ const translations = {
     noHistory: 'Sem histórico de localização.',
     refresh: 'Atualizar',
     exportCSV: 'CSV',
+    shareLocation: 'Compartilhar Local',
+    locationCopied: 'Link de localização copiado!',
 
     // Settings
     systemSettings: 'Configurações do Sistema',

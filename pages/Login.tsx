@@ -140,7 +140,7 @@ export const Login = () => {
 
         {/* Footer discreto */}
         <div className="text-center mt-10 text-slate-500 dark:text-slate-500 text-sm">
-          <p>© {new Date().getFullYear()} K-TAG Manager. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} Mais Soluções em Monitoramento. Todos os direitos reservados.</p>
         </div>
       </motion.div>
     </div>

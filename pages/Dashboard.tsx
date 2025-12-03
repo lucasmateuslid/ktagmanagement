@@ -1,10 +1,12 @@
+
 import React, { useEffect, useState } from 'react';
 import { Tag, Vehicle } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { Tag as TagIcon, Car, Link2, Wifi, Activity } from 'lucide-react';
+import { Tag as TagIcon, Car, Link2, Wifi, Activity, Map, Settings, Plus, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -33,6 +35,13 @@ export const Dashboard = () => {
     { label: t('unlinkedTags'), value: unlinkedCount, icon: Wifi, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
   ];
 
+  const quickActions = [
+    { label: t('addTag'), path: '/tags', icon: Plus, color: 'bg-blue-500' },
+    { label: t('addVehicle'), path: '/vehicles', icon: Car, color: 'bg-orange-500' },
+    { label: t('liveMap'), path: '/map', icon: Map, color: 'bg-emerald-500' },
+    { label: t('settings'), path: '/settings', icon: Settings, color: 'bg-slate-500' },
+  ];
+
   const pieData = [
     { name: t('linkedTags'), value: linkedCount },
     { name: t('unlinkedTags'), value: unlinkedCount },
@@ -48,17 +57,42 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-8 py-6">
-      {/* Título */}
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-          {t('overview') || 'Visão Geral'}
-        </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">
-          Status atual do sistema K-TAG
-        </p>
+      {/* Header */}
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+            {t('overview') || 'Visão Geral'}
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
+            Status atual do sistema K-TAG
+          </p>
+        </div>
+        <Link to="/map" className="hidden md:flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+          {t('liveMap')} <ArrowRight size={16} />
+        </Link>
       </div>
 
-      {/* Stats Cards - Legíveis e profissionais */}
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {quickActions.map((action, idx) => {
+          const Icon = action.icon;
+          return (
+            <Link key={idx} to={action.path}>
+              <motion.div
+                whileHover={{ y: -2 }}
+                className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
+              >
+                <div className={`p-2.5 rounded-lg text-white shadow-md ${action.color}`}>
+                  <Icon size={18} />
+                </div>
+                <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">{action.label}</span>
+              </motion.div>
+            </Link>
+          )
+        })}
+      </div>
+
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, idx) => {
           const Icon = stat.icon;
@@ -68,9 +102,12 @@ export const Dashboard = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.1 }}
-              className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition-shadow"
+              className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative overflow-hidden group"
             >
-              <div className="flex items-center justify-between">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
+                <Icon size={80} />
+              </div>
+              <div className="flex items-center justify-between relative z-10">
                 <div>
                   <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
                     {stat.label}
@@ -88,14 +125,14 @@ export const Dashboard = () => {
         })}
       </div>
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pie Chart */}
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Pie Chart - 1 Column */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6"
+          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
         >
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -104,16 +141,16 @@ export const Dashboard = () => {
             <Activity className="w-5 h-5 text-slate-500" />
           </div>
 
-          <div className="h-80">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
-                  outerRadius={100}
-                  paddingAngle={4}
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
                   dataKey="value"
                 >
                   {pieData.map((entry, index) => (
@@ -128,47 +165,36 @@ export const Dashboard = () => {
                     color: '#fff'
                   }}
                 />
-                <Legend />
+                <Legend verticalAlign="bottom" height={36} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-
-          <div className="flex justify-center gap-8 mt-4">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-emerald-500" />
-              <span className="text-sm text-slate-700 dark:text-slate-300">{t('linkedTags')}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-purple-500" />
-              <span className="text-sm text-slate-700 dark:text-slate-300">{t('unlinkedTags')}</span>
-            </div>
-          </div>
         </motion.div>
 
-        {/* Bar Chart */}
+        {/* Bar Chart - 1 Column */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6"
+          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
         >
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">
             {t('vehicleDist') || 'Distribuição por Tipo'}
           </h3>
 
-          <div className="h-80">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData} barSize={40}>
+              <BarChart data={barData} barSize={30}>
                 <XAxis
                   dataKey="name"
                   stroke="#64748b"
-                  fontSize={13}
+                  fontSize={12}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
                   stroke="#64748b"
-                  fontSize={13}
+                  fontSize={12}
                   tickLine={false}
                   axisLine={false}
                 />
@@ -180,9 +206,35 @@ export const Dashboard = () => {
                     color: '#fff'
                   }}
                 />
-                <Bar dataKey="count" fill="#3b82f6" radius={[8, 8, 8, 8]} />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 4, 4]} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </motion.div>
+
+        {/* Recent Activity (Simulated List) */}
+        <motion.div
+           initial={{ opacity: 0, y: 20 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ delay: 0.6 }}
+           className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
+        >
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
+            {t('recentActivity')}
+          </h3>
+          <div className="space-y-4">
+             {tags.slice(0, 4).map((tag, i) => (
+                <div key={tag.id} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                   <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600">
+                      <TagIcon size={14} />
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-white truncate">Tag Created: {tag.name}</p>
+                      <p className="text-xs text-slate-500">{new Date(tag.createdAt).toLocaleDateString()}</p>
+                   </div>
+                </div>
+             ))}
+             {tags.length === 0 && <p className="text-sm text-slate-500 text-center py-4">No recent activity</p>}
           </div>
         </motion.div>
       </div>

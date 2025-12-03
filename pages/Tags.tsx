@@ -1,26 +1,45 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
-import { Tag } from '../types';
+import { Tag, Vehicle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Plus, Trash2, Edit2, Key, Save, X, Upload, CheckSquare, Square, Wifi } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car } from 'lucide-react';
 
 export const Tags = () => {
   const [tags, setTags] = useState<Tag[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Tag>>({});
+  const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
 
-  const loadTags = async () => {
-    const loaded = await storage.getTags();
-    setTags(loaded);
+  const loadData = async () => {
+    const [loadedTags, loadedVehicles] = await Promise.all([
+      storage.getTags(),
+      storage.getVehicles()
+    ]);
+    setTags(loadedTags);
+    setVehicles(loadedVehicles);
   };
 
   useEffect(() => {
-    loadTags();
+    loadData();
   }, []);
+
+  // Search Logic
+  const filteredTags = tags.filter(tag => {
+    const term = searchTerm.toLowerCase();
+    const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
+    
+    return (
+      tag.name.toLowerCase().includes(term) ||
+      tag.accessoryId.toLowerCase().includes(term) ||
+      (tag.macAddress && tag.macAddress.toLowerCase().includes(term)) ||
+      (linkedVehicle && linkedVehicle.plate.toLowerCase().includes(term))
+    );
+  });
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedTags);
@@ -33,10 +52,10 @@ export const Tags = () => {
   };
 
   const toggleSelectAll = () => {
-    if (selectedTags.size === tags.length) {
+    if (selectedTags.size === filteredTags.length) {
       setSelectedTags(new Set());
     } else {
-      setSelectedTags(new Set(tags.map(t => t.id)));
+      setSelectedTags(new Set(filteredTags.map(t => t.id)));
     }
   };
 
@@ -55,9 +74,6 @@ export const Tags = () => {
 
       // Perform actual delete
       await storage.deleteTag(id);
-      
-      // DO NOT CALL loadTags() HERE. 
-      // It causes a race condition where the DB returns the old item before deletion propagates.
     }
   };
 
@@ -66,14 +82,13 @@ export const Tags = () => {
     if (count === 0) return;
     
     if (confirm(t('massDeleteConfirm'))) {
-      const idsToDelete = Array.from(selectedTags);
+      const idsToDelete = Array.from(selectedTags) as string[];
 
       // Optimistic Update
       setTags(prev => prev.filter(t => !selectedTags.has(t.id)));
       setSelectedTags(new Set());
       
       await storage.deleteTags(idsToDelete);
-      // DO NOT CALL loadTags() HERE.
     }
   };
 
@@ -102,8 +117,7 @@ export const Tags = () => {
     }
 
     await storage.saveTag(newTag);
-    // Only reload on save to ensure consistency, delete relies on optimistic
-    loadTags(); 
+    loadData(); 
     setIsModalOpen(false);
     setFormData({});
   };
@@ -167,49 +181,65 @@ export const Tags = () => {
       count++;
     }
 
-    loadTags();
+    loadData();
     alert(t('importSuccess'));
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">{t('tagManagement')}</h1>
-          <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs px-2 py-1 rounded-full">
-            {tags.length}
-          </span>
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div>
+           <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-white">{t('tagManagement')}</h1>
+            <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs px-2 py-1 rounded-full">
+              {tags.length}
+            </span>
+          </div>
         </div>
         
-        <div className="flex gap-2 w-full md:w-auto">
-          {selectedTags.size > 0 && (
-            <button
-              onClick={handleMassDelete}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors mr-auto md:mr-0 animate-pulse z-20 relative cursor-pointer"
-            >
-              <Trash2 size={18} /> {t('deleteSelected')} ({selectedTags.size})
-            </button>
-          )}
+        <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
+          {/* Search Input */}
+          <div className="relative flex-1 md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder={t('searchTags')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+            />
+          </div>
 
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept=".csv,.txt" 
-            className="hidden" 
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors flex-1 md:flex-none justify-center"
-          >
-            <Upload size={18} /> {t('importCSV')}
-          </button>
-          <button
-            onClick={() => { setFormData({}); setIsModalOpen(true); }}
-            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors flex-1 md:flex-none justify-center"
-          >
-            <Plus size={18} /> {t('addTag')}
-          </button>
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+            {selectedTags.size > 0 && (
+              <button
+                onClick={handleMassDelete}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap animate-pulse z-20 relative cursor-pointer"
+              >
+                <Trash2 size={18} /> {t('deleteSelected')} ({selectedTags.size})
+              </button>
+            )}
+
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              accept=".csv,.txt" 
+              className="hidden" 
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap"
+            >
+              <Upload size={18} /> {t('importCSV')}
+            </button>
+            <button
+              onClick={() => { setFormData({}); setIsModalOpen(true); }}
+              className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap"
+            >
+              <Plus size={18} /> {t('addTag')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -219,20 +249,22 @@ export const Tags = () => {
             onClick={toggleSelectAll}
             className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary-600 transition-colors"
           >
-            {selectedTags.size === tags.length && tags.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
+            {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
             {t('selectAll')}
           </button>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {tags.map((tag) => {
+        {filteredTags.map((tag) => {
           const isSelected = selectedTags.has(tag.id);
+          const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
+          
           return (
             <div 
               key={tag.id} 
               className={`
-                relative rounded-xl shadow-sm border p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer
+                relative rounded-xl shadow-sm border p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer group
                 ${isSelected 
                   ? 'bg-primary-50 border-primary-500 dark:bg-primary-900/20 dark:border-primary-500' 
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-primary-300 dark:hover:border-primary-700'}
@@ -257,7 +289,7 @@ export const Tags = () => {
                   </div>
                 </div>
                 
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{tag.name}</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1 truncate pr-2">{tag.name}</h3>
                 <p className="text-xs text-slate-500 font-mono mb-4">SN: {tag.accessoryId}</p>
                 
                 <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 p-3 rounded-md">
@@ -267,9 +299,15 @@ export const Tags = () => {
                       <span className="font-mono text-xs">{tag.macAddress}</span>
                     </div>
                    )}
+                   {linkedVehicle && (
+                    <div className="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-1 mb-1 text-emerald-600 dark:text-emerald-400">
+                      <span className="font-semibold text-xs uppercase flex items-center gap-1"><Car size={10} /> {t('plate')}</span>
+                      <span className="font-mono text-xs font-bold">{linkedVehicle.plate}</span>
+                    </div>
+                   )}
                   <div className="flex justify-col gap-1 flex-col">
                     <span className="font-semibold text-xs uppercase text-slate-500">{t('hashedKey')}</span>
-                    <span className="font-mono text-[10px] break-all text-slate-500">{tag.hashedAdvKey}</span>
+                    <span className="font-mono text-[10px] break-all text-slate-500 line-clamp-1">{tag.hashedAdvKey}</span>
                   </div>
                 </div>
               </div>
@@ -301,7 +339,7 @@ export const Tags = () => {
           );
         })}
 
-        {tags.length === 0 && (
+        {filteredTags.length === 0 && (
           <div className="col-span-full py-12 text-center text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
             {t('noTags')}
           </div>
