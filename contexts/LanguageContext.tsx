@@ -91,6 +91,12 @@ const translations = {
     exportCSV: 'CSV',
     shareLocation: 'Share Location',
     locationCopied: 'Location link copied to clipboard!',
+    reports: 'Reports',
+    exportPDF: 'Export PDF',
+    exportExcel: 'Export Excel',
+    resolveAddress: 'Resolve Addresses',
+    resolving: 'Resolving...',
+    address: 'Address',
 
     // Settings
     systemSettings: 'System Settings',
@@ -209,6 +215,12 @@ const translations = {
     exportCSV: 'CSV',
     shareLocation: 'Compartilhar Local',
     locationCopied: 'Link de localização copiado!',
+    reports: 'Relatórios',
+    exportPDF: 'Exportar PDF',
+    exportExcel: 'Exportar Excel',
+    resolveAddress: 'Resolver Endereços',
+    resolving: 'Resolvendo...',
+    address: 'Endereço',
 
     // Settings
     systemSettings: 'Configurações do Sistema',

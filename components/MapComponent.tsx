@@ -133,10 +133,10 @@ export const MapComponent: React.FC<MapProps> = ({ locations }) => {
   const polylinePositions = locations.map(l => [l.lat, l.lon] as [number, number]);
 
   return (
-    <div className="relative h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-800 bg-slate-100">
+    <div className="relative h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-800 bg-slate-100 z-0">
       
-      {/* Provider Switcher */}
-      <div className="absolute top-4 right-4 z-[1000] bg-white dark:bg-slate-900 p-2 rounded-lg shadow-md flex flex-col gap-2 max-w-[200px]">
+      {/* Provider Switcher - Lowered Z-Index to allow modals to be on top */}
+      <div className="absolute top-4 right-4 z-[400] bg-white dark:bg-slate-900 p-2 rounded-lg shadow-md flex flex-col gap-2 max-w-[200px]">
         <div className="flex gap-1 text-xs">
           <button 
             onClick={() => setProvider('osm')}

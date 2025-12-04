@@ -17,7 +17,10 @@
     "react-leaflet": "4.2.1",
     "leaflet": "1.9.4",
     "framer-motion": "11.0.8",
-    "firebase": "^12.6.0"
+    "firebase": "^12.6.0",
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.1",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

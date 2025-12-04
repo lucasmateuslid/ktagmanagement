@@ -2,12 +2,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { fetchTagLocation, exportToCSV } from '../services/api';
+import { geocodingService } from '../services/geocoding';
 import { Tag, LocationHistory, Vehicle } from '../types';
 import { MapComponent } from '../components/MapComponent';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { RefreshCw, Download, Play, Square, Car, AlertTriangle, Share2, Search, MapPin, Copy, Check, MessageCircle, Send } from 'lucide-react';
+import { RefreshCw, Download, Play, Square, Car, AlertTriangle, Share2, Search, MapPin, Copy, Check, MessageCircle, Send, FileText, FileSpreadsheet, Loader2 } from 'lucide-react';
+
+// Explicit imports for ESM modules
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable'; 
+import * as XLSX from 'xlsx';
 
 export const LiveMap = () => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -25,6 +31,12 @@ export const LiveMap = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [whatsappNumber, setWhatsappNumber] = useState('');
+
+  // Reports
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportAddresses, setReportAddresses] = useState<Record<string, string>>({});
+  const [resolving, setResolving] = useState(false);
+  const [resolveProgress, setResolveProgress] = useState({ current: 0, total: 0 });
   
   const { addNotification } = useNotification();
   const { setStatus, setLastSync } = useConnection();
@@ -47,6 +59,7 @@ export const LiveMap = () => {
   useEffect(() => {
     const loadHistory = async () => {
       if (selectedTagId) {
+        // pruneHistory is called internally by getLocations
         const hist = await storage.getLocations(selectedTagId);
         setLocations(hist);
       }
@@ -133,10 +146,102 @@ export const LiveMap = () => {
     };
   }, []);
 
-  const handleExport = () => {
+  const handleExportCSV = () => {
     if (locations.length === 0) return alert("No data to export");
     exportToCSV(locations);
   };
+
+  // --- Report & Address Logic ---
+  
+  const resolveAddresses = async () => {
+    if (locations.length === 0) return;
+    setResolving(true);
+    setResolveProgress({ current: 0, total: locations.length });
+    
+    const newAddresses = { ...reportAddresses };
+    
+    // Process ALL locations (Removed slice limit)
+    const toResolve = locations; 
+    let count = 0;
+
+    for (const loc of toResolve) {
+      count++;
+      setResolveProgress({ current: count, total: locations.length });
+      
+      if (!newAddresses[loc.id]) {
+        try {
+          const addr = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+          newAddresses[loc.id] = addr;
+        } catch (e) {
+          console.warn("Skipping address due to error", e);
+        }
+      }
+    }
+    
+    setReportAddresses(newAddresses);
+    setResolving(false);
+  };
+
+  const generatePDF = () => {
+    if (!jsPDF) return alert("PDF Library not loaded properly");
+    
+    try {
+      const doc = new jsPDF();
+      
+      doc.setFontSize(18);
+      doc.text(`Location Report: ${selectedTag?.name}`, 14, 22);
+      doc.setFontSize(11);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
+      if(activeVehicle) doc.text(`Vehicle: ${activeVehicle.model} (${activeVehicle.plate})`, 14, 36);
+
+      const headers = [['Date/Time', 'Lat', 'Lon', 'Speed/Conf', 'Address']];
+      const data = locations.map(l => [
+         l.isodatetime,
+         l.lat.toFixed(5),
+         l.lon.toFixed(5),
+         l.conf.toString(),
+         reportAddresses[l.id] || 'N/A'
+      ]);
+
+      // Use the functional import instead of prototype method
+      autoTable(doc, {
+        head: headers,
+        body: data,
+        startY: 44,
+      });
+
+      doc.save(`report_${selectedTag?.name}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert("Error generating PDF. Check console.");
+    }
+  };
+
+  const generateExcel = () => {
+    if (!XLSX) return alert("Excel Library not loaded properly");
+    
+    try {
+      const data = locations.map(l => ({
+        Timestamp: l.timestamp,
+        Date: l.isodatetime,
+        Latitude: l.lat,
+        Longitude: l.lon,
+        Confidence: l.conf,
+        Status: l.status,
+        Address: reportAddresses[l.id] || 'Unresolved'
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Locations");
+      XLSX.writeFile(wb, `report_${selectedTag?.name}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      alert("Error generating Excel. Check console.");
+    }
+  };
+
+  // --- Share Logic ---
 
   const getShareUrl = () => {
     if (locations.length === 0) return null;
@@ -179,37 +284,33 @@ export const LiveMap = () => {
       return;
     }
     const text = encodeURIComponent(`📍 ${t('shareLocation')}: ${url}`);
-    
-    // Clean number: remove anything that is not a digit
     const cleanNumber = whatsappNumber.replace(/\D/g, '');
-    
     let waUrl = '';
     if (cleanNumber) {
       waUrl = `https://wa.me/${cleanNumber}?text=${text}`;
     } else {
       waUrl = `https://wa.me/?text=${text}`;
     }
-    
     window.open(waUrl, '_blank');
     setIsShareOpen(false);
     setWhatsappNumber('');
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] gap-4">
+    <div className="flex flex-col h-[calc(100vh-6rem)] gap-4 relative">
       
       {window.location.protocol === 'https:' && (
-         <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 px-4 py-2 rounded-lg text-xs flex items-center gap-2 border border-amber-200 dark:border-amber-900">
+         <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 px-4 py-2 rounded-lg text-xs flex items-center gap-2 border border-amber-200 dark:border-amber-900 shrink-0">
             <AlertTriangle size={14} />
             <span>Note: K-Tag API is HTTP. If you see errors, use the Cloud Function Proxy (Settings).</span>
          </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4 justify-between">
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4 justify-between shrink-0">
         
         <div className="flex flex-wrap items-center gap-4 flex-1">
           {/* Custom Searchable Dropdown */}
-          <div className="flex flex-col relative" ref={dropdownRef}>
+          <div className="flex flex-col relative z-20" ref={dropdownRef}>
             <label className="text-xs text-slate-500 mb-1">{t('selectTracker')}</label>
             <div 
                 className="w-full md:w-64 p-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white flex items-center justify-between cursor-pointer"
@@ -294,7 +395,8 @@ export const LiveMap = () => {
            </div>
         )}
 
-        <div className="flex items-center gap-2 relative" ref={shareRef}>
+        {/* Share Button */}
+        <div className="flex items-center gap-2 relative z-20" ref={shareRef}>
            <button 
               onClick={() => setIsShareOpen(!isShareOpen)}
               className={`flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-medium transition-colors ${isShareOpen ? 'border-primary-500 ring-2 ring-primary-100 dark:ring-primary-900/30' : 'border-slate-300 dark:border-slate-700'}`}
@@ -337,18 +439,57 @@ export const LiveMap = () => {
                </div>
              </div>
            )}
-
+           
+           {/* Report Button */}
            <button 
-              onClick={handleExport}
+              onClick={() => setIsReportOpen(!isReportOpen)}
               className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-medium"
            >
-             <Download size={16} /> {t('exportCSV')}
+             <Download size={16} /> {t('reports')}
            </button>
         </div>
       </div>
 
+      {/* Report Modal - Z Index increased to 2000 */}
+      {isReportOpen && (
+         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
+                 <h2 className="text-xl font-bold mb-4">{t('reports')}</h2>
+                 <p className="text-sm text-slate-500 mb-6">Generate advanced reports with addresses.</p>
+                 
+                 <div className="space-y-4">
+                    <button 
+                      onClick={resolveAddresses} 
+                      disabled={resolving || locations.length === 0}
+                      className="w-full flex items-center justify-center gap-2 py-3 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                       {resolving ? <Loader2 size={18} className="animate-spin" /> : <MapPin size={18} />} 
+                       {resolving ? `${t('resolving')} (${resolveProgress.current}/${resolveProgress.total})` : t('resolveAddress')}
+                    </button>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                       <button onClick={generatePDF} className="flex items-center justify-center gap-2 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+                          <FileText size={18} /> {t('exportPDF')}
+                       </button>
+                       <button onClick={generateExcel} className="flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                          <FileSpreadsheet size={18} /> {t('exportExcel')}
+                       </button>
+                    </div>
+
+                    <button onClick={handleExportCSV} className="w-full flex items-center justify-center gap-2 py-3 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                          <Download size={18} /> {t('exportCSV')}
+                    </button>
+                 </div>
+                 
+                 <div className="mt-6 flex justify-end">
+                    <button onClick={() => setIsReportOpen(false)} className="text-slate-500 hover:text-slate-800">Close</button>
+                 </div>
+             </div>
+         </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full min-h-0">
-        <div className="lg:col-span-2 h-[400px] lg:h-full">
+        <div className="lg:col-span-2 h-[400px] lg:h-full relative z-0">
            <MapComponent locations={locations} />
         </div>
 
@@ -386,6 +527,9 @@ export const LiveMap = () => {
                             {loc.lat.toFixed(6)}, {loc.lon.toFixed(6)}
                         </a>
                     </div>
+                    {reportAddresses[loc.id] && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">{reportAddresses[loc.id]}</p>
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
                     {loc.isodatetime}

@@ -169,7 +169,46 @@ export const storage = {
   },
 
   // Locations (History)
+  
+  // New Helper: Prune history older than 128 hours
+  pruneHistory: async (tagId: string) => {
+    const HOURS_128 = 128 * 60 * 60 * 1000;
+    const cutoff = Date.now() - HOURS_128;
+    
+    // 1. Prune Local
+    const allLocal = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
+    const prunedLocal = allLocal.filter(l => l.timestamp >= cutoff);
+    if (allLocal.length !== prunedLocal.length) {
+       console.log(`[Storage] Pruned ${allLocal.length - prunedLocal.length} old local records.`);
+       setLocal(KEYS.LOCATIONS, prunedLocal);
+    }
+
+    // 2. Prune Firestore
+    if (db) {
+      try {
+        const q = query(
+           collection(db, KEYS.LOCATIONS), 
+           where("tagId", "==", tagId),
+           where("timestamp", "<", cutoff)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+           const batch = writeBatch(db);
+           snap.docs.forEach(d => batch.delete(d.ref));
+           await batch.commit();
+           console.log(`[Storage] Pruned ${snap.size} old Firestore records for tag ${tagId}`);
+        }
+      } catch (e) {
+         console.warn("Firestore prune failed", e);
+      }
+    }
+  },
+
   getLocations: async (tagId: string): Promise<LocationHistory[]> => {
+    // Attempt prune before returning
+    // We don't await pruneHistory to keep UI fast, it runs in background
+    storage.pruneHistory(tagId);
+
     const fallback = () => {
       const all = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
       return all.filter((l) => l.tagId === tagId).sort((a, b) => b.timestamp - a.timestamp);
@@ -188,6 +227,7 @@ export const storage = {
     }
     return fallback();
   },
+  
   addLocation: async (loc: LocationHistory) => {
     if (db) {
       try {
