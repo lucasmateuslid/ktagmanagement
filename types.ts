@@ -3,6 +3,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  password?: string; // Added for profile updates
   role?: 'admin' | 'user';
   status?: 'pending' | 'approved' | 'rejected'; // Status da aprovação
   ip?: string; // IP do cadastro
@@ -83,4 +84,8 @@ export interface AppSettings {
   ktagPass: string;
   googleMapsKey: string;
   mapboxKey: string;
+  
+  // Real Plate API Config
+  plateApiUrl: string; // e.g. https://api.provider.com/v1/plate/{plate}
+  plateApiToken: string;
 }

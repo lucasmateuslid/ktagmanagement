@@ -6,7 +6,6 @@ type Language = 'pt' | 'en';
 
 const translations = {
   en: {
-    // ... existing ...
     dashboard: 'Dashboard',
     liveMap: 'Live Map',
     tags: 'Tags',
@@ -89,6 +88,16 @@ const translations = {
     categoryName: 'Category Name',
     fipeMapping: 'FIPE API Type',
     noFipe: 'No FIPE Integration',
+    searchPlate: 'Search Plate',
+    searchingPlate: 'Searching Plate (Real API)...',
+    plateFound: 'Vehicle found!',
+    plateNotFound: 'Plate not found.',
+    
+    // Plate API
+    plateApiConfig: 'License Plate API Configuration',
+    plateApiUrl: 'API URL',
+    plateApiUrlDesc: 'Use {plate} as placeholder. Ex: https://api.xyz.com/v1/{plate}',
+    plateApiToken: 'API Token/Key',
 
     selectTracker: 'Select Tracker',
     searchTracker: 'Search tracker...',
@@ -144,6 +153,14 @@ const translations = {
     saveConfig: 'Save Configuration',
     savedSuccess: 'Settings Saved',
     savedError: 'Failed to save settings',
+    
+    myProfile: 'My Profile',
+    editProfile: 'Edit Profile',
+    cancelEdit: 'Cancel',
+    saveProfile: 'Save Profile',
+    newPassword: 'New Password',
+    optional: 'Optional',
+    profileSaved: 'Profile updated successfully',
 
     portalTitle: 'K-TAG Portal',
     portalSubtitle: 'Professional Tracking Management',
@@ -237,6 +254,16 @@ const translations = {
     categoryName: 'Nome da Categoria',
     fipeMapping: 'Tipo API FIPE',
     noFipe: 'Sem Integração FIPE',
+    searchPlate: 'Buscar Placa',
+    searchingPlate: 'Buscando Placa (API Real)...',
+    plateFound: 'Veículo encontrado!',
+    plateNotFound: 'Placa não encontrada.',
+    
+    // Plate API
+    plateApiConfig: 'Configuração API de Placas (Externa)',
+    plateApiUrl: 'URL da API',
+    plateApiUrlDesc: 'Use {plate} onde vai a placa. Ex: https://api.xyz.com/v1/{plate}',
+    plateApiToken: 'Token/Chave da API',
 
     selectTracker: 'Selecionar Rastreador',
     searchTracker: 'Buscar rastreador...',
@@ -292,6 +319,14 @@ const translations = {
     saveConfig: 'Salvar Configuração',
     savedSuccess: 'Configurações Salvas',
     savedError: 'Falha ao salvar configurações',
+    
+    myProfile: 'Meu Perfil',
+    editProfile: 'Editar Perfil',
+    cancelEdit: 'Cancelar',
+    saveProfile: 'Salvar Perfil',
+    newPassword: 'Nova Senha',
+    optional: 'Opcional',
+    profileSaved: 'Perfil atualizado com sucesso',
 
     portalTitle: 'K-TAG Portal',
     portalSubtitle: 'Gestão Profissional de Rastreamento',

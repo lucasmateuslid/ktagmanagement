@@ -7,6 +7,7 @@ interface AuthContextType {
   user: User | null;
   login: (email: string) => Promise<string | void>; // Retorna string de erro se falhar
   register: (name: string, email: string, ip: string) => Promise<void>;
+  updateProfile: (data: Partial<User>) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -99,6 +100,12 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     await storage.registerUserRequest(newUser);
   };
 
+  const updateProfile = async (data: Partial<User>) => {
+    if (!user) return;
+    await storage.updateUserProfile(user.id, data);
+    setUser(prev => prev ? { ...prev, ...data } : null);
+  };
+
   const logout = async () => {
     await storage.clearSessionUser();
     setUser(null);
@@ -111,6 +118,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       user, 
       login, 
       register,
+      updateProfile,
       logout, 
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin',

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Tag, Vehicle, Company } from '../types';
+import { Tag, Vehicle, Company, VehicleCategory } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
@@ -13,6 +13,7 @@ export const Dashboard = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [categories, setCategories] = useState<VehicleCategory[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [companyChartData, setCompanyChartData] = useState<any[]>([]);
   const [trendChartData, setTrendChartData] = useState<any[]>([]);
@@ -20,14 +21,16 @@ export const Dashboard = () => {
   const { lastSync } = useConnection();
 
   const loadData = async () => {
-    const [loadedTags, loadedVehicles, loadedCompanies] = await Promise.all([
+    const [loadedTags, loadedVehicles, loadedCompanies, loadedCategories] = await Promise.all([
       storage.getTags(),
       storage.getVehicles(),
       storage.getCompanies(),
+      storage.getCategories()
     ]);
     setTags(loadedTags);
     setVehicles(loadedVehicles);
     setCompanies(loadedCompanies);
+    setCategories(loadedCategories);
     processHistoryData(loadedTags, loadedVehicles);
     processCompanyData(loadedVehicles, loadedCompanies);
     processTrendData(loadedVehicles);
@@ -111,9 +114,26 @@ export const Dashboard = () => {
   const linkedCount = vehicles.filter(v => v.tagId).length;
   const unlinkedCount = tags.length - linkedCount;
 
-  const carCount = vehicles.filter(v => v.type === 'cat-car' || v.type === 'Car').length;
-  const truckCount = vehicles.filter(v => v.type === 'cat-truck' || v.type === 'Truck').length;
-  const motoCount = vehicles.filter(v => v.type === 'cat-moto' || v.type === 'Motorcycle').length;
+  // Dynamic Category Counting
+  const getCategoryType = (typeId: string) => {
+      const cat = categories.find(c => c.id === typeId);
+      return cat ? cat.fipeType : 'none';
+  };
+
+  const carCount = vehicles.filter(v => {
+      const type = getCategoryType(v.type);
+      return type === 'carros' || v.type === 'cat-car' || v.type === 'Car';
+  }).length;
+
+  const truckCount = vehicles.filter(v => {
+      const type = getCategoryType(v.type);
+      return type === 'caminhoes' || v.type === 'cat-truck' || v.type === 'Truck';
+  }).length;
+
+  const motoCount = vehicles.filter(v => {
+      const type = getCategoryType(v.type);
+      return type === 'motos' || v.type === 'cat-moto' || v.type === 'Motorcycle';
+  }).length;
 
   const quickActions = [
     { label: t('addTag'), path: '/tags', icon: Plus },

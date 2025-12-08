@@ -42,7 +42,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   ktagUser: 'TagLocation',
   ktagPass: 'a9B3xQ7z',
   googleMapsKey: '',
-  mapboxKey: ''
+  mapboxKey: '',
+  plateApiUrl: '',
+  plateApiToken: ''
 };
 
 // Default Categories to initialize
@@ -121,6 +123,48 @@ export const storage = {
     if (idx >= 0) {
       users[idx].status = status;
       setLocal(KEYS.USERS_DB, users);
+    }
+  },
+
+  updateUserProfile: async (userId: string, data: Partial<User>) => {
+    // 1. Update DB
+    if (db) {
+      try {
+        const userRef = doc(db, KEYS.USERS_DB, userId);
+        const docSnap = await getDoc(userRef);
+        
+        if (docSnap.exists()) {
+           // Normal update if document exists
+           await updateDoc(userRef, data);
+        } else {
+           // Handle cases like 'root-admin' which might exist in session but not in DB yet.
+           // We try to reconstruct the full object from local session to ensure DB integrity.
+           const localSession = getLocal<User | null>(KEYS.USER_SESSION, null);
+           if (localSession && localSession.id === userId) {
+               const fullUser = { ...localSession, ...data };
+               await setDoc(userRef, fullUser);
+           } else {
+               // Fallback: Create partial doc (better than failing)
+               await setDoc(userRef, data, { merge: true });
+           }
+        }
+      } catch (e) {
+        console.error("Firestore updateUserProfile failed", e);
+      }
+    }
+    
+    // 2. Update Local List
+    const users = getLocal<User[]>(KEYS.USERS_DB, []);
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      users[idx] = { ...users[idx], ...data };
+      setLocal(KEYS.USERS_DB, users);
+    }
+
+    // 3. Update Session if it matches current user
+    const currentSession = getLocal<User | null>(KEYS.USER_SESSION, null);
+    if (currentSession && currentSession.id === userId) {
+        setLocal(KEYS.USER_SESSION, { ...currentSession, ...data });
     }
   },
 

@@ -2,9 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { fipeService, FipeReference } from '../services/fipe';
+import { plateLookupService } from '../services/plateLookup';
 import { Tag, Vehicle, Company, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check } from 'lucide-react';
+import { useNotification } from '../contexts/NotificationContext';
+import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check } from 'lucide-react';
 
 // --- Internal Component: Searchable Select ---
 interface SearchableSelectProps {
@@ -128,12 +130,14 @@ export const Vehicles = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Vehicle>>({});
   const { t } = useLanguage();
+  const { addNotification } = useNotification();
 
   const [useFipe, setUseFipe] = useState(false);
   const [fipeBrands, setFipeBrands] = useState<FipeReference[]>([]);
   const [fipeModels, setFipeModels] = useState<FipeReference[]>([]);
   const [fipeYears, setFipeYears] = useState<FipeReference[]>([]);
   const [loadingFipe, setLoadingFipe] = useState(false);
+  const [loadingPlate, setLoadingPlate] = useState(false);
   
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -245,6 +249,37 @@ export const Vehicles = () => {
     setLoadingFipe(false);
   };
 
+  const handlePlateLookup = async () => {
+    if (!formData.plate || formData.plate.length < 7) {
+        addNotification('error', t('searchPlate'), 'Invalid plate format.');
+        return;
+    }
+    
+    setLoadingPlate(true);
+    addNotification('info', t('searchPlate'), t('searchingPlate'));
+    
+    try {
+        const result = await plateLookupService.lookup(formData.plate);
+        if (result && result.found) {
+            setFormData(prev => ({
+                ...prev,
+                model: result.model,
+                year: result.year,
+                fipeCode: result.fipeCode,
+                // Apply suggested category if found
+                type: result.suggestedCategoryId || prev.type 
+            }));
+            addNotification('success', t('searchPlate'), t('plateFound'));
+        } else {
+            addNotification('info', t('searchPlate'), t('plateNotFound'));
+        }
+    } catch (e: any) {
+        addNotification('error', t('searchPlate'), e.message);
+    } finally {
+        setLoadingPlate(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.plate || !formData.model || !formData.type) return;
@@ -288,6 +323,17 @@ export const Vehicles = () => {
   const getCategoryName = (id: string) => {
       const cat = categories.find(c => c.id === id);
       return cat ? cat.name : id;
+  };
+
+  const getCategoryIcon = (id: string) => {
+      const cat = categories.find(c => c.id === id);
+      if(!cat) return <CarIcon className="text-zinc-500" size={24} />;
+      
+      switch(cat.fipeType) {
+          case 'caminhoes': return <Truck className="text-zinc-500" size={24} />;
+          case 'motos': return <Bike className="text-zinc-500" size={24} />;
+          default: return <CarIcon className="text-zinc-500" size={24} />;
+      }
   };
   
   const getCompanyPrefix = (id?: string) => {
@@ -342,7 +388,7 @@ export const Vehicles = () => {
                 <td className="p-4">
                    <div className="flex items-center gap-3">
                      <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                       <CarIcon className="text-zinc-500" size={24} />
+                       {getCategoryIcon(vehicle.type)}
                      </div>
                      <span className="font-medium text-zinc-900 dark:text-white">{getCategoryName(vehicle.type)}</span>
                    </div>
@@ -411,13 +457,25 @@ export const Vehicles = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('plate')}</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.plate || ''}
-                    onChange={e => setFormData({ ...formData, plate: e.target.value })}
-                    className="w-full px-3 py-2.5 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                  />
+                  <div className="relative">
+                    <input
+                        type="text"
+                        required
+                        value={formData.plate || ''}
+                        onChange={e => setFormData({ ...formData, plate: e.target.value })}
+                        className="w-full pl-3 pr-10 py-2.5 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors font-mono uppercase"
+                        placeholder="ABC1234"
+                    />
+                    <button 
+                        type="button"
+                        onClick={handlePlateLookup}
+                        disabled={loadingPlate || !formData.plate}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-primary-500 disabled:opacity-50"
+                        title={t('searchPlate')}
+                    >
+                        {loadingPlate ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
