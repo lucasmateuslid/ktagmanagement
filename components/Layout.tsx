@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { AiAssistant } from './AiAssistant';
 import { 
   LayoutGrid, 
   Map, 
@@ -275,6 +276,9 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
             {children}
           </div>
         </div>
+        
+        {/* Floating AI Assistant */}
+        <AiAssistant />
       </main>
     </div>
   );

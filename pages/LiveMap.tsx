@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { storage } from '../services/storage';
 import { fetchTagLocation, exportToCSV } from '../services/api';
 import { geocodingService } from '../services/geocoding';
@@ -42,6 +43,7 @@ export const LiveMap = () => {
   const { addNotification } = useNotification();
   const { setStatus, setLastSync } = useConnection();
   const { t } = useLanguage();
+  const [searchParams] = useSearchParams(); // Add Search Params
   const timerRef = useRef<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
@@ -54,15 +56,21 @@ export const LiveMap = () => {
       setTags(allTags);
       setVehicles(allVehicles);
       setCategories(allCategories);
-      if (allTags.length > 0 && !selectedTagId) setSelectedTagId(allTags[0].id);
+
+      // Check URL for tagId
+      const urlTagId = searchParams.get('tagId');
+      if (urlTagId && allTags.find(t => t.id === urlTagId)) {
+        setSelectedTagId(urlTagId);
+      } else if (allTags.length > 0 && !selectedTagId) {
+        setSelectedTagId(allTags[0].id);
+      }
     };
     loadData();
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     const loadHistory = async () => {
       if (selectedTagId) {
-        // pruneHistory is called internally by getLocations
         const hist = await storage.getLocations(selectedTagId);
         setLocations(hist);
       }
@@ -149,6 +157,21 @@ export const LiveMap = () => {
       timerRef.current = window.setInterval(fetchUpdate, 60000); 
     }
   };
+
+  // --- Auto-Start Tracking Logic from URL ---
+  useEffect(() => {
+    const autoStart = searchParams.get('autoStart') === 'true';
+    // Only start if we have a tag, not tracking yet, and not already loading
+    if (autoStart && selectedTagId && !isTracking && !loading) {
+        console.log("Auto-start tracking triggered for", selectedTagId);
+        setIsTracking(true);
+        fetchUpdate();
+        timerRef.current = window.setInterval(fetchUpdate, 60000);
+        
+        // Optional: Remove query param so it doesn't re-trigger on reload if user navigates away and back
+        // but keeping it might be better for "link sharing" behavior.
+    }
+  }, [selectedTagId]); // Depend on selectedTagId resolution
 
   useEffect(() => {
     return () => {
