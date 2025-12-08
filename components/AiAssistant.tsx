@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
-import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, ChevronRight } from 'lucide-react';
+import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, ChevronRight, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
 
@@ -96,6 +96,7 @@ export const AiAssistant = () => {
 
       const lastLoc = locations[0];
       
+      // Auto-start tracking logic
       const internalLink = `${window.location.origin}/#/map?tagId=${vehicle.tagId}&autoStart=true`;
       const googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${lastLoc.lat},${lastLoc.lon}`;
 
@@ -194,20 +195,23 @@ export const AiAssistant = () => {
 Objetivos:
 1. Ajudar a localizar veículos.
 2. Fornecer estatísticas de frota (tags livres, veiculos roubados, categorias).
-3. Orientar sobre o uso do sistema.
+3. Orientar sobre o uso do sistema (cadastros, segurança).
 
 Regras de Ferramentas:
 - Se o usuário perguntar sobre a localização de uma placa específica, use 'get_vehicle_location'.
 - Se o usuário perguntar "quantos veículos temos", "quantas tags livres", "índice de roubo", "resumo da frota" ou estatísticas gerais, use 'get_fleet_stats'.
 - Se o usuário perguntar "quais veiculos foram roubados", "historico de roubo", "quando tal veiculo foi roubado", use 'get_security_logs'.
 
-Comportamento:
+Comportamento Específico:
+- Se o usuário perguntar "Como cadastrar veículo?", "Como adicionar carro" ou algo similar sobre cadastro de veículos, responda EXATAMENTE com estes passos:
+  1. Vá até a página de **Veículos** (é a 5ª opção na barra lateral).
+  2. Clique no botão **"Adicionar Veículo"** no canto superior direito.
+  3. Preencha o formulário com os dados (Placa, Modelo, Categoria).
+  4. Clique em **Salvar**. Pronto, veículo cadastrado!
+  Você também pode fornecer este link direto para facilitar: [Ir para Veículos](${window.location.origin}/#/vehicles).
+
 - Se a ferramenta 'get_vehicle_location' retornar 'isStolen: true', responda com URGÊNCIA EM NEGRITO 🚨 alertando sobre o roubo.
 - Sempre forneça o link 'internalTracking' como: [📍 Rastrear no Mapa Ao Vivo](link).
-- Se o usuário quiser "Cadastrar um veículo" ou "Criar uma Tag", explique que você não pode gravar dados diretamente, mas forneça os links:
-  - Veículos: ${window.location.origin}/#/vehicles
-  - Tags: ${window.location.origin}/#/tags
-  - Segurança/Sinistros: ${window.location.origin}/#/security
 - Seja conciso e profissional.`
         }
       });
@@ -255,6 +259,7 @@ Comportamento:
 
   const quickActions = [
     { label: '📊 Estatísticas Gerais', prompt: 'Me dê um resumo das estatísticas da frota: tags livres, veículos por categoria e total.', icon: BarChart3 },
+    { label: '🚗 Como cadastrar veículo?', prompt: 'Como faço para cadastrar um novo veículo no sistema?', icon: HelpCircle },
     { label: '🚨 Veículos Roubados', prompt: 'Liste os veículos roubados e seus status.', icon: AlertTriangle },
     { label: '🏷️ Status Tags', prompt: 'Quantas tags temos no total e quantas estão livres?', icon: TagIcon },
     { label: '📍 Rastrear Placa', prompt: 'Quero rastrear um veículo pela placa. (Digite a placa)', icon: MapPin },
