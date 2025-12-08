@@ -22,7 +22,9 @@ import {
   Info,
   Settings,
   X,
-  ChevronRight
+  ChevronRight,
+  ShieldAlert,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -61,8 +63,11 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const navItems = [
     { label: t('dashboard'), path: '/', icon: LayoutGrid },
     { label: t('liveMap'), path: '/map', icon: Map },
+    { label: 'Segurança', path: '/security', icon: ShieldAlert },
     { label: t('tags'), path: '/tags', icon: Tags },
     { label: t('vehicles'), path: '/vehicles', icon: CarFront },
+    // Only add Users item if admin
+    ...(user?.role === 'admin' ? [{ label: t('users'), path: '/users', icon: Users }] : []),
     { label: t('settings'), path: '/settings', icon: Settings },
   ];
 

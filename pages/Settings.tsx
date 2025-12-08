@@ -5,11 +5,10 @@ import { AppSettings, User, Company, VehicleCategory } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Save, Settings as SettingsIcon, Map, Database, Globe, Key, Languages, CloudLightning, Users, Check, X, Building2, Truck, Trash2, Plus, Search, ShieldAlert, Lock, User as UserIcon, Edit2 } from 'lucide-react';
+import { Save, Settings as SettingsIcon, Map, Database, Globe, Key, Languages, CloudLightning, Trash2, Plus, Search, ShieldAlert, Lock, Edit2, Building2, Truck } from 'lucide-react';
 
 export const Settings = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   
@@ -33,12 +32,10 @@ export const Settings = () => {
       if (data.language) setLanguage(data.language);
       
       if (isAdmin) {
-        const [allUsers, allCompanies, allCategories] = await Promise.all([
-            storage.getAllUsers(),
+        const [allCompanies, allCategories] = await Promise.all([
             storage.getCompanies(),
             storage.getCategories()
         ]);
-        setUsers(allUsers);
         setCompanies(allCompanies);
         setCategories(allCategories);
       }
@@ -94,19 +91,6 @@ export const Settings = () => {
       if(!currentUser) return;
       setProfileForm({ name: currentUser.name, password: '' });
       setIsEditingProfile(true);
-  };
-
-  const handleUserAction = async (userId: string, action: 'approved' | 'rejected') => {
-    await storage.updateUserStatus(userId, action);
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: action } : u));
-    addNotification('success', 'User Updated', `User has been ${action}.`);
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-      if(!confirm("Are you sure you want to permanently delete this user?")) return;
-      setUsers(prev => prev.filter(u => u.id !== userId));
-      await storage.updateUserStatus(userId, 'rejected'); // Soft delete for now
-      addNotification('success', 'User Deleted', 'User removed from list.');
   };
 
   const handleAddCompany = async (e: React.FormEvent) => {
@@ -263,94 +247,6 @@ export const Settings = () => {
         {/* --- ADMIN ONLY SECTION --- */}
         {isAdmin ? (
             <>
-                {/* User Management */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden border-l-4 border-l-blue-500">
-                    <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Users size={18} className="text-blue-600" />
-                            <h2 className="font-semibold text-zinc-800 dark:text-zinc-200">User Access Management</h2>
-                        </div>
-                        <span className="text-xs font-mono bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-1 rounded">ADMIN AREA</span>
-                    </div>
-                    <div className="p-0">
-                        <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 uppercase">
-                                <tr>
-                                <th className="px-6 py-3">Name</th>
-                                <th className="px-6 py-3">Email</th>
-                                <th className="px-6 py-3">IP Address</th>
-                                <th className="px-6 py-3">Date</th>
-                                <th className="px-6 py-3">Status</th>
-                                <th className="px-6 py-3 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                {users.filter(u => u.email !== 'lucasmateus.lima@outlook.com').map(user => (
-                                <tr key={user.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                                    <td className="px-6 py-4 font-medium">{user.name}</td>
-                                    <td className="px-6 py-4 text-zinc-500">{user.email}</td>
-                                    <td className="px-6 py-4 font-mono text-xs text-zinc-500">{user.ip || 'N/A'}</td>
-                                    <td className="px-6 py-4 text-xs text-zinc-500">
-                                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                        user.status === 'approved' ? 'bg-green-100 text-green-700' :
-                                        user.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                        'bg-yellow-100 text-yellow-700'
-                                    }`}>
-                                        {user.status || 'Unknown'}
-                                    </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                        {user.status === 'pending' && (
-                                            <>
-                                            <button 
-                                                onClick={() => handleUserAction(user.id, 'approved')}
-                                                className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200 transition-colors"
-                                                title="Approve"
-                                            >
-                                                <Check size={16} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleUserAction(user.id, 'rejected')}
-                                                className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
-                                                title="Reject"
-                                            >
-                                                <X size={16} />
-                                            </button>
-                                            </>
-                                        )}
-                                        {user.status !== 'pending' && (
-                                            <button 
-                                            onClick={() => handleUserAction(user.id, user.status === 'approved' ? 'rejected' : 'approved')}
-                                            className="text-xs text-blue-500 hover:text-blue-700 underline px-2"
-                                            >
-                                            {user.status === 'approved' ? 'Revoke' : 'Approve'}
-                                            </button>
-                                        )}
-                                        <button 
-                                            onClick={() => handleDeleteUser(user.id)}
-                                            className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors"
-                                            title="Delete User"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                                ))}
-                                {users.filter(u => u.email !== 'lucasmateus.lima@outlook.com').length === 0 && (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-8 text-center text-zinc-500">No external users registered.</td>
-                                </tr>
-                                )}
-                            </tbody>
-                        </table>
-                        </div>
-                    </div>
-                </div>
-
                 {/* Companies & Categories Management */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Companies */}

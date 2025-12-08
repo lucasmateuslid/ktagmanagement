@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
-import { X, Send, Sparkles, Bot } from 'lucide-react';
+import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
 
@@ -14,7 +14,7 @@ export const AiAssistant = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: 'Olá! Sou seu Operador de Frota com IA. Pergunte-me onde está um veículo pela placa.' }
+    { role: 'model', text: 'Olá! Sou seu Operador de Frota Inteligente. Posso ajudar a localizar veículos, verificar estatísticas de tags, relatórios de roubo e muito mais. Como posso ajudar?' }
   ]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -27,10 +27,11 @@ export const AiAssistant = () => {
     scrollToBottom();
   }, [messages, isOpen]);
 
-  // --- TOOL DEFINITION ---
+  // --- TOOL DEFINITIONS ---
+
   const getVehicleLocationTool: FunctionDeclaration = {
     name: 'get_vehicle_location',
-    description: 'Obter a localização, link do google maps e link de rastreamento interno de um veículo pela placa.',
+    description: 'Obter a localização, status (ativo/roubado) e link de rastreamento de um veículo pela placa.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -40,7 +41,26 @@ export const AiAssistant = () => {
     }
   };
 
+  const getFleetStatsTool: FunctionDeclaration = {
+    name: 'get_fleet_stats',
+    description: 'Obter estatísticas gerais da frota: contagem de tags (livres/vinculadas), veículos por categoria, índice de roubo e total de veículos.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {}, // No parameters needed, fetches all stats
+    }
+  };
+
+  const getSecurityLogsTool: FunctionDeclaration = {
+    name: 'get_security_logs',
+    description: 'Buscar histórico de roubos e furtos. Retorna lista de veículos roubados, data do roubo, e B.O se disponível.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    }
+  };
+
   // --- TOOL EXECUTION LOGIC ---
+
   const executeVehicleSearch = async (plate: string) => {
     try {
       const vehicles = await storage.getVehicles();
@@ -51,26 +71,39 @@ export const AiAssistant = () => {
       if (!vehicle) {
         return { found: false, message: `Veículo com placa ${plate} não encontrado no banco de dados.` };
       }
+      
+      const isStolen = vehicle.status === 'stolen';
 
       if (!vehicle.tagId) {
-        return { found: true, message: `Veículo ${vehicle.model} (${vehicle.plate}) está registrado mas não vinculado a um rastreador.` };
+        return { 
+            found: true, 
+            message: `Veículo ${vehicle.model} (${vehicle.plate}) está registrado mas não vinculado a um rastreador.`,
+            status: vehicle.status,
+            isStolen: isStolen
+        };
       }
 
       const locations = await storage.getLocations(vehicle.tagId);
       
       if (locations.length === 0) {
-        return { found: true, message: `Veículo ${vehicle.model} (${vehicle.plate}) está vinculado mas não possui histórico recente.` };
+        return { 
+            found: true, 
+            message: `Veículo ${vehicle.model} (${vehicle.plate}) está vinculado mas não possui histórico recente.`,
+            status: vehicle.status,
+            isStolen: isStolen
+        };
       }
 
-      const lastLoc = locations[0]; // Assuming getLocations sorts desc
+      const lastLoc = locations[0];
       
-      // CRITICAL: Add autoStart=true to trigger automatic tracking in LiveMap
       const internalLink = `${window.location.origin}/#/map?tagId=${vehicle.tagId}&autoStart=true`;
       const googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${lastLoc.lat},${lastLoc.lon}`;
 
       return {
         found: true,
         vehicle: { model: vehicle.model, plate: vehicle.plate },
+        status: vehicle.status || 'active',
+        isStolen: isStolen,
         location: { lat: lastLoc.lat, lon: lastLoc.lon, timestamp: lastLoc.isodatetime },
         links: {
           googleMaps: googleMapsLink,
@@ -82,10 +115,66 @@ export const AiAssistant = () => {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const executeFleetStats = async () => {
+    try {
+        const [tags, vehicles, categories] = await Promise.all([
+            storage.getTags(),
+            storage.getVehicles(),
+            storage.getCategories()
+        ]);
 
-    const userMsg = input;
+        const totalTags = tags.length;
+        const linkedTags = vehicles.filter(v => v.tagId).length;
+        const freeTags = totalTags - linkedTags;
+
+        const totalVehicles = vehicles.length;
+        const stolenVehicles = vehicles.filter(v => v.status === 'stolen').length;
+        const activeVehicles = vehicles.filter(v => v.status === 'active').length;
+        const maintenanceVehicles = vehicles.filter(v => v.status === 'maintenance').length;
+
+        // Group by Category Name
+        const byCategory: Record<string, number> = {};
+        vehicles.forEach(v => {
+            const catName = categories.find(c => c.id === v.type)?.name || 'Desconhecido';
+            byCategory[catName] = (byCategory[catName] || 0) + 1;
+        });
+
+        return {
+            tags: { total: totalTags, linked: linkedTags, free: freeTags },
+            vehicles: { 
+                total: totalVehicles, 
+                stolen: stolenVehicles, 
+                active: activeVehicles, 
+                maintenance: maintenanceVehicles,
+                byCategory: byCategory 
+            }
+        };
+    } catch (e) {
+        return { error: 'Falha ao calcular estatísticas' };
+    }
+  };
+
+  const executeSecurityLogs = async () => {
+    try {
+      const records = await storage.getStolenRecords();
+      return records.map(r => ({
+        plate: r.vehiclePlate,
+        model: r.vehicleModel,
+        type: r.type,
+        date: new Date(r.timestamp).toLocaleString(),
+        policeReport: r.policeReport || 'N/A',
+        status: r.status,
+        recoveredAt: r.recoveredAt ? new Date(r.recoveredAt).toLocaleString() : null
+      })).slice(0, 10); // Return last 10
+    } catch (e) {
+      return { error: 'Erro ao buscar logs de segurança' };
+    }
+  };
+
+  const handleSend = async (textOverride?: string) => {
+    const userMsg = textOverride || input;
+    if (!userMsg.trim() || loading) return;
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
@@ -93,55 +182,83 @@ export const AiAssistant = () => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // Initial Request
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
             { role: 'user', parts: [{ text: userMsg }] }
         ],
         config: {
-          tools: [{ functionDeclarations: [getVehicleLocationTool] }],
-          systemInstruction: "Você é um assistente operacional de frota eficiente. Fale estritamente em Português. Quando um usuário perguntar sobre um veículo, use a ferramenta disponível. Se encontrado, forneça os dados resumidos e OBRIGATORIAMENTE forneça o link 'internalTracking' formatado como um link clicável com o texto '📍 Rastrear Agora no Mapa Ao Vivo' e o link do Google Maps. Seja direto."
+          tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }],
+          systemInstruction: `Você é um Assistente Operacional de Frota altamente inteligente (K-TAG AI). Fale estritamente em Português.
+
+Objetivos:
+1. Ajudar a localizar veículos.
+2. Fornecer estatísticas de frota (tags livres, veiculos roubados, categorias).
+3. Orientar sobre o uso do sistema.
+
+Regras de Ferramentas:
+- Se o usuário perguntar sobre a localização de uma placa específica, use 'get_vehicle_location'.
+- Se o usuário perguntar "quantos veículos temos", "quantas tags livres", "índice de roubo", "resumo da frota" ou estatísticas gerais, use 'get_fleet_stats'.
+- Se o usuário perguntar "quais veiculos foram roubados", "historico de roubo", "quando tal veiculo foi roubado", use 'get_security_logs'.
+
+Comportamento:
+- Se a ferramenta 'get_vehicle_location' retornar 'isStolen: true', responda com URGÊNCIA EM NEGRITO 🚨 alertando sobre o roubo.
+- Sempre forneça o link 'internalTracking' como: [📍 Rastrear no Mapa Ao Vivo](link).
+- Se o usuário quiser "Cadastrar um veículo" ou "Criar uma Tag", explique que você não pode gravar dados diretamente, mas forneça os links:
+  - Veículos: ${window.location.origin}/#/vehicles
+  - Tags: ${window.location.origin}/#/tags
+  - Segurança/Sinistros: ${window.location.origin}/#/security
+- Seja conciso e profissional.`
         }
       });
 
-      // Handle Function Calls
       const functionCalls = response.functionCalls;
       
       if (functionCalls && functionCalls.length > 0) {
         const call = functionCalls[0];
-        
+        let toolResult;
+
         if (call.name === 'get_vehicle_location') {
           const args = call.args as { plate: string };
-          const toolResult = await executeVehicleSearch(args.plate);
+          toolResult = await executeVehicleSearch(args.plate);
+        } else if (call.name === 'get_fleet_stats') {
+          toolResult = await executeFleetStats();
+        } else if (call.name === 'get_security_logs') {
+          toolResult = await executeSecurityLogs();
+        }
 
-          // Send result back to model
-          const finalResponse = await ai.models.generateContent({
+        const finalResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [
                 { role: 'user', parts: [{ text: userMsg }] },
-                { role: 'model', parts: [{ functionCall: call }] }, // History
+                { role: 'model', parts: [{ functionCall: call }] },
                 { role: 'function', parts: [{ functionResponse: { name: call.name, response: { result: toolResult } } }] }
             ],
             config: {
-                tools: [{ functionDeclarations: [getVehicleLocationTool] }],
+                tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }],
             }
-          });
+        });
           
-          setMessages(prev => [...prev, { role: 'model', text: finalResponse.text || "Encontrei o veículo mas não consegui gerar a descrição." }]);
-        }
+        setMessages(prev => [...prev, { role: 'model', text: finalResponse.text || "Tarefa concluída." }]);
+      
       } else {
-        // Normal text response
-        setMessages(prev => [...prev, { role: 'model', text: response.text || "Não entendi a solicitação." }]);
+        setMessages(prev => [...prev, { role: 'model', text: response.text || "Não entendi." }]);
       }
 
     } catch (error) {
       console.error("AI Error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Desculpe, ocorreu um erro ao conectar com o serviço de IA." }]);
+      setMessages(prev => [...prev, { role: 'model', text: "Erro de conexão com a IA." }]);
     } finally {
       setLoading(false);
     }
   };
+
+  const quickActions = [
+    { label: '📊 Estatísticas Gerais', prompt: 'Me dê um resumo das estatísticas da frota: tags livres, veículos por categoria e total.', icon: BarChart3 },
+    { label: '🚨 Veículos Roubados', prompt: 'Liste os veículos roubados e seus status.', icon: AlertTriangle },
+    { label: '🏷️ Status Tags', prompt: 'Quantas tags temos no total e quantas estão livres?', icon: TagIcon },
+    { label: '📍 Rastrear Placa', prompt: 'Quero rastrear um veículo pela placa. (Digite a placa)', icon: MapPin },
+  ];
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-4 font-sans">
@@ -151,17 +268,17 @@ export const AiAssistant = () => {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="w-80 sm:w-96 h-[500px] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
+            className="w-80 sm:w-[450px] h-[600px] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-primary-500 rounded-lg text-white">
                   <Bot size={18} />
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-zinc-900 dark:text-white">Operador IA</h3>
-                  <p className="text-[10px] text-zinc-500">Gemini 2.5 Flash</p>
+                  <p className="text-[10px] text-zinc-500">K-Tag Intelligence</p>
                 </div>
               </div>
               <button onClick={() => setIsOpen(false)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
@@ -174,19 +291,18 @@ export const AiAssistant = () => {
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div 
-                    className={`max-w-[85%] p-3 rounded-2xl text-sm whitespace-pre-wrap ${
+                    className={`max-w-[90%] p-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                       msg.role === 'user' 
                         ? 'bg-primary-600 text-white rounded-tr-none' 
                         : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-tl-none shadow-sm'
                     }`}
                     dangerouslySetInnerHTML={{ 
-                        // Linkify logic for Markdown links [Text](url) and raw URLs
                         __html: msg.text
-                            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="block mt-2 text-center bg-primary-500/10 text-primary-600 dark:text-primary-400 py-2 px-3 rounded-lg font-bold border border-primary-500/20 hover:bg-primary-500/20 transition-colors">$1</a>')
+                            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // Bold
+                            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="flex items-center justify-center gap-2 mt-2 w-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 py-2 px-3 rounded-lg font-bold border border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors"><span class="shrink-0">📍</span> $1</a>')
                             .replace(/(https?:\/\/[^\s<]+)/g, (url) => {
-                                // Avoid double replacing if inside the anchor tag from previous replace
                                 if (url.includes('">')) return url; 
-                                return `<a href="${url}" target="_blank" class="underline text-blue-500 hover:text-blue-600 dark:text-blue-400 break-all">Link</a>`;
+                                return `<a href="${url}" target="_blank" class="underline text-blue-500 hover:text-blue-600 dark:text-blue-400 break-all">Link Externo</a>`;
                             })
                     }}
                   />
@@ -204,27 +320,50 @@ export const AiAssistant = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
-            <div className="p-3 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
-              <form 
-                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 focus-within:border-primary-500 transition-colors"
-              >
-                <input 
-                  type="text" 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Digite uma placa..." 
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 text-zinc-900 dark:text-white placeholder-zinc-400"
-                />
-                <button 
-                  type="submit" 
-                  disabled={loading || !input.trim()}
-                  className="p-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            {/* Quick Actions & Input Area */}
+            <div className="bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 shrink-0 flex flex-col">
+              
+              {/* Quick Action Chips */}
+              <div className="flex gap-2 overflow-x-auto p-3 scrollbar-hide border-b border-zinc-50 dark:border-zinc-800/50">
+                {quickActions.map((action, i) => (
+                    <button
+                        key={i}
+                        onClick={() => {
+                            if (action.label.includes('Placa')) {
+                                setInput("Localize o veículo com a placa ");
+                            } else {
+                                handleSend(action.prompt);
+                            }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-xs font-medium whitespace-nowrap transition-colors border border-zinc-200 dark:border-zinc-700"
+                    >
+                        <action.icon size={12} />
+                        {action.label}
+                    </button>
+                ))}
+              </div>
+
+              <div className="p-3">
+                <form 
+                    onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+                    className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-950 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500/20 transition-all"
                 >
-                  <Send size={16} />
-                </button>
-              </form>
+                    <input 
+                    type="text" 
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Digite sua solicitação..." 
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 text-zinc-900 dark:text-white placeholder-zinc-400"
+                    />
+                    <button 
+                    type="submit" 
+                    disabled={loading || !input.trim()}
+                    className="p-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    >
+                    <Send size={16} />
+                    </button>
+                </form>
+              </div>
             </div>
           </motion.div>
         )}
@@ -232,8 +371,8 @@ export const AiAssistant = () => {
 
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-4 rounded-full shadow-lg transition-all duration-300 flex items-center justify-center ${
-            isOpen ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300' : 'bg-primary-500 text-white hover:bg-primary-400 hover:scale-110'
+        className={`p-4 rounded-full shadow-xl shadow-primary-500/20 transition-all duration-300 flex items-center justify-center border ${
+            isOpen ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700' : 'bg-primary-600 text-white hover:bg-primary-500 border-transparent hover:scale-105'
         }`}
       >
         {isOpen ? <X size={24} /> : <Sparkles size={24} />}

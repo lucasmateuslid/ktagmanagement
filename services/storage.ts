@@ -1,7 +1,7 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord } from '../types';
 import { db } from './firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc, orderBy } from 'firebase/firestore';
 
 const KEYS = {
   USER_SESSION: 'ktag_user_session',
@@ -13,6 +13,7 @@ const KEYS = {
   SETTINGS: 'ktag_settings',
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
+  STOLEN_RECORDS: 'ktag_stolen_records',
 };
 
 // --- LocalStorage Helpers (Fallback) ---
@@ -439,6 +440,63 @@ export const storage = {
     if (!all.find((e) => e.timestamp === loc.timestamp && e.tagId === loc.tagId)) {
       all.push(loc);
       setLocal(KEYS.LOCATIONS, all);
+    }
+  },
+
+  // --- STOLEN RECORDS ---
+  getStolenRecords: async (): Promise<StolenRecord[]> => {
+    if (db) {
+      try {
+        const q = query(collection(db, KEYS.STOLEN_RECORDS), orderBy('timestamp', 'desc'));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as StolenRecord);
+      } catch (e) {
+        console.warn("Firestore getStolenRecords failed", e);
+      }
+    }
+    return getLocal<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
+  },
+
+  reportTheft: async (record: StolenRecord) => {
+    // 1. Save Record
+    if (db) {
+      try {
+        await setDoc(doc(db, KEYS.STOLEN_RECORDS, record.id), record);
+      } catch (e) { console.warn("Firestore saveRecord failed", e); }
+    }
+    const list = getLocal<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
+    list.unshift(record);
+    setLocal(KEYS.STOLEN_RECORDS, list);
+
+    // 2. Update Vehicle Status
+    const vehicle = (await storage.getVehicles()).find(v => v.id === record.vehicleId);
+    if (vehicle) {
+      const updatedVehicle = { ...vehicle, status: 'stolen' as const };
+      await storage.saveVehicle(updatedVehicle);
+    }
+  },
+
+  recoverVehicle: async (recordId: string, vehicleId: string) => {
+    const recoveredAt = Date.now();
+    
+    // 1. Update Record
+    if (db) {
+      try {
+        await updateDoc(doc(db, KEYS.STOLEN_RECORDS, recordId), { status: 'recovered', recoveredAt });
+      } catch (e) { console.warn("Firestore updateRecord failed", e); }
+    }
+    const list = getLocal<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
+    const idx = list.findIndex(r => r.id === recordId);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], status: 'recovered', recoveredAt };
+      setLocal(KEYS.STOLEN_RECORDS, list);
+    }
+
+    // 2. Update Vehicle Status
+    const vehicle = (await storage.getVehicles()).find(v => v.id === vehicleId);
+    if (vehicle) {
+      const updatedVehicle = { ...vehicle, status: 'active' as const };
+      await storage.saveVehicle(updatedVehicle);
     }
   },
   

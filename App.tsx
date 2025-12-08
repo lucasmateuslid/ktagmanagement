@@ -13,6 +13,8 @@ import { Tags } from './pages/Tags';
 import { Vehicles } from './pages/Vehicles';
 import { LiveMap } from './pages/LiveMap';
 import { Settings } from './pages/Settings';
+import { Security } from './pages/Security';
+import { Users } from './pages/Users';
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
@@ -52,6 +54,18 @@ function App() {
                   <Route path="/map" element={
                     <ProtectedRoute>
                       <LiveMap />
+                    </ProtectedRoute>
+                  } />
+
+                  <Route path="/security" element={
+                    <ProtectedRoute>
+                      <Security />
+                    </ProtectedRoute>
+                  } />
+
+                  <Route path="/users" element={
+                    <ProtectedRoute>
+                      <Users />
                     </ProtectedRoute>
                   } />
 

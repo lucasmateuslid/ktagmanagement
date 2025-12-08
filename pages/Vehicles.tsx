@@ -6,7 +6,7 @@ import { plateLookupService } from '../services/plateLookup';
 import { Tag, Vehicle, Company, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check } from 'lucide-react';
+import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench } from 'lucide-react';
 
 // --- Internal Component: Searchable Select ---
 interface SearchableSelectProps {
@@ -293,6 +293,7 @@ export const Vehicles = () => {
       fipeCode: formData.fipeCode,
       tagId: formData.tagId === 'none' ? undefined : formData.tagId,
       companyId: formData.companyId,
+      status: formData.status || 'active',
       createdAt: formData.createdAt || Date.now() // Save creation date
     };
 
@@ -348,13 +349,31 @@ export const Vehicles = () => {
     return tag ? tag.name : 'Unknown Tag';
   };
 
+  const getStatusBadge = (status?: string) => {
+    if (status === 'stolen') {
+      return (
+        <span className="inline-flex items-center gap-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded text-xs font-bold uppercase border border-red-200 dark:border-red-900/50">
+          <ShieldAlert size={12} /> ROUBADO
+        </span>
+      );
+    }
+    if (status === 'maintenance') {
+      return (
+        <span className="inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded text-xs font-bold uppercase border border-amber-200 dark:border-amber-900/50">
+          <Wrench size={12} /> MANUTENÇÃO
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{t('vehicleFleet')}</h1>
         <button
           onClick={() => { 
-              setFormData({ type: categories[0]?.id }); 
+              setFormData({ type: categories[0]?.id, status: 'active' }); 
               setTagSearchTerm(''); 
               setIsModalOpen(true); 
           }}
@@ -379,7 +398,7 @@ export const Vehicles = () => {
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {vehicles.map((vehicle) => (
-              <tr key={vehicle.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+              <tr key={vehicle.id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${vehicle.status === 'stolen' ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
                 <td className="p-4">
                     {getCompanyPrefix(vehicle.companyId) ? (
                         <span className="font-mono font-bold bg-zinc-200 dark:bg-zinc-700 px-2 py-1 rounded text-xs text-zinc-700 dark:text-zinc-200">{getCompanyPrefix(vehicle.companyId)}</span>
@@ -394,11 +413,20 @@ export const Vehicles = () => {
                    </div>
                 </td>
                 <td className="p-4 text-zinc-600 dark:text-zinc-300">
-                  {vehicle.model}
-                  {vehicle.fipeCode && <span className="ml-2 text-xs text-zinc-400 border border-zinc-200 dark:border-zinc-700 px-1 rounded">FIPE: {vehicle.fipeCode}</span>}
+                  <div className="flex flex-col">
+                    <span>{vehicle.model}</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      {vehicle.fipeCode && <span className="text-[10px] text-zinc-400 border border-zinc-200 dark:border-zinc-700 px-1 rounded">FIPE: {vehicle.fipeCode}</span>}
+                    </div>
+                  </div>
                 </td>
                 <td className="p-4 text-zinc-600 dark:text-zinc-300">{vehicle.year || '-'}</td>
-                <td className="p-4 font-mono text-zinc-600 dark:text-zinc-300 font-bold">{vehicle.plate}</td>
+                <td className="p-4 font-mono text-zinc-600 dark:text-zinc-300 font-bold">
+                  <div className="flex flex-col gap-1">
+                    <span>{vehicle.plate}</span>
+                    {getStatusBadge(vehicle.status)}
+                  </div>
+                </td>
                 <td className="p-4">
                    <div className={`flex items-center gap-2 text-sm ${vehicle.tagId ? 'text-green-600 dark:text-green-400 font-medium' : 'text-zinc-400'}`}>
                       <LinkIcon size={14} />
@@ -432,15 +460,45 @@ export const Vehicles = () => {
 
        {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800">
+          <div className={`bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto border-2 ${formData.status === 'stolen' ? 'border-red-500' : 'border-zinc-200 dark:border-zinc-800'}`}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-zinc-900 dark:text-white">
+              <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
                 {formData.id ? t('editVehicle') : t('newVehicle')}
+                {formData.status === 'stolen' && <span className="text-red-500 text-sm font-bold animate-pulse">[ROUBADO]</span>}
               </h2>
               <button onClick={() => setIsModalOpen(false)}><X className="text-zinc-400 hover:text-zinc-600" /></button>
             </div>
             
             <form onSubmit={handleSave} className="space-y-4">
+              
+              {/* STATUS SELECTION */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                 <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-zinc-500">Status Operacional</label>
+                 <div className="grid grid-cols-3 gap-2">
+                    <button
+                       type="button"
+                       onClick={() => setFormData({...formData, status: 'active'})}
+                       className={`py-2 px-1 rounded text-xs font-bold transition-all ${(!formData.status || formData.status === 'active') ? 'bg-green-500 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
+                    >
+                       ATIVO
+                    </button>
+                    <button
+                       type="button"
+                       onClick={() => setFormData({...formData, status: 'maintenance'})}
+                       className={`py-2 px-1 rounded text-xs font-bold transition-all ${formData.status === 'maintenance' ? 'bg-amber-500 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
+                    >
+                       MANUTENÇÃO
+                    </button>
+                    <button
+                       type="button"
+                       onClick={() => setFormData({...formData, status: 'stolen'})}
+                       className={`py-2 px-1 rounded text-xs font-bold transition-all ${formData.status === 'stolen' ? 'bg-red-600 text-white shadow-md animate-pulse' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
+                    >
+                       ROUBADO
+                    </button>
+                 </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <SearchableSelect 
@@ -479,7 +537,7 @@ export const Vehicles = () => {
                 </div>
               </div>
 
-              {/* Company Selector - Now using SearchableSelect */}
+              {/* Company Selector */}
               <div>
                   <SearchableSelect 
                     label={t('company')}
@@ -575,7 +633,6 @@ export const Vehicles = () => {
                         onChange={(e) => {
                             setTagSearchTerm(e.target.value);
                             setShowTagDropdown(true);
-                            // Only clear link if user clears input completely, otherwise keep it until they select new
                             if(e.target.value === '') setFormData({...formData, tagId: undefined});
                         }}
                         onFocus={() => setShowTagDropdown(true)}
@@ -635,7 +692,11 @@ export const Vehicles = () => {
 
               <button
                 type="submit"
-                className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 mt-4 shadow-lg shadow-primary-500/20 transition-all hover:shadow-primary-500/40"
+                className={`w-full text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 mt-4 shadow-lg transition-all ${
+                    formData.status === 'stolen' 
+                    ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20' 
+                    : 'bg-primary-600 hover:bg-primary-700 shadow-primary-500/20'
+                }`}
               >
                 <Save size={20} /> {t('saveVehicle')}
               </button>

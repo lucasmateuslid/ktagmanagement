@@ -62,7 +62,7 @@ export const Login = () => {
                 K
             </div>
             <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight mb-3">
-              {isLogin ? 'Welcome back' : 'Join K-TAG'}
+              {isLogin ? 'Bem-Vindo!' : 'Join K-TAG'}
             </h1>
             <p className="text-zinc-500">
               {t('portalSubtitle')}

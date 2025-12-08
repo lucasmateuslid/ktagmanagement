@@ -41,7 +41,26 @@ export interface Vehicle {
   fipeCode?: string;
   tagId?: string; // Optional link to a tag
   companyId?: string; // ID da empresa responsável
+  status?: 'active' | 'stolen' | 'maintenance'; // Vehicle Status
   createdAt: number; // Timestamp de criação
+}
+
+export interface StolenRecord {
+  id: string;
+  vehicleId: string;
+  vehiclePlate: string;
+  vehicleModel: string;
+  type: 'theft' | 'robbery'; // Furto vs Roubo (Assalto)
+  timestamp: number;
+  location: {
+    lat: number;
+    lon: number;
+    address?: string;
+  };
+  policeReport?: string; // BO
+  notes?: string;
+  status: 'open' | 'recovered';
+  recoveredAt?: number;
 }
 
 // K-Tag API Response Shape

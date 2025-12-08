@@ -5,7 +5,7 @@ import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
-import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2 } from 'lucide-react';
+import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2, ShieldAlert, AlertTriangle, Lock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
@@ -113,6 +113,12 @@ export const Dashboard = () => {
 
   const linkedCount = vehicles.filter(v => v.tagId).length;
   const unlinkedCount = tags.length - linkedCount;
+  const stolenCount = vehicles.filter(v => v.status === 'stolen').length;
+  const maintenanceCount = vehicles.filter(v => v.status === 'maintenance').length;
+  
+  // Theft Index Calculation
+  const totalActiveFleet = vehicles.length;
+  const theftRate = totalActiveFleet > 0 ? ((stolenCount / totalActiveFleet) * 100).toFixed(1) : '0.0';
 
   // Dynamic Category Counting
   const getCategoryType = (typeId: string) => {
@@ -147,7 +153,7 @@ export const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-20">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div className="flex flex-col gap-1">
@@ -286,6 +292,87 @@ export const Dashboard = () => {
                     <span className="text-zinc-600 dark:text-zinc-400">Free</span>
                 </div>
              </div>
+        </div>
+
+        {/* SECURITY & REPORTS SECTION */}
+        <div className="col-span-full">
+            <h3 className="text-zinc-900 dark:text-white text-lg font-bold mb-4 flex items-center gap-2">
+                <ShieldAlert className="text-red-500" size={20}/> Relatório de Segurança e Índices
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Theft Index Card */}
+                <div className={`p-6 rounded-3xl border flex flex-col justify-between transition-colors
+                    ${stolenCount > 0 
+                        ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' 
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+                    }`}
+                >
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs uppercase font-bold tracking-wider opacity-70 mb-1">Veículos Roubados</p>
+                            <h2 className={`text-4xl font-display font-bold ${stolenCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-white'}`}>
+                                {stolenCount}
+                            </h2>
+                        </div>
+                        <div className={`p-2 rounded-lg ${stolenCount > 0 ? 'bg-red-100 text-red-600' : 'bg-zinc-100 text-zinc-500'}`}>
+                            <AlertTriangle size={24} />
+                        </div>
+                    </div>
+                    <div className="mt-4">
+                        <div className="flex justify-between text-xs mb-1 font-medium">
+                             <span>Índice de Roubo da Frota</span>
+                             <span>{theftRate}%</span>
+                        </div>
+                        <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
+                            <div 
+                                className="bg-red-500 h-full rounded-full transition-all duration-500" 
+                                style={{ width: `${Math.min(parseFloat(theftRate), 100)}%` }}
+                            ></div>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 mt-2">Baseado no total de {totalActiveFleet} veículos ativos.</p>
+                    </div>
+                </div>
+
+                {/* Maintenance Status */}
+                <div className="p-6 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between">
+                     <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs uppercase font-bold tracking-wider text-zinc-500 mb-1">Em Manutenção</p>
+                            <h2 className="text-4xl font-display font-bold text-zinc-900 dark:text-white">
+                                {maintenanceCount}
+                            </h2>
+                        </div>
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/20 text-amber-600 rounded-lg">
+                            <Lock size={24} />
+                        </div>
+                    </div>
+                    <div className="mt-auto">
+                        <p className="text-xs text-zinc-500">Veículos indisponíveis para operação.</p>
+                    </div>
+                </div>
+
+                 {/* Available Tags for New Vehicles */}
+                 <div className="p-6 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between">
+                     <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs uppercase font-bold tracking-wider text-zinc-500 mb-1">Tags Disponíveis</p>
+                            <h2 className="text-4xl font-display font-bold text-zinc-900 dark:text-white">
+                                {unlinkedCount}
+                            </h2>
+                        </div>
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 rounded-lg">
+                            <TagIcon size={24} />
+                        </div>
+                    </div>
+                    <div className="mt-auto">
+                        <Link to="/tags" className="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1">
+                            Vincular a novos veículos <ChevronRight size={12}/>
+                        </Link>
+                    </div>
+                </div>
+
+            </div>
         </div>
 
         {/* --- NEW CHARTS --- */}

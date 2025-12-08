@@ -10,6 +10,7 @@ const translations = {
     liveMap: 'Live Map',
     tags: 'Tags',
     vehicles: 'Vehicles',
+    users: 'Users', // Added
     settings: 'Settings',
     signOut: 'Sign Out',
     systemOnline: 'System Online',
@@ -170,12 +171,19 @@ const translations = {
     createAccount: 'Create Account',
     haveAccount: 'Already have an account? Sign in',
     noAccount: "Don't have an account? Sign up",
+    
+    // Users Page
+    userManagement: 'User Management',
+    manageAccess: 'Control system access and permissions',
+    pendingUsers: 'Pending Approval',
+    activeUsers: 'Active Users',
   },
   pt: {
     dashboard: 'Painel de Controle',
     liveMap: 'Mapa ao Vivo',
     tags: 'Tags',
     vehicles: 'Veículos',
+    users: 'Usuários', // Added
     settings: 'Configurações',
     signOut: 'Sair',
     systemOnline: 'Sistema Online',
@@ -336,6 +344,12 @@ const translations = {
     createAccount: 'Criar Conta',
     haveAccount: 'Já tem uma conta? Entre',
     noAccount: "Não tem conta? Cadastre-se",
+
+    // Users Page
+    userManagement: 'Gestão de Usuários',
+    manageAccess: 'Controle de acesso e permissões do sistema',
+    pendingUsers: 'Aprovação Pendente',
+    activeUsers: 'Usuários Ativos',
   }
 };
 
