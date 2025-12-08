@@ -33,6 +33,12 @@ const translations = {
     cars: 'Cars',
     trucks: 'Trucks',
     motorcycles: 'Motorcycles',
+    
+    // New Metrics Charts
+    vehiclesByCompany: 'Vehicles by Company',
+    vehicleEntryTrend: 'Vehicle Acquisition Trend (Monthly)',
+    total: 'Total',
+    entries: 'Entries',
 
     tagManagement: 'Tag Management',
     searchTags: 'Search by Name, SN, MAC or Plate...',
@@ -175,6 +181,12 @@ const translations = {
     cars: 'Carros',
     trucks: 'Caminhões',
     motorcycles: 'Motos',
+
+    // New Metrics Charts
+    vehiclesByCompany: 'Veículos por Empresa',
+    vehicleEntryTrend: 'Tendência de Entrada (Mensal)',
+    total: 'Total',
+    entries: 'Entradas',
 
     tagManagement: 'Gerenciamento de Tags',
     searchTags: 'Buscar por Nome, SN, MAC ou Placa...',

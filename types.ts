@@ -40,6 +40,7 @@ export interface Vehicle {
   fipeCode?: string;
   tagId?: string; // Optional link to a tag
   companyId?: string; // ID da empresa responsável
+  createdAt: number; // Timestamp de criação
 }
 
 // K-Tag API Response Shape

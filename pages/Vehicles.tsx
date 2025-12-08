@@ -144,6 +144,11 @@ export const Vehicles = () => {
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
+  const filteredTags = tags.filter(tag => 
+    tag.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
+    tag.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase())
+  );
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
@@ -252,7 +257,8 @@ export const Vehicles = () => {
       year: formData.year,
       fipeCode: formData.fipeCode,
       tagId: formData.tagId === 'none' ? undefined : formData.tagId,
-      companyId: formData.companyId
+      companyId: formData.companyId,
+      createdAt: formData.createdAt || Date.now() // Save creation date
     };
 
     await storage.saveVehicle(newVehicle);
@@ -295,12 +301,6 @@ export const Vehicles = () => {
     const tag = tags.find(t => t.id === tagId);
     return tag ? tag.name : 'Unknown Tag';
   };
-
-  // Tag filter logic
-  const filteredTags = tags.filter(t => 
-      t.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
-      t.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase())
-  );
 
   return (
     <div className="space-y-6">

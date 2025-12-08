@@ -1,29 +1,36 @@
 
 import React, { useEffect, useState } from 'react';
-import { Tag, Vehicle } from '../types';
+import { Tag, Vehicle, Company } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
-import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
-import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
+  const [companyChartData, setCompanyChartData] = useState<any[]>([]);
+  const [trendChartData, setTrendChartData] = useState<any[]>([]);
   const { t } = useLanguage();
   const { lastSync } = useConnection();
 
   const loadData = async () => {
-    const [loadedTags, loadedVehicles] = await Promise.all([
+    const [loadedTags, loadedVehicles, loadedCompanies] = await Promise.all([
       storage.getTags(),
       storage.getVehicles(),
+      storage.getCompanies(),
     ]);
     setTags(loadedTags);
     setVehicles(loadedVehicles);
+    setCompanies(loadedCompanies);
     processHistoryData(loadedTags, loadedVehicles);
+    processCompanyData(loadedVehicles, loadedCompanies);
+    processTrendData(loadedVehicles);
   };
 
   useEffect(() => {
@@ -47,6 +54,58 @@ export const Dashboard = () => {
       data.push({ name: dateStr, linked: linkedCount, total: totalCount });
     }
     setChartData(data);
+  };
+
+  const processCompanyData = (vehicles: Vehicle[], companies: Company[]) => {
+      const counts: Record<string, number> = {};
+      
+      vehicles.forEach(v => {
+          const id = v.companyId || 'unknown';
+          counts[id] = (counts[id] || 0) + 1;
+      });
+
+      const data = companies.map(c => ({
+          name: c.prefix || c.name, // Use prefix for better chart fitting
+          fullName: c.name,
+          count: counts[c.id] || 0
+      }));
+
+      // Add unknown if exists
+      if (counts['unknown']) {
+          data.push({ name: 'N/A', fullName: 'Sem Empresa', count: counts['unknown'] });
+      }
+
+      setCompanyChartData(data.sort((a, b) => b.count - a.count));
+  };
+
+  const processTrendData = (vehicles: Vehicle[]) => {
+      // Group by Month (Last 6 months)
+      const months: Record<string, number> = {};
+      const now = new Date();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+      // Initialize last 6 months
+      for(let i=5; i>=0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = `${monthNames[d.getMonth()]}`;
+          months[key] = 0;
+      }
+
+      vehicles.forEach(v => {
+          if (v.createdAt) {
+             const d = new Date(v.createdAt);
+             // Check if within last 6 months approx
+             const diffTime = Math.abs(now.getTime() - d.getTime());
+             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+             if(diffDays <= 180) {
+                 const key = `${monthNames[d.getMonth()]}`;
+                 if(months[key] !== undefined) months[key]++;
+             }
+          }
+      });
+
+      const data = Object.keys(months).map(k => ({ name: k, entries: months[k] }));
+      setTrendChartData(data);
   };
 
   const linkedCount = vehicles.filter(v => v.tagId).length;
@@ -207,6 +266,50 @@ export const Dashboard = () => {
                     <span className="text-zinc-600 dark:text-zinc-400">Free</span>
                 </div>
              </div>
+        </div>
+
+        {/* --- NEW CHARTS --- */}
+
+        {/* Vehicles by Company */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+                <Building2 size={16} className="text-indigo-500" />
+                <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">{t('vehiclesByCompany')}</h3>
+            </div>
+            <div className="h-48 min-w-0">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={companyChartData} layout="vertical" margin={{ left: 20 }}>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10, fill: '#71717a' }} interval={0} />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                            cursor={{ fill: '#27272a', opacity: 0.2 }}
+                        />
+                        <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+
+        {/* Acquisition Trend */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+             <div className="flex items-center gap-2 mb-4">
+                <Activity size={16} className="text-emerald-500" />
+                <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">{t('vehicleEntryTrend')}</h3>
+            </div>
+             <div className="h-48 min-w-0">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={trendChartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" opacity={0.3} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a' }} />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                            cursor={{ fill: '#27272a', opacity: 0.2 }}
+                        />
+                        <Bar dataKey="entries" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
         </div>
 
       </div>
