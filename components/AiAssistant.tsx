@@ -46,7 +46,7 @@ export const AiAssistant = () => {
     description: 'Obter estatísticas gerais da frota: contagem de tags (livres/vinculadas), veículos por categoria, índice de roubo e total de veículos.',
     parameters: {
       type: Type.OBJECT,
-      properties: {}, // No parameters needed, fetches all stats
+      properties: {}, 
     }
   };
 
@@ -172,6 +172,30 @@ export const AiAssistant = () => {
     }
   };
 
+  // --- MESSAGE FORMATTING ---
+  const formatMessage = (text: string) => {
+    if (!text) return '';
+    
+    // 1. Remove Code Block wrappers (```) to prevent raw code display
+    // We strip the backticks completely to treat everything as natural language
+    let clean = text.replace(/```(?:json|xml|html|javascript|typescript)?/gi, '').replace(/```/g, '');
+
+    // 2. Bold (**text**)
+    clean = clean.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+    // 3. Markdown Links [Text](URL) -> Styled Buttons
+    // Explicitly target the structure to avoid capturing extra text
+    clean = clean.replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g, 
+      `<a href="$2" class="flex items-center justify-center gap-2 mt-2 w-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 py-2 px-3 rounded-lg font-bold border border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors text-center text-sm decoration-0"><span class="shrink-0">📍</span> $1</a>`
+    );
+
+    // 4. Line breaks
+    clean = clean.replace(/\n/g, '<br />');
+
+    return clean;
+  };
+
   const handleSend = async (textOverride?: string) => {
     const userMsg = textOverride || input;
     if (!userMsg.trim() || loading) return;
@@ -194,25 +218,30 @@ export const AiAssistant = () => {
 
 Objetivos:
 1. Ajudar a localizar veículos.
-2. Fornecer estatísticas de frota (tags livres, veiculos roubados, categorias).
-3. Orientar sobre o uso do sistema (cadastros, segurança).
+2. Fornecer estatísticas de frota.
+3. Orientar sobre o uso do sistema.
+
+Regras CRÍTICAS de Resposta:
+- RESPOSTA APENAS EM TEXTO NATURAL.
+- NUNCA USE BLOCOS DE CÓDIGO ( \`\`\` ).
+- NUNCA EXIBA JSON ou XML BRUTO.
+- Se a ferramenta retornar dados técnicos, interprete-os e faça um resumo amigável.
+- Use listas com marcadores (-) para enumerar itens.
 
 Regras de Ferramentas:
-- Se o usuário perguntar sobre a localização de uma placa específica, use 'get_vehicle_location'.
-- Se o usuário perguntar "quantos veículos temos", "quantas tags livres", "índice de roubo", "resumo da frota" ou estatísticas gerais, use 'get_fleet_stats'.
-- Se o usuário perguntar "quais veiculos foram roubados", "historico de roubo", "quando tal veiculo foi roubado", use 'get_security_logs'.
+- Use 'get_vehicle_location' para localizar veículos pela placa.
+- Use 'get_fleet_stats' para contagens e estatísticas gerais.
+- Use 'get_security_logs' para histórico de roubos.
 
 Comportamento Específico:
-- Se o usuário perguntar "Como cadastrar veículo?", "Como adicionar carro" ou algo similar sobre cadastro de veículos, responda EXATAMENTE com estes passos:
-  1. Vá até a página de **Veículos** (é a 5ª opção na barra lateral).
-  2. Clique no botão **"Adicionar Veículo"** no canto superior direito.
-  3. Preencha o formulário com os dados (Placa, Modelo, Categoria).
-  4. Clique em **Salvar**. Pronto, veículo cadastrado!
-  Você também pode fornecer este link direto para facilitar: [Ir para Veículos](${window.location.origin}/#/vehicles).
+- **Cadastro de Veículos**: Responda EXATAMENTE com estes passos:
+  1. Vá até a página de **Veículos** (5ª opção na barra lateral).
+  2. Clique no botão **"Adicionar Veículo"**.
+  3. Preencha o formulário e clique em **Salvar**.
+  Você pode usar este link direto: [Ir para Veículos](${window.location.origin}/#/vehicles).
 
-- Se a ferramenta 'get_vehicle_location' retornar 'isStolen: true', responda com URGÊNCIA EM NEGRITO 🚨 alertando sobre o roubo.
-- Sempre forneça o link 'internalTracking' como: [📍 Rastrear no Mapa Ao Vivo](link).
-- Seja conciso e profissional.`
+- **Roubo**: Se 'isStolen: true', use **NEGRITO** e emojis de alerta 🚨.
+- **Links**: Sempre forneça o link interno como: [📍 Rastrear no Mapa Ao Vivo](link).`
         }
       });
 
@@ -296,20 +325,12 @@ Comportamento Específico:
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div 
-                    className={`max-w-[90%] p-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
+                    className={`max-w-[90%] p-3 rounded-2xl text-sm leading-relaxed ${
                       msg.role === 'user' 
                         ? 'bg-primary-600 text-white rounded-tr-none' 
                         : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-tl-none shadow-sm'
                     }`}
-                    dangerouslySetInnerHTML={{ 
-                        __html: msg.text
-                            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // Bold
-                            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="flex items-center justify-center gap-2 mt-2 w-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 py-2 px-3 rounded-lg font-bold border border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors"><span class="shrink-0">📍</span> $1</a>')
-                            .replace(/(https?:\/\/[^\s<]+)/g, (url) => {
-                                if (url.includes('">')) return url; 
-                                return `<a href="${url}" target="_blank" class="underline text-blue-500 hover:text-blue-600 dark:text-blue-400 break-all">Link Externo</a>`;
-                            })
-                    }}
+                    dangerouslySetInnerHTML={{ __html: formatMessage(msg.text) }}
                   />
                 </div>
               ))}
