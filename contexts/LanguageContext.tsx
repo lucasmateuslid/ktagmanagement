@@ -6,7 +6,7 @@ type Language = 'pt' | 'en';
 
 const translations = {
   en: {
-    // Layout
+    // ... existing ...
     dashboard: 'Dashboard',
     liveMap: 'Live Map',
     tags: 'Tags',
@@ -21,7 +21,6 @@ const translations = {
     clearAll: 'Clear all',
     noNotifications: 'No notifications',
 
-    // Dashboard
     overview: 'Dashboard Overview',
     quickActions: 'Quick Actions',
     recentActivity: 'Recent Activity',
@@ -35,7 +34,6 @@ const translations = {
     trucks: 'Trucks',
     motorcycles: 'Motorcycles',
 
-    // Tags
     tagManagement: 'Tag Management',
     searchTags: 'Search by Name, SN, MAC or Plate...',
     deleteSelected: 'Delete Selected',
@@ -53,12 +51,12 @@ const translations = {
     saveTag: 'Save Tag',
     importSuccess: 'Successfully imported tags.',
     deleteConfirm: 'Are you sure you want to delete this tag?',
+    saveConfirm: 'Are you sure you want to save changes to this tag?',
     massDeleteConfirm: 'Are you sure you want to delete selected tags?',
 
-    // Vehicles
     vehicleFleet: 'Vehicle Fleet',
     addVehicle: 'Add Vehicle',
-    type: 'Type',
+    type: 'Category',
     model: 'Model',
     year: 'Year',
     plate: 'Plate',
@@ -74,8 +72,18 @@ const translations = {
     loadingFipe: 'Loading FIPE data...',
     saveVehicle: 'Save Vehicle',
     noLink: '-- No Link --',
+    company: 'Company',
+    selectCompany: 'Select Company',
+    manageCompanies: 'Manage Companies',
+    manageCategories: 'Manage Categories',
+    companyName: 'Company Name',
+    prefix: 'Prefix (Initials)',
+    addCompany: 'Add Company',
+    addCategory: 'Add Category',
+    categoryName: 'Category Name',
+    fipeMapping: 'FIPE API Type',
+    noFipe: 'No FIPE Integration',
 
-    // Map
     selectTracker: 'Select Tracker',
     searchTracker: 'Search tracker...',
     action: 'Action',
@@ -94,11 +102,23 @@ const translations = {
     reports: 'Reports',
     exportPDF: 'Export PDF',
     exportExcel: 'Export Excel',
-    resolveAddress: 'Resolve Addresses',
+    resolveAddress: 'Resolver Endereços',
     resolving: 'Resolving...',
     address: 'Address',
+    clearHistory: 'Clear History',
+    clearConfirm: 'Are you sure you want to clear all location history for this tag? This cannot be undone.',
+    historyCleared: 'Location history cleared successfully.',
+    
+    repDate: 'Date/Time',
+    repLat: 'Latitude',
+    repLon: 'Longitude',
+    repSpeed: 'Conf',
+    repAddr: 'Address',
+    repTitle: 'Location Report',
+    repVehicle: 'Vehicle',
+    repStatus: 'Status',
+    repTimestamp: 'Timestamp',
 
-    // Settings
     systemSettings: 'System Settings',
     manageConfig: 'Manage API connections, credentials, and external services',
     generalSettings: 'General Settings',
@@ -112,14 +132,13 @@ const translations = {
     username: 'Username',
     password: 'Password',
     mapProviders: 'Map Providers',
-    googleKey: 'Google Maps Javascript API Key',
+    googleKey: 'Chave API Google Maps (Javascript)',
     googleDesc: 'Leave empty to use OpenStreetMap.',
     mapboxKey: 'Mapbox Access Token',
     saveConfig: 'Save Configuration',
     savedSuccess: 'Settings Saved',
     savedError: 'Failed to save settings',
 
-    // Login
     portalTitle: 'K-TAG Portal',
     portalSubtitle: 'Professional Tracking Management',
     fullName: 'Full Name',
@@ -130,7 +149,6 @@ const translations = {
     noAccount: "Don't have an account? Sign up",
   },
   pt: {
-    // Layout
     dashboard: 'Painel de Controle',
     liveMap: 'Mapa ao Vivo',
     tags: 'Tags',
@@ -145,7 +163,6 @@ const translations = {
     clearAll: 'Limpar tudo',
     noNotifications: 'Sem notificações',
 
-    // Dashboard
     overview: 'Visão Geral',
     quickActions: 'Ações Rápidas',
     recentActivity: 'Atividade Recente',
@@ -159,7 +176,6 @@ const translations = {
     trucks: 'Caminhões',
     motorcycles: 'Motos',
 
-    // Tags
     tagManagement: 'Gerenciamento de Tags',
     searchTags: 'Buscar por Nome, SN, MAC ou Placa...',
     deleteSelected: 'Excluir Selecionados',
@@ -177,12 +193,12 @@ const translations = {
     saveTag: 'Salvar Tag',
     importSuccess: 'Tags importadas com sucesso.',
     deleteConfirm: 'Tem certeza que deseja excluir esta tag?',
+    saveConfirm: 'Tem certeza que deseja salvar alterações nesta tag?',
     massDeleteConfirm: 'Tem certeza que deseja excluir as tags selecionadas?',
 
-    // Vehicles
     vehicleFleet: 'Frota de Veículos',
     addVehicle: 'Adicionar Veículo',
-    type: 'Tipo',
+    type: 'Categoria',
     model: 'Modelo',
     year: 'Ano',
     plate: 'Placa',
@@ -198,8 +214,18 @@ const translations = {
     loadingFipe: 'Carregando FIPE...',
     saveVehicle: 'Salvar Veículo',
     noLink: '-- Sem Vínculo --',
+    company: 'Empresa',
+    selectCompany: 'Selecione a Empresa',
+    manageCompanies: 'Gerenciar Empresas',
+    manageCategories: 'Gerenciar Categorias de Veículos',
+    companyName: 'Nome da Empresa',
+    prefix: 'Prefixo (Iniciais)',
+    addCompany: 'Adicionar Empresa',
+    addCategory: 'Adicionar Categoria',
+    categoryName: 'Nome da Categoria',
+    fipeMapping: 'Tipo API FIPE',
+    noFipe: 'Sem Integração FIPE',
 
-    // Map
     selectTracker: 'Selecionar Rastreador',
     searchTracker: 'Buscar rastreador...',
     action: 'Ação',
@@ -221,8 +247,20 @@ const translations = {
     resolveAddress: 'Resolver Endereços',
     resolving: 'Resolvendo...',
     address: 'Endereço',
+    clearHistory: 'Limpar Histórico',
+    clearConfirm: 'Tem certeza que deseja limpar todo o histórico de localização desta tag? Isso não pode ser desfeito.',
+    historyCleared: 'Histórico limpo com sucesso.',
 
-    // Settings
+    repDate: 'Data/Hora',
+    repLat: 'Latitude',
+    repLon: 'Longitude',
+    repSpeed: 'Conf',
+    repAddr: 'Endereço',
+    repTitle: 'Relatório de Localização',
+    repVehicle: 'Veículo',
+    repStatus: 'Status',
+    repTimestamp: 'Timestamp',
+
     systemSettings: 'Configurações do Sistema',
     manageConfig: 'Gerencie conexões de API, credenciais e serviços externos',
     generalSettings: 'Geral',
@@ -243,8 +281,7 @@ const translations = {
     savedSuccess: 'Configurações Salvas',
     savedError: 'Falha ao salvar configurações',
 
-    // Login
-    portalTitle: 'Portal K-TAG',
+    portalTitle: 'K-TAG Portal',
     portalSubtitle: 'Gestão Profissional de Rastreamento',
     fullName: 'Nome Completo',
     email: 'Endereço de Email',
@@ -264,7 +301,7 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider = ({ children }: { children?: ReactNode }) => {
-  const [language, setLanguage] = useState<Language>('pt'); // Default to PT
+  const [language, setLanguage] = useState<Language>('pt');
 
   useEffect(() => {
     const init = async () => {

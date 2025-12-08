@@ -8,7 +8,7 @@ import { MapComponent } from '../components/MapComponent';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { RefreshCw, Download, Play, Square, Car, AlertTriangle, Share2, Search, MapPin, Copy, Check, MessageCircle, Send, FileText, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { RefreshCw, Download, Play, Square, Car, AlertTriangle, Share2, Search, MapPin, Copy, Check, MessageCircle, Send, FileText, FileSpreadsheet, Loader2, Trash2 } from 'lucide-react';
 
 // Explicit imports for ESM modules
 import { jsPDF } from 'jspdf';
@@ -146,6 +146,15 @@ export const LiveMap = () => {
     };
   }, []);
 
+  const handleClearHistory = async () => {
+    if (!selectedTagId) return;
+    if (confirm(t('clearConfirm'))) {
+      await storage.clearTagHistory(selectedTagId);
+      setLocations([]);
+      addNotification('success', t('clearHistory'), t('historyCleared'));
+    }
+  };
+
   const handleExportCSV = () => {
     if (locations.length === 0) return alert("No data to export");
     exportToCSV(locations);
@@ -189,12 +198,12 @@ export const LiveMap = () => {
       const doc = new jsPDF();
       
       doc.setFontSize(18);
-      doc.text(`Location Report: ${selectedTag?.name}`, 14, 22);
+      doc.text(`${t('repTitle')}: ${selectedTag?.name}`, 14, 22);
       doc.setFontSize(11);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-      if(activeVehicle) doc.text(`Vehicle: ${activeVehicle.model} (${activeVehicle.plate})`, 14, 36);
+      doc.text(`${t('repDate')}: ${new Date().toLocaleString()}`, 14, 30);
+      if(activeVehicle) doc.text(`${t('repVehicle')}: ${activeVehicle.model} (${activeVehicle.plate})`, 14, 36);
 
-      const headers = [['Date/Time', 'Lat', 'Lon', 'Speed/Conf', 'Address']];
+      const headers = [[t('repDate'), t('repLat'), t('repLon'), t('repSpeed'), t('repAddr')]];
       const data = locations.map(l => [
          l.isodatetime,
          l.lat.toFixed(5),
@@ -222,13 +231,13 @@ export const LiveMap = () => {
     
     try {
       const data = locations.map(l => ({
-        Timestamp: l.timestamp,
-        Date: l.isodatetime,
-        Latitude: l.lat,
-        Longitude: l.lon,
-        Confidence: l.conf,
-        Status: l.status,
-        Address: reportAddresses[l.id] || 'Unresolved'
+        [t('repTimestamp')]: l.timestamp,
+        [t('repDate')]: l.isodatetime,
+        [t('repLat')]: l.lat,
+        [t('repLon')]: l.lon,
+        [t('repSpeed')]: l.conf,
+        [t('repStatus')]: l.status,
+        [t('repAddr')]: reportAddresses[l.id] || 'Unresolved'
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
@@ -371,9 +380,18 @@ export const LiveMap = () => {
                   onClick={fetchUpdate}
                   disabled={loading}
                   className="p-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-500 hover:text-primary-600 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
-                  title="Force Refresh"
+                  title={t('refresh')}
                 >
                   <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                </button>
+
+                <button
+                  onClick={handleClearHistory}
+                  disabled={locations.length === 0}
+                  className="p-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-500 hover:text-red-600 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                  title={t('clearHistory')}
+                >
+                  <Trash2 size={18} />
                 </button>
              </div>
           </div>

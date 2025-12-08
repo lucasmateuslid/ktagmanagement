@@ -3,240 +3,212 @@ import React, { useEffect, useState } from 'react';
 import { Tag, Vehicle } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { Tag as TagIcon, Car, Link2, Wifi, Activity, Map, Settings, Plus, ArrowRight } from 'lucide-react';
+import { useConnection } from '../contexts/ConnectionContext';
+import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip } from 'recharts';
+import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
   const { t } = useLanguage();
+  const { lastSync } = useConnection();
+
+  const loadData = async () => {
+    const [loadedTags, loadedVehicles] = await Promise.all([
+      storage.getTags(),
+      storage.getVehicles(),
+    ]);
+    setTags(loadedTags);
+    setVehicles(loadedVehicles);
+    processHistoryData(loadedTags, loadedVehicles);
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      const [loadedTags, loadedVehicles] = await Promise.all([
-        storage.getTags(),
-        storage.getVehicles(),
-      ]);
-      setTags(loadedTags);
-      setVehicles(loadedVehicles);
-    };
     loadData();
   }, []);
+
+  const processHistoryData = (tags: Tag[], vehicles: Vehicle[]) => {
+    const days = 7;
+    const data = [];
+    const now = new Date();
+    const currentLinkedRatio = vehicles.filter(v => v.tagId).length / (tags.length || 1);
+
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toLocaleDateString(undefined, { weekday: 'short' });
+      const timestamp = date.setHours(23, 59, 59, 999);
+      const existingTags = tags.filter(t => t.createdAt <= timestamp);
+      const totalCount = existingTags.length;
+      const linkedCount = Math.floor(totalCount * currentLinkedRatio);
+      data.push({ name: dateStr, linked: linkedCount, total: totalCount });
+    }
+    setChartData(data);
+  };
 
   const linkedCount = vehicles.filter(v => v.tagId).length;
   const unlinkedCount = tags.length - linkedCount;
 
-  const stats = [
-    { label: t('totalTags'), value: tags.length, icon: TagIcon, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-    { label: t('totalVehicles'), value: vehicles.length, icon: Car, color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
-    { label: t('linkedTags'), value: linkedCount, icon: Link2, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-    { label: t('unlinkedTags'), value: unlinkedCount, icon: Wifi, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
-  ];
+  const carCount = vehicles.filter(v => v.type === 'cat-car' || v.type === 'Car').length;
+  const truckCount = vehicles.filter(v => v.type === 'cat-truck' || v.type === 'Truck').length;
+  const motoCount = vehicles.filter(v => v.type === 'cat-moto' || v.type === 'Motorcycle').length;
 
   const quickActions = [
-    { label: t('addTag'), path: '/tags', icon: Plus, color: 'bg-blue-500' },
-    { label: t('addVehicle'), path: '/vehicles', icon: Car, color: 'bg-orange-500' },
-    { label: t('liveMap'), path: '/map', icon: Map, color: 'bg-emerald-500' },
-    { label: t('settings'), path: '/settings', icon: Settings, color: 'bg-slate-500' },
+    { label: t('addTag'), path: '/tags', icon: Plus },
+    { label: t('addVehicle'), path: '/vehicles', icon: CarFront },
+    { label: t('liveMap'), path: '/map', icon: Activity },
   ];
 
   const pieData = [
-    { name: t('linkedTags'), value: linkedCount },
-    { name: t('unlinkedTags'), value: unlinkedCount },
+    { name: 'Linked', value: linkedCount, color: '#f59e0b' }, // Primary 500
+    { name: 'Unlinked', value: unlinkedCount, color: '#27272a' }, // Zinc 800
   ];
-
-  const barData = [
-    { name: t('cars') || 'Carros', count: vehicles.filter(v => v.type === 'Car').length },
-    { name: t('trucks') || 'Caminhões', count: vehicles.filter(v => v.type === 'Truck').length },
-    { name: t('motorcycles') || 'Motos', count: vehicles.filter(v => v.type === 'Motorcycle').length },
-  ];
-
-  const COLORS = ['#10b981', '#8b5cf6'];
 
   return (
-    <div className="space-y-8 py-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-            {t('overview') || 'Visão Geral'}
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Status atual do sistema K-TAG
-          </p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+        <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-display font-bold text-zinc-900 dark:text-white">
+            {t('overview')}
+            </h1>
+            <p className="text-zinc-500 text-sm">Welcome back, here's what's happening today.</p>
         </div>
-        <Link to="/map" className="hidden md:flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
-          {t('liveMap')} <ArrowRight size={16} />
-        </Link>
+        {lastSync && (
+            <div className="text-xs text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <Clock size={12} /> Last Synced: {new Date(lastSync).toLocaleTimeString()}
+            </div>
+        )}
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {quickActions.map((action, idx) => {
-          const Icon = action.icon;
-          return (
-            <Link key={idx} to={action.path}>
-              <motion.div
-                whileHover={{ y: -2 }}
-                className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
-              >
-                <div className={`p-2.5 rounded-lg text-white shadow-md ${action.color}`}>
-                  <Icon size={18} />
-                </div>
-                <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">{action.label}</span>
-              </motion.div>
-            </Link>
-          )
-        })}
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 relative overflow-hidden group"
-            >
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity transform group-hover:scale-110 duration-500">
-                <Icon size={80} />
-              </div>
-              <div className="flex items-center justify-between relative z-10">
+      {/* Bento Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        
+        {/* Main Stats Card */}
+        <motion.div 
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+            className="col-span-1 md:col-span-2 row-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm"
+        >
+            <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                    {stat.label}
-                  </p>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">
-                    {stat.value}
-                  </p>
+                    <h3 className="text-zinc-500 text-sm font-medium uppercase tracking-wider">{t('totalTags')}</h3>
+                    <p className="text-5xl font-display font-bold text-zinc-900 dark:text-white mt-2">{tags.length}</p>
                 </div>
-                <div className={`p-4 rounded-xl ${stat.color}`}>
-                  <Icon size={28} />
+                <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-full text-zinc-900 dark:text-white">
+                    <TagIcon size={24} />
                 </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Pie Chart - 1 Column */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              {t('tagLinkStatus') || 'Status de Vinculação'}
-            </h3>
-            <Activity className="w-5 h-5 text-slate-500" />
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgb(15 23 42)',
-                    border: '1px solid rgb(51 65 85)',
-                    borderRadius: '12px',
-                    color: '#fff'
-                  }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+            </div>
+            
+            <div className="h-40 mt-6 -mx-2 min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                    <defs>
+                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                        </linearGradient>
+                    </defs>
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                        itemStyle={{ fontSize: '12px' }}
+                        cursor={{ stroke: '#27272a' }}
+                    />
+                    <Area type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={3} fill="url(#colorTotal)" />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
         </motion.div>
 
-        {/* Bar Chart - 1 Column */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
+        {/* Secondary Stats (Vehicles) */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="bg-zinc-900 dark:bg-zinc-950 rounded-3xl p-6 border border-zinc-800 dark:border-zinc-900 text-white flex flex-col justify-between shadow-md"
         >
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">
-            {t('vehicleDist') || 'Distribuição por Tipo'}
-          </h3>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData} barSize={30}>
-                <XAxis
-                  dataKey="name"
-                  stroke="#64748b"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgb(15 23 42)',
-                    border: '1px solid rgb(51 65 85)',
-                    borderRadius: '12px',
-                    color: '#fff'
-                  }}
-                />
-                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 4, 4]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-
-        {/* Recent Activity (Simulated List) */}
-        <motion.div
-           initial={{ opacity: 0, y: 20 }}
-           animate={{ opacity: 1, y: 0 }}
-           transition={{ delay: 0.6 }}
-           className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 min-w-0"
-        >
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
-            {t('recentActivity')}
-          </h3>
-          <div className="space-y-4">
-             {tags.slice(0, 4).map((tag, i) => (
-                <div key={tag.id} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                   <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600">
-                      <TagIcon size={14} />
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 dark:text-white truncate">Tag Created: {tag.name}</p>
-                      <p className="text-xs text-slate-500">{new Date(tag.createdAt).toLocaleDateString()}</p>
-                   </div>
+            <div className="flex justify-between">
+                <span className="text-zinc-400 text-xs uppercase tracking-wider">{t('totalVehicles')}</span>
+                <CarFront size={18} className="text-zinc-500" />
+            </div>
+            <p className="text-3xl font-display font-bold mt-2">{vehicles.length}</p>
+            
+            <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
+                    <Car size={14} className="text-zinc-400 mb-1" />
+                    <span className="text-lg font-bold">{carCount}</span>
+                    <span className="text-[10px] text-zinc-500 uppercase">{t('cars')}</span>
                 </div>
-             ))}
-             {tags.length === 0 && <p className="text-sm text-slate-500 text-center py-4">No recent activity</p>}
-          </div>
+                <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
+                    <Truck size={14} className="text-zinc-400 mb-1" />
+                    <span className="text-lg font-bold">{truckCount}</span>
+                    <span className="text-[10px] text-zinc-500 uppercase">{t('trucks')}</span>
+                </div>
+                 <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
+                    <Bike size={14} className="text-zinc-400 mb-1" />
+                    <span className="text-lg font-bold">{motoCount}</span>
+                    <span className="text-[10px] text-zinc-500 uppercase">Moto</span>
+                </div>
+            </div>
         </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="bg-primary-500 text-black rounded-3xl p-6 flex flex-col justify-between shadow-lg shadow-primary-500/20"
+        >
+             <div className="flex justify-between">
+                <span className="text-black/60 text-xs uppercase tracking-wider font-bold">{t('linkedTags')}</span>
+                <Link2 size={18} className="text-black/60" />
+            </div>
+            <p className="text-3xl font-display font-bold mt-2">{linkedCount}</p>
+            <div className="mt-4 text-xs font-bold text-black/60">
+                {Math.round((linkedCount / (tags.length || 1)) * 100)}% Utilization
+            </div>
+        </motion.div>
+
+        {/* Quick Actions */}
+        <div className="col-span-1 md:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-4">{t('quickActions')}</h3>
+            <div className="grid grid-cols-3 gap-3">
+                {quickActions.map((action, idx) => (
+                    <Link key={idx} to={action.path} className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors border border-zinc-200 dark:border-zinc-800 group">
+                        <action.icon size={20} className="text-zinc-600 dark:text-zinc-400 group-hover:text-primary-600 dark:group-hover:text-primary-500 transition-colors" />
+                        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 text-center">{action.label}</span>
+                    </Link>
+                ))}
+            </div>
+        </div>
+
+        {/* Pie Chart Card */}
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center relative min-w-0 shadow-sm">
+             <div className="absolute top-6 left-6">
+                <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Allocation</h3>
+             </div>
+             <div className="h-32 w-32 mt-4 relative">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={pieData} innerRadius={35} outerRadius={50} paddingAngle={5} dataKey="value" stroke="none">
+                            {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Pie>
+                    </PieChart>
+                </ResponsiveContainer>
+                {/* Center text */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                     <Wifi size={16} className="text-zinc-400" />
+                </div>
+             </div>
+             <div className="flex gap-4 mt-4 text-xs">
+                <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-primary-500"></div>
+                    <span className="text-zinc-600 dark:text-zinc-400">Linked</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-zinc-800"></div>
+                    <span className="text-zinc-600 dark:text-zinc-400">Free</span>
+                </div>
+             </div>
+        </div>
+
       </div>
     </div>
   );

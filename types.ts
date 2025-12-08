@@ -4,6 +4,21 @@ export interface User {
   name: string;
   email: string;
   role?: 'admin' | 'user';
+  status?: 'pending' | 'approved' | 'rejected'; // Status da aprovação
+  ip?: string; // IP do cadastro
+  createdAt?: number;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  prefix: string; // Iniciais (ex: KTG para K-Tag)
+}
+
+export interface VehicleCategory {
+  id: string;
+  name: string; // Ex: Utilitário, Passeio
+  fipeType: 'carros' | 'motos' | 'caminhoes' | 'none'; // Mapeamento para API FIPE
 }
 
 export interface Tag {
@@ -18,12 +33,13 @@ export interface Tag {
 
 export interface Vehicle {
   id: string;
-  type: 'Car' | 'Truck' | 'Motorcycle' | 'Other';
+  type: string; // Agora armazena o ID da VehicleCategory ou string legada
   plate: string;
   model: string;
   year?: string;
   fipeCode?: string;
   tagId?: string; // Optional link to a tag
+  companyId?: string; // ID da empresa responsável
 }
 
 // K-Tag API Response Shape

@@ -1,5 +1,4 @@
-
-import { initializeApp } from 'firebase/app';
+import * as firebaseApp from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
@@ -15,7 +14,8 @@ const firebaseConfig = {
 let db: any = null;
 
 try {
-  const app = initializeApp(firebaseConfig);
+  // Access initializeApp from namespace object, casting to any to bypass strict type checking if definitions are mismatched
+  const app = (firebaseApp as any).initializeApp(firebaseConfig);
   db = getFirestore(app);
   console.log("Firebase initialized with provided credentials");
 } catch (e) {

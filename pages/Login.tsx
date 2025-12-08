@@ -1,148 +1,142 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Navigate } from 'react-router-dom';
-import { ShieldCheck, LogIn, UserPlus } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const Login = () => {
-  const { login, isAuthenticated } = useAuth();
+  const { login, register, isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [ip, setIp] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+  useEffect(() => {
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => setIp(data.ip))
+      .catch(() => {});
+  }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  if (isAuthenticated) return <Navigate to="/" replace />;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email && password) {
-      login(name || email.split('@')[0], email);
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
+    try {
+        if (isLogin) {
+            const err = await login(email);
+            if (err) setError(err);
+        } else {
+            if (!name) throw new Error("Name is required");
+            await register(name, email, ip || 'Unknown IP');
+            setSuccess("Registro pedente de aprovação pelo gestor.");
+            setIsLogin(true);
+            setName('');
+            setPassword('');
+        }
+    } catch (e: any) {
+        setError(e.message || "An error occurred");
+    } finally {
+        setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-      {/* Background sutil */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary-50/50 via-transparent to-blue-50/30 dark:from-primary-900/10 dark:to-transparent -z-10" />
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="w-full max-w-md"
-      >
-        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-          {/* Header com logo e título */}
-          <div className="px-10 pt-10 pb-8 text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary-100 dark:bg-primary-900/30 mb-6 ring-8 ring-primary-100/50 dark:ring-primary-900/20">
-              <ShieldCheck size={40} className="text-primary-600 dark:text-primary-400" />
+    <div className="min-h-screen bg-black text-white flex font-sans">
+      
+      {/* Left Side: Form */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-16 lg:px-32 relative z-10">
+         <div className="mb-12">
+            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-black font-display font-black text-2xl mb-6">
+                K
             </div>
-            <h1 className="text-4xl font-bold text-slate-900 dark:text-white tracking-tight">
-              K-TAG Manager
+            <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight mb-3">
+              {isLogin ? 'Welcome back' : 'Join K-TAG'}
             </h1>
-            <p className="mt-3 text-slate-500 dark:text-slate-400 text-lg">
-              {t('portalSubtitle') || 'Gerenciamento inteligente de tags veiculares'}
+            <p className="text-zinc-500">
+              {t('portalSubtitle')}
             </p>
-          </div>
+         </div>
 
-          {/* Formulário */}
-          <div className="px-10 pb-10">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Nome (apenas no cadastro) */}
-              {!isLogin && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                    {t('fullName') || 'Nome completo'}
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-4 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                    placeholder="João Silva"
+         <form onSubmit={handleSubmit} className="space-y-5">
+            {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg text-sm">{error}</div>}
+            {success && <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-500 rounded-lg text-sm">{success}</div>}
+
+            {!isLogin && (
+               <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">{t('fullName')}</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} 
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                    placeholder="Jane Doe"
                   />
-                </motion.div>
-              )}
+               </div>
+            )}
 
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  {t('email') || 'E-mail'}
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                  placeholder="admin@ktag.com"
+            <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">{t('email')}</label>
+                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} 
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                placeholder="name@company.com"
                 />
-              </div>
-
-              {/* Senha */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  {t('password') || 'Senha'}
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-
-              {/* Botão principal - Azul clássico */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                type="submit"
-                className="w-full mt-8 py-4 px-6 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-lg shadow-lg shadow-primary-600/30 transition-all duration-200 flex items-center justify-center gap-3"
-              >
-                {isLogin ? (
-                  <>
-                    <LogIn size={20} />
-                    {t('signIn') || 'Entrar'}
-                  </>
-                ) : (
-                  <>
-                    <UserPlus size={20} />
-                    {t('createAccount') || 'Criar conta'}
-                  </>
-                )}
-              </motion.button>
-            </form>
-
-            {/* Alternar entre login/cadastro */}
-            <div className="mt-8 text-center">
-              <button
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
-              >
-                {isLogin
-                  ? t('noAccount') || 'Não tem uma conta? Cadastre-se'
-                  : t('haveAccount') || 'Já tem conta? Faça login'}
-              </button>
             </div>
-          </div>
-        </div>
 
-        {/* Footer discreto */}
-        <div className="text-center mt-10 text-slate-500 dark:text-slate-500 text-sm">
-          <p>© {new Date().getFullYear()} Mais Soluções em Monitoramento. Todos os direitos reservados.</p>
-        </div>
-      </motion.div>
+            <div className="space-y-1">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">{t('password')}</label>
+                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} 
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                placeholder="••••••••"
+                />
+            </div>
+
+            <button type="submit" disabled={loading}
+                className="w-full bg-primary-500 hover:bg-primary-400 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                {loading ? <Loader2 className="animate-spin" /> : (
+                    <>
+                       {isLogin ? t('signIn') : t('createAccount')} 
+                       <ArrowRight size={20} />
+                    </>
+                )}
+            </button>
+         </form>
+
+         <div className="mt-8 text-center">
+            <button onClick={() => { setIsLogin(!isLogin); setError(''); }} className="text-zinc-500 hover:text-white transition-colors text-sm">
+                {isLogin ? t('noAccount') : t('haveAccount')}
+            </button>
+         </div>
+      </div>
+
+      {/* Right Side: Visual */}
+      <div className="hidden lg:flex w-1/2 bg-zinc-900 relative overflow-hidden items-center justify-center">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-800 via-zinc-900 to-black opacity-50"></div>
+          
+          {/* Abstract C6 Style Visual */}
+          <div className="relative z-10 w-96 h-96">
+             <div className="absolute inset-0 border-[1px] border-zinc-700 rounded-full opacity-20"></div>
+             <div className="absolute inset-4 border-[1px] border-zinc-700 rounded-full opacity-20"></div>
+             <div className="absolute inset-8 border-[1px] border-zinc-700 rounded-full opacity-20"></div>
+             <div className="absolute inset-0 flex items-center justify-center">
+                 <ShieldCheck size={120} className="text-primary-500 opacity-80 drop-shadow-[0_0_30px_rgba(245,158,11,0.3)]" />
+             </div>
+          </div>
+          
+          <div className="absolute bottom-12 left-12 text-zinc-500 text-xs font-mono">
+             SECURE ACCESS GATEWAY v2.0 - Developed By Lucasmateus.tech
+          </div>
+      </div>
+
     </div>
   );
 };

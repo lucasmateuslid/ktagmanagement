@@ -1,15 +1,18 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory } from '../types';
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc } from 'firebase/firestore';
 
 const KEYS = {
-  USER: 'ktag_user',
+  USER_SESSION: 'ktag_user_session',
+  USERS_DB: 'ktag_users_db',
   TAGS: 'ktag_tags',
   VEHICLES: 'ktag_vehicles',
   LOCATIONS: 'ktag_locations',
   THEME: 'ktag_theme',
   SETTINGS: 'ktag_settings',
+  COMPANIES: 'ktag_companies',
+  CATEGORIES: 'ktag_categories',
 };
 
 // --- LocalStorage Helpers (Fallback) ---
@@ -42,29 +45,177 @@ const DEFAULT_SETTINGS: AppSettings = {
   mapboxKey: ''
 };
 
-// --- Storage Service Interface (Async) ---
-// Now with robust error handling for Firestore offline states
+// Default Categories to initialize
+const DEFAULT_CATEGORIES: VehicleCategory[] = [
+  { id: 'cat-car', name: 'Carro de Passeio', fipeType: 'carros' },
+  { id: 'cat-truck', name: 'Caminhão', fipeType: 'caminhoes' },
+  { id: 'cat-moto', name: 'Motocicleta', fipeType: 'motos' },
+];
 
 export const storage = {
-  // User
-  getUser: async (): Promise<User | null> => {
-    return getLocal<User | null>(KEYS.USER, null); 
+  // --- USER SESSION (Current Logged In) ---
+  getSessionUser: async (): Promise<User | null> => {
+    return getLocal<User | null>(KEYS.USER_SESSION, null); 
   },
-  setUser: async (user: User) => {
-    setLocal(KEYS.USER, user);
+  setSessionUser: async (user: User) => {
+    setLocal(KEYS.USER_SESSION, user);
   },
-  clearUser: async () => {
-    localStorage.removeItem(KEYS.USER);
+  clearSessionUser: async () => {
+    localStorage.removeItem(KEYS.USER_SESSION);
   },
 
-  // Tags
+  // --- USER MANAGEMENT (DB) ---
+  findUserByEmail: async (email: string): Promise<User | null> => {
+    if (db) {
+      try {
+        const q = query(collection(db, KEYS.USERS_DB), where("email", "==", email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const d = snap.docs[0];
+          return { ...d.data(), id: d.id } as User;
+        }
+      } catch (e) {
+        console.warn("Firestore findUser failed", e);
+      }
+    }
+    const localUsers = getLocal<User[]>(KEYS.USERS_DB, []);
+    return localUsers.find(u => u.email === email) || null;
+  },
+
+  registerUserRequest: async (user: User) => {
+    if (db) {
+      try {
+        await setDoc(doc(db, KEYS.USERS_DB, user.id), user);
+        return;
+      } catch (e) {
+        console.error("Firestore register failed", e);
+      }
+    }
+    const users = getLocal<User[]>(KEYS.USERS_DB, []);
+    users.push(user);
+    setLocal(KEYS.USERS_DB, users);
+  },
+
+  getAllUsers: async (): Promise<User[]> => {
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, KEYS.USERS_DB));
+        return snap.docs.map(d => ({...d.data(), id: d.id} as User));
+      } catch (e) {
+        console.warn("Firestore getAllUsers failed", e);
+      }
+    }
+    return getLocal<User[]>(KEYS.USERS_DB, []);
+  },
+
+  updateUserStatus: async (userId: string, status: 'approved' | 'rejected') => {
+    if (db) {
+      try {
+        await updateDoc(doc(db, KEYS.USERS_DB, userId), { status });
+      } catch (e) {
+        console.error("Firestore updateStatus failed", e);
+      }
+    }
+    const users = getLocal<User[]>(KEYS.USERS_DB, []);
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      users[idx].status = status;
+      setLocal(KEYS.USERS_DB, users);
+    }
+  },
+
+  // --- COMPANIES ---
+  getCompanies: async (): Promise<Company[]> => {
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, KEYS.COMPANIES));
+        const firestoreData = snap.docs.map(d => ({ ...d.data(), id: d.id } as Company));
+        setLocal(KEYS.COMPANIES, firestoreData);
+        return firestoreData;
+      } catch (e) {
+        console.warn("Firestore getCompanies failed", e);
+      }
+    }
+    return getLocal<Company[]>(KEYS.COMPANIES, []);
+  },
+  saveCompany: async (company: Company) => {
+    if (db) {
+      try {
+        await setDoc(doc(db, KEYS.COMPANIES, company.id), company);
+      } catch (e) {
+        console.warn("Firestore saveCompany failed", e);
+      }
+    }
+    const list = getLocal<Company[]>(KEYS.COMPANIES, []);
+    const index = list.findIndex(c => c.id === company.id);
+    if (index >= 0) list[index] = company;
+    else list.push(company);
+    setLocal(KEYS.COMPANIES, list);
+  },
+  deleteCompany: async (id: string) => {
+    if (db) {
+      try { await deleteDoc(doc(db, KEYS.COMPANIES, id)); } catch (e) {}
+    }
+    const list = getLocal<Company[]>(KEYS.COMPANIES, []);
+    setLocal(KEYS.COMPANIES, list.filter(c => c.id !== id));
+  },
+
+  // --- VEHICLE CATEGORIES ---
+  getCategories: async (): Promise<VehicleCategory[]> => {
+    // Ensure defaults exist locally first time
+    let localData = getLocal<VehicleCategory[]>(KEYS.CATEGORIES, []);
+    if (localData.length === 0) {
+        localData = DEFAULT_CATEGORIES;
+        setLocal(KEYS.CATEGORIES, localData);
+    }
+
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, KEYS.CATEGORIES));
+        if (snap.empty) {
+            // Seed defaults if empty
+            const batch = writeBatch(db);
+            DEFAULT_CATEGORIES.forEach(c => batch.set(doc(db, KEYS.CATEGORIES, c.id), c));
+            await batch.commit();
+            return DEFAULT_CATEGORIES;
+        }
+        const firestoreData = snap.docs.map(d => ({ ...d.data(), id: d.id } as VehicleCategory));
+        setLocal(KEYS.CATEGORIES, firestoreData);
+        return firestoreData;
+      } catch (e) {
+        console.warn("Firestore getCategories failed", e);
+      }
+    }
+    return localData;
+  },
+  saveCategory: async (category: VehicleCategory) => {
+    if (db) {
+      try {
+        await setDoc(doc(db, KEYS.CATEGORIES, category.id), category);
+      } catch (e) {
+        console.warn("Firestore saveCategory failed", e);
+      }
+    }
+    const list = getLocal<VehicleCategory[]>(KEYS.CATEGORIES, []);
+    const index = list.findIndex(c => c.id === category.id);
+    if (index >= 0) list[index] = category;
+    else list.push(category);
+    setLocal(KEYS.CATEGORIES, list);
+  },
+  deleteCategory: async (id: string) => {
+    if (db) {
+      try { await deleteDoc(doc(db, KEYS.CATEGORIES, id)); } catch (e) {}
+    }
+    const list = getLocal<VehicleCategory[]>(KEYS.CATEGORIES, []);
+    setLocal(KEYS.CATEGORIES, list.filter(c => c.id !== id));
+  },
+
+  // --- TAGS ---
   getTags: async (): Promise<Tag[]> => {
-    // Try Firestore first, merge/fallback to local
     if (db) {
       try {
         const snap = await getDocs(collection(db, KEYS.TAGS));
         const firestoreTags = snap.docs.map(d => ({ ...d.data(), id: d.id } as Tag));
-        // Also update local for offline backup
         setLocal(KEYS.TAGS, firestoreTags); 
         return firestoreTags;
       } catch (e) {
@@ -81,7 +232,6 @@ export const storage = {
         console.warn("Firestore saveTag failed, saving to local.", e);
       }
     }
-    // Always save local
     const tags = getLocal<Tag[]>(KEYS.TAGS, []);
     const index = tags.findIndex((t) => t.id === tag.id);
     if (index >= 0) tags[index] = tag;
@@ -90,23 +240,17 @@ export const storage = {
   },
   deleteTag: async (id: string) => {
     console.log(`[Storage] Deleting tag: ${id}`);
-    // Delete from Firestore
     if (db) {
       try {
         await deleteDoc(doc(db, KEYS.TAGS, id));
-        console.log(`[Storage] Firestore delete success: ${id}`);
       } catch (e) {
         console.warn("Firestore deleteTag failed, continuing to local.", e);
       }
     }
-    // Always delete from local to ensure UI updates immediately
     const tags = getLocal<Tag[]>(KEYS.TAGS, []);
     setLocal(KEYS.TAGS, tags.filter((t) => t.id !== id));
-    console.log(`[Storage] Local delete complete: ${id}`);
   },
   deleteTags: async (ids: string[]) => {
-    console.log(`[Storage] Deleting batch tags: ${ids.length}`);
-    // Delete from Firestore
     if (db) {
       try {
         const batch = writeBatch(db);
@@ -115,18 +259,15 @@ export const storage = {
           batch.delete(ref);
         });
         await batch.commit();
-        console.log(`[Storage] Firestore batch delete success`);
       } catch (e) {
          console.warn("Firestore deleteTags batch failed, continuing to local.", e);
       }
     }
-    // Always delete from local
     const tags = getLocal<Tag[]>(KEYS.TAGS, []);
     setLocal(KEYS.TAGS, tags.filter((t) => !ids.includes(t.id)));
-    console.log(`[Storage] Local batch delete complete`);
   },
 
-  // Vehicles
+  // --- VEHICLES ---
   getVehicles: async (): Promise<Vehicle[]> => {
     if (db) {
       try {
@@ -148,7 +289,6 @@ export const storage = {
         console.warn("Firestore saveVehicle failed, saving to local.", e);
       }
     }
-    // Always save local
     const list = getLocal<Vehicle[]>(KEYS.VEHICLES, []);
     const index = list.findIndex((v) => v.id === vehicle.id);
     if (index >= 0) list[index] = vehicle;
@@ -163,27 +303,23 @@ export const storage = {
         console.warn("Firestore deleteVehicle failed, continuing to local.", e);
       }
     }
-    // Always delete local
     const list = getLocal<Vehicle[]>(KEYS.VEHICLES, []);
     setLocal(KEYS.VEHICLES, list.filter((v) => v.id !== id));
   },
 
-  // Locations (History)
-  
-  // New Helper: Prune history older than 128 hours
+  // --- LOCATIONS ---
   pruneHistory: async (tagId: string) => {
     const HOURS_128 = 128 * 60 * 60 * 1000;
     const cutoff = Date.now() - HOURS_128;
     
-    // 1. Prune Local
+    // Prune Local
     const allLocal = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
     const prunedLocal = allLocal.filter(l => l.timestamp >= cutoff);
     if (allLocal.length !== prunedLocal.length) {
-       console.log(`[Storage] Pruned ${allLocal.length - prunedLocal.length} old local records.`);
        setLocal(KEYS.LOCATIONS, prunedLocal);
     }
 
-    // 2. Prune Firestore
+    // Prune Firestore
     if (db) {
       try {
         const q = query(
@@ -196,7 +332,6 @@ export const storage = {
            const batch = writeBatch(db);
            snap.docs.forEach(d => batch.delete(d.ref));
            await batch.commit();
-           console.log(`[Storage] Pruned ${snap.size} old Firestore records for tag ${tagId}`);
         }
       } catch (e) {
          console.warn("Firestore prune failed", e);
@@ -204,9 +339,30 @@ export const storage = {
     }
   },
 
+  clearTagHistory: async (tagId: string) => {
+    const allLocal = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
+    const prunedLocal = allLocal.filter(l => l.tagId !== tagId);
+    setLocal(KEYS.LOCATIONS, prunedLocal);
+
+    if (db) {
+      try {
+        const q = query(
+          collection(db, KEYS.LOCATIONS),
+          where("tagId", "==", tagId)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      } catch (e) {
+        console.warn("Firestore clear history failed", e);
+      }
+    }
+  },
+
   getLocations: async (tagId: string): Promise<LocationHistory[]> => {
-    // Attempt prune before returning
-    // We don't await pruneHistory to keep UI fast, it runs in background
     storage.pruneHistory(tagId);
 
     const fallback = () => {
@@ -221,7 +377,6 @@ export const storage = {
         const locs = snap.docs.map(d => d.data() as LocationHistory);
         return locs.sort((a, b) => b.timestamp - a.timestamp);
       } catch (e) {
-        console.warn("Firestore getLocations failed, using fallback.", e);
         return fallback();
       }
     }
@@ -236,7 +391,6 @@ export const storage = {
         console.warn("Firestore addLocation failed, saving to local.", e);
       }
     }
-    // Always add to local for redundancy
     const all = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
     if (!all.find((e) => e.timestamp === loc.timestamp && e.tagId === loc.tagId)) {
       all.push(loc);
@@ -244,7 +398,7 @@ export const storage = {
     }
   },
   
-  // Settings
+  // --- SETTINGS ---
   getSettings: async (): Promise<AppSettings> => {
     const fallback = () => getLocal<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
     if (db) {
@@ -253,12 +407,11 @@ export const storage = {
         const snap = await getDoc(ref);
         if (snap.exists()) {
            const data = { ...DEFAULT_SETTINGS, ...snap.data() };
-           setLocal(KEYS.SETTINGS, data); // Sync local
+           setLocal(KEYS.SETTINGS, data); 
            return data;
         }
         return DEFAULT_SETTINGS;
       } catch (e) {
-        console.warn("Firestore getSettings failed, using fallback.", e);
         return fallback();
       }
     }
