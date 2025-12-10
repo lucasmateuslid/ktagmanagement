@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { LocationHistory } from '../types';
+import { LocationHistory, Vehicle } from '../types';
 import { storage } from '../services/storage';
 
 // Declare google globally to avoid type errors
@@ -22,6 +22,8 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 interface MapProps {
   locations: LocationHistory[];
+  isFleetMode?: boolean; // New prop for Fleet Mode
+  vehicles?: Vehicle[];  // Needed to resolve Plate/Model in Fleet Mode
 }
 
 const RecenterMap = ({ lat, lon }: { lat: number; lon: number }) => {
@@ -33,7 +35,7 @@ const RecenterMap = ({ lat, lon }: { lat: number; lon: number }) => {
 };
 
 // Google Maps Wrapper
-const GoogleMapCanvas = ({ locations }: { locations: LocationHistory[] }) => {
+const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: LocationHistory[], isFleetMode?: boolean, vehicles?: Vehicle[] }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [googleMap, setGoogleMap] = useState<any | null>(null);
   const [markers, setMarkers] = useState<any[]>([]);
@@ -61,38 +63,72 @@ const GoogleMapCanvas = ({ locations }: { locations: LocationHistory[] }) => {
     if (poly) poly.setMap(null);
 
     const newMarkers: any[] = [];
-    
-    // Add Latest Marker
-    if (locations.length > 0) {
-      const latest = locations[0];
-      const marker = new google.maps.Marker({
-        position: { lat: latest.lat, lng: latest.lon },
-        map: googleMap,
-        title: "Latest Position"
-      });
-      googleMap.setCenter({ lat: latest.lat, lng: latest.lon });
-      newMarkers.push(marker);
-    }
 
-    // Polyline
-    const path = locations.map(l => ({ lat: l.lat, lng: l.lon }));
-    const polyline = new google.maps.Polyline({
-      path: path,
-      geodesic: true,
-      strokeColor: '#2563eb',
-      strokeOpacity: 1.0,
-      strokeWeight: 4,
-    });
-    polyline.setMap(googleMap);
-    setPoly(polyline);
+    if (isFleetMode && vehicles) {
+        // --- FLEET MODE: Multiple Markers, No Polyline ---
+        locations.forEach(loc => {
+            const vehicle = vehicles.find(v => v.tagId === loc.tagId);
+            const title = vehicle ? `${vehicle.plate} - ${vehicle.model}` : 'Unknown Tag';
+            
+            const marker = new google.maps.Marker({
+                position: { lat: loc.lat, lng: loc.lon },
+                map: googleMap,
+                title: title,
+                // Optional: Custom icon for fleet could go here
+            });
+            
+            const infoWindow = new google.maps.InfoWindow({
+                content: `<div style="color:black"><b>${title}</b><br/>Conf: ${loc.conf}%<br/>${loc.isodatetime}</div>`
+            });
+            
+            marker.addListener("click", () => {
+                infoWindow.open(googleMap, marker);
+            });
+
+            newMarkers.push(marker);
+        });
+
+        // Fit bounds to show all vehicles
+        if (locations.length > 0) {
+            const bounds = new google.maps.LatLngBounds();
+            locations.forEach(loc => bounds.extend({ lat: loc.lat, lng: loc.lon }));
+            googleMap.fitBounds(bounds);
+        }
+
+    } else {
+        // --- SINGLE MODE: One Marker + Polyline ---
+        if (locations.length > 0) {
+            const latest = locations[0];
+            const marker = new google.maps.Marker({
+                position: { lat: latest.lat, lng: latest.lon },
+                map: googleMap,
+                title: "Latest Position"
+            });
+            googleMap.setCenter({ lat: latest.lat, lng: latest.lon });
+            newMarkers.push(marker);
+
+            // Polyline
+            const path = locations.map(l => ({ lat: l.lat, lng: l.lon }));
+            const polyline = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#2563eb',
+                strokeOpacity: 1.0,
+                strokeWeight: 4,
+            });
+            polyline.setMap(googleMap);
+            setPoly(polyline);
+        }
+    }
+    
     setMarkers(newMarkers);
 
-  }, [locations, googleMap]);
+  }, [locations, googleMap, isFleetMode]);
 
   return <div ref={mapRef} style={{ width: '100%', height: '100%' }} />;
 };
 
-export const MapComponent: React.FC<MapProps> = ({ locations }) => {
+export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = false, vehicles = [] }) => {
   const [provider, setProvider] = useState<'osm' | 'google' | 'mapbox'>('osm');
   const [googleKey, setGoogleKey] = useState('');
   const [mapboxKey, setMapboxKey] = useState('');
@@ -126,6 +162,7 @@ export const MapComponent: React.FC<MapProps> = ({ locations }) => {
     setProvider('mapbox');
   }
 
+  // Determine center based on mode
   const centerPosition: [number, number] = locations.length > 0 
     ? [locations[0].lat, locations[0].lon] 
     : [40.7128, -74.0060];
@@ -135,7 +172,7 @@ export const MapComponent: React.FC<MapProps> = ({ locations }) => {
   return (
     <div className="relative h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-800 bg-slate-100 z-0">
       
-      {/* Provider Switcher - Lowered Z-Index to allow modals to be on top */}
+      {/* Provider Switcher */}
       <div className="absolute top-4 right-4 z-[400] bg-white dark:bg-slate-900 p-2 rounded-lg shadow-md flex flex-col gap-2 max-w-[200px]">
         <div className="flex gap-1 text-xs">
           <button 
@@ -182,21 +219,46 @@ export const MapComponent: React.FC<MapProps> = ({ locations }) => {
             />
           )}
 
-          {locations.length > 0 && <RecenterMap lat={locations[0].lat} lon={locations[0].lon} />}
-          {locations.length > 0 && (
-            <Marker position={[locations[0].lat, locations[0].lon]}>
-              <Popup>
-                <div className="text-sm">
-                  <p className="font-bold">Latest Position</p>
-                  <p>Conf: {locations[0].conf}%</p>
-                </div>
-              </Popup>
-            </Marker>
+          {!isFleetMode && locations.length > 0 && <RecenterMap lat={locations[0].lat} lon={locations[0].lon} />}
+
+          {/* RENDER LOGIC SWITCH */}
+          {isFleetMode ? (
+              // FLEET MODE: Render multiple markers
+              locations.map((loc) => {
+                  const vehicle = vehicles?.find(v => v.tagId === loc.tagId);
+                  return (
+                    <Marker key={loc.id || `${loc.lat}-${loc.lon}`} position={[loc.lat, loc.lon]}>
+                        <Popup>
+                            <div className="text-sm">
+                                <p className="font-bold text-zinc-900">{vehicle ? `${vehicle.plate}` : 'Unknown'}</p>
+                                <p className="text-xs text-zinc-500 mb-1">{vehicle?.model}</p>
+                                <p className="text-xs">Conf: {loc.conf}%</p>
+                                <p className="text-[10px] text-zinc-400">{new Date(loc.timestamp).toLocaleTimeString()}</p>
+                            </div>
+                        </Popup>
+                    </Marker>
+                  )
+              })
+          ) : (
+              // SINGLE MODE: One marker + Polyline
+              <>
+                {locations.length > 0 && (
+                    <Marker position={[locations[0].lat, locations[0].lon]}>
+                    <Popup>
+                        <div className="text-sm">
+                        <p className="font-bold">Latest Position</p>
+                        <p>Conf: {locations[0].conf}%</p>
+                        </div>
+                    </Popup>
+                    </Marker>
+                )}
+                <Polyline positions={polylinePositions} color="blue" weight={4} opacity={0.6} />
+              </>
           )}
-          <Polyline positions={polylinePositions} color="blue" weight={4} opacity={0.6} />
+
         </MapContainer>
       ) : (
-        <GoogleMapCanvas locations={locations} />
+        <GoogleMapCanvas locations={locations} isFleetMode={isFleetMode} vehicles={vehicles} />
       )}
     </div>
   );
