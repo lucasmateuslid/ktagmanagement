@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { Vehicle, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { FileText, Calendar, Filter, FileSpreadsheet, Download } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { FileText, Calendar, Filter, FileSpreadsheet, Download, ChevronDown, PieChart as PieIcon, BarChart3, TrendingUp } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -65,17 +65,28 @@ export const Reports = () => {
   const processCharts = (data: Vehicle[]) => {
       // 1. Trend (Group by Day)
       const trendMap: Record<string, number> = {};
+      
+      // Fill gaps with 0
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          trendMap[d.toLocaleDateString()] = 0;
+      }
+
       data.forEach(v => {
           const dateStr = new Date(v.createdAt).toLocaleDateString();
-          trendMap[dateStr] = (trendMap[dateStr] || 0) + 1;
+          if (trendMap[dateStr] !== undefined) {
+              trendMap[dateStr] += 1;
+          }
       });
+
       // Convert to array and sort by date
       const trendArr = Object.keys(trendMap).map(k => ({
           date: k,
           count: trendMap[k],
-          timestamp: new Date(k.split('/').reverse().join('-')).getTime() // Simple parse for sorting if needed
+          // Sort helper
+          timestamp: new Date(k.split('/').reverse().join('-')).getTime() 
       })).sort((a,b) => {
-         // Naive sort for DD/MM/YYYY format or similar
          const da = a.date.split('/').reverse().join('');
          const db = b.date.split('/').reverse().join('');
          return da.localeCompare(db);
@@ -101,7 +112,9 @@ export const Reports = () => {
       setInstallData(instArr);
   };
 
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  // C6 / Carbon Palette
+  const COLORS = ['#f59e0b', '#1f1f22', '#52525b', '#a1a1aa', '#d4d4d8']; 
+  // Primary (Yellow), Zinc 850, Zinc 600, Zinc 400, Zinc 300
 
   const handleExportPDF = () => {
       const doc = new jsPDF();
@@ -139,162 +152,258 @@ export const Reports = () => {
   };
 
   return (
-    <div className="space-y-6 pb-10">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6">
-            <div className="flex items-center gap-3">
-                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/20 rounded-xl text-indigo-600 dark:text-indigo-400">
-                    <FileText size={32} />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{t('reports')}</h1>
-                    <p className="text-zinc-500">{t('reportPeriod')}: {startDate} to {endDate}</p>
-                </div>
+    <div className="space-y-8 pb-20 font-sans">
+        
+        {/* --- HEADER & FILTERS --- */}
+        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
+            <div>
+                <h1 className="text-3xl font-display font-bold text-zinc-900 dark:text-white flex items-center gap-3">
+                    {t('reports')}
+                </h1>
+                <p className="text-zinc-500 mt-1 text-sm">
+                    Análise detalhada de inclusões e distribuição da frota.
+                </p>
             </div>
 
-            <div className="flex flex-wrap items-end gap-2 bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <div className="flex flex-col">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase px-1">{t('startDate')}</label>
-                    <input 
-                        type="date" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-primary-500"
-                    />
+            {/* Filter Bar - Glass/Carbon Style */}
+            <div className="flex flex-col sm:flex-row items-center gap-2 bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm w-full xl:w-auto">
+                 <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
+                    <Calendar size={16} className="text-zinc-400" />
+                    <div className="flex flex-col">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-0.5">{t('startDate')}</label>
+                        <input 
+                            type="date" 
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-white outline-none focus:ring-0 w-full h-5"
+                        />
+                    </div>
                  </div>
-                 <div className="flex flex-col">
-                    <label className="text-[10px] font-bold text-zinc-500 uppercase px-1">{t('endDate')}</label>
-                    <input 
-                        type="date" 
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-primary-500"
-                    />
+                 
+                 <div className="hidden sm:block text-zinc-300 dark:text-zinc-700">/</div>
+
+                 <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
+                    <Calendar size={16} className="text-zinc-400" />
+                    <div className="flex flex-col">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-0.5">{t('endDate')}</label>
+                        <input 
+                            type="date" 
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-white outline-none focus:ring-0 w-full h-5"
+                        />
+                    </div>
                  </div>
-                 <button className="bg-primary-600 text-white p-2 rounded-lg hover:bg-primary-700 transition-colors">
-                     <Filter size={18} />
+
+                 <button 
+                    onClick={filterData}
+                    className="w-full sm:w-auto bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary-500/20 flex items-center justify-center gap-2"
+                 >
+                     <Filter size={18} /> {t('filter')}
                  </button>
             </div>
         </div>
 
-        {/* --- MINI DASHBOARD --- */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-             {/* Total KPI */}
-             <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-                 <div>
-                     <p className="text-sm text-zinc-500 font-medium uppercase tracking-wider">{t('totalInclusions')}</p>
-                     <h2 className="text-4xl font-display font-bold text-zinc-900 dark:text-white mt-1">{filteredVehicles.length}</h2>
+        {/* --- KPI & TREND SECTION --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+             {/* Total KPI Card */}
+             <div className="bg-zinc-900 dark:bg-zinc-950 text-white p-8 rounded-3xl flex flex-col justify-between shadow-xl relative overflow-hidden group">
+                 <div className="absolute top-0 right-0 p-32 bg-primary-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-primary-500/20 transition-all duration-700" />
+                 
+                 <div className="relative z-10">
+                     <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest mb-4">{t('totalInclusions')}</p>
+                     <div className="flex items-baseline gap-2">
+                        <h2 className="text-6xl font-display font-black text-white tracking-tight">{filteredVehicles.length}</h2>
+                        <span className="text-sm font-medium text-zinc-500">veículos</span>
+                     </div>
                  </div>
-                 <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-full">
-                     <Calendar size={24} className="text-zinc-500" />
+                 
+                 <div className="relative z-10 mt-8 flex items-center gap-2 text-primary-500 text-sm font-medium">
+                     <TrendingUp size={16} />
+                     <span>No período selecionado</span>
                  </div>
              </div>
 
-             {/* Trend Chart */}
-             <div className="lg:col-span-3 bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <h3 className="text-sm text-zinc-500 font-medium uppercase tracking-wider mb-4">{t('inclusionsByDay')}</h3>
-                 <div className="h-40 w-full min-w-0">
+             {/* Trend Chart Card */}
+             <div className="lg:col-span-3 bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
+                 <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-sm text-zinc-500 font-bold uppercase tracking-wider flex items-center gap-2">
+                        <BarChart3 size={16} className="text-primary-500"/> {t('inclusionsByDay')}
+                    </h3>
+                 </div>
+                 <div className="flex-1 min-h-[200px] w-full">
                      <ResponsiveContainer width="100%" height="100%">
-                         <BarChart data={trendData}>
+                         <AreaChart data={trendData}>
+                            <defs>
+                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" opacity={0.1} />
                             <Tooltip 
-                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                                cursor={{ fill: '#27272a', opacity: 0.2 }}
+                                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}
+                                itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
+                                cursor={{ stroke: '#f59e0b', strokeWidth: 1, strokeDasharray: '4 4' }}
                             />
-                            <XAxis dataKey="date" hide />
-                            <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                         </BarChart>
+                            <XAxis 
+                                dataKey="date" 
+                                tick={{ fontSize: 10, fill: '#71717a' }} 
+                                axisLine={false} 
+                                tickLine={false}
+                                dy={10}
+                            />
+                            <Area 
+                                type="monotone" 
+                                dataKey="count" 
+                                stroke="#f59e0b" 
+                                strokeWidth={3} 
+                                fillOpacity={1} 
+                                fill="url(#colorCount)" 
+                            />
+                         </AreaChart>
                      </ResponsiveContainer>
                  </div>
              </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* --- PIE CHARTS SECTION --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Category Pie */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <h3 className="text-sm text-zinc-500 font-medium uppercase tracking-wider mb-4">{t('byCategory')}</h3>
-                 <div className="h-64 w-full flex items-center justify-center">
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
+                 <h3 className="text-sm text-zinc-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-2">
+                    <PieIcon size={16} /> {t('byCategory')}
+                 </h3>
+                 <div className="h-64 w-full flex items-center justify-center relative">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                            <Pie data={categoryData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                            <Pie 
+                                data={categoryData} 
+                                innerRadius={60} 
+                                outerRadius={80} 
+                                paddingAngle={5} 
+                                dataKey="value"
+                                cornerRadius={4}
+                            >
                                 {categoryData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
                                 ))}
                             </Pie>
-                            <Legend verticalAlign="bottom" height={36}/>
                             <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                            <Legend 
+                                verticalAlign="bottom" 
+                                iconType="circle"
+                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 ml-1">{value}</span>}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
+                    {/* Center Text */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="text-center">
+                            <span className="block text-2xl font-display font-bold text-zinc-900 dark:text-white">
+                                {categoryData.length}
+                            </span>
+                            <span className="text-[10px] uppercase text-zinc-400 font-bold">Tipos</span>
+                        </div>
+                    </div>
                  </div>
             </div>
 
             {/* Installation Pie */}
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <h3 className="text-sm text-zinc-500 font-medium uppercase tracking-wider mb-4">{t('byInstallation')}</h3>
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
+                 <h3 className="text-sm text-zinc-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-2">
+                    <PieIcon size={16} /> {t('byInstallation')}
+                 </h3>
                  <div className="h-64 w-full flex items-center justify-center">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                            <Pie data={installData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                            <Pie 
+                                data={installData} 
+                                innerRadius={60} 
+                                outerRadius={80} 
+                                paddingAngle={5} 
+                                dataKey="value"
+                                cornerRadius={4}
+                            >
                                 {installData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={index === 0 ? '#10b981' : '#6366f1'} />
+                                    <Cell key={`cell-${index}`} fill={index === 0 ? '#10b981' : '#f59e0b'} stroke="rgba(0,0,0,0)" />
                                 ))}
                             </Pie>
-                            <Legend verticalAlign="bottom" height={36}/>
                             <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                            <Legend 
+                                verticalAlign="bottom" 
+                                iconType="circle"
+                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 ml-1">{value}</span>}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                  </div>
             </div>
         </div>
 
-        {/* --- DETAILED LIST --- */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/50">
-                <h3 className="font-bold text-zinc-800 dark:text-zinc-200">{t('vehicleList')}</h3>
+        {/* --- DETAILED LIST TABLE --- */}
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <div>
+                    <h3 className="font-bold text-lg text-zinc-900 dark:text-white">{t('vehicleList')}</h3>
+                    <p className="text-xs text-zinc-500 uppercase tracking-wide font-medium mt-1">Exportação de Dados</p>
+                </div>
                 <div className="flex gap-2">
                     <button 
                         onClick={handleExportPDF}
                         disabled={filteredVehicles.length === 0}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition-colors disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-red-500 hover:text-red-500 dark:hover:text-red-400 rounded-xl text-xs font-bold transition-all disabled:opacity-50 text-zinc-600 dark:text-zinc-400"
                     >
-                        <Download size={14} /> PDF
+                        <Download size={16} /> PDF
                     </button>
                     <button 
                          onClick={handleExportExcel}
                          disabled={filteredVehicles.length === 0}
-                         className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-colors disabled:opacity-50"
+                         className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-green-500 hover:text-green-500 dark:hover:text-green-400 rounded-xl text-xs font-bold transition-all disabled:opacity-50 text-zinc-600 dark:text-zinc-400"
                     >
-                        <FileSpreadsheet size={14} /> Excel
+                        <FileSpreadsheet size={16} /> Excel
                     </button>
                 </div>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 uppercase border-b border-zinc-200 dark:border-zinc-700">
+                    <thead className="text-xs text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800 font-semibold">
                         <tr>
-                            <th className="px-6 py-3">{t('inclusionDate')}</th>
-                            <th className="px-6 py-3">{t('plate')}</th>
-                            <th className="px-6 py-3">{t('model')}</th>
-                            <th className="px-6 py-3">{t('type')}</th>
-                            <th className="px-6 py-3">{t('byInstallation')}</th>
+                            <th className="px-6 py-4">{t('inclusionDate')}</th>
+                            <th className="px-6 py-4">{t('plate')}</th>
+                            <th className="px-6 py-4">{t('model')}</th>
+                            <th className="px-6 py-4">{t('type')}</th>
+                            <th className="px-6 py-4">{t('byInstallation')}</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
                         {filteredVehicles.map(v => (
-                            <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                                <td className="px-6 py-4 text-zinc-500">{new Date(v.createdAt).toLocaleDateString()}</td>
-                                <td className="px-6 py-4 font-mono font-bold text-zinc-900 dark:text-white">{v.plate}</td>
-                                <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">{v.model}</td>
+                            <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors group">
+                                <td className="px-6 py-4 text-zinc-500 font-mono text-xs">
+                                    {new Date(v.createdAt).toLocaleDateString()}
+                                </td>
                                 <td className="px-6 py-4">
-                                    <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-1 rounded text-xs">
+                                    <span className="font-mono font-bold text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700">
+                                        {v.plate}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-zinc-700 dark:text-zinc-300 font-medium">
+                                    {v.model}
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
                                         {categories.find(c => c.id === v.type)?.name || '-'}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4">
                                     {v.installationType === 'tag_tracker' ? (
-                                        <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded">
+                                        <span className="inline-flex items-center gap-1.5 text-primary-600 dark:text-primary-400 font-bold text-[10px] bg-primary-50 dark:bg-primary-900/10 px-2 py-1 rounded-full uppercase tracking-wide border border-primary-100 dark:border-primary-900/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-primary-500"></span>
                                             {t('tagTracker')}
                                         </span>
                                     ) : (
-                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded">
+                                        <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] bg-emerald-50 dark:bg-emerald-900/10 px-2 py-1 rounded-full uppercase tracking-wide border border-emerald-100 dark:border-emerald-900/30">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                             {t('tagOnly')}
                                         </span>
                                     )}
@@ -303,7 +412,10 @@ export const Reports = () => {
                         ))}
                         {filteredVehicles.length === 0 && (
                             <tr>
-                                <td colSpan={5} className="p-8 text-center text-zinc-400">{t('noDataPeriod')}</td>
+                                <td colSpan={5} className="p-12 text-center text-zinc-400 flex flex-col items-center justify-center gap-2">
+                                    <FileText size={32} className="opacity-20" />
+                                    <span className="text-sm font-medium">{t('noDataPeriod')}</span>
+                                </td>
                             </tr>
                         )}
                     </tbody>

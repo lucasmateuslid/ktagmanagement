@@ -143,7 +143,7 @@ export const Dashboard = () => {
 
   const quickActions = [
     { label: t('addTag'), path: '/tags', icon: Plus },
-    { label: t('addVehicle'), path: '/vehicles', icon: CarFront },
+    { label: t('addVehicle'), path: '/vehicles?action=new', icon: CarFront },
     { label: t('liveMap'), path: '/map', icon: Activity },
   ];
 

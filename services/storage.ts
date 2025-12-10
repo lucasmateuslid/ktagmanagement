@@ -36,6 +36,18 @@ const setLocal = (key: string, value: any) => {
   }
 };
 
+// --- Firestore Helper: Remove undefined values ---
+// Firestore crashes if you pass 'undefined' as a value.
+const cleanData = <T extends Record<string, any>>(data: T): T => {
+  const copy = { ...data };
+  Object.keys(copy).forEach(key => {
+    if (copy[key] === undefined) {
+      delete copy[key];
+    }
+  });
+  return copy;
+};
+
 // Default Settings
 const DEFAULT_SETTINGS: AppSettings = {
   language: 'pt',
@@ -91,7 +103,7 @@ export const storage = {
   registerUserRequest: async (user: User) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.USERS_DB, user.id), user);
+        await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(user));
         return;
       } catch (e) {
         console.error("Firestore register failed", e);
@@ -139,17 +151,17 @@ export const storage = {
         
         if (docSnap.exists()) {
            // Normal update if document exists
-           await updateDoc(userRef, data);
+           await updateDoc(userRef, cleanData(data));
         } else {
            // Handle cases like 'root-admin' which might exist in session but not in DB yet.
            // We try to reconstruct the full object from local session to ensure DB integrity.
            const localSession = getLocal<User | null>(KEYS.USER_SESSION, null);
            if (localSession && localSession.id === userId) {
                const fullUser = { ...localSession, ...data };
-               await setDoc(userRef, fullUser);
+               await setDoc(userRef, cleanData(fullUser));
            } else {
                // Fallback: Create partial doc (better than failing)
-               await setDoc(userRef, data, { merge: true });
+               await setDoc(userRef, cleanData(data), { merge: true });
            }
         }
       } catch (e) {
@@ -189,7 +201,7 @@ export const storage = {
   saveCompany: async (company: Company) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.COMPANIES, company.id), company);
+        await setDoc(doc(db, KEYS.COMPANIES, company.id), cleanData(company));
       } catch (e) {
         console.warn("Firestore saveCompany failed", e);
       }
@@ -239,7 +251,7 @@ export const storage = {
   saveCategory: async (category: VehicleCategory) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.CATEGORIES, category.id), category);
+        await setDoc(doc(db, KEYS.CATEGORIES, category.id), cleanData(category));
       } catch (e) {
         console.warn("Firestore saveCategory failed", e);
       }
@@ -275,7 +287,7 @@ export const storage = {
   saveClient: async (client: Client) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.CLIENTS, client.id), client);
+        await setDoc(doc(db, KEYS.CLIENTS, client.id), cleanData(client));
       } catch (e) {
         console.warn("Firestore saveClient failed", e);
       }
@@ -311,7 +323,7 @@ export const storage = {
   saveTag: async (tag: Tag) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.TAGS, tag.id), tag);
+        await setDoc(doc(db, KEYS.TAGS, tag.id), cleanData(tag));
       } catch (e) {
         console.warn("Firestore saveTag failed, saving to local.", e);
       }
@@ -323,7 +335,6 @@ export const storage = {
     setLocal(KEYS.TAGS, tags);
   },
   deleteTag: async (id: string) => {
-    console.log(`[Storage] Deleting tag: ${id}`);
     if (db) {
       try {
         await deleteDoc(doc(db, KEYS.TAGS, id));
@@ -368,7 +379,8 @@ export const storage = {
   saveVehicle: async (vehicle: Vehicle) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.VEHICLES, vehicle.id), vehicle);
+        // Use cleanData to avoid "undefined" fields which crash Firestore
+        await setDoc(doc(db, KEYS.VEHICLES, vehicle.id), cleanData(vehicle));
       } catch (e) {
         console.warn("Firestore saveVehicle failed, saving to local.", e);
       }
@@ -470,7 +482,7 @@ export const storage = {
   addLocation: async (loc: LocationHistory) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.LOCATIONS, loc.id), loc);
+        await setDoc(doc(db, KEYS.LOCATIONS, loc.id), cleanData(loc));
       } catch (e) {
         console.warn("Firestore addLocation failed, saving to local.", e);
       }
@@ -500,7 +512,7 @@ export const storage = {
     // 1. Save Record
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.STOLEN_RECORDS, record.id), record);
+        await setDoc(doc(db, KEYS.STOLEN_RECORDS, record.id), cleanData(record));
       } catch (e) { console.warn("Firestore saveRecord failed", e); }
     }
     const list = getLocal<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
@@ -563,7 +575,7 @@ export const storage = {
   saveSettings: async (settings: AppSettings) => {
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.SETTINGS, 'config'), settings);
+        await setDoc(doc(db, KEYS.SETTINGS, 'config'), cleanData(settings));
       } catch (e) {
         console.warn("Firestore saveSettings failed, saving to local.", e);
       }

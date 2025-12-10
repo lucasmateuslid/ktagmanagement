@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { storage } from '../services/storage';
-import { fipeService, FipeReference } from '../services/fipe';
 import { plateLookupService } from '../services/plateLookup';
 import { hinovaService } from '../services/hinova';
+import { fipeService, FipeReference } from '../services/fipe';
 import { Tag, Vehicle, Company, VehicleCategory, Client } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, MapPin, CheckCircle, XCircle, Database, Settings } from 'lucide-react';
+import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, MapPin, CheckCircle, XCircle, Database, Settings, BookOpen } from 'lucide-react';
 
 // --- Internal Component: Searchable Select ---
 interface SearchableSelectProps {
@@ -59,7 +60,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 text-left border rounded-lg flex items-center justify-between transition-colors
+        className={`w-full px-3 py-2.5 text-left border rounded-lg flex items-center justify-center sm:justify-between transition-colors
           ${disabled 
             ? 'bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 border-zinc-200 dark:border-zinc-800 cursor-not-allowed' 
             : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white hover:border-primary-500 focus:ring-2 focus:ring-primary-500/20'
@@ -73,7 +74,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
             {selectedOption ? selectedOption.label : (placeholder || 'Select...')}
           </span>
         </div>
-        <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown size={16} className={`hidden sm:block text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
@@ -135,13 +136,8 @@ export const Vehicles = () => {
 
   const { t } = useLanguage();
   const { addNotification } = useNotification();
-
-  const [useFipe, setUseFipe] = useState(false);
-  const [fipeBrands, setFipeBrands] = useState<FipeReference[]>([]);
-  const [fipeModels, setFipeModels] = useState<FipeReference[]>([]);
-  const [fipeYears, setFipeYears] = useState<FipeReference[]>([]);
-  const [loadingFipe, setLoadingFipe] = useState(false);
   const [loadingPlate, setLoadingPlate] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   
   // Hinova Status Modal State
   const [hinovaStatus, setHinovaStatus] = useState<{
@@ -151,14 +147,20 @@ export const Vehicles = () => {
     details?: string;
   }>({ open: false, step: 'idle', message: '' });
   
-  const [selectedBrand, setSelectedBrand] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [selectedYear, setSelectedYear] = useState('');
-
   // Enhanced Tag Search
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
+
+  // FIPE Search State
+  const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
+  const [fipeBrands, setFipeBrands] = useState<FipeReference[]>([]);
+  const [fipeModels, setFipeModels] = useState<FipeReference[]>([]);
+  const [fipeYears, setFipeYears] = useState<FipeReference[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [loadingFipe, setLoadingFipe] = useState(false);
+
 
   const filteredTags = tags.filter(tag => 
     tag.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
@@ -195,72 +197,81 @@ export const Vehicles = () => {
     loadData();
   }, []);
 
+  // Check for auto-open action from Dashboard
   useEffect(() => {
-    if (useFipe && isModalOpen) {
-      loadBrands();
+    if (searchParams.get('action') === 'new') {
+        if (!isModalOpen) {
+            setFormData({ type: categories[0]?.id, status: 'active', installationType: 'tag_only' }); 
+            setClientFormData({});
+            setTagSearchTerm(''); 
+            setIsModalOpen(true);
+        }
+        // Clear param
+        setSearchParams(params => {
+            params.delete('action');
+            return params;
+        });
     }
-  }, [useFipe, isModalOpen, formData.type]);
+  }, [searchParams, categories, isModalOpen]);
 
-  const getCurrentCategory = () => categories.find(c => c.id === formData.type);
-  const isFipeEnabled = () => {
-      const cat = getCurrentCategory();
-      return cat && cat.fipeType && cat.fipeType !== 'none';
+  // --- FIPE HELPERS ---
+  const getCategoryFipeType = (id?: string) => {
+      if (!id) return 'carros'; // default
+      const cat = categories.find(c => c.id === id);
+      return cat?.fipeType && cat.fipeType !== 'none' ? cat.fipeType : 'carros';
   };
 
-  const loadBrands = async () => {
-    const cat = getCurrentCategory();
-    if (!cat || cat.fipeType === 'none') return;
-    
-    setLoadingFipe(true);
-    const brands = await fipeService.getBrands(cat.fipeType as any);
-    setFipeBrands(brands);
-    setLoadingFipe(false);
-    setFipeModels([]);
-    setFipeYears([]);
+  const openFipeSearch = async () => {
+      setIsFipeModalOpen(true);
+      setLoadingFipe(true);
+      setFipeBrands([]);
+      setFipeModels([]);
+      setFipeYears([]);
+      setSelectedBrand('');
+      setSelectedModel('');
+
+      const type = getCategoryFipeType(formData.type);
+      const brands = await fipeService.getBrands(type as any);
+      setFipeBrands(brands);
+      setLoadingFipe(false);
   };
 
-  const handleBrandChange = async (brandId: string) => {
-    setSelectedBrand(brandId);
-    setLoadingFipe(true);
-    const cat = getCurrentCategory();
-    if (!cat) return;
-
-    const models = await fipeService.getModels(cat.fipeType as any, brandId);
-    setFipeModels(models);
-    setLoadingFipe(false);
-    setSelectedModel('');
-    setSelectedYear('');
+  const handleFipeBrandChange = async (brandId: string) => {
+      setSelectedBrand(brandId);
+      setLoadingFipe(true);
+      setFipeModels([]);
+      setFipeYears([]);
+      const type = getCategoryFipeType(formData.type);
+      const models = await fipeService.getModels(type, brandId);
+      setFipeModels(models);
+      setLoadingFipe(false);
   };
 
-  const handleModelChange = async (modelId: string) => {
-    setSelectedModel(modelId);
-    setLoadingFipe(true);
-    const cat = getCurrentCategory();
-    if (!cat) return;
-
-    const years = await fipeService.getYears(cat.fipeType as any, selectedBrand, modelId);
-    setFipeYears(years);
-    setLoadingFipe(false);
-    setSelectedYear('');
+  const handleFipeModelChange = async (modelId: string) => {
+      setSelectedModel(modelId);
+      setLoadingFipe(true);
+      setFipeYears([]);
+      const type = getCategoryFipeType(formData.type);
+      const years = await fipeService.getYears(type, selectedBrand, modelId);
+      setFipeYears(years);
+      setLoadingFipe(false);
   };
 
-  const handleYearChange = async (yearId: string) => {
-    setSelectedYear(yearId);
-    setLoadingFipe(true);
-    const cat = getCurrentCategory();
-    if (!cat) return;
-
-    const details = await fipeService.getDetails(cat.fipeType as any, selectedBrand, selectedModel, yearId);
-    
-    if (details) {
-      setFormData(prev => ({
-        ...prev,
-        model: `${details.Marca} ${details.Modelo}`,
-        year: details.AnoModelo.toString(),
-        fipeCode: details.CodigoFipe
-      }));
-    }
-    setLoadingFipe(false);
+  const handleFipeYearChange = async (yearId: string) => {
+      setLoadingFipe(true);
+      const type = getCategoryFipeType(formData.type);
+      const details = await fipeService.getDetails(type, selectedBrand, selectedModel, yearId);
+      if (details) {
+          setFormData(prev => ({
+              ...prev,
+              model: details.Modelo,
+              year: details.AnoModelo.toString(),
+              fipeCode: details.CodigoFipe
+          }));
+          setIsFipeModalOpen(false);
+          addNotification('success', 'FIPE', 'Dados carregados da tabela FIPE.');
+      }
+      setLoadingFipe(false);
   };
 
   const handlePlateLookup = async () => {
@@ -280,7 +291,6 @@ export const Vehicles = () => {
                 model: result.model,
                 year: result.year,
                 fipeCode: result.fipeCode,
-                // Apply suggested category if found
                 type: result.suggestedCategoryId || prev.type 
             }));
             addNotification('success', t('searchPlate'), t('plateFound'));
@@ -305,7 +315,6 @@ export const Vehicles = () => {
     try {
         const result = await hinovaService.searchVehicle(formData.plate);
         if (result) {
-            // Success Feedback
             setHinovaStatus({ 
                 open: true, 
                 step: 'success', 
@@ -313,11 +322,9 @@ export const Vehicles = () => {
                 details: `${result.vehicle.model} - ${result.client.name}`
             });
 
-            // Update Data
             setFormData(prev => ({ ...prev, ...result.vehicle }));
             setClientFormData(result.client);
 
-            // Auto close after 2 seconds
             setTimeout(() => {
                 setHinovaStatus(prev => ({ ...prev, open: false }));
             }, 2000);
@@ -342,73 +349,94 @@ export const Vehicles = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.plate || !formData.model || !formData.type) return;
+    if (!formData.plate || !formData.model || !formData.type) {
+        addNotification('error', 'Erro', 'Preencha Placa, Modelo e Categoria.');
+        return;
+    }
 
     let linkedClientId = formData.clientId;
 
     // Handle Client Saving Logic
     if (clientFormData.name) {
-        // Check if client exists by CPF
-        let client = clients.find(c => c.cpf === clientFormData.cpf);
+        let client = null;
         
+        // Find existing client by CPF if provided
+        if (clientFormData.cpf) {
+             client = clients.find(c => c.cpf === clientFormData.cpf);
+        }
+
         if (client) {
-            // Update Existing (Optional: could verify if data changed)
-             // For now we assume we link to existing
              linkedClientId = client.id;
         } else {
             // Create New Client
-            const newClient: Client = {
-                id: crypto.randomUUID(),
-                name: clientFormData.name,
-                cpf: clientFormData.cpf || '',
-                phone: clientFormData.phone || '',
-                email: clientFormData.email,
-                address: clientFormData.address,
-                city: clientFormData.city,
-                state: clientFormData.state,
-                createdAt: Date.now()
-            };
-            await storage.saveClient(newClient);
-            linkedClientId = newClient.id;
+            try {
+                const newClient: Client = {
+                    id: crypto.randomUUID(),
+                    name: clientFormData.name,
+                    cpf: clientFormData.cpf || '',
+                    phone: clientFormData.phone || '',
+                    email: clientFormData.email, // email? is optional, safely passed
+                    createdAt: Date.now()
+                };
+                
+                // Optimistic Client Update
+                setClients(prev => [...prev, newClient]);
+                
+                await storage.saveClient(newClient);
+                linkedClientId = newClient.id;
+            } catch (err) {
+                console.error("Failed to save client:", err);
+                addNotification('error', 'Erro Cliente', 'Falha ao salvar dados do cliente.');
+                return;
+            }
         }
     }
 
-    const newVehicle: Vehicle = {
-      id: formData.id || crypto.randomUUID(),
-      type: formData.type || (categories[0]?.id || 'Car'),
-      plate: formData.plate,
-      model: formData.model,
-      year: formData.year,
-      fipeCode: formData.fipeCode,
-      tagId: formData.tagId === 'none' ? undefined : formData.tagId,
-      companyId: formData.companyId,
-      clientId: linkedClientId,
-      hinovaId: formData.hinovaId,
-      status: formData.status || 'active',
-      installationType: formData.installationType || 'tag_only', // Default to tag_only if undefined
-      createdAt: formData.createdAt || Date.now() 
-    };
+    try {
+        const newVehicle: Vehicle = {
+          id: formData.id || crypto.randomUUID(),
+          type: formData.type || (categories[0]?.id || 'cat-car'),
+          plate: formData.plate,
+          model: formData.model,
+          year: formData.year || '', // Ensure no undefined
+          fipeCode: formData.fipeCode || '',
+          tagId: formData.tagId === 'none' ? undefined : formData.tagId,
+          companyId: formData.companyId,
+          clientId: linkedClientId,
+          hinovaId: formData.hinovaId,
+          status: formData.status || 'active',
+          installationType: formData.installationType || 'tag_only',
+          createdAt: formData.createdAt || Date.now() 
+        };
 
-    await storage.saveVehicle(newVehicle);
-    loadData();
-    setIsModalOpen(false);
-    setFormData({});
-    setClientFormData({});
-    setUseFipe(false);
-    resetFipeSelection();
-    setTagSearchTerm('');
-  };
+        // Optimistic Vehicle Update
+        setVehicles(prev => {
+            const exists = prev.find(v => v.id === newVehicle.id);
+            if (exists) return prev.map(v => v.id === newVehicle.id ? newVehicle : v);
+            return [newVehicle, ...prev];
+        });
 
-  const resetFipeSelection = () => {
-    setSelectedBrand('');
-    setSelectedModel('');
-    setSelectedYear('');
-    setFipeModels([]);
-    setFipeYears([]);
+        await storage.saveVehicle(newVehicle);
+        addNotification('success', 'Sucesso', 'Veículo salvo corretamente.');
+        
+        setIsModalOpen(false);
+        setFormData({});
+        setClientFormData({});
+        setTagSearchTerm('');
+        
+        // Background sync to ensure consistency
+        loadData();
+    } catch (err) {
+        console.error("Failed to save vehicle:", err);
+        addNotification('error', 'Erro', 'Falha ao salvar veículo.');
+        loadData(); // Revert on error
+    }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this vehicle?')) {
+    if (confirm('Deseja excluir este veículo?')) {
+      // Optimistic Delete
+      setVehicles(prev => prev.filter(v => v.id !== id));
       await storage.deleteVehicle(id);
       loadData();
     }
@@ -619,7 +647,7 @@ export const Vehicles = () => {
                     </div>
                   </div>
 
-                  {/* Installation Type Section (NEW) */}
+                  {/* Installation Type Section */}
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 mb-2">
                       <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500 mb-2">
                           Instalação do equipamento
@@ -689,8 +717,6 @@ export const Vehicles = () => {
                     value={formData.type || ''}
                     onChange={(val) => {
                       setFormData({...formData, type: val as any});
-                      setUseFipe(false);
-                      resetFipeSelection();
                     }}
                   />
 
@@ -705,7 +731,16 @@ export const Vehicles = () => {
                   />
 
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('model')}</label>
+                    <div className="flex justify-between items-end mb-1">
+                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('model')}</label>
+                        <button 
+                            type="button" 
+                            onClick={openFipeSearch}
+                            className="text-[10px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 bg-primary-50 dark:bg-primary-900/10 px-2 py-0.5 rounded border border-primary-100 dark:border-primary-900/30"
+                        >
+                            <BookOpen size={10} /> Consultar FIPE
+                        </button>
+                    </div>
                     <input
                     type="text"
                     required
@@ -715,70 +750,15 @@ export const Vehicles = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                     <div>
-                        <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('year')}</label>
-                        <input
-                        type="text"
-                        value={formData.year || ''}
-                        onChange={e => setFormData({ ...formData, year: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                        />
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">FIPE</label>
-                        <input
-                        type="text"
-                        value={formData.fipeCode || ''}
-                        onChange={e => setFormData({ ...formData, fipeCode: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                        />
-                     </div>
+                  <div>
+                     <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('year')}</label>
+                     <input
+                     type="text"
+                     value={formData.year || ''}
+                     onChange={e => setFormData({ ...formData, year: e.target.value })}
+                     className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+                     />
                   </div>
-
-                  {/* FIPE SEARCH TOGGLE (Only if not ID) */}
-                  {!formData.id && isFipeEnabled() && (
-                    <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                         <div className="flex items-center gap-2 mb-2">
-                            <input 
-                            type="checkbox" 
-                            id="useFipe" 
-                            checked={useFipe} 
-                            onChange={(e) => setUseFipe(e.target.checked)}
-                            className="rounded text-primary-600 focus:ring-primary-500"
-                            />
-                            <label htmlFor="useFipe" className="text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
-                            Busca Manual FIPE
-                            </label>
-                        </div>
-                         {useFipe && (
-                             <div className="space-y-2">
-                                {loadingFipe && <div className="text-xs text-primary-500">Loading...</div>}
-                                <SearchableSelect
-                                    placeholder={t('selectBrand')}
-                                    options={fipeBrands.map(b => ({ value: b.codigo, label: b.nome }))}
-                                    value={selectedBrand}
-                                    onChange={handleBrandChange}
-                                    disabled={loadingFipe}
-                                />
-                                <SearchableSelect
-                                    placeholder={t('selectModel')}
-                                    options={fipeModels.map(b => ({ value: b.codigo, label: b.nome }))}
-                                    value={selectedModel}
-                                    onChange={handleModelChange}
-                                    disabled={!selectedBrand || loadingFipe}
-                                />
-                                <SearchableSelect
-                                    placeholder={t('selectYear')}
-                                    options={fipeYears.map(b => ({ value: b.codigo, label: b.nome }))}
-                                    value={selectedYear}
-                                    onChange={handleYearChange}
-                                    disabled={!selectedModel || loadingFipe}
-                                />
-                             </div>
-                         )}
-                    </div>
-                  )}
 
                   {/* Tag Selector */}
                   <div className="relative" ref={tagDropdownRef}>
@@ -844,7 +824,7 @@ export const Vehicles = () => {
 
               {/* RIGHT COLUMN: CLIENT & EXTRA DETAILS */}
               <div className="space-y-4">
-                 <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 pb-2">Dados do Cliente (Hinova)</h3>
+                 <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 pb-2">Dados do Cliente</h3>
                  
                  <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-3">
                     <div>
@@ -861,7 +841,7 @@ export const Vehicles = () => {
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3">
                          <div>
                             <label className="block text-xs font-medium mb-1 text-zinc-500">CPF</label>
                             <input
@@ -885,40 +865,14 @@ export const Vehicles = () => {
                                 />
                             </div>
                          </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-medium mb-1 text-zinc-500">Endereço</label>
-                        <div className="relative">
-                             <MapPin size={14} className="absolute left-3 top-2.5 text-zinc-400" />
-                             <input
-                                type="text"
-                                value={clientFormData.address || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, address: e.target.value })}
-                                className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                placeholder="Rua, Número, Bairro"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
                          <div>
-                            <label className="block text-xs font-medium mb-1 text-zinc-500">Cidade</label>
+                            <label className="block text-xs font-medium mb-1 text-zinc-500">Email</label>
                             <input
-                                type="text"
-                                value={clientFormData.city || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, city: e.target.value })}
+                                type="email"
+                                value={clientFormData.email || ''}
+                                onChange={e => setClientFormData({ ...clientFormData, email: e.target.value })}
                                 className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                            />
-                         </div>
-                         <div>
-                            <label className="block text-xs font-medium mb-1 text-zinc-500">UF</label>
-                            <input
-                                type="text"
-                                value={clientFormData.state || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, state: e.target.value })}
-                                className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                maxLength={2}
+                                placeholder="cliente@email.com"
                             />
                          </div>
                     </div>
@@ -970,6 +924,73 @@ export const Vehicles = () => {
                     )}
                 </div>
               )}
+
+                {/* --- FIPE SEARCH MODAL --- */}
+                {isFipeModalOpen && (
+                    <div className="absolute inset-0 z-[70] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-2 text-primary-600">
+                                <BookOpen size={24} />
+                                <h3 className="text-xl font-bold text-zinc-900 dark:text-white">Consulta FIPE</h3>
+                            </div>
+                            <button onClick={() => setIsFipeModalOpen(false)}><X className="text-zinc-400 hover:text-zinc-600" /></button>
+                        </div>
+
+                        {loadingFipe && (
+                            <div className="flex-1 flex flex-col items-center justify-center text-primary-500">
+                                <Loader2 size={32} className="animate-spin mb-2" />
+                                <span className="text-sm font-medium">Carregando dados...</span>
+                            </div>
+                        )}
+
+                        {!loadingFipe && (
+                            <div className="flex flex-col gap-4 flex-1 overflow-y-auto">
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-zinc-500">1. Selecione a Marca</label>
+                                    <SearchableSelect 
+                                        options={fipeBrands.map(b => ({ value: b.codigo, label: b.nome }))}
+                                        value={selectedBrand}
+                                        onChange={handleFipeBrandChange}
+                                        placeholder="Selecione Marca..."
+                                    />
+                                </div>
+                                
+                                <div className={`space-y-1 transition-opacity ${!selectedBrand ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                                    <label className="text-sm font-medium text-zinc-500">2. Selecione o Modelo</label>
+                                    <SearchableSelect 
+                                        options={fipeModels.map(m => ({ value: m.codigo, label: m.nome }))}
+                                        value={selectedModel}
+                                        onChange={handleFipeModelChange}
+                                        placeholder="Selecione Modelo..."
+                                        disabled={!selectedBrand}
+                                    />
+                                </div>
+
+                                <div className={`space-y-1 transition-opacity ${!selectedModel ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                                    <label className="text-sm font-medium text-zinc-500">3. Selecione o Ano</label>
+                                    <div className="max-h-40 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                                        {fipeYears.map(y => (
+                                            <button
+                                                key={y.codigo}
+                                                type="button"
+                                                onClick={() => handleFipeYearChange(y.codigo)}
+                                                className="w-full text-left px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-800 last:border-0 text-sm font-medium text-zinc-700 dark:text-zinc-300 flex justify-between items-center"
+                                            >
+                                                {y.nome}
+                                                <ChevronDown className="-rotate-90 text-zinc-300" size={14} />
+                                            </button>
+                                        ))}
+                                        {fipeYears.length === 0 && <div className="p-4 text-center text-xs text-zinc-400">Selecione um modelo acima.</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="mt-auto pt-4 text-center">
+                            <p className="text-xs text-zinc-400">Fonte: Tabela FIPE (API Parallelum)</p>
+                        </div>
+                    </div>
+                )}
 
             </form>
           </div>

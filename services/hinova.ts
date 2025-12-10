@@ -30,9 +30,11 @@ interface HinovaResponseItem {
   descricao_situacao: string;
 }
 
-// Fallback proxy to bypass CORS if direct connection fails
+// Fallback proxies to bypass CORS if direct connection fails
+// Note: Some proxies strip headers. We prioritize those known to support Authorization headers.
 const PUBLIC_PROXIES = [
-    { base: 'https://corsproxy.io/?', type: 'plain' }
+    { base: 'https://corsproxy.io/?', type: 'plain' },
+    { base: 'https://api.codetabs.com/v1/proxy?quest=', type: 'query' }
 ];
 
 export const hinovaService = {
@@ -145,9 +147,12 @@ export const hinovaService = {
     } catch (e: any) {
         console.warn("Direct Hinova fetch failed (likely CORS). Attempting fallback proxies...", e);
         
+        let lastError = e;
+
         // Strategy 3: Public Proxies Fallback (Handles CORS automatically)
         for (const proxy of PUBLIC_PROXIES) {
             try {
+                console.log(`Trying proxy: ${proxy.base}`);
                 const proxyUrl = proxy.type === 'query' 
                     ? `${proxy.base}${encodeURIComponent(targetUrl)}` 
                     : `${proxy.base}${targetUrl}`;
@@ -159,17 +164,25 @@ export const hinovaService = {
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 });
+                
+                // Check if proxy itself failed (some return HTML on error)
+                const contentType = response.headers.get("content-type");
+                if (contentType && !contentType.includes("application/json")) {
+                    throw new Error("Proxy returned non-JSON response");
+                }
+
                 return await handleResponse(response);
-            } catch (proxyErr) {
+            } catch (proxyErr: any) {
                 console.warn(`Proxy ${proxy.base} failed:`, proxyErr);
+                lastError = proxyErr;
             }
         }
 
         // Final Error Handling
-        if (e.message === 'Failed to fetch') {
-             throw new Error("Erro de Conexão (CORS). O navegador bloqueou o acesso à Hinova. Tente configurar o 'Cloud Function Proxy' se o problema persistir.");
+        if (e.message === 'Failed to fetch' || e.name === 'TypeError') {
+             throw new Error("Erro de Conexão (CORS). O navegador bloqueou o acesso à Hinova. Todos os proxies públicos falharam. Configure o 'Cloud Function Proxy' para uma solução definitiva.");
         }
-        throw new Error(e.message || "Falha na comunicação com Hinova");
+        throw new Error(lastError.message || "Falha na comunicação com Hinova");
     }
   }
 };
