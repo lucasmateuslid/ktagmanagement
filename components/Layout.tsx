@@ -24,7 +24,8 @@ import {
   X,
   ChevronRight,
   ShieldAlert,
-  Users
+  Users,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -64,6 +65,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     { label: t('dashboard'), path: '/', icon: LayoutGrid },
     { label: t('liveMap'), path: '/map', icon: Map },
     { label: 'Segurança', path: '/security', icon: ShieldAlert },
+    { label: t('reports'), path: '/reports', icon: FileText }, // Added
     { label: t('tags'), path: '/tags', icon: Tags },
     { label: t('vehicles'), path: '/vehicles', icon: CarFront },
     // Only add Users item if admin

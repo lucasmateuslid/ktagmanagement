@@ -1,5 +1,5 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client } from '../types';
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc, orderBy } from 'firebase/firestore';
 
@@ -8,9 +8,10 @@ const KEYS = {
   USERS_DB: 'ktag_users_db',
   TAGS: 'ktag_tags',
   VEHICLES: 'ktag_vehicles',
+  CLIENTS: 'ktag_clients', // New Key
   LOCATIONS: 'ktag_locations',
   THEME: 'ktag_theme',
-  SETTINGS: 'ktag_settings',
+  SETTINGS: 'ktag_settings_v2', // VERSION BUMP: Forces refresh of defaults (clears old wrong token)
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
   STOLEN_RECORDS: 'ktag_stolen_records',
@@ -45,7 +46,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   googleMapsKey: '',
   mapboxKey: '',
   plateApiUrl: '',
-  plateApiToken: ''
+  plateApiToken: '',
+  hinovaUrl: 'https://api.hinova.com.br/api/sga/v2',
+  hinovaToken: '19d988945b90e0a3abf0b441a5477126f952dd20d699eeb4e7e766f1289fd557b3ebc22097925f1b1903f3407de4b8dc44184e21f2f6d760f4f9c340a3902de0bd6db4a9356458c67b4e871ba04898c49b9f5a71af9d7461ae34c902477ad12d'
 };
 
 // Default Categories to initialize
@@ -253,6 +256,42 @@ export const storage = {
     }
     const list = getLocal<VehicleCategory[]>(KEYS.CATEGORIES, []);
     setLocal(KEYS.CATEGORIES, list.filter(c => c.id !== id));
+  },
+
+  // --- CLIENTS (NEW) ---
+  getClients: async (): Promise<Client[]> => {
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, KEYS.CLIENTS));
+        const data = snap.docs.map(d => ({ ...d.data(), id: d.id } as Client));
+        setLocal(KEYS.CLIENTS, data);
+        return data;
+      } catch (e) {
+        console.warn("Firestore getClients failed", e);
+      }
+    }
+    return getLocal<Client[]>(KEYS.CLIENTS, []);
+  },
+  saveClient: async (client: Client) => {
+    if (db) {
+      try {
+        await setDoc(doc(db, KEYS.CLIENTS, client.id), client);
+      } catch (e) {
+        console.warn("Firestore saveClient failed", e);
+      }
+    }
+    const list = getLocal<Client[]>(KEYS.CLIENTS, []);
+    const index = list.findIndex(c => c.id === client.id);
+    if (index >= 0) list[index] = client;
+    else list.push(client);
+    setLocal(KEYS.CLIENTS, list);
+  },
+  deleteClient: async (id: string) => {
+    if (db) {
+      try { await deleteDoc(doc(db, KEYS.CLIENTS, id)); } catch (e) {}
+    }
+    const list = getLocal<Client[]>(KEYS.CLIENTS, []);
+    setLocal(KEYS.CLIENTS, list.filter(c => c.id !== id));
   },
 
   // --- TAGS ---
@@ -502,7 +541,9 @@ export const storage = {
   
   // --- SETTINGS ---
   getSettings: async (): Promise<AppSettings> => {
+    // Attempt to load from new key first
     const fallback = () => getLocal<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
+    
     if (db) {
       try {
         const ref = doc(db, KEYS.SETTINGS, 'config');

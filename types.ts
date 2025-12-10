@@ -22,6 +22,18 @@ export interface VehicleCategory {
   fipeType: 'carros' | 'motos' | 'caminhoes' | 'none'; // Mapeamento para API FIPE
 }
 
+export interface Client {
+  id: string;
+  name: string;
+  cpf: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  createdAt: number;
+}
+
 export interface Tag {
   id: string;
   name: string;
@@ -39,9 +51,14 @@ export interface Vehicle {
   model: string;
   year?: string;
   fipeCode?: string;
+  color?: string; // Added Color
+  chassis?: string; // Added Chassis
   tagId?: string; // Optional link to a tag
   companyId?: string; // ID da empresa responsável
+  clientId?: string; // ID do cliente (proprietário/associado)
+  hinovaId?: string; // ID externo da Hinova
   status?: 'active' | 'stolen' | 'maintenance'; // Vehicle Status
+  installationType?: 'tag_only' | 'tag_tracker'; // New field: Tipo de instalação
   createdAt: number; // Timestamp de criação
 }
 
@@ -107,4 +124,8 @@ export interface AppSettings {
   // Real Plate API Config
   plateApiUrl: string; // e.g. https://api.provider.com/v1/plate/{plate}
   plateApiToken: string;
+
+  // Hinova API Config
+  hinovaUrl: string;
+  hinovaToken: string;
 }

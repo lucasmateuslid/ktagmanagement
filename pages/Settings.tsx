@@ -5,7 +5,7 @@ import { AppSettings, User, Company, VehicleCategory } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Save, Settings as SettingsIcon, Map, Database, Globe, Key, Languages, CloudLightning, Trash2, Plus, Search, ShieldAlert, Lock, Edit2, Building2, Truck } from 'lucide-react';
+import { Save, Settings as SettingsIcon, Map, Database, Globe, Key, Languages, CloudLightning, Trash2, Plus, Search, ShieldAlert, Lock, Edit2, Building2, Truck, Server, Eye, EyeOff } from 'lucide-react';
 
 export const Settings = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -19,6 +19,9 @@ export const Settings = () => {
   // Form states for new items
   const [newCompany, setNewCompany] = useState({ name: '', prefix: '' });
   const [newCategory, setNewCategory] = useState({ name: '', fipeType: 'none' });
+  
+  // Visibility States
+  const [showHinovaToken, setShowHinovaToken] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotification();
@@ -325,6 +328,45 @@ export const Settings = () => {
                     <div className="flex items-center gap-2 text-red-500 bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-200 dark:border-red-900/30">
                         <ShieldAlert size={20} />
                         <span className="text-sm font-semibold">Restricted Area: System Configuration</span>
+                    </div>
+
+                    {/* HINOVA API CONFIG (NEW) */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                        <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center gap-2">
+                            <Server size={18} className="text-cyan-500" />
+                            <h2 className="font-semibold text-zinc-800 dark:text-zinc-200">Hinova Integration</h2>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Hinova API URL</label>
+                                <input
+                                    type="text"
+                                    value={settings.hinovaUrl || ''}
+                                    onChange={(e) => setSettings({ ...settings, hinovaUrl: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    placeholder="https://api.hinova.com.br/api/sga/v2"
+                                />
+                                <p className="text-xs text-zinc-400 mt-1">Base URL for Hinova integration (e.g. including /api/sga/v2)</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Hinova API Token</label>
+                                <div className="relative">
+                                    <input
+                                        type={showHinovaToken ? "text" : "password"}
+                                        value={settings.hinovaToken || ''}
+                                        onChange={(e) => setSettings({ ...settings, hinovaToken: e.target.value })}
+                                        className="w-full pl-4 pr-10 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowHinovaToken(!showHinovaToken)}
+                                        className="absolute right-3 top-2.5 text-zinc-400 hover:text-zinc-600"
+                                    >
+                                        {showHinovaToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Plate API Section */}
