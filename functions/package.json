@@ -1,3 +1,4 @@
+
 {
   "name": "functions",
   "description": "K-Tag API Proxy Function",
@@ -15,7 +16,8 @@
   "dependencies": {
     "firebase-admin": "^11.8.0",
     "firebase-functions": "^4.3.1",
-    "axios": "^1.6.7"
+    "axios": "^1.6.7",
+    "cors": "^2.8.5"
   },
   "private": true
 }

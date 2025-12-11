@@ -1,55 +1,49 @@
+
 /**
- * FIREBASE CLOUD FUNCTION CODE
- * 
- * Instructions:
- * 1. cd functions
- * 2. npm install axios
- * 3. firebase deploy --only functions
- * 4. Copy URL to App Settings
+ * Generic Proxy Function to bypass CORS
+ * Deploy with: firebase deploy --only functions
  */
 
 const functions = require("firebase-functions");
 const axios = require("axios");
+const cors = require("cors")({ origin: true }); // Automatically allow all origins
 
-exports.proxyApi = functions.https.onRequest(async (req, res) => {
-  // 1. Handle CORS
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return;
-  }
-
-  // 2. Extract Data
-  const { url, method, headers, body } = req.body;
-
-  if (!url) {
-    res.status(400).send("Missing 'url' in request body");
-    return;
-  }
-
-  try {
-    console.log(`Proxying request to: ${url}`);
+exports.proxyApi = functions.https.onRequest((req, res) => {
+  // Wrap logic in CORS middleware to handle Preflight (OPTIONS) requests automatically
+  return cors(req, res, async () => {
     
-    // 3. Make the Request using Axios
-    // Axios automatically handles HTTP/HTTPS and headers better than native fetch in Cloud Functions
-    const response = await axios({
-      url: url,
-      method: method || 'GET',
-      headers: headers || {},
-      data: body,
-      validateStatus: () => true, // Resolve promise for all status codes (don't throw on 4xx/5xx)
-      timeout: 10000 // 10s timeout
-    });
+    // 1. Extract Data from Request Body
+    const { url, method, headers, body } = req.body;
 
-    // 4. Return Response
-    // Axios stores response data in .data
-    res.status(response.status).send(response.data);
-    
-  } catch (error) {
-    console.error("Proxy Error:", error.message);
-    res.status(500).send({ error: error.message || "Internal Proxy Error" });
-  }
+    if (!url) {
+      res.status(400).send({ error: "Missing 'url' in request body" });
+      return;
+    }
+
+    try {
+      console.log(`[Proxy] Forwarding ${method || 'GET'} to: ${url}`);
+
+      // 2. Make the Request using Axios (Server-side)
+      const response = await axios({
+        url: url,
+        method: method || 'GET',
+        headers: headers || {}, // Pass through Auth headers
+        data: body || undefined,
+        validateStatus: () => true, // Do not throw error on 4xx/5xx status
+        timeout: 20000 // 20s timeout
+      });
+
+      // 3. Return Response to Client
+      res.status(response.status).send(response.data);
+
+    } catch (error) {
+      console.error("[Proxy Error]", error.message);
+      
+      // Handle Network Errors (Timeout, DNS, etc)
+      const status = error.response ? error.response.status : 500;
+      const message = error.response ? error.response.data : error.message;
+      
+      res.status(status).send({ error: message || "Internal Proxy Error" });
+    }
+  });
 });
