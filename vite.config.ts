@@ -10,8 +10,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      external: ['@google/genai']
+    }
+  },
+  optimizeDeps: {
+    exclude: ['@google/genai']
   },
   define: {
-    'process.env': {}
+    'process.env': process.env
   }
 });

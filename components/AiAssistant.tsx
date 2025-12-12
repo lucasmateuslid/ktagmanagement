@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
-import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, ChevronRight, HelpCircle } from 'lucide-react';
+import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
 
@@ -177,15 +177,13 @@ export const AiAssistant = () => {
   const formatMessage = (text: string) => {
     if (!text) return '';
     
-    // 1. Remove Code Block wrappers (```) to prevent raw code display
-    // We strip the backticks completely to treat everything as natural language
+    // 1. Remove Code Block wrappers to prevent raw code display
     let clean = text.replace(/```(?:json|xml|html|javascript|typescript)?/gi, '').replace(/```/g, '');
 
     // 2. Bold (**text**)
     clean = clean.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
 
     // 3. Markdown Links [Text](URL) -> Styled Buttons
-    // Explicitly target the structure to avoid capturing extra text
     clean = clean.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g, 
       `<a href="$2" class="flex items-center justify-center gap-2 mt-2 w-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 py-2 px-3 rounded-lg font-bold border border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors text-center text-sm decoration-0"><span class="shrink-0">📍</span> $1</a>`
@@ -281,7 +279,7 @@ Comportamento Específico:
 
     } catch (error) {
       console.error("AI Error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Erro de conexão com a IA." }]);
+      setMessages(prev => [...prev, { role: 'model', text: "Erro de conexão com a IA ou chave API não configurada." }]);
     } finally {
       setLoading(false);
     }
