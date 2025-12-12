@@ -16,10 +16,16 @@ let db: any = null;
 
 try {
   const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  console.log("Firebase initialized successfully");
+  
+  // Specific try/catch for Firestore to allow graceful degradation to LocalStorage
+  try {
+    db = getFirestore(app);
+    console.log("Firebase initialized successfully");
+  } catch (fsError) {
+    console.warn("Firestore service not available (Offline Mode active):", fsError);
+  }
 } catch (e) {
-  console.error("Firebase init error:", e);
+  console.error("Firebase app init error (Offline Mode active):", e);
   // Fallback to local storage is handled in storage.ts if db is null
 }
 
