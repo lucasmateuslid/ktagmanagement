@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { Tag, Vehicle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';

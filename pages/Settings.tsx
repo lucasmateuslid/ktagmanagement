@@ -1,5 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState } from 'react';
 import { storage } from '../services/storage';
 import { AppSettings, User, Company, VehicleCategory } from '../types';
 import { useNotification } from '../contexts/NotificationContext';

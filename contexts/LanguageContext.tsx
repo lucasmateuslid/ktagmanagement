@@ -1,5 +1,6 @@
 
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import * as React from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { storage } from '../services/storage';
 
 type Language = 'pt' | 'en';

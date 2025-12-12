@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+
+import * as React from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { storage } from '../services/storage';
 
 interface ThemeContextType {

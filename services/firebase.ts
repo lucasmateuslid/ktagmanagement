@@ -1,4 +1,5 @@
-import * as firebaseApp from 'firebase/app';
+
+import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
@@ -14,12 +15,12 @@ const firebaseConfig = {
 let db: any = null;
 
 try {
-  // Access initializeApp from namespace object, casting to any to bypass strict type checking if definitions are mismatched
-  const app = (firebaseApp as any).initializeApp(firebaseConfig);
+  const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
-  console.log("Firebase initialized with provided credentials");
+  console.log("Firebase initialized successfully");
 } catch (e) {
-  console.error("Firebase init error", e);
+  console.error("Firebase init error:", e);
+  // Fallback to local storage is handled in storage.ts if db is null
 }
 
 export { db };

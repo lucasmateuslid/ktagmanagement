@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { StolenRecord, Vehicle } from '../types';
 import { ShieldAlert, AlertTriangle, Plus, Search, MapPin, CheckCircle, FileText, Calendar, Lock, Car, X, RefreshCw } from 'lucide-react';
