@@ -20,6 +20,12 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       return;
     }
 
+    // Sanitize Headers: Remove headers that might conflict or be invalid for the upstream request
+    const safeHeaders = { ...headers };
+    delete safeHeaders['host'];
+    delete safeHeaders['content-length'];
+    delete safeHeaders['connection'];
+
     try {
       console.log(`[Proxy] Forwarding ${method || 'GET'} to: ${url}`);
 
@@ -27,7 +33,7 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       const response = await axios({
         url: url,
         method: method || 'GET',
-        headers: headers || {}, // Pass through Auth headers
+        headers: safeHeaders, 
         data: body || undefined,
         validateStatus: () => true, // Do not throw error on 4xx/5xx status
         timeout: 20000 // 20s timeout

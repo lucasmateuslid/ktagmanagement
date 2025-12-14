@@ -70,22 +70,29 @@ export const hinovaService = {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                    'Authorization': tokenFinal,
-                    'Content-Type': 'application/json'
+                    'Authorization': tokenFinal
+                    // REMOVED: 'Content-Type': 'application/json' (GET requests shouldn't have content-type)
                 }
             })
         });
 
         // 4. Handle Proxy-Specific Errors
         if (!response.ok) {
-            const errorText = await response.text();
+            let errorText = await response.text();
+            try {
+                 // Try to parse JSON error if available
+                 const jsonError = JSON.parse(errorText);
+                 if (jsonError.error) errorText = jsonError.error;
+            } catch (e) {}
+
             if (response.status === 401) {
-                 throw new Error("Erro de Autenticação (401). Verifique o Token da Hinova nas configurações.");
+                 console.error("Hinova 401:", errorText);
+                 throw new Error("Erro de Autenticação (401). Verifique se o Token da Hinova nas configurações está correto e ativo.");
             }
             if (response.status === 500) {
                  throw new Error(`Erro no Servidor Proxy: ${errorText}`);
             }
-            throw new Error(`Erro na API (${response.status}): ${errorText}`);
+            throw new Error(`Erro na API Hinova (${response.status}): ${errorText}`);
         }
 
         // 5. Parse Data
