@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -12,26 +12,17 @@ const firebaseConfig = {
   appId: "1:843254608500:web:8daab97451b1cecace5721"
 };
 
-let db: any = null;
+let app;
+let db: Firestore | null = null;
 
-// FORCED OFFLINE MODE FOR AI STUDIO
-// We default to null to use LocalStorage implementation in services/storage.ts
-// This prevents connection errors or "firebase-cli" requirements from blocking the UI.
-console.log("Running in Offline Mode (LocalStorage Only) for Frontend Development");
-
-/* 
-// Uncomment to enable real Firebase
 try {
-  const app = initializeApp(firebaseConfig);
-  try {
-    db = getFirestore(app);
-    console.log("Firebase initialized successfully");
-  } catch (fsError) {
-    console.warn("Firestore service not available (Offline Mode active):", fsError);
-  }
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  console.log("Firebase initialized successfully");
 } catch (e) {
-  console.error("Firebase app init error (Offline Mode active):", e);
+  console.error("Firebase initialization error:", e);
+  console.warn("Falling back to LocalStorage (Offline Mode)");
+  db = null;
 }
-*/
 
 export { db };
