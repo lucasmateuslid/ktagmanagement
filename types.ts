@@ -127,5 +127,7 @@ export interface AppSettings {
 
   // Hinova API Config
   hinovaUrl: string;
-  hinovaToken: string;
+  hinovaToken: string; // SGA Token (Initial)
+  hinovaUser: string;  // Added: Usuario para autenticacao
+  hinovaPass: string;  // Added: Senha para autenticacao
 }

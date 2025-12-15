@@ -23,6 +23,7 @@ export const Settings = () => {
   
   // Visibility States
   const [showHinovaToken, setShowHinovaToken] = useState(false);
+  const [showHinovaPass, setShowHinovaPass] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotification();
@@ -331,14 +332,14 @@ export const Settings = () => {
                         <span className="text-sm font-semibold">Restricted Area: System Configuration</span>
                     </div>
 
-                    {/* HINOVA API CONFIG (NEW) */}
+                    {/* HINOVA API CONFIG (UPDATED) */}
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
                         <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex items-center gap-2">
                             <Server size={18} className="text-cyan-500" />
                             <h2 className="font-semibold text-zinc-800 dark:text-zinc-200">Hinova Integration</h2>
                         </div>
-                        <div className="p-6 space-y-4">
-                            <div>
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="col-span-full">
                                 <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Hinova API URL</label>
                                 <input
                                     type="text"
@@ -347,16 +348,18 @@ export const Settings = () => {
                                     className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                                     placeholder="https://api.hinova.com.br/api/sga/v2"
                                 />
-                                <p className="text-xs text-zinc-400 mt-1">Base URL for Hinova integration (e.g. including /api/sga/v2)</p>
+                                <p className="text-xs text-zinc-400 mt-1">Base URL (e.g. including /api/sga/v2)</p>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Hinova API Token</label>
+                            
+                            <div className="col-span-full">
+                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Token SGA (Associação)</label>
                                 <div className="relative">
                                     <input
                                         type={showHinovaToken ? "text" : "password"}
                                         value={settings.hinovaToken || ''}
                                         onChange={(e) => setSettings({ ...settings, hinovaToken: e.target.value })}
                                         className="w-full pl-4 pr-10 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                        placeholder="SGA Token"
                                     />
                                     <button 
                                         type="button" 
@@ -364,6 +367,38 @@ export const Settings = () => {
                                         className="absolute right-3 top-2.5 text-zinc-400 hover:text-zinc-600"
                                     >
                                         {showHinovaToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-zinc-400 mt-1">Token gerado no painel SGA. Usado para autenticação inicial.</p>
+                            </div>
+
+                            {/* USER/PASS for Auth Endpoint */}
+                             <div>
+                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Usuário de Integração</label>
+                                <input
+                                    type="text"
+                                    value={settings.hinovaUser || ''}
+                                    onChange={(e) => setSettings({ ...settings, hinovaUser: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                    placeholder="usuario.api"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">Senha de Integração</label>
+                                <div className="relative">
+                                    <input
+                                        type={showHinovaPass ? "text" : "password"}
+                                        value={settings.hinovaPass || ''}
+                                        onChange={(e) => setSettings({ ...settings, hinovaPass: e.target.value })}
+                                        className="w-full pl-4 pr-10 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                        placeholder="senha123"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowHinovaPass(!showHinovaPass)}
+                                        className="absolute right-3 top-2.5 text-zinc-400 hover:text-zinc-600"
+                                    >
+                                        {showHinovaPass ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
                             </div>

@@ -1,6 +1,6 @@
 
 import { storage } from './storage';
-import { Vehicle, Client } from '../types';
+import { Vehicle, Client, AppSettings } from '../types';
 
 interface HinovaResponseItem {
   codigo_veiculo: string;
@@ -30,37 +30,111 @@ interface HinovaResponseItem {
   descricao_situacao: string;
 }
 
+// In-memory cache for the user token to avoid re-authenticating on every request
+let cachedUserToken: string | null = null;
+let authPromise: Promise<string> | null = null;
+
+// Helper to clean tokens (remove quotes)
+const cleanToken = (token: string) => {
+    let raw = token.trim();
+    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+        raw = raw.substring(1, raw.length - 1);
+    }
+    return raw;
+};
+
+// Internal function to authenticate
+const authenticate = async (settings: AppSettings): Promise<string> => {
+    if (!settings.hinovaToken || !settings.hinovaUser || !settings.hinovaPass) {
+        throw new Error("Credenciais Hinova incompletas. Vá em Configurações e preencha Token SGA, Usuário e Senha.");
+    }
+
+    const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
+    const authUrl = `${baseUrl}/usuario/autenticar`;
+    const sgaToken = `Bearer ${cleanToken(settings.hinovaToken)}`;
+
+    console.log("[Hinova] Autenticando usuário...");
+
+    const response = await fetch(settings.customProxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            url: authUrl,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': sgaToken
+            },
+            body: {
+                usuario: settings.hinovaUser,
+                senha: settings.hinovaPass
+            }
+        })
+    });
+
+    if (!response.ok) {
+         let errText = await response.text();
+         try { const j = JSON.parse(errText); if(j.error) errText = j.error; } catch(e){}
+         throw new Error(`Falha na Autenticação Hinova: ${errText}`);
+    }
+
+    const data = await response.json();
+    if (!data.token_usuario) {
+        throw new Error("Resposta de autenticação inválida (token_usuario ausente).");
+    }
+
+    console.log("[Hinova] Autenticado com sucesso.");
+    return data.token_usuario;
+};
+
+// Singleton-like access to token
+const getToken = async (settings: AppSettings): Promise<string> => {
+    if (cachedUserToken) return cachedUserToken;
+    
+    // Prevent multiple parallel auth requests
+    if (!authPromise) {
+        authPromise = authenticate(settings).then(token => {
+            cachedUserToken = token;
+            authPromise = null;
+            return token;
+        }).catch(err => {
+            authPromise = null;
+            throw err;
+        });
+    }
+    return authPromise;
+};
+
 export const hinovaService = {
   searchVehicle: async (plateOrChassis: string): Promise<{ vehicle: Partial<Vehicle>, client: Partial<Client> } | null> => {
     const settings = await storage.getSettings();
 
-    // 1. Validation: Ensure Proxy is Configured
-    // Hinova strictly blocks browser requests. We must use the Cloud Function.
+    // 1. Validation
     if (!settings.customProxyUrl) {
-        throw new Error("Configuração Necessária: A API da Hinova bloqueia navegadores. Vá em 'Configurações' e preencha o campo 'URL da Cloud Function (Firebase)' com a URL que você gerou.");
+        throw new Error("Proxy Cloud Function não configurado.");
     }
 
-    if (!settings.hinovaToken) {
-      throw new Error("Token da Hinova não configurado. Vá em Configurações.");
+    // 2. Authentication (Lazy)
+    // We get the dynamic user token here.
+    let userToken: string;
+    try {
+        userToken = await getToken(settings);
+    } catch (authError: any) {
+        throw new Error(`Erro Login Hinova: ${authError.message}`);
     }
 
-    // 2. Prepare Data
+    // 3. Prepare Data
     const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
     const query = plateOrChassis.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     const type = query.length === 7 ? 'PLACA' : 'CHASSI'; 
     const targetUrl = `${baseUrl}/veiculo/buscar/${query}/${type}`;
+    
+    // Ensure token format
+    const finalToken = `Bearer ${cleanToken(userToken)}`;
 
-    // Token Cleaning
-    let rawToken = settings.hinovaToken.trim();
-    if ((rawToken.startsWith('"') && rawToken.endsWith('"')) || (rawToken.startsWith("'") && rawToken.endsWith("'"))) {
-        rawToken = rawToken.substring(1, rawToken.length - 1);
-    }
-    const tokenFinal = rawToken.toLowerCase().startsWith('bearer ') ? rawToken : `Bearer ${rawToken}`;
-
-    // 3. Execute Request via Cloud Function Proxy
-    // We do NOT try direct fetch here to avoid "Blocked by CORS" console errors.
+    // 4. Execute Request via Cloud Function Proxy
     try {
-        console.log(`[Hinova] Buscando via Proxy: ${settings.customProxyUrl}`);
+        console.log(`[Hinova] Buscando veículo: ${query}`);
         
         const response = await fetch(settings.customProxyUrl, {
             method: 'POST',
@@ -70,32 +144,26 @@ export const hinovaService = {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json',
-                    'Authorization': tokenFinal
-                    // REMOVED: 'Content-Type': 'application/json' (GET requests shouldn't have content-type)
+                    'Authorization': finalToken
                 }
             })
         });
 
-        // 4. Handle Proxy-Specific Errors
+        // 5. Handle Errors
         if (!response.ok) {
             let errorText = await response.text();
-            try {
-                 // Try to parse JSON error if available
-                 const jsonError = JSON.parse(errorText);
-                 if (jsonError.error) errorText = jsonError.error;
-            } catch (e) {}
+            try { const jsonError = JSON.parse(errorText); if (jsonError.error) errorText = jsonError.error; } catch (e) {}
 
             if (response.status === 401) {
-                 console.error("Hinova 401:", errorText);
-                 throw new Error("Erro de Autenticação (401). Verifique se o Token da Hinova nas configurações está correto e ativo.");
+                 // Token expired? Clear cache and retry once could be implemented here, 
+                 // but for now let's just error out and clear cache for next try.
+                 cachedUserToken = null;
+                 throw new Error("Sessão Hinova expirada. Tente novamente.");
             }
-            if (response.status === 500) {
-                 throw new Error(`Erro no Servidor Proxy: ${errorText}`);
-            }
-            throw new Error(`Erro na API Hinova (${response.status}): ${errorText}`);
+            throw new Error(`Erro API Hinova (${response.status}): ${errorText}`);
         }
 
-        // 5. Parse Data
+        // 6. Parse Data
         const data: HinovaResponseItem[] = await response.json();
 
         if (!Array.isArray(data) || data.length === 0) {
@@ -131,10 +199,9 @@ export const hinovaService = {
 
     } catch (e: any) {
         console.error("Hinova Service Error:", e);
-        // Clean up error message for UI
         const msg = e.message || "Erro desconhecido";
         if (msg.includes("Failed to fetch")) {
-            throw new Error("Falha de conexão com a Cloud Function. Verifique a URL do Proxy nas configurações.");
+            throw new Error("Falha de conexão com o Proxy.");
         }
         throw new Error(msg);
     }

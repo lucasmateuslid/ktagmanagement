@@ -11,7 +11,7 @@ const KEYS = {
   CLIENTS: 'ktag_clients', // New Key
   LOCATIONS: 'ktag_locations',
   THEME: 'ktag_theme',
-  SETTINGS: 'ktag_settings_v2', // VERSION BUMP: Forces refresh of defaults (clears old wrong token)
+  SETTINGS: 'ktag_settings_v3', // VERSION BUMP: Forces refresh of defaults for new Hinova fields
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
   STOLEN_RECORDS: 'ktag_stolen_records',
@@ -60,7 +60,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   plateApiUrl: '',
   plateApiToken: '',
   hinovaUrl: 'https://api.hinova.com.br/api/sga/v2',
-  hinovaToken: '19d988945b90e0a3abf0b441a5477126f952dd20d699eeb4e7e766f1289fd557b3ebc22097925f1b1903f3407de4b8dc44184e21f2f6d760f4f9c340a3902de0bd6db4a9356458c67b4e871ba04898c49b9f5a71af9d7461ae34c902477ad12d'
+  hinovaToken: '19d988945b90e0a3abf0b441a5477126f952dd20d699eeb4e7e766f1289fd557b3ebc22097925f1b1903f3407de4b8dc44184e21f2f6d760f4f9c340a3902de0bd6db4a9356458c67b4e871ba04898c49b9f5a71af9d7461ae34c902477ad12d',
+  hinovaUser: '',
+  hinovaPass: ''
 };
 
 // Default Categories to initialize
