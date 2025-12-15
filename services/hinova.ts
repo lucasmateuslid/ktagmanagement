@@ -2,24 +2,27 @@
 import { storage } from './storage';
 import { Vehicle, Client, AppSettings } from '../types';
 
+// Interface atualizada baseada no JSON fornecido
 interface HinovaResponseItem {
   codigo_veiculo: string;
   placa: string;
   chassi: string;
   codigo_fipe: string;
   ano_fabricacao: string;
-  ano_modelo: string;
+  ano_modelo: string; // Usar este para o Ano
   renavam: string;
-  tipo: string;
+  tipo: string; // AUTOMÓVEL, MOTOCICLETA, etc.
   categoria: string;
   marca: string;
   modelo: string;
   codigo_cor: string;
-  // Client Data
+  // Dados do Cliente
   nome: string;
   cpf: string;
   telefone: string;
+  ddd: string;
   telefone_celular: string;
+  ddd_celular: string;
   email: string;
   logradouro: string;
   numero: string;
@@ -115,7 +118,6 @@ export const hinovaService = {
     }
 
     // 2. Authentication (Lazy)
-    // We get the dynamic user token here.
     let userToken: string;
     try {
         userToken = await getToken(settings);
@@ -126,10 +128,9 @@ export const hinovaService = {
     // 3. Prepare Data
     const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
     const query = plateOrChassis.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const type = query.length === 7 ? 'PLACA' : 'CHASSI'; 
-    const targetUrl = `${baseUrl}/veiculo/buscar/${query}/${type}`;
+    const typeSearch = query.length === 7 ? 'placa' : 'chassi'; 
+    const targetUrl = `${baseUrl}/veiculo/buscar/${query}/${typeSearch}`;
     
-    // Ensure token format
     const finalToken = `Bearer ${cleanToken(userToken)}`;
 
     // 4. Execute Request via Cloud Function Proxy
@@ -155,8 +156,6 @@ export const hinovaService = {
             try { const jsonError = JSON.parse(errorText); if (jsonError.error) errorText = jsonError.error; } catch (e) {}
 
             if (response.status === 401) {
-                 // Token expired? Clear cache and retry once could be implemented here, 
-                 // but for now let's just error out and clear cache for next try.
                  cachedUserToken = null;
                  throw new Error("Sessão Hinova expirada. Tente novamente.");
             }
@@ -172,13 +171,37 @@ export const hinovaService = {
 
         const item = data[0];
 
+        // --- DETECÇÃO AUTOMÁTICA DE CATEGORIA ---
+        const categories = await storage.getCategories();
+        let targetFipeType = 'carros'; // Padrão
+        
+        const hinovaType = (item.tipo || '').toUpperCase();
+        
+        if (hinovaType.includes('MOTO') || hinovaType.includes('CICL')) {
+            targetFipeType = 'motos';
+        } else if (hinovaType.includes('CAMIN') || hinovaType.includes('TRUCK')) {
+            targetFipeType = 'caminhoes';
+        }
+        
+        // Encontra o ID da categoria no sistema K-Tag que corresponde ao tipo detectado
+        const matchedCategory = categories.find(c => c.fipeType === targetFipeType) 
+                             || categories.find(c => c.fipeType === 'carros')
+                             || categories[0];
+
+        const categoryId = matchedCategory ? matchedCategory.id : 'cat-car';
+
+        // Format Phone
+        const phone = item.telefone_celular 
+            ? `(${item.ddd_celular}) ${item.telefone_celular}` 
+            : (item.telefone ? `(${item.ddd}) ${item.telefone}` : '');
+
         // Map to Client
         const client: Partial<Client> = {
             name: item.nome,
             cpf: item.cpf,
-            phone: item.telefone_celular || item.telefone,
+            phone: phone,
             email: item.email,
-            address: `${item.logradouro}, ${item.numero}, ${item.bairro}`,
+            address: `${item.logradouro}, ${item.numero} - ${item.bairro}`,
             city: item.cidade,
             state: item.estado,
             createdAt: Date.now()
@@ -188,10 +211,11 @@ export const hinovaService = {
         const vehicle: Partial<Vehicle> = {
             plate: item.placa,
             chassis: item.chassi,
-            model: `${item.marca} ${item.modelo}`,
-            year: item.ano_modelo,
+            model: `${item.marca} ${item.modelo}`, // Concatena Marca e Modelo
+            year: item.ano_modelo, // Usa ano_modelo conforme solicitado
             fipeCode: item.codigo_fipe,
             hinovaId: item.codigo_veiculo,
+            type: categoryId, // Define automaticamente se é Moto ou Carro
             status: item.descricao_situacao === 'ATIVO' ? 'active' : 'maintenance'
         };
 
