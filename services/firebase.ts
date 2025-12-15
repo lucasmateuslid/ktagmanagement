@@ -14,10 +14,15 @@ const firebaseConfig = {
 
 let db: any = null;
 
+// FORCED OFFLINE MODE FOR AI STUDIO
+// We default to null to use LocalStorage implementation in services/storage.ts
+// This prevents connection errors or "firebase-cli" requirements from blocking the UI.
+console.log("Running in Offline Mode (LocalStorage Only) for Frontend Development");
+
+/* 
+// Uncomment to enable real Firebase
 try {
   const app = initializeApp(firebaseConfig);
-  
-  // Specific try/catch for Firestore to allow graceful degradation to LocalStorage
   try {
     db = getFirestore(app);
     console.log("Firebase initialized successfully");
@@ -26,7 +31,7 @@ try {
   }
 } catch (e) {
   console.error("Firebase app init error (Offline Mode active):", e);
-  // Fallback to local storage is handled in storage.ts if db is null
 }
+*/
 
 export { db };
