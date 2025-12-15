@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { storage } from '../services/storage';
 import { fetchTagLocation, exportToCSV } from '../services/api';
 import { geocodingService } from '../services/geocoding';
@@ -16,6 +16,8 @@ import { RefreshCw, Download, Play, Square, Car, Truck, Bike, AlertTriangle, Sha
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable'; 
 import * as XLSX from 'xlsx';
+
+const { useSearchParams } = ReactRouterDOM as any;
 
 export const LiveMap = () => {
   const [tags, setTags] = useState<Tag[]>([]);

@@ -8,7 +8,11 @@ import { useConnection } from '../contexts/ConnectionContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2, ShieldAlert, AlertTriangle, Lock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
+
+// Fix types
+const { Link } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
 export const Dashboard = () => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -149,8 +153,8 @@ export const Dashboard = () => {
   ];
 
   const pieData = [
-    { name: 'Linked', value: linkedCount, color: '#f59e0b' }, // Primary 500
-    { name: 'Unlinked', value: unlinkedCount, color: '#27272a' }, // Zinc 800
+    { name: 'Linked', value: linkedCount, color: '#f59e0b' }, // Primary 500 Yellow
+    { name: 'Unlinked', value: unlinkedCount, color: '#27272a' }, // Zinc 800 Carbon
   ];
 
   return (
@@ -161,11 +165,11 @@ export const Dashboard = () => {
             <h1 className="text-3xl font-display font-bold text-zinc-900 dark:text-white">
             {t('overview')}
             </h1>
-            <p className="text-zinc-500 text-sm">Welcome back, here's what's happening today.</p>
+            <p className="text-zinc-500 text-sm">Bem vindo ao painel de controle K-TAG.</p>
         </div>
         {lastSync && (
             <div className="text-xs text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                <Clock size={12} /> Last Synced: {new Date(lastSync).toLocaleTimeString()}
+                <Clock size={12} /> Sync: {new Date(lastSync).toLocaleTimeString()}
             </div>
         )}
       </div>
@@ -174,7 +178,7 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
         
         {/* Main Stats Card */}
-        <motion.div 
+        <MotionDiv 
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className="col-span-1 md:col-span-2 row-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm"
         >
@@ -198,23 +202,23 @@ export const Dashboard = () => {
                         </linearGradient>
                     </defs>
                     <Tooltip 
-                        contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                        itemStyle={{ fontSize: '12px' }}
+                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#fff' }}
+                        itemStyle={{ fontSize: '12px', color: '#f59e0b' }}
                         cursor={{ stroke: '#27272a' }}
                     />
                     <Area type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={3} fill="url(#colorTotal)" />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
-        </motion.div>
+        </MotionDiv>
 
-        {/* Secondary Stats (Vehicles) */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        {/* Secondary Stats (Vehicles) - Carbon Style */}
+        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             className="bg-zinc-900 dark:bg-zinc-950 rounded-3xl p-6 border border-zinc-800 dark:border-zinc-900 text-white flex flex-col justify-between shadow-md"
         >
             <div className="flex justify-between">
                 <span className="text-zinc-400 text-xs uppercase tracking-wider">{t('totalVehicles')}</span>
-                <CarFront size={18} className="text-zinc-500" />
+                <CarFront size={18} className="text-primary-500" />
             </div>
             <p className="text-3xl font-display font-bold mt-2">{vehicles.length}</p>
             
@@ -222,33 +226,31 @@ export const Dashboard = () => {
                 <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
                     <Car size={14} className="text-zinc-400 mb-1" />
                     <span className="text-lg font-bold">{carCount}</span>
-                    <span className="text-[10px] text-zinc-500 uppercase">{t('cars')}</span>
                 </div>
                 <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
                     <Truck size={14} className="text-zinc-400 mb-1" />
                     <span className="text-lg font-bold">{truckCount}</span>
-                    <span className="text-[10px] text-zinc-500 uppercase">{t('trucks')}</span>
                 </div>
                  <div className="flex flex-col items-center justify-center p-2 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
                     <Bike size={14} className="text-zinc-400 mb-1" />
                     <span className="text-lg font-bold">{motoCount}</span>
-                    <span className="text-[10px] text-zinc-500 uppercase">Moto</span>
                 </div>
             </div>
-        </motion.div>
+        </MotionDiv>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        {/* Highlight Card - Yellow C6 Style */}
+        <MotionDiv initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="bg-primary-500 text-black rounded-3xl p-6 flex flex-col justify-between shadow-lg shadow-primary-500/20"
         >
              <div className="flex justify-between">
-                <span className="text-black/60 text-xs uppercase tracking-wider font-bold">{t('linkedTags')}</span>
-                <Link2 size={18} className="text-black/60" />
+                <span className="text-black/70 text-xs uppercase tracking-wider font-bold">{t('linkedTags')}</span>
+                <Link2 size={18} className="text-black" />
             </div>
             <p className="text-3xl font-display font-bold mt-2">{linkedCount}</p>
-            <div className="mt-4 text-xs font-bold text-black/60">
-                {Math.round((linkedCount / (tags.length || 1)) * 100)}% Utilization
+            <div className="mt-4 text-xs font-bold text-black/70">
+                {Math.round((linkedCount / (tags.length || 1)) * 100)}% de Utilização
             </div>
-        </motion.div>
+        </MotionDiv>
 
         {/* Quick Actions */}
         <div className="col-span-1 md:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -266,7 +268,7 @@ export const Dashboard = () => {
         {/* Pie Chart Card */}
         <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center relative min-w-0 shadow-sm">
              <div className="absolute top-6 left-6">
-                <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Allocation</h3>
+                <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Alocação</h3>
              </div>
              <div className="h-32 w-32 mt-4 relative">
                 <ResponsiveContainer width="100%" height="100%">
@@ -286,11 +288,11 @@ export const Dashboard = () => {
              <div className="flex gap-4 mt-4 text-xs">
                 <div className="flex items-center gap-1">
                     <div className="w-2 h-2 rounded-full bg-primary-500"></div>
-                    <span className="text-zinc-600 dark:text-zinc-400">Linked</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">Vinculadas</span>
                 </div>
                 <div className="flex items-center gap-1">
                     <div className="w-2 h-2 rounded-full bg-zinc-800"></div>
-                    <span className="text-zinc-600 dark:text-zinc-400">Free</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">Livres</span>
                 </div>
              </div>
         </div>
@@ -381,7 +383,7 @@ export const Dashboard = () => {
         {/* Vehicles by Company */}
         <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-                <Building2 size={16} className="text-indigo-500" />
+                <Building2 size={16} className="text-primary-500" />
                 <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">{t('vehiclesByCompany')}</h3>
             </div>
             <div className="h-48 min-w-0">
@@ -393,7 +395,7 @@ export const Dashboard = () => {
                             contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
                             cursor={{ fill: '#27272a', opacity: 0.2 }}
                         />
-                        <Bar dataKey="count" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                        <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20} />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -402,7 +404,7 @@ export const Dashboard = () => {
         {/* Acquisition Trend */}
         <div className="col-span-1 md:col-span-2 lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
              <div className="flex items-center gap-2 mb-4">
-                <Activity size={16} className="text-emerald-500" />
+                <Activity size={16} className="text-primary-500" />
                 <h3 className="text-zinc-500 text-xs font-medium uppercase tracking-wider">{t('vehicleEntryTrend')}</h3>
             </div>
              <div className="h-48 min-w-0">
@@ -414,7 +416,7 @@ export const Dashboard = () => {
                             contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }}
                             cursor={{ fill: '#27272a', opacity: 0.2 }}
                         />
-                        <Bar dataKey="entries" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
+                        <Bar dataKey="entries" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={30} />
                     </BarChart>
                 </ResponsiveContainer>
             </div>

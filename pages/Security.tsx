@@ -1,11 +1,13 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import * as ReactRouterDOM from 'react-router-dom';
 import { storage } from '../services/storage';
 import { StolenRecord, Vehicle } from '../types';
 import { ShieldAlert, AlertTriangle, Plus, Search, MapPin, CheckCircle, FileText, Calendar, Lock, Car, X, RefreshCw } from 'lucide-react';
 import { useNotification } from '../contexts/NotificationContext';
-import { Link } from 'react-router-dom';
+
+const { Link } = ReactRouterDOM as any;
 
 export const Security = () => {
   const [activeRecords, setActiveRecords] = useState<StolenRecord[]>([]);

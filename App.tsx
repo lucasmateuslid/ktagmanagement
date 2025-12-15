@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -16,6 +16,8 @@ import { Settings } from './pages/Settings';
 import { Security } from './pages/Security';
 import { Users } from './pages/Users';
 import { Reports } from './pages/Reports';
+
+const { HashRouter, Routes, Route, Navigate } = ReactRouterDOM as any;
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();

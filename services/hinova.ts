@@ -216,7 +216,7 @@ export const hinovaService = {
             fipeCode: item.codigo_fipe,
             hinovaId: item.codigo_veiculo,
             type: categoryId, // Define automaticamente se é Moto ou Carro
-            status: item.descricao_situacao === 'ATIVO' ? 'active' : 'maintenance'
+            status: 'active' // Sempre ativo ao importar da Hinova, conforme solicitado
         };
 
         return { vehicle, client };

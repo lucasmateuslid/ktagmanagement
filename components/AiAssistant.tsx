@@ -6,6 +6,8 @@ import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIco
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
 
+const MotionDiv = motion.div as any;
+
 const sanitizeHTML = (dirtyHtml: string) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div>${dirtyHtml}</div>`, 'text/html');
@@ -332,7 +334,7 @@ Comportamento Específico:
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-4 font-sans">
       <AnimatePresence>
         {isOpen && (
-          <motion.div
+          <MotionDiv
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -416,7 +418,7 @@ Comportamento Específico:
                 </form>
               </div>
             </div>
-          </motion.div>
+          </MotionDiv>
         )}
       </AnimatePresence>
 

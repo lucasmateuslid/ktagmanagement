@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { storage } from '../services/storage';
 import { plateLookupService } from '../services/plateLookup';
 import { hinovaService } from '../services/hinova';
@@ -10,6 +10,8 @@ import { Tag, Vehicle, Company, VehicleCategory, Client } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, MapPin, CheckCircle, XCircle, Database, Settings, BookOpen } from 'lucide-react';
+
+const { useSearchParams } = ReactRouterDOM as any;
 
 // --- Internal Component: Searchable Select ---
 interface SearchableSelectProps {

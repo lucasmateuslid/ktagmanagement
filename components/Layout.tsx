@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -29,6 +29,11 @@ import {
   FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Fix TS errors for missing types
+const { Link, useLocation } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
+const MotionAside = motion.aside as any;
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const { user, logout } = useAuth();
@@ -181,14 +186,14 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       <AnimatePresence>
         {isSidebarOpen && (
           <>
-             <motion.div 
+             <MotionDiv 
                initial={{ opacity: 0 }}
                animate={{ opacity: 1 }}
                exit={{ opacity: 0 }}
                className="md:hidden fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm"
                onClick={() => setIsSidebarOpen(false)}
              />
-             <motion.aside
+             <MotionAside
                 initial={{ x: '-100%' }}
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
@@ -196,7 +201,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                 className="md:hidden fixed inset-y-0 left-0 z-[70] w-72 h-full shadow-2xl"
              >
                 <SidebarContent />
-             </motion.aside>
+             </MotionAside>
           </>
         )}
       </AnimatePresence>
@@ -238,7 +243,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
               <AnimatePresence>
                 {isNotifOpen && (
-                  <motion.div
+                  <MotionDiv
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -271,7 +276,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         ))
                       )}
                     </div>
-                  </motion.div>
+                  </MotionDiv>
                 )}
               </AnimatePresence>
             </div>

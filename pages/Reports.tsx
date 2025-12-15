@@ -113,17 +113,63 @@ export const Reports = () => {
       setInstallData(instArr);
   };
 
-  // C6 / Carbon Palette
-  const COLORS = ['#f59e0b', '#1f1f22', '#52525b', '#a1a1aa', '#d4d4d8']; 
-  // Primary (Yellow), Zinc 850, Zinc 600, Zinc 400, Zinc 300
+  // C6 / Carbon Palette Updated to Yellow
+  const COLORS = ['#f59e0b', '#27272a', '#52525b', '#a1a1aa', '#d4d4d8']; 
 
   const handleExportPDF = () => {
       const doc = new jsPDF();
-      doc.setFontSize(18);
-      doc.text(t('vehicleList'), 14, 22);
-      doc.setFontSize(11);
-      doc.text(`${t('reportPeriod')}: ${startDate} - ${endDate}`, 14, 30);
       
+      // --- HEADER & SUMMARY ---
+      // Logo text
+      doc.setFontSize(22);
+      doc.setTextColor(40, 40, 45); // Dark Gray
+      doc.text("K-TAG RELATÓRIO DE FROTA", 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 26);
+      doc.text(`Período: ${startDate} até ${endDate}`, 14, 31);
+
+      // --- EXECUTIVE SUMMARY SECTION ---
+      let yPos = 45;
+      
+      doc.setFillColor(245, 158, 11); // Primary Yellow
+      doc.rect(14, 38, 182, 1, 'F'); // Divider Line
+
+      doc.setFontSize(14);
+      doc.setTextColor(0);
+      doc.text("Resumo Executivo (Dados dos Gráficos)", 14, yPos);
+      yPos += 8;
+
+      doc.setFontSize(11);
+      
+      // 1. Totals
+      doc.text(`Total de Veículos no Período: ${filteredVehicles.length}`, 14, yPos);
+      yPos += 6;
+
+      // 2. Categories
+      doc.text("Distribuição por Categoria:", 14, yPos);
+      yPos += 6;
+      categoryData.forEach(cat => {
+          doc.text(`• ${cat.name}: ${cat.value}`, 20, yPos);
+          yPos += 5;
+      });
+      yPos += 2;
+
+      // 3. Installations
+      doc.text("Distribuição por Instalação:", 14, yPos);
+      yPos += 6;
+      installData.forEach(inst => {
+          doc.text(`• ${inst.name}: ${inst.value}`, 20, yPos);
+          yPos += 5;
+      });
+
+      yPos += 10; // Space before table
+
+      // --- DETAILED TABLE ---
+      doc.setFontSize(14);
+      doc.text(t('vehicleList'), 14, yPos);
+
       const headers = [[t('inclusionDate'), t('plate'), t('model'), t('type'), t('byInstallation')]];
       const rows = filteredVehicles.map(v => [
           new Date(v.createdAt).toLocaleDateString(),
@@ -133,8 +179,14 @@ export const Reports = () => {
           v.installationType === 'tag_tracker' ? t('tagTracker') : t('tagOnly')
       ]);
 
-      autoTable(doc, { head: headers, body: rows, startY: 40 });
-      doc.save('vehicles_report.pdf');
+      autoTable(doc, { 
+          head: headers, 
+          body: rows, 
+          startY: yPos + 4,
+          theme: 'grid',
+          headStyles: { fillColor: [39, 39, 42] }, // Zinc 800
+      });
+      doc.save('vehicles_report_full.pdf');
   };
 
   const handleExportExcel = () => {
@@ -166,7 +218,7 @@ export const Reports = () => {
                 </p>
             </div>
 
-            {/* Filter Bar - Glass/Carbon Style */}
+            {/* Filter Bar - Glass/Carbon Style - Fixed Colors for Visibility */}
             <div className="flex flex-col sm:flex-row items-center gap-2 bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm w-full xl:w-auto">
                  <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
                     <Calendar size={16} className="text-zinc-400" />
@@ -176,7 +228,8 @@ export const Reports = () => {
                             type="date" 
                             value={startDate}
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-white outline-none focus:ring-0 w-full h-5"
+                            // Explicitly force text color in dark mode
+                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-zinc-200 outline-none focus:ring-0 w-full h-5"
                         />
                     </div>
                  </div>
@@ -191,7 +244,8 @@ export const Reports = () => {
                             type="date" 
                             value={endDate}
                             onChange={(e) => setEndDate(e.target.value)}
-                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-white outline-none focus:ring-0 w-full h-5"
+                            // Explicitly force text color in dark mode
+                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-zinc-200 outline-none focus:ring-0 w-full h-5"
                         />
                     </div>
                  </div>
@@ -207,8 +261,8 @@ export const Reports = () => {
 
         {/* --- KPI & TREND SECTION --- */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-             {/* Total KPI Card */}
-             <div className="bg-zinc-900 dark:bg-zinc-950 text-white p-8 rounded-3xl flex flex-col justify-between shadow-xl relative overflow-hidden group">
+             {/* Total KPI Card - Deep Carbon */}
+             <div className="bg-zinc-900 dark:bg-zinc-950 text-white p-8 rounded-3xl flex flex-col justify-between shadow-xl relative overflow-hidden group border border-zinc-800">
                  <div className="absolute top-0 right-0 p-32 bg-primary-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-primary-500/20 transition-all duration-700" />
                  
                  <div className="relative z-10">
@@ -294,7 +348,7 @@ export const Reports = () => {
                             <Legend 
                                 verticalAlign="bottom" 
                                 iconType="circle"
-                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 ml-1">{value}</span>}
+                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300 ml-1">{value}</span>}
                             />
                         </PieChart>
                     </ResponsiveContainer>
@@ -334,7 +388,7 @@ export const Reports = () => {
                             <Legend 
                                 verticalAlign="bottom" 
                                 iconType="circle"
-                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 ml-1">{value}</span>}
+                                formatter={(value) => <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300 ml-1">{value}</span>}
                             />
                         </PieChart>
                     </ResponsiveContainer>

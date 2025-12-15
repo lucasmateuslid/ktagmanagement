@@ -3,9 +3,11 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Navigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+const { Navigate } = ReactRouterDOM as any;
 
 export const Login = () => {
   const { login, register, isAuthenticated } = useAuth();
