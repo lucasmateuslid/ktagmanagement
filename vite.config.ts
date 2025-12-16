@@ -25,7 +25,8 @@ const BUILD_EXTERNAL_PREFIXES = [
 
 export default defineConfig(({ mode }) => {
   // Carrega variáveis de ambiente conforme modo (dev / prod)
-  const env = loadEnv(mode, process.cwd(), '');
+  // Use '.' instead of process.cwd() to resolve type error
+  const env = loadEnv(mode, '.', '');
 
   return {
     plugins: [

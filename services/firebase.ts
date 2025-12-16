@@ -17,10 +17,15 @@ let db: Firestore | null = null;
 
 try {
   app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  console.log("Firebase initialized successfully");
-} catch (e) {
-  console.error("Firebase initialization error:", e);
+  try {
+      db = getFirestore(app);
+      console.log("Firebase initialized successfully");
+  } catch (firestoreError: any) {
+      console.warn("Firestore initialization failed (Offline Mode enabled):", firestoreError.message);
+      db = null;
+  }
+} catch (e: any) {
+  console.error("Firebase App initialization error:", e);
   console.warn("Falling back to LocalStorage (Offline Mode)");
   db = null;
 }
