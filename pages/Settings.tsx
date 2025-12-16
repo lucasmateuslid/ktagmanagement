@@ -58,6 +58,7 @@ export const Settings = () => {
       // Se for admin, salva tudo. Se não, salva apenas preferências locais (idioma)
       if (isAdmin) {
           await storage.saveSettings(settings);
+          storage.logAction(currentUser, 'CONFIG', 'System Settings', 'Updated global system configuration');
       } else {
           // Busca configurações atuais do banco para não sobrescrever chaves com vazio
           const currentRemoteConfig = await storage.getSettings();
@@ -107,6 +108,8 @@ export const Settings = () => {
         prefix: newCompany.prefix.toUpperCase()
     };
     await storage.saveCompany(company);
+    storage.logAction(currentUser, 'CREATE', 'Company', `Added company ${company.name}`, company.id);
+    
     setCompanies([...companies, company]);
     setNewCompany({ name: '', prefix: '' });
     addNotification('success', 'Success', 'Company added.');
@@ -114,7 +117,10 @@ export const Settings = () => {
 
   const handleDeleteCompany = async (id: string) => {
     if(!confirm('Delete this company?')) return;
+    const company = companies.find(c => c.id === id);
     await storage.deleteCompany(id);
+    storage.logAction(currentUser, 'DELETE', 'Company', `Deleted company ${company?.name || id}`, id);
+    
     setCompanies(prev => prev.filter(c => c.id !== id));
   };
 
@@ -127,6 +133,8 @@ export const Settings = () => {
         fipeType: newCategory.fipeType as any
     };
     await storage.saveCategory(category);
+    storage.logAction(currentUser, 'CREATE', 'Category', `Added category ${category.name}`, category.id);
+
     setCategories([...categories, category]);
     setNewCategory({ name: '', fipeType: 'none' });
     addNotification('success', 'Success', 'Category added.');
@@ -134,7 +142,10 @@ export const Settings = () => {
 
   const handleDeleteCategory = async (id: string) => {
     if(!confirm('Delete this category?')) return;
+    const cat = categories.find(c => c.id === id);
     await storage.deleteCategory(id);
+    storage.logAction(currentUser, 'DELETE', 'Category', `Deleted category ${cat?.name || id}`, id);
+
     setCategories(prev => prev.filter(c => c.id !== id));
   };
 

@@ -1,7 +1,7 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog } from '../types';
 import { db } from './firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc, orderBy, limit } from 'firebase/firestore';
 
 const KEYS = {
   USER_SESSION: 'ktag_user_session',
@@ -15,6 +15,7 @@ const KEYS = {
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
   STOLEN_RECORDS: 'ktag_stolen_records',
+  AUDIT_LOGS: 'ktag_audit_logs',
 };
 
 // --- LocalStorage Helpers (Fallback) ---
@@ -73,6 +74,52 @@ const DEFAULT_CATEGORIES: VehicleCategory[] = [
 ];
 
 export const storage = {
+  // --- AUDIT LOGS ---
+  logAction: async (user: User | null, action: AuditLog['action'], entity: string, details: string, entityId?: string) => {
+    if (!user) return; // Anonymous actions not logged (or handle differently)
+
+    const logEntry: AuditLog = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      action,
+      entity,
+      entityId,
+      details,
+      timestamp: Date.now()
+    };
+
+    if (db) {
+      try {
+        await addDoc(collection(db, KEYS.AUDIT_LOGS), cleanData(logEntry));
+      } catch (e) {
+        console.warn("Firestore logAction failed", e);
+      }
+    }
+    
+    // Also save to local for offline viewing/backup
+    const logs = getLocal<AuditLog[]>(KEYS.AUDIT_LOGS, []);
+    logs.unshift(logEntry);
+    // Keep local log size manageable (e.g., last 200 actions)
+    if (logs.length > 200) logs.pop();
+    setLocal(KEYS.AUDIT_LOGS, logs);
+  },
+
+  getAuditLogs: async (limitCount = 100): Promise<AuditLog[]> => {
+    if (db) {
+      try {
+        const q = query(collection(db, KEYS.AUDIT_LOGS), orderBy('timestamp', 'desc'), limit(limitCount));
+        const snap = await getDocs(q);
+        const data = snap.docs.map(d => ({ ...d.data(), id: d.id } as AuditLog));
+        return data;
+      } catch (e) {
+        console.warn("Firestore getAuditLogs failed, using local", e);
+      }
+    }
+    return getLocal<AuditLog[]>(KEYS.AUDIT_LOGS, []);
+  },
+
   // --- USER SESSION (Current Logged In) ---
   getSessionUser: async (): Promise<User | null> => {
     return getLocal<User | null>(KEYS.USER_SESSION, null); 

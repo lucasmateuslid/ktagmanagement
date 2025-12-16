@@ -4,26 +4,32 @@ import { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { Vehicle, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { FileText, Calendar, Filter, FileSpreadsheet, Download, ChevronDown, PieChart as PieIcon, BarChart3, TrendingUp } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid } from 'recharts';
+import { useAuth } from '../contexts/AuthContext';
+import { FileText, Calendar, Filter, FileSpreadsheet, Download, PieChart as PieIcon, BarChart3, TrendingUp, Settings } from 'lucide-react';
+import { ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 export const Reports = () => {
   const { t } = useLanguage();
+  const { user } = useAuth(); // Audit
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   
-  // Date Filter State
+  // Date Inputs State
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() - 7); // Default to last 7 days
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  // Applied Filter State (Actual Logic Trigger)
+  const [appliedStartDate, setAppliedStartDate] = useState(startDate);
+  const [appliedEndDate, setAppliedEndDate] = useState(endDate);
   
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
   
@@ -44,18 +50,50 @@ export const Reports = () => {
     loadData();
   }, []);
 
+  // Trigger filter only when Vehicles load OR when user clicks Filter (changing applied dates)
   useEffect(() => {
       filterData();
-  }, [vehicles, startDate, endDate]);
+  }, [vehicles, appliedStartDate, appliedEndDate]);
+
+  const handleApplyFilter = () => {
+      setAppliedStartDate(startDate);
+      setAppliedEndDate(endDate);
+  };
+
+  // Helper to force Local Time creation from YYYY-MM-DD string
+  const parseLocalDate = (dateStr: string): Date => {
+      if (!dateStr) return new Date(); // Fallback
+      const parts = dateStr.split('-').map(Number);
+      if (parts.length !== 3) return new Date();
+      const [year, month, day] = parts;
+      return new Date(year, month - 1, day);
+  };
+
+  const toLocalISO = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+  };
+
+  // Format YYYY-MM-DD to DD/MM/YYYY for display
+  const formatDateDisplay = (isoDate: string) => {
+      if (!isoDate) return '-';
+      const [y, m, d] = isoDate.split('-');
+      return `${d}/${m}/${y}`;
+  }
 
   const filterData = () => {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      // Create Local Dates from the inputs
+      const start = parseLocalDate(appliedStartDate);
+      start.setHours(0, 0, 0, 0); // Start of day
+
+      const end = parseLocalDate(appliedEndDate);
+      end.setHours(23, 59, 59, 999); // End of day
 
       const filtered = vehicles.filter(v => {
           if (!v.createdAt) return false;
+          // Compare timestamps
           return v.createdAt >= start.getTime() && v.createdAt <= end.getTime();
       });
 
@@ -65,33 +103,39 @@ export const Reports = () => {
 
   const processCharts = (data: Vehicle[]) => {
       // 1. Trend (Group by Day)
-      const trendMap: Record<string, number> = {};
+      const countMap: Record<string, number> = {};
       
-      // Fill gaps with 0
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          trendMap[d.toLocaleDateString()] = 0;
-      }
-
       data.forEach(v => {
-          const dateStr = new Date(v.createdAt).toLocaleDateString();
-          if (trendMap[dateStr] !== undefined) {
-              trendMap[dateStr] += 1;
-          }
+          if (!v.createdAt) return;
+          const d = new Date(v.createdAt);
+          const key = toLocalISO(d);
+          countMap[key] = (countMap[key] || 0) + 1;
       });
 
-      // Convert to array and sort by date
-      const trendArr = Object.keys(trendMap).map(k => ({
-          date: k,
-          count: trendMap[k],
-          // Sort helper
-          timestamp: new Date(k.split('/').reverse().join('-')).getTime() 
-      })).sort((a,b) => {
-         const da = a.date.split('/').reverse().join('');
-         const db = b.date.split('/').reverse().join('');
-         return da.localeCompare(db);
-      });
+      const trendArr = [];
+      const start = parseLocalDate(appliedStartDate);
+      const end = parseLocalDate(appliedEndDate);
+      
+      if (start <= end) {
+          const current = new Date(start);
+          let safetyCounter = 0;
+          
+          while (current <= end && safetyCounter < 365) {
+              const key = toLocalISO(current);
+              const displayDate = current.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+              
+              trendArr.push({
+                  date: displayDate, // X-Axis Label
+                  fullDate: key,     // Tooltip
+                  count: countMap[key] || 0,
+                  timestamp: current.getTime()
+              });
+              
+              current.setDate(current.getDate() + 1);
+              safetyCounter++;
+          }
+      }
+      
       setTrendData(trendArr);
 
       // 2. Category Distribution
@@ -113,41 +157,34 @@ export const Reports = () => {
       setInstallData(instArr);
   };
 
-  // C6 / Carbon Palette Updated to Yellow
   const COLORS = ['#f59e0b', '#27272a', '#52525b', '#a1a1aa', '#d4d4d8']; 
 
   const handleExportPDF = () => {
       const doc = new jsPDF();
       
-      // --- HEADER & SUMMARY ---
-      // Logo text
       doc.setFontSize(22);
-      doc.setTextColor(40, 40, 45); // Dark Gray
+      doc.setTextColor(40, 40, 45); 
       doc.text("K-TAG RELATÓRIO DE FROTA", 14, 20);
       
       doc.setFontSize(10);
       doc.setTextColor(100);
       doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 26);
-      doc.text(`Período: ${startDate} até ${endDate}`, 14, 31);
+      doc.text(`Período: ${formatDateDisplay(appliedStartDate)} até ${formatDateDisplay(appliedEndDate)}`, 14, 31);
 
-      // --- EXECUTIVE SUMMARY SECTION ---
       let yPos = 45;
       
-      doc.setFillColor(245, 158, 11); // Primary Yellow
-      doc.rect(14, 38, 182, 1, 'F'); // Divider Line
+      doc.setFillColor(245, 158, 11); 
+      doc.rect(14, 38, 182, 1, 'F'); 
 
       doc.setFontSize(14);
       doc.setTextColor(0);
-      doc.text("Resumo Executivo (Dados dos Gráficos)", 14, yPos);
+      doc.text("Resumo Executivo", 14, yPos);
       yPos += 8;
 
       doc.setFontSize(11);
-      
-      // 1. Totals
       doc.text(`Total de Veículos no Período: ${filteredVehicles.length}`, 14, yPos);
       yPos += 6;
 
-      // 2. Categories
       doc.text("Distribuição por Categoria:", 14, yPos);
       yPos += 6;
       categoryData.forEach(cat => {
@@ -156,7 +193,6 @@ export const Reports = () => {
       });
       yPos += 2;
 
-      // 3. Installations
       doc.text("Distribuição por Instalação:", 14, yPos);
       yPos += 6;
       installData.forEach(inst => {
@@ -164,9 +200,8 @@ export const Reports = () => {
           yPos += 5;
       });
 
-      yPos += 10; // Space before table
+      yPos += 10; 
 
-      // --- DETAILED TABLE ---
       doc.setFontSize(14);
       doc.text(t('vehicleList'), 14, yPos);
 
@@ -184,9 +219,11 @@ export const Reports = () => {
           body: rows, 
           startY: yPos + 4,
           theme: 'grid',
-          headStyles: { fillColor: [39, 39, 42] }, // Zinc 800
+          headStyles: { fillColor: [39, 39, 42] }, 
       });
       doc.save('vehicles_report_full.pdf');
+
+      storage.logAction(user, 'REPORT', 'Report', 'Exported Vehicle Fleet PDF');
   };
 
   const handleExportExcel = () => {
@@ -202,6 +239,8 @@ export const Reports = () => {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Vehicles");
       XLSX.writeFile(wb, "vehicles_report.xlsx");
+
+      storage.logAction(user, 'REPORT', 'Report', 'Exported Vehicle Fleet Excel');
   };
 
   return (
@@ -218,40 +257,35 @@ export const Reports = () => {
                 </p>
             </div>
 
-            {/* Filter Bar - Glass/Carbon Style - Fixed Colors for Visibility */}
+            {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row items-center gap-2 bg-white dark:bg-zinc-900 p-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm w-full xl:w-auto">
-                 <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
-                    <Calendar size={16} className="text-zinc-400" />
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-0.5">{t('startDate')}</label>
-                        <input 
-                            type="date" 
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            // Explicitly force text color in dark mode
-                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-zinc-200 outline-none focus:ring-0 w-full h-5"
-                        />
-                    </div>
+                 
+                 {/* Start Date */}
+                 <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-4 py-2 border border-zinc-100 dark:border-zinc-700/50 focus-within:ring-2 focus-within:ring-primary-500/50 transition-all w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-1">{t('startDate')}</label>
+                    <input 
+                        type="date" 
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="bg-transparent border-none p-0 text-sm font-bold text-zinc-900 dark:text-white focus:ring-0 h-5 w-full cursor-pointer"
+                    />
                  </div>
                  
                  <div className="hidden sm:block text-zinc-300 dark:text-zinc-700">/</div>
 
-                 <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-2 border border-zinc-100 dark:border-zinc-800">
-                    <Calendar size={16} className="text-zinc-400" />
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-0.5">{t('endDate')}</label>
-                        <input 
-                            type="date" 
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            // Explicitly force text color in dark mode
-                            className="bg-transparent border-none p-0 text-sm font-semibold text-zinc-900 dark:text-zinc-200 outline-none focus:ring-0 w-full h-5"
-                        />
-                    </div>
+                 {/* End Date */}
+                 <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-4 py-2 border border-zinc-100 dark:border-zinc-700/50 focus-within:ring-2 focus-within:ring-primary-500/50 transition-all w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase leading-none mb-1">{t('endDate')}</label>
+                    <input 
+                        type="date" 
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="bg-transparent border-none p-0 text-sm font-bold text-zinc-900 dark:text-white focus:ring-0 h-5 w-full cursor-pointer"
+                    />
                  </div>
 
                  <button 
-                    onClick={filterData}
+                    onClick={handleApplyFilter}
                     className="w-full sm:w-auto bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-primary-500/20 flex items-center justify-center gap-2"
                  >
                      <Filter size={18} /> {t('filter')}
@@ -261,7 +295,7 @@ export const Reports = () => {
 
         {/* --- KPI & TREND SECTION --- */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-             {/* Total KPI Card - Deep Carbon */}
+             {/* Total KPI Card */}
              <div className="bg-zinc-900 dark:bg-zinc-950 text-white p-8 rounded-3xl flex flex-col justify-between shadow-xl relative overflow-hidden group border border-zinc-800">
                  <div className="absolute top-0 right-0 p-32 bg-primary-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-primary-500/20 transition-all duration-700" />
                  
@@ -324,7 +358,6 @@ export const Reports = () => {
 
         {/* --- PIE CHARTS SECTION --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Category Pie */}
             <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
                  <h3 className="text-sm text-zinc-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-2">
                     <PieIcon size={16} /> {t('byCategory')}
@@ -344,7 +377,10 @@ export const Reports = () => {
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
                                 ))}
                             </Pie>
-                            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                                itemStyle={{ color: '#e4e4e7' }} 
+                            />
                             <Legend 
                                 verticalAlign="bottom" 
                                 iconType="circle"
@@ -352,7 +388,6 @@ export const Reports = () => {
                             />
                         </PieChart>
                     </ResponsiveContainer>
-                    {/* Center Text */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="text-center">
                             <span className="block text-2xl font-display font-bold text-zinc-900 dark:text-white">
@@ -364,7 +399,6 @@ export const Reports = () => {
                  </div>
             </div>
 
-            {/* Installation Pie */}
             <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
                  <h3 className="text-sm text-zinc-500 font-bold uppercase tracking-wider mb-6 flex items-center gap-2">
                     <PieIcon size={16} /> {t('byInstallation')}
@@ -384,7 +418,10 @@ export const Reports = () => {
                                     <Cell key={`cell-${index}`} fill={index === 0 ? '#10b981' : '#f59e0b'} stroke="rgba(0,0,0,0)" />
                                 ))}
                             </Pie>
-                            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                                itemStyle={{ color: '#e4e4e7' }} 
+                            />
                             <Legend 
                                 verticalAlign="bottom" 
                                 iconType="circle"
@@ -420,7 +457,8 @@ export const Reports = () => {
                     </button>
                 </div>
             </div>
-            <div className="overflow-x-auto">
+            
+            <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm text-left">
                     <thead className="text-xs text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800 font-semibold">
                         <tr>
@@ -475,6 +513,37 @@ export const Reports = () => {
                         )}
                     </tbody>
                 </table>
+            </div>
+
+            <div className="md:hidden p-4 space-y-3">
+                {filteredVehicles.map(v => (
+                    <div key={v.id} className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{categories.find(c => c.id === v.type)?.name || '-'}</span>
+                                <h4 className="font-bold text-zinc-900 dark:text-white mt-0.5">{v.model}</h4>
+                            </div>
+                            <span className="font-mono font-bold text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-1 rounded">
+                                {v.plate}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center pt-3 border-t border-zinc-200 dark:border-zinc-800 mt-3">
+                            <span className="text-xs text-zinc-500 font-mono">{new Date(v.createdAt).toLocaleDateString()}</span>
+                            {v.installationType === 'tag_tracker' ? (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-2 py-0.5 rounded-full">
+                                    <Settings size={10} /> {t('tagTracker')}
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
+                                    {t('tagOnly')}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                ))}
+                {filteredVehicles.length === 0 && (
+                    <div className="text-center p-8 text-zinc-400 text-sm">Nenhum registro.</div>
+                )}
             </div>
         </div>
     </div>

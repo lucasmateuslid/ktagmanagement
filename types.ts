@@ -112,6 +112,18 @@ export interface AppNotification {
   read: boolean;
 }
 
+export interface AuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'REPORT' | 'LOGIN' | 'CONFIG';
+  entity: string; // e.g., 'Vehicle', 'Tag', 'User'
+  entityId?: string;
+  details: string;
+  timestamp: number;
+}
+
 export interface AppSettings {
   language: 'pt' | 'en';
   customProxyUrl: string; // URL for the Firebase Cloud Function

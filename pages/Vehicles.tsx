@@ -9,6 +9,7 @@ import { fipeService, FipeReference } from '../services/fipe';
 import { Tag, Vehicle, Company, VehicleCategory, Client } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, MapPin, CheckCircle, XCircle, Database, Settings, BookOpen } from 'lucide-react';
 
 const { useSearchParams } = ReactRouterDOM as any;
@@ -139,6 +140,7 @@ export const Vehicles = () => {
 
   const { t } = useLanguage();
   const { addNotification } = useNotification();
+  const { user } = useAuth(); // Get current user for audit
   const [loadingPlate, setLoadingPlate] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   
@@ -217,6 +219,7 @@ export const Vehicles = () => {
     }
   }, [searchParams, categories, isModalOpen]);
 
+  // ... (FIPE and Lookup handlers preserved)
   // --- FIPE HELPERS ---
   const getCategoryFipeType = (id?: string) => {
       if (!id) return 'carros'; // default
@@ -396,6 +399,7 @@ export const Vehicles = () => {
     }
 
     try {
+        const isEdit = !!formData.id;
         const newVehicle: Vehicle = {
           id: formData.id || crypto.randomUUID(),
           type: formData.type || (categories[0]?.id || 'cat-car'),
@@ -420,6 +424,16 @@ export const Vehicles = () => {
         });
 
         await storage.saveVehicle(newVehicle);
+        
+        // AUDIT LOG
+        storage.logAction(
+            user, 
+            isEdit ? 'UPDATE' : 'CREATE', 
+            'Vehicle', 
+            `${isEdit ? 'Updated' : 'Created'} vehicle ${newVehicle.plate} (${newVehicle.model})`,
+            newVehicle.id
+        );
+
         addNotification('success', 'Sucesso', 'Veículo salvo corretamente.');
         
         setIsModalOpen(false);
@@ -438,9 +452,14 @@ export const Vehicles = () => {
 
   const handleDelete = async (id: string) => {
     if (confirm('Deseja excluir este veículo?')) {
+      const v = vehicles.find(veh => veh.id === id);
       // Optimistic Delete
       setVehicles(prev => prev.filter(v => v.id !== id));
       await storage.deleteVehicle(id);
+      
+      // AUDIT LOG
+      storage.logAction(user, 'DELETE', 'Vehicle', `Deleted vehicle ${v?.plate || id}`, id);
+
       loadData();
     }
   };
@@ -497,6 +516,20 @@ export const Vehicles = () => {
     return null;
   };
 
+  // --- RENDER HELPERS ---
+  const handleEditClick = (vehicle: Vehicle) => {
+      setFormData(vehicle);
+      if(vehicle.clientId) {
+          const client = clients.find(c => c.id === vehicle.clientId);
+          if(client) setClientFormData(client);
+      } else {
+          setClientFormData({});
+      }
+      const linked = tags.find(t => t.id === vehicle.tagId);
+      setTagSearchTerm(linked ? linked.name : '');
+      setIsModalOpen(true); 
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -508,13 +541,14 @@ export const Vehicles = () => {
               setTagSearchTerm(''); 
               setIsModalOpen(true); 
           }}
-          className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-primary-500/20"
         >
-          <Plus size={18} /> {t('addVehicle')}
+          <Plus size={18} /> <span className="hidden sm:inline">{t('addVehicle')}</span>
         </button>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+      {/* --- DESKTOP TABLE VIEW --- */}
+      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 text-sm">
@@ -574,26 +608,14 @@ export const Vehicles = () => {
                     ) : <span className="text-zinc-300">-</span>}
                 </td>
                 <td className="p-4 text-right">
-                  <button onClick={() => { 
-                      setFormData(vehicle);
-                      // Load Client Data
-                      if(vehicle.clientId) {
-                          const client = clients.find(c => c.id === vehicle.clientId);
-                          if(client) setClientFormData(client);
-                      } else {
-                          setClientFormData({});
-                      }
-                      
-                      // Pre-fill search term if tag linked
-                      const linked = tags.find(t => t.id === vehicle.tagId);
-                      setTagSearchTerm(linked ? linked.name : '');
-                      setIsModalOpen(true); 
-                  }} className="p-2 text-zinc-400 hover:text-primary-600 transition-colors">
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(vehicle.id)} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="flex justify-end gap-1">
+                    <button onClick={() => handleEditClick(vehicle)} className="p-2 text-zinc-400 hover:text-primary-600 transition-colors">
+                        <Edit2 size={16} />
+                    </button>
+                    <button onClick={() => handleDelete(vehicle.id)} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
+                        <Trash2 size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -604,6 +626,70 @@ export const Vehicles = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* --- MOBILE CARD VIEW --- */}
+      <div className="md:hidden space-y-4">
+        {vehicles.map((vehicle) => (
+            <div key={vehicle.id} className={`bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border ${vehicle.status === 'stolen' ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-zinc-200 dark:border-zinc-800'}`}>
+                {/* Header */}
+                <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg shrink-0">
+                            {getCategoryIcon(vehicle.type)}
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-zinc-900 dark:text-white">{vehicle.model}</h3>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="font-mono text-sm font-bold bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">{vehicle.plate}</span>
+                                {getCompanyPrefix(vehicle.companyId) && <span className="text-[10px] font-bold bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">{getCompanyPrefix(vehicle.companyId)}</span>}
+                            </div>
+                        </div>
+                    </div>
+                    {getStatusBadge(vehicle.status)}
+                </div>
+
+                {/* Body Details */}
+                <div className="grid grid-cols-2 gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-4 bg-zinc-50 dark:bg-zinc-950/50 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/50">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] uppercase text-zinc-400 font-bold mb-0.5">Cliente</span>
+                        <span className="truncate font-medium">{getClientName(vehicle.clientId) || '-'}</span>
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-[10px] uppercase text-zinc-400 font-bold mb-0.5">Tag</span>
+                        <div className={`flex items-center gap-1 ${vehicle.tagId ? 'text-green-600 dark:text-green-400 font-bold' : 'text-zinc-400'}`}>
+                            <LinkIcon size={12} />
+                            <span className="truncate">{vehicle.tagId ? 'Vinculado' : 'Sem Tag'}</span>
+                        </div>
+                    </div>
+                    {(vehicle.year || vehicle.installationType === 'tag_tracker') && (
+                        <div className="col-span-2 flex gap-2 mt-1">
+                             {vehicle.year && <span className="text-[10px] bg-white dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">{vehicle.year}</span>}
+                             {vehicle.installationType === 'tag_tracker' && <span className="text-[10px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800 flex items-center gap-1"><Settings size={10} /> +Tracker</span>}
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => handleEditClick(vehicle)} 
+                        className="flex-1 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm font-medium hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Edit2 size={16} /> Editar
+                    </button>
+                    <button 
+                        onClick={() => handleDelete(vehicle.id)} 
+                        className="w-10 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
+            </div>
+        ))}
+        {vehicles.length === 0 && (
+            <div className="text-center py-10 text-zinc-500">{t('noVehicles')}</div>
+        )}
       </div>
 
        {isModalOpen && (
@@ -618,7 +704,7 @@ export const Vehicles = () => {
             </div>
             
             <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-              
+              {/* ... (rest of form remains same) ... */}
               {/* LEFT COLUMN: VEHICLE DETAILS */}
               <div className="space-y-4">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 pb-2">Dados do Veículo</h3>
@@ -895,7 +981,7 @@ export const Vehicles = () => {
                  </div>
               </div>
 
-              {/* --- HINOVA STATUS MODAL --- */}
+              {/* ... Modals (Hinova, FIPE) ... */}
               {hinovaStatus.open && (
                 <div className="absolute inset-0 z-[60] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
                     <div className={`p-4 rounded-full mb-4 shadow-lg ${
@@ -931,6 +1017,7 @@ export const Vehicles = () => {
                 {/* --- FIPE SEARCH MODAL --- */}
                 {isFipeModalOpen && (
                     <div className="absolute inset-0 z-[70] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+                        {/* ... FIPE MODAL CONTENT ... */}
                         <div className="flex justify-between items-center mb-6">
                             <div className="flex items-center gap-2 text-primary-600">
                                 <BookOpen size={24} />

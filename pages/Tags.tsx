@@ -5,6 +5,7 @@ import { storage } from '../services/storage';
 import { Tag, Vehicle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car } from 'lucide-react';
 
 export const Tags = () => {
@@ -17,6 +18,7 @@ export const Tags = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
   const { addNotification } = useNotification();
+  const { user } = useAuth(); // Audit
 
   const loadData = async () => {
     const [loadedTags, loadedVehicles] = await Promise.all([
@@ -70,6 +72,8 @@ export const Tags = () => {
 
     if (confirm(t('deleteConfirm'))) {
       try {
+        const tagToDelete = tags.find(t => t.id === id);
+        
         // 1. Optimistic UI Update (Remove immediately)
         setTags(prev => prev.filter(t => t.id !== id));
         setSelectedTags(prev => {
@@ -81,6 +85,9 @@ export const Tags = () => {
         // 2. Actual Storage Delete
         await storage.deleteTag(id);
         
+        // Audit
+        storage.logAction(user, 'DELETE', 'Tag', `Deleted tag ${tagToDelete?.name} (${tagToDelete?.accessoryId})`, id);
+
         // 3. Notification
         addNotification('success', 'Deleted', 'Tag removed successfully.');
         
@@ -105,6 +112,10 @@ export const Tags = () => {
       setSelectedTags(new Set());
       
       await storage.deleteTags(idsToDelete);
+      
+      // Audit
+      storage.logAction(user, 'DELETE', 'Tag', `Batch deleted ${count} tags`);
+
       addNotification('success', 'Batch Deleted', `${count} tags removed.`);
     }
   };
@@ -123,6 +134,7 @@ export const Tags = () => {
       }
     }
 
+    const isEdit = !!formData.id;
     const newTag: Tag = {
       id: formData.id || crypto.randomUUID(),
       name: formData.name,
@@ -141,6 +153,16 @@ export const Tags = () => {
     }
 
     await storage.saveTag(newTag);
+    
+    // Audit
+    storage.logAction(
+        user, 
+        isEdit ? 'UPDATE' : 'CREATE', 
+        'Tag', 
+        `${isEdit ? 'Updated' : 'Created'} tag ${newTag.name}`, 
+        newTag.id
+    );
+
     // Silent background reload to ensure consistency eventually
     setTimeout(() => loadData(), 1000); 
     
@@ -207,6 +229,10 @@ export const Tags = () => {
       
       await storage.saveTag(newTag);
       count++;
+    }
+
+    if (count > 0) {
+        storage.logAction(user, 'CREATE', 'Tag', `Imported ${count} tags via CSV`);
     }
 
     loadData();

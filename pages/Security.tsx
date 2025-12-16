@@ -185,7 +185,7 @@ export const Security = () => {
             )}
         </div>
 
-        {/* History Table */}
+        {/* History Section */}
         <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
             <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 flex justify-between items-center">
                 <h3 className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
@@ -196,7 +196,8 @@ export const Security = () => {
                 </button>
             </div>
             
-            <div className="overflow-x-auto">
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="text-xs text-zinc-500 uppercase bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
                         <tr>
@@ -238,12 +239,50 @@ export const Security = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Mobile History Cards */}
+            <div className="md:hidden p-4 space-y-3">
+                {historyRecords.map(record => (
+                    <div key={record.id} className="bg-zinc-50 dark:bg-zinc-950 rounded-lg p-4 border border-zinc-200 dark:border-zinc-800">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${record.type === 'robbery' ? 'text-red-600 bg-red-100' : 'text-orange-600 bg-orange-100'}`}>
+                                    {record.type === 'robbery' ? 'Roubo' : 'Furto'}
+                                </span>
+                                <div className="font-bold text-zinc-900 dark:text-white mt-1">{record.vehiclePlate}</div>
+                                <div className="text-xs text-zinc-500">{record.vehicleModel}</div>
+                            </div>
+                            <span className="px-2 py-1 rounded text-[10px] font-bold uppercase text-emerald-600 bg-emerald-100">
+                                Recuperado
+                            </span>
+                        </div>
+                        <div className="text-xs text-zinc-500 space-y-1 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                            <div className="flex justify-between">
+                                <span>Ocorrência:</span>
+                                <span>{new Date(record.timestamp).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>Recuperação:</span>
+                                <span>{record.recoveredAt ? new Date(record.recoveredAt).toLocaleDateString() : '-'}</span>
+                            </div>
+                            {record.policeReport && (
+                                <div className="flex justify-between">
+                                    <span>B.O:</span>
+                                    <span className="font-mono">{record.policeReport}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
+                {historyRecords.length === 0 && <div className="text-center text-zinc-400 text-sm">Nenhum histórico.</div>}
+            </div>
         </div>
 
-        {/* Modal: Report Theft */}
+        {/* Modal: Report Theft (Same as before) */}
         {isModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-red-200 dark:border-red-900/30 animate-in fade-in zoom-in-95 duration-200">
+                    {/* ... (Form Content Same as before) ... */}
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
                             <AlertTriangle /> Registrar Roubo/Furto

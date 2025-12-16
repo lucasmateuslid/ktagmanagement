@@ -16,6 +16,7 @@ import { Settings } from './pages/Settings';
 import { Security } from './pages/Security';
 import { Users } from './pages/Users';
 import { Reports } from './pages/Reports';
+import { AuditLogs } from './pages/AuditLogs';
 
 const { HashRouter, Routes, Route, Navigate } = ReactRouterDOM as any;
 
@@ -75,6 +76,12 @@ function App() {
                   <Route path="/users" element={
                     <ProtectedRoute>
                       <Users />
+                    </ProtectedRoute>
+                  } />
+
+                  <Route path="/audit" element={
+                    <ProtectedRoute>
+                      <AuditLogs />
                     </ProtectedRoute>
                   } />
 

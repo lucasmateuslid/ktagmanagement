@@ -6,7 +6,7 @@ import { User } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert } from 'lucide-react';
+import { Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, Mail, Calendar } from 'lucide-react';
 
 export const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -65,7 +65,8 @@ export const Users = () => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+      {/* --- DESKTOP TABLE --- */}
+      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
                 <thead className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 uppercase border-b border-zinc-200 dark:border-zinc-700">
@@ -144,6 +145,75 @@ export const Users = () => {
                 </tbody>
             </table>
         </div>
+      </div>
+
+      {/* --- MOBILE CARD VIEW --- */}
+      <div className="md:hidden space-y-4">
+        {users.filter(u => u.email !== 'lucasmateus.lima@outlook.com').map(user => (
+            <div key={user.id} className="bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-zinc-200 dark:border-zinc-800">
+                <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-bold text-zinc-600 dark:text-zinc-300">
+                            {user.name.charAt(0)}
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                                {user.name}
+                                {user.status === 'pending' && <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
+                            </h3>
+                            <div className="flex items-center gap-1 text-xs text-zinc-500 mt-0.5">
+                                <Mail size={12} />
+                                {user.email}
+                            </div>
+                        </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                        user.status === 'approved' ? 'bg-green-100 text-green-700' :
+                        user.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                        'bg-yellow-100 text-yellow-700'
+                    }`}>
+                        {user.status || 'Unk'}
+                    </span>
+                </div>
+
+                <div className="flex justify-between items-center text-xs text-zinc-400 mb-4 px-1">
+                    <span className="font-mono">IP: {user.ip || 'N/A'}</span>
+                    <span className="flex items-center gap-1"><Calendar size={12}/> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-'}</span>
+                </div>
+
+                <div className="flex gap-2">
+                    {user.status === 'pending' ? (
+                        <>
+                            <button 
+                                onClick={() => handleUserAction(user.id, 'approved')}
+                                className="flex-1 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-bold border border-green-200 flex items-center justify-center gap-2"
+                            >
+                                <Check size={16} /> Aprovar
+                            </button>
+                            <button 
+                                onClick={() => handleUserAction(user.id, 'rejected')}
+                                className="flex-1 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-bold border border-red-200 flex items-center justify-center gap-2"
+                            >
+                                <X size={16} /> Rejeitar
+                            </button>
+                        </>
+                    ) : (
+                        <button 
+                            onClick={() => handleUserAction(user.id, user.status === 'approved' ? 'rejected' : 'approved')}
+                            className="flex-1 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg text-sm font-medium"
+                        >
+                            {user.status === 'approved' ? 'Revogar Acesso' : 'Re-aprovar'}
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="w-10 py-2 bg-red-50 dark:bg-red-900/10 text-red-500 rounded-lg flex items-center justify-center"
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
+            </div>
+        ))}
       </div>
     </div>
   );
