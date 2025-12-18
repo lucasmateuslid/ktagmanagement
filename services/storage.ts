@@ -134,7 +134,7 @@ export const storage = {
   findUserByEmail: async (email: string): Promise<User | null> => {
     if (db) {
       try {
-        const q = query(collection(db, KEYS.USERS_DB), where("email", "==", email));
+        const q = query(collection(db, KEYS.USERS_DB), where("email", "==", email.toLowerCase().trim()));
         const snap = await getDocs(q);
         if (!snap.empty) {
           const d = snap.docs[0];
@@ -145,20 +145,31 @@ export const storage = {
       }
     }
     const localUsers = getLocal<User[]>(KEYS.USERS_DB, []);
-    return localUsers.find(u => u.email === email) || null;
+    return localUsers.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim()) || null;
   },
 
   registerUserRequest: async (user: User) => {
+    const cleanedUser = { ...user, email: user.email.toLowerCase().trim() };
+    
     if (db) {
       try {
-        await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(user));
+        await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(cleanedUser), { merge: true });
         return;
       } catch (e) {
         console.error("Firestore register failed", e);
       }
     }
+    
+    // Fallback Local Storage com Lógica de Atualização (Upsert)
     const users = getLocal<User[]>(KEYS.USERS_DB, []);
-    users.push(user);
+    const index = users.findIndex(u => u.email.toLowerCase().trim() === cleanedUser.email);
+    
+    if (index >= 0) {
+      users[index] = { ...users[index], ...cleanedUser };
+    } else {
+      users.push(cleanedUser);
+    }
+    
     setLocal(KEYS.USERS_DB, users);
   },
 

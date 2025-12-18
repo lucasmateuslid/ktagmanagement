@@ -6,8 +6,8 @@ import { storage } from '../services/storage';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string) => Promise<string | void>; // Retorna string de erro se falhar
-  register: (name: string, email: string, ip: string) => Promise<void>;
+  login: (email: string, password?: string) => Promise<string | void>;
+  register: (name: string, email: string, password: string, ip: string) => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
@@ -25,75 +25,90 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
   useEffect(() => {
     const init = async () => {
-      // Carrega a sessão atual
-      const u = await storage.getSessionUser();
-      
-      // Valida se a sessão ainda é válida no banco (opcional, mas bom para segurança)
-      if (u) {
-        const dbUser = await storage.findUserByEmail(u.email);
-        if (dbUser && dbUser.status === 'approved') {
-           setUser(dbUser);
-        } else if (u.email === ADMIN_EMAIL) {
-           setUser(u); // Root Admin sempre entra
-        } else {
-           storage.clearSessionUser();
-           setUser(null);
+      try {
+        const u = await storage.getSessionUser();
+        if (u) {
+          // Mantém a sessão ativa imediatamente
+          setUser(u);
+          
+          // Validação silenciosa no banco de dados
+          const dbUser = await storage.findUserByEmail(u.email);
+          if (dbUser) {
+            if (dbUser.status === 'approved') {
+              setUser(dbUser); 
+              await storage.setSessionUser(dbUser);
+            } else {
+              await storage.clearSessionUser();
+              setUser(null);
+            }
+          }
         }
+      } catch (e) {
+        console.error("Auth Init Error:", e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     init();
   }, []);
 
-  const login = async (email: string): Promise<string | void> => {
+  const login = async (email: string, password?: string): Promise<string | void> => {
     setLoading(true);
+    const cleanEmail = email.trim().toLowerCase();
     
-    // Root Admin Bypass
-    if (email === ADMIN_EMAIL) {
-        const adminUser: User = { 
-            id: 'root-admin', 
-            name: 'Lucas Lima (Admin)', 
-            email, 
-            role: 'admin', 
-            status: 'approved',
-            createdAt: Date.now()
-        };
-        await storage.setSessionUser(adminUser);
-        setUser(adminUser);
+    if (!password) {
+        setLoading(false);
+        return "Por favor, insira sua senha.";
+    }
+
+    // Busca no Banco de Dados (Firestore / Local)
+    const dbUser = await storage.findUserByEmail(cleanEmail);
+
+    if (dbUser) {
+        // Validação estrita de senha do banco
+        if (dbUser.password && password !== dbUser.password) {
+            setLoading(false);
+            return "Senha incorreta. Verifique os dados e tente novamente.";
+        }
+
+        // Caso especial: se o usuário existe mas não tem senha definida (migração), 
+        // ou se a senha coincide com a que foi digitada
+        if (!dbUser.password && (password === 'admin' || password === '123456')) {
+            // Permitir o primeiro acesso se não houver senha no banco, mas for o admin
+            if (cleanEmail !== ADMIN_EMAIL) {
+                setLoading(false);
+                return "Usuário sem senha definida. Contate o administrador.";
+            }
+        }
+
+        if (dbUser.status === 'pending' && cleanEmail !== ADMIN_EMAIL) {
+            setLoading(false);
+            return "Sua conta ainda não foi aprovada.";
+        }
+
+        if (dbUser.status === 'rejected') {
+            setLoading(false);
+            return "Acesso revogado pelo gestor.";
+        }
+
+        await storage.setSessionUser(dbUser);
+        setUser(dbUser);
         setLoading(false);
         return;
     }
 
-    const dbUser = await storage.findUserByEmail(email);
-
-    if (!dbUser) {
-        setLoading(false);
-        return "User not found. Please register first.";
-    }
-
-    if (dbUser.status === 'pending') {
-        setLoading(false);
-        return "Account pending approval from administrator.";
-    }
-
-    if (dbUser.status === 'rejected') {
-        setLoading(false);
-        return "Access rejected by administrator.";
-    }
-
-    // Login sucess
-    await storage.setSessionUser(dbUser);
-    setUser(dbUser);
     setLoading(false);
+    return "Usuário não localizado no sistema K-TAG.";
   };
 
-  const register = async (name: string, email: string, ip: string) => {
+  const register = async (name: string, email: string, password: string, ip: string) => {
     const newUser: User = { 
         id: crypto.randomUUID(), 
         name, 
-        email, 
-        role: 'user', 
-        status: 'pending', // Sempre pendente
+        email: email.trim().toLowerCase(), 
+        password,
+        role: email.trim().toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user', 
+        status: email.trim().toLowerCase() === ADMIN_EMAIL ? 'approved' : 'pending',
         ip,
         createdAt: Date.now()
     };
@@ -104,7 +119,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const updateProfile = async (data: Partial<User>) => {
     if (!user) return;
     await storage.updateUserProfile(user.id, data);
-    setUser(prev => prev ? { ...prev, ...data } : null);
+    const updatedUser = { ...user, ...data };
+    setUser(updatedUser);
+    await storage.setSessionUser(updatedUser);
   };
 
   const logout = async () => {
@@ -112,7 +129,14 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     setUser(null);
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading K-TAG...</div>;
+  if (loading) return (
+    <div className="h-screen w-screen flex items-center justify-center bg-zinc-950">
+      <div className="flex flex-col items-center gap-6">
+        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Autenticando</h2>
+      </div>
+    </div>
+  );
 
   return (
     <AuthContext.Provider value={{ 

@@ -46,7 +46,6 @@ export const Reports = () => {
   };
 
   const processCharts = (data: Vehicle[], startStr: string, endStr: string) => {
-      // 1. Processar Categoria e Instalação (Pie Charts)
       const catMap: Record<string, number> = {};
       const instMap: Record<string, number> = {};
       
@@ -60,12 +59,10 @@ export const Reports = () => {
       setCategoryData(Object.keys(catMap).map(k => ({ name: k, value: catMap[k] })));
       setInstallData(Object.keys(instMap).map(k => ({ name: k, value: instMap[k] })));
 
-      // 2. Processar Tendência Diária (Area Chart)
       const trendMap: Record<string, number> = {};
       const start = new Date(startStr + 'T00:00:00');
       const end = new Date(endStr + 'T23:59:59');
 
-      // Inicializar todos os dias do intervalo com 0 para o gráfico não ficar quebrado
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           const dayKey = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
           trendMap[dayKey] = 0;
@@ -81,6 +78,123 @@ export const Reports = () => {
       });
 
       setTrendData(Object.keys(trendMap).map(k => ({ name: k, count: trendMap[k] })));
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    const primaryColor = [245, 158, 11]; // #f59e0b
+    const darkColor = [24, 24, 27]; // #18181b
+    
+    // Configurações de Cabeçalho
+    doc.setFontSize(22);
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text("K-TAG INSIGHT REPORT", 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text(`Período: ${new Date(appliedStartDate).toLocaleDateString()} - ${new Date(appliedEndDate).toLocaleDateString()}`, 14, 30);
+    doc.text(`Gerado por: ${user?.name || 'Sistema'} em ${new Date().toLocaleString()}`, 14, 35);
+
+    // DASHBOARD DE BLOCOS (KPI CARDS)
+    const cardWidth = 60;
+    const cardHeight = 25;
+    const cardY = 45;
+
+    // Card 1: Total
+    doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.roundedRect(14, cardY, cardWidth, cardHeight, 3, 3, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.text("TOTAL ATIVAÇÕES", 18, cardY + 8);
+    doc.setFontSize(16);
+    doc.text(`${filteredVehicles.length}`, 18, cardY + 18);
+
+    // Card 2: Só Tag
+    const soTagCount = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.roundedRect(14 + cardWidth + 5, cardY, cardWidth, cardHeight, 3, 3, "F");
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+    doc.text("SÓ TAG", 14 + cardWidth + 9, cardY + 8);
+    doc.setFontSize(16);
+    doc.text(`${soTagCount}`, 14 + cardWidth + 9, cardY + 18);
+
+    // Card 3: Tag + Tracker
+    const tagTrackerCount = filteredVehicles.filter(v => v.installationType === 'tag_tracker').length;
+    doc.setFillColor(240, 240, 240);
+    doc.roundedRect(14 + (cardWidth * 2) + 10, cardY, cardWidth, cardHeight, 3, 3, "F");
+    doc.setTextColor(100);
+    doc.setFontSize(8);
+    doc.text("TAG + RASTREADOR", 14 + (cardWidth * 2) + 14, cardY + 8);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(16);
+    doc.text(`${tagTrackerCount}`, 14 + (cardWidth * 2) + 14, cardY + 18);
+
+    // TABELA DE RESUMO POR CATEGORIA
+    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("Distribuição por Categoria", 14, 85);
+
+    autoTable(doc, {
+      startY: 90,
+      head: [['Categoria', 'Quantidade', 'Representatividade (%)']],
+      body: categoryData.map(c => [
+        c.name, 
+        c.value, 
+        `${((c.value / filteredVehicles.length) * 100).toFixed(1)}%`
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [80, 80, 80] },
+      styles: { fontSize: 9 }
+    });
+
+    // LISTAGEM DETALHADA
+    doc.setFontSize(12);
+    doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
+
+    const detailedData = filteredVehicles.map(v => [
+      new Date(v.createdAt!).toLocaleDateString(),
+      v.plate,
+      v.model,
+      categories.find(c => c.id === v.type)?.name || '-',
+      v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+    ]);
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 20,
+      head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento']],
+      body: detailedData,
+      theme: 'striped',
+      headStyles: { fillColor: primaryColor },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 25 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 35 },
+        4: { cellWidth: 35 }
+      }
+    });
+
+    doc.save(`relatorio_detalhado_${appliedStartDate}_${appliedEndDate}.pdf`);
+  };
+
+  const exportExcel = () => {
+    const dataToExport = filteredVehicles.map(v => ({
+      Data: new Date(v.createdAt!).toLocaleDateString(),
+      Placa: v.plate,
+      Modelo: v.model,
+      Categoria: categories.find(c => c.id === v.type)?.name || '-',
+      Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Veículos");
+    XLSX.writeFile(workbook, `relatorio_veiculos_${appliedStartDate}_${appliedEndDate}.xlsx`);
   };
 
   const COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#71717a'];
@@ -210,8 +324,20 @@ export const Reports = () => {
             <div className="p-10 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-950/20">
                 <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Lista Detalhada</h3>
                 <div className="flex gap-2">
-                    <button className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-red-500 transition-all flex items-center gap-2 text-zinc-500"><Download size={14}/> PDF</button>
-                    <button className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-emerald-500 transition-all flex items-center gap-2 text-zinc-500"><FileSpreadsheet size={14}/> Excel</button>
+                    <button 
+                      onClick={exportPDF}
+                      disabled={filteredVehicles.length === 0}
+                      className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-red-500 transition-all flex items-center gap-2 text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Download size={14}/> PDF
+                    </button>
+                    <button 
+                      onClick={exportExcel}
+                      disabled={filteredVehicles.length === 0}
+                      className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-emerald-500 transition-all flex items-center gap-2 text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <FileSpreadsheet size={14}/> Excel
+                    </button>
                 </div>
             </div>
             <div className="overflow-x-auto">

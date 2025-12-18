@@ -111,7 +111,11 @@ export const LiveMap = () => {
     const term = tagSearchTerm.toLowerCase().trim();
     return tags.filter(tag => {
       const vehicle = vehicles.find(v => v.tagId === tag.id);
-      return tag.name.toLowerCase().includes(term) || vehicle?.plate?.toLowerCase().includes(term);
+      return (
+        tag.name.toLowerCase().includes(term) || 
+        vehicle?.plate?.toLowerCase().includes(term) ||
+        tag.accessoryId.toLowerCase().includes(term)
+      );
     });
   }, [tags, vehicles, tagSearchTerm]);
 
@@ -180,7 +184,6 @@ export const LiveMap = () => {
   const handleShare = async () => {
     if (!selectedTagId) return;
     
-    // Verifica se há localização disponível para compartilhar
     if (locations.length === 0) {
         addNotification('info', 'Sem Localização', 'Este veículo/tag ainda não possui localização registrada para compartilhar.');
         return;
@@ -188,8 +191,6 @@ export const LiveMap = () => {
 
     const latest = locations[0];
     const vehicle = vehicles.find(v => v.tagId === selectedTagId);
-    
-    // Gera o link do Google Maps baseado na última coordenada conhecida
     const googleMapsUrl = `https://www.google.com/maps?q=${latest.lat},${latest.lon}`;
     
     if (navigator.share) {
@@ -200,7 +201,6 @@ export const LiveMap = () => {
                 url: googleMapsUrl
             });
         } catch (e) {
-            // Fallback para cópia se o compartilhamento falhar
             await navigator.clipboard.writeText(googleMapsUrl);
             addNotification('success', 'Link Copiado', 'Link do Google Maps copiado para a área de transferência.');
         }
@@ -218,28 +218,29 @@ export const LiveMap = () => {
   const selectedTag = tags.find(t => t.id === selectedTagId);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)] md:h-[calc(100vh-10rem)] gap-6 font-sans">
+    <div className="flex flex-col h-full lg:h-[calc(100vh-10rem)] gap-6 font-sans overflow-hidden">
       
+      {/* TOOLBAR CONTROLS */}
       <div className="bg-white dark:bg-zinc-900 p-4 rounded-[32px] shadow-sm border border-zinc-200 dark:border-zinc-800 flex flex-col xl:flex-row xl:items-center gap-4 justify-between shrink-0">
         
         <div className="flex flex-wrap items-center gap-3">
-          <div className={`relative ${isFleetTracking ? 'opacity-30 pointer-events-none grayscale' : ''}`} ref={dropdownRef}>
+          <div className={`relative w-full md:w-auto ${isFleetTracking ? 'opacity-30 pointer-events-none grayscale' : ''}`} ref={dropdownRef}>
             <button 
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className="flex items-center gap-3 px-5 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-primary-500 transition-all text-sm font-black uppercase tracking-tight min-w-[260px] shadow-sm"
+                className="flex items-center gap-3 px-5 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl hover:border-primary-500 transition-all text-sm font-black uppercase tracking-tight w-full md:min-w-[260px] shadow-sm"
             >
-                <Radar className="text-primary-500" size={18} />
+                <Radar className="text-primary-500 shrink-0" size={18} />
                 <span className="truncate flex-1 text-left text-zinc-900 dark:text-zinc-100">
                   {activeVehicle ? `${activeVehicle.plate} - ${selectedTag?.name}` : (selectedTag ? selectedTag.name : 'Selecionar Veículo')}
                 </span>
-                <ChevronRight size={14} className={`text-zinc-400 transition-transform ${isSearchOpen ? 'rotate-90' : ''}`} />
+                <ChevronRight size={14} className={`text-zinc-400 shrink-0 transition-transform ${isSearchOpen ? 'rotate-90' : ''}`} />
             </button>
             {isSearchOpen && (
                 <div className="absolute top-full left-0 w-full md:w-[360px] mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-2xl z-[500] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800">
                       <div className="relative">
                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                         <input type="text" placeholder="Placa ou Nome..." value={tagSearchTerm} onChange={e => setTagSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold outline-none focus:ring-2 focus:ring-primary-500" />
+                         <input type="text" placeholder="Placa, Nome ou SN..." value={tagSearchTerm} onChange={e => setTagSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold outline-none focus:ring-2 focus:ring-primary-500" />
                       </div>
                    </div>
                    <div className="max-h-80 overflow-y-auto p-2 custom-scrollbar">
@@ -247,11 +248,15 @@ export const LiveMap = () => {
                         const v = vehicles.find(veh => veh.tagId === t.id);
                         return (
                           <button key={t.id} onClick={() => { setSelectedTagId(t.id); setIsSearchOpen(false); }} className={`w-full p-3 text-left rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-between group transition-all ${selectedTagId === t.id ? 'bg-primary-500/10 border-primary-500/20' : ''}`}>
-                             <div>
-                                <div className="font-black text-zinc-900 dark:text-zinc-100 text-xs uppercase tracking-tight">{t.name}</div>
-                                <div className="text-[10px] font-bold text-zinc-400 uppercase mt-0.5">{v?.plate || 'SEM VÍNCULO'}</div>
+                             <div className="flex-1 min-w-0">
+                                <div className="font-black text-zinc-900 dark:text-zinc-100 text-xs uppercase tracking-tight truncate">{t.name}</div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                   <div className="text-[10px] font-bold text-zinc-400 uppercase truncate">{v?.plate || 'SEM VÍNCULO'}</div>
+                                   <div className="w-1 h-1 rounded-full bg-zinc-300 shrink-0" />
+                                   <div className="text-[9px] font-mono text-zinc-400 truncate">SN: {t.accessoryId}</div>
+                                </div>
                              </div>
-                             <ChevronRight size={14} className="text-zinc-300 group-hover:text-primary-500" />
+                             <ChevronRight size={14} className="text-zinc-300 group-hover:text-primary-500 shrink-0 ml-2" />
                           </button>
                         )
                       })}
@@ -260,10 +265,10 @@ export const LiveMap = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full md:w-auto">
             <button
               onClick={toggleTracking}
-              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase tracking-[0.1em] text-[10px] transition-all shadow-lg ${isTracking ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-zinc-900 dark:bg-primary-500 text-white dark:text-black shadow-primary-500/20'}`}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black uppercase tracking-[0.1em] text-[10px] transition-all shadow-lg ${isTracking ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-zinc-900 dark:bg-primary-500 text-white dark:text-black shadow-primary-500/20'}`}
             >
               {isTracking ? <><Square size={14} fill="currentColor" /> PARAR</> : <><Play size={14} fill="currentColor" /> RASTREAR</>}
             </button>
@@ -282,10 +287,6 @@ export const LiveMap = () => {
                 <Wifi size={14} className="text-emerald-500" />
                 <div className="flex flex-col"><span className="text-xs font-black text-zinc-900 dark:text-white leading-none">{fleetStats.online}</span><span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Online</span></div>
              </div>
-             <div className="px-4 py-2 flex items-center gap-3 border-r border-zinc-200 dark:border-zinc-800">
-                <WifiOff size={14} className="text-red-500" />
-                <div className="flex flex-col"><span className="text-xs font-black text-zinc-900 dark:text-white leading-none">{fleetStats.noResponse}</span><span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Sem Sinal</span></div>
-             </div>
              <div className="px-4 py-2 flex items-center gap-3">
                 <MapPinned size={14} className="text-primary-500" />
                 <div className="flex flex-col"><span className="text-xs font-black text-zinc-900 dark:text-white leading-none">{fleetStats.withLocation}</span><span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Localizados</span></div>
@@ -296,20 +297,24 @@ export const LiveMap = () => {
         <div className="flex items-center gap-2">
             <button 
               onClick={() => { setIsFleetTracking(!isFleetTracking); if(isTracking) setIsTracking(false); }} 
-              className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${isFleetTracking ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-zinc-900 dark:border-white shadow-xl' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:border-primary-500'}`}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${isFleetTracking ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-zinc-900 dark:border-white shadow-xl' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:border-primary-500'}`}
             >
-              <LayoutGrid size={16} /> {isFleetTracking ? 'Módulo Frota ATIVO' : 'Modo Frota'}
-            </button>
-            <button className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-2xl hover:text-red-500 transition-colors">
-              <Download size={18} />
+              <LayoutGrid size={16} /> {isFleetTracking ? 'Frota ATIVO' : 'Frota'}
             </button>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+      {/* CONTENT AREA: MAP & LIST */}
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
         
-        <div className="w-full lg:w-[340px] bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-sm shrink-0">
-          <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
+        {/* MAP CONTAINER (Top on Mobile, Right on Desktop) */}
+        <div className="flex-1 order-1 lg:order-2 rounded-[40px] overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950 relative z-0 min-h-[400px] lg:min-h-0">
+           <MapComponent locations={locations} isFleetMode={isFleetTracking} vehicles={vehicles} />
+        </div>
+
+        {/* STATUS LIST (Bottom on Mobile, Left on Desktop) */}
+        <div className="w-full lg:w-[340px] order-2 lg:order-1 bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-sm shrink-0 h-[450px] lg:h-full">
+          <div className="p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
              <div className="flex items-center justify-between mb-6">
                 <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em]">Status Intelligence</h2>
                 <div className="flex gap-1">
@@ -319,9 +324,9 @@ export const LiveMap = () => {
              </div>
              {activeVehicle && !isFleetTracking ? (
                 <div className="flex items-center gap-5">
-                   <div className="w-16 h-16 rounded-[24px] bg-zinc-900 flex items-center justify-center text-primary-500 border border-zinc-800 shadow-xl shrink-0"><Car size={32}/></div>
+                   <div className="w-14 h-14 md:w-16 md:h-16 rounded-[24px] bg-zinc-900 flex items-center justify-center text-primary-500 border border-zinc-800 shadow-xl shrink-0"><Car size={28}/></div>
                    <div className="min-w-0">
-                      <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate leading-tight">{activeVehicle.plate}</h3>
+                      <h3 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate leading-tight">{activeVehicle.plate}</h3>
                       <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-1 truncate">{activeVehicle.model}</p>
                    </div>
                 </div>
@@ -330,12 +335,12 @@ export const LiveMap = () => {
                    <LayoutGrid size={24} className="text-primary-500" />
                    <div>
                       <div className="text-xs font-black uppercase tracking-widest leading-none">Visão Geral</div>
-                      <div className="text-[10px] font-bold text-zinc-500 mt-1 uppercase tracking-tighter">{locations.length} Veículos na malha</div>
+                      <div className="text-[10px] font-bold text-zinc-500 mt-1 uppercase tracking-tighter">{locations.length} Veículos localizados</div>
                    </div>
                 </div>
              ) : (
-                <div className="py-6 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl">
-                   <Radar size={32} className="mx-auto text-zinc-300 mb-2 animate-pulse" />
+                <div className="py-4 md:py-6 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl">
+                   <Radar size={28} className="mx-auto text-zinc-300 mb-2 animate-pulse" />
                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Aguardando Veículo</span>
                 </div>
              )}
@@ -351,7 +356,7 @@ export const LiveMap = () => {
                 locations.map(loc => {
                   const v = vehicles.find(veh => veh.tagId === loc.tagId);
                   return (
-                    <div key={loc.id} className="p-5 rounded-[24px] bg-white dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 shadow-sm hover:border-primary-500 transition-all cursor-pointer group">
+                    <div key={loc.id} className="p-4 md:p-5 rounded-[24px] bg-white dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 shadow-sm hover:border-primary-500 transition-all cursor-pointer group">
                        <div className="flex justify-between items-start mb-3">
                           <span className="text-[11px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{v?.plate || 'SINAL'}</span>
                           <div className="flex items-center gap-2"><span className="text-[10px] font-mono text-zinc-400">{new Date(loc.timestamp).toLocaleTimeString()}</span><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /></div>
@@ -368,10 +373,6 @@ export const LiveMap = () => {
                 })
              )}
           </div>
-        </div>
-
-        <div className="flex-1 rounded-[40px] overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950 relative z-0">
-           <MapComponent locations={locations} isFleetMode={isFleetTracking} vehicles={vehicles} />
         </div>
       </div>
     </div>
