@@ -31,7 +31,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
           // Mantém a sessão ativa imediatamente
           setUser(u);
           
-          // Validação silenciosa no banco de dados
+          // Validação silenciosa no banco de dados (pode ser Firestore ou Cache Local sincronizado)
           const dbUser = await storage.findUserByEmail(u.email);
           if (dbUser) {
             if (dbUser.status === 'approved') {
@@ -61,34 +61,32 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         return "Por favor, insira sua senha.";
     }
 
-    // Busca no Banco de Dados (Firestore / Local)
+    // Busca no Banco de Dados (Prioriza Firestore, depois cache local sincronizado via Database Sync)
     const dbUser = await storage.findUserByEmail(cleanEmail);
 
     if (dbUser) {
-        // Validação estrita de senha do banco
+        // Validação estrita de senha
         if (dbUser.password && password !== dbUser.password) {
             setLoading(false);
             return "Senha incorreta. Verifique os dados e tente novamente.";
         }
 
-        // Caso especial: se o usuário existe mas não tem senha definida (migração), 
-        // ou se a senha coincide com a que foi digitada
+        // Caso o usuário não tenha senha (migração legada)
         if (!dbUser.password && (password === 'admin' || password === '123456')) {
-            // Permitir o primeiro acesso se não houver senha no banco, mas for o admin
             if (cleanEmail !== ADMIN_EMAIL) {
                 setLoading(false);
-                return "Usuário sem senha definida. Contate o administrador.";
+                return "Usuário sem senha definida no servidor. Contate o administrador.";
             }
         }
 
         if (dbUser.status === 'pending' && cleanEmail !== ADMIN_EMAIL) {
             setLoading(false);
-            return "Sua conta ainda não foi aprovada.";
+            return "Sua conta ainda não foi aprovada pelo gestor.";
         }
 
         if (dbUser.status === 'rejected') {
             setLoading(false);
-            return "Acesso revogado pelo gestor.";
+            return "Seu acesso foi revogado. Contate o administrador.";
         }
 
         await storage.setSessionUser(dbUser);
@@ -98,7 +96,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     }
 
     setLoading(false);
-    return "Usuário não localizado no sistema K-TAG.";
+    return "E-mail não localizado no cache de usuários. Se for novo, peça ao admin para sincronizar o banco.";
   };
 
   const register = async (name: string, email: string, password: string, ip: string) => {

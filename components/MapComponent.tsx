@@ -9,6 +9,9 @@ import { Loader2, AlertCircle, Map as MapIcon, Navigation } from 'lucide-react';
 
 declare const google: any;
 
+// Coordenadas padrão atualizadas para o ponto específico solicitado
+const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
+
 // Fix Leaflet Default Icon (Fallback)
 const DefaultIcon = L.icon({
     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -42,10 +45,13 @@ const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: Loca
   // Initialize Map
   useEffect(() => {
     if (mapRef.current && !googleMap && typeof google !== 'undefined' && google.maps) {
-      const initialCenter = locations.length > 0 ? { lat: locations[0].lat, lng: locations[0].lon } : { lat: -23.5505, lng: -46.6333 };
+      const initialCenter = locations.length > 0 
+        ? { lat: locations[0].lat, lng: locations[0].lon } 
+        : { lat: RN_CENTER.lat, lng: RN_CENTER.lon };
+        
       const map = new google.maps.Map(mapRef.current, {
         center: initialCenter,
-        zoom: 15,
+        zoom: 12,
         mapId: 'KTAG_PREMIUM_MAP', // Requires Google Cloud Map ID for advanced markers if used
         disableDefaultUI: false,
         zoomControl: true,
@@ -115,7 +121,12 @@ const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: Loca
             bounds.extend(marker.getPosition());
         });
         
-        if (locations.length > 0) googleMap.fitBounds(bounds);
+        if (locations.length > 0) {
+          googleMap.fitBounds(bounds);
+        } else {
+          googleMap.setCenter({ lat: RN_CENTER.lat, lng: RN_CENTER.lon });
+          googleMap.setZoom(12);
+        }
 
     } else {
         // Single Tracking Mode
@@ -147,6 +158,9 @@ const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: Loca
             });
             polyline.setMap(googleMap);
             polyRef.current = polyline;
+        } else {
+            googleMap.setCenter({ lat: RN_CENTER.lat, lng: RN_CENTER.lon });
+            googleMap.setZoom(12);
         }
     }
   }, [locations, googleMap, isFleetMode, vehicles]);
@@ -231,8 +245,8 @@ export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = fals
         </div>
       ) : (
         <MapContainer 
-          center={locations.length > 0 ? [locations[0].lat, locations[0].lon] : [-23.5505, -46.6333]} 
-          zoom={15} 
+          center={locations.length > 0 ? [locations[0].lat, locations[0].lon] : [RN_CENTER.lat, RN_CENTER.lon]} 
+          zoom={locations.length > 0 ? 15 : 12} 
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />

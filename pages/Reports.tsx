@@ -80,12 +80,24 @@ export const Reports = () => {
       setTrendData(Object.keys(trendMap).map(k => ({ name: k, count: trendMap[k] })));
   };
 
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }: any) => {
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 1.4;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  
+    return (
+      <text x={x} y={y} fill={index % 2 === 0 ? '#71717a' : '#a1a1aa'} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black uppercase">
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+
   const exportPDF = () => {
     const doc = new jsPDF();
     const primaryColor = [245, 158, 11]; // #f59e0b
     const darkColor = [24, 24, 27]; // #18181b
     
-    // Configurações de Cabeçalho
     doc.setFontSize(22);
     doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
     doc.setFont("helvetica", "bold");
@@ -97,42 +109,45 @@ export const Reports = () => {
     doc.text(`Período: ${new Date(appliedStartDate).toLocaleDateString()} - ${new Date(appliedEndDate).toLocaleDateString()}`, 14, 30);
     doc.text(`Gerado por: ${user?.name || 'Sistema'} em ${new Date().toLocaleString()}`, 14, 35);
 
-    // DASHBOARD DE BLOCOS (KPI CARDS)
+    const totalCount = filteredVehicles.length;
     const cardWidth = 60;
     const cardHeight = 25;
     const cardY = 45;
 
-    // Card 1: Total
+    // CARD 1: TOTAL
     doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
     doc.roundedRect(14, cardY, cardWidth, cardHeight, 3, 3, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(8);
     doc.text("TOTAL ATIVAÇÕES", 18, cardY + 8);
-    doc.setFontSize(16);
-    doc.text(`${filteredVehicles.length}`, 18, cardY + 18);
+    doc.setFontSize(14);
+    doc.text(`${totalCount}`, 18, cardY + 18);
 
-    // Card 2: Só Tag
+    // CARD 2: SÓ TAG
     const soTagCount = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
+    const soTagPercent = totalCount > 0 ? ((soTagCount / totalCount) * 100).toFixed(1) : "0.0";
+    
     doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
     doc.roundedRect(14 + cardWidth + 5, cardY, cardWidth, cardHeight, 3, 3, "F");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(8);
     doc.text("SÓ TAG", 14 + cardWidth + 9, cardY + 8);
-    doc.setFontSize(16);
-    doc.text(`${soTagCount}`, 14 + cardWidth + 9, cardY + 18);
+    doc.setFontSize(14);
+    doc.text(`${soTagCount} (${soTagPercent}%)`, 14 + cardWidth + 9, cardY + 18);
 
-    // Card 3: Tag + Tracker
+    // CARD 3: TAG + RASTREADOR
     const tagTrackerCount = filteredVehicles.filter(v => v.installationType === 'tag_tracker').length;
+    const tagTrackerPercent = totalCount > 0 ? ((tagTrackerCount / totalCount) * 100).toFixed(1) : "0.0";
+    
     doc.setFillColor(240, 240, 240);
     doc.roundedRect(14 + (cardWidth * 2) + 10, cardY, cardWidth, cardHeight, 3, 3, "F");
     doc.setTextColor(100);
     doc.setFontSize(8);
     doc.text("TAG + RASTREADOR", 14 + (cardWidth * 2) + 14, cardY + 8);
     doc.setTextColor(0, 0, 0);
-    doc.setFontSize(16);
-    doc.text(`${tagTrackerCount}`, 14 + (cardWidth * 2) + 14, cardY + 18);
+    doc.setFontSize(14);
+    doc.text(`${tagTrackerCount} (${tagTrackerPercent}%)`, 14 + (cardWidth * 2) + 14, cardY + 18);
 
-    // TABELA DE RESUMO POR CATEGORIA
     doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
@@ -151,7 +166,6 @@ export const Reports = () => {
       styles: { fontSize: 9 }
     });
 
-    // LISTAGEM DETALHADA
     doc.setFontSize(12);
     doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
 
@@ -169,14 +183,7 @@ export const Reports = () => {
       body: detailedData,
       theme: 'striped',
       headStyles: { fillColor: primaryColor },
-      styles: { fontSize: 8 },
-      columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 25 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 35 },
-        4: { cellWidth: 35 }
-      }
+      styles: { fontSize: 8 }
     });
 
     doc.save(`relatorio_detalhado_${appliedStartDate}_${appliedEndDate}.pdf`);
@@ -247,7 +254,7 @@ export const Reports = () => {
                      <ResponsiveContainer width="100%" height="100%">
                          <AreaChart data={trendData}>
                              <defs>
-                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                <linearGradient id="colorCount" x1="0" x2="0" y2="1">
                                   <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
                                   <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
                                 </linearGradient>
@@ -280,6 +287,8 @@ export const Reports = () => {
                                 dataKey="value" 
                                 cornerRadius={8}
                                 stroke="none"
+                                label={renderCustomizedLabel}
+                                labelLine={false}
                             >
                                 {categoryData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                             </Pie>
@@ -295,7 +304,7 @@ export const Reports = () => {
 
             <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><Settings size={16} /> Por Equipamento</h3>
-                 <div className="h-64 w-full relative">
+                 <div className="h-64 w-full flex items-center justify-center relative">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie 
@@ -306,6 +315,8 @@ export const Reports = () => {
                                 dataKey="value" 
                                 cornerRadius={8}
                                 stroke="none"
+                                label={renderCustomizedLabel}
+                                labelLine={false}
                             >
                                 {installData.map((e, i) => <Cell key={i} fill={i === 0 ? '#f59e0b' : '#27272a'} />)}
                             </Pie>
@@ -313,7 +324,7 @@ export const Reports = () => {
                         </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                        <div className="text-3xl font-display font-black text-zinc-900 dark:text-white leading-none">{installData.length > 0 ? "OK" : "0"}</div>
+                        <div className="text-3xl font-display font-black text-zinc-900 dark:text-white leading-none">{filteredVehicles.length > 0 ? "OK" : "0"}</div>
                         <div className="text-[10px] uppercase text-zinc-400 font-black tracking-widest mt-1">Mix</div>
                     </div>
                  </div>

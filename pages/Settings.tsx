@@ -10,7 +10,8 @@ import {
   Save, Settings as SettingsIcon, Map, Database, Globe, Key, 
   Languages, CloudLightning, Trash2, Plus, Search, ShieldAlert, 
   Lock, Edit2, Building2, Truck, Server, Eye, EyeOff, 
-  User as UserIcon, LayoutGrid, ChevronRight, Activity, Cpu, MapPin, ShieldCheck
+  User as UserIcon, LayoutGrid, ChevronRight, Activity, Cpu, MapPin, ShieldCheck,
+  Wifi, Cloud, Terminal
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -26,6 +27,8 @@ export const Settings = () => {
   const [showPwds, setShowPwds] = useState(false);
   const [pwdLoading, setPwdLoading] = useState(false);
 
+  // Visibility Toggles for Configs
+  const [showHinovaToken, setShowHinovaToken] = useState(false);
   const [showHinovaPass, setShowHinovaPass] = useState(false);
   const [showKTagPass, setShowKTagPass] = useState(false);
   
@@ -83,7 +86,6 @@ export const Settings = () => {
 
     setPwdLoading(true);
     try {
-        // Verifica senha atual (no banco de dados real ou sessão)
         const dbUser = await storage.findUserByEmail(currentUser.email);
         const actualCurrentPassword = dbUser?.password || currentUser.password;
 
@@ -170,7 +172,7 @@ export const Settings = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         
         {/* LEFT COLUMN: PROFILE & SECURITY */}
-        <div className="lg:col-span-5 space-y-10">
+        <div className="lg:col-span-4 space-y-10">
           
           {/* User Profile Card */}
           <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden">
@@ -194,7 +196,7 @@ export const Settings = () => {
           {/* SECURITY: CHANGE PASSWORD */}
           <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2"><Lock size={14}/> Segurança da Conta</h3>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2"><Lock size={14}/> Segurança</h3>
                 <button onClick={() => setShowPwds(!showPwds)} className="text-zinc-500">{showPwds ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
              </div>
              
@@ -207,7 +209,6 @@ export const Settings = () => {
                         value={pwdForm.current}
                         onChange={e => setPwdForm({...pwdForm, current: e.target.value})}
                         className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
-                        placeholder="••••••••"
                     />
                 </div>
                 <div className="space-y-1">
@@ -218,77 +219,158 @@ export const Settings = () => {
                         value={pwdForm.new}
                         onChange={e => setPwdForm({...pwdForm, new: e.target.value})}
                         className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
-                        placeholder="Nova senha forte"
-                    />
-                </div>
-                <div className="space-y-1 pb-4">
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Confirmar Nova Senha</label>
-                    <input 
-                        type={showPwds ? 'text' : 'password'} 
-                        required
-                        value={pwdForm.confirm}
-                        onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})}
-                        className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
-                        placeholder="Repita a nova senha"
                     />
                 </div>
                 <button 
                     type="submit" 
                     disabled={pwdLoading}
-                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-800 transition-all"
+                    className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all mt-4"
                 >
                     {pwdLoading ? <Activity className="animate-spin" size={16}/> : <ShieldCheck size={16}/>}
-                    Atualizar Senha
+                    Salvar Senha
                 </button>
              </form>
           </div>
 
           <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><Languages size={16}/> Preferências</h3>
-            <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Idioma da Interface</label>
-                <select 
-                  value={settings.language} 
-                  onChange={e => setSettings({...settings, language: e.target.value as any})}
-                  className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
-                >
-                  <option value="pt">Português (Brasil)</option>
-                  <option value="en">English (US)</option>
-                </select>
-            </div>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><Languages size={16}/> Idioma</h3>
+            <select 
+              value={settings.language} 
+              onChange={e => setSettings({...settings, language: e.target.value as any})}
+              className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
+            >
+              <option value="pt">Português (Brasil)</option>
+              <option value="en">English (US)</option>
+            </select>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: BUSINESS & API (ONLY ADMIN) */}
-        <div className="lg:col-span-7 space-y-10">
+        {/* RIGHT COLUMN: INFRA & BUSINESS (ONLY ADMIN) */}
+        <div className="lg:col-span-8 space-y-10">
           {!isAdmin ? (
             <div className="bg-amber-50 dark:bg-amber-950/20 p-10 rounded-[40px] border border-amber-200 dark:border-amber-900/30 flex items-center gap-6">
               <Lock size={32} className="text-amber-500" />
               <div>
                 <h4 className="font-black uppercase tracking-widest text-xs text-amber-800 dark:text-amber-400">Ambiente Restrito</h4>
-                <p className="text-sm text-amber-700 dark:text-zinc-400 mt-1">As configurações de infraestrutura e APIs são visíveis apenas para Administradores Master.</p>
+                <p className="text-sm text-amber-700 dark:text-zinc-400 mt-1">Configurações de infraestrutura visíveis apenas para Administradores.</p>
               </div>
             </div>
           ) : (
             <>
-              {/* GESTÃO DE NEGÓCIO */}
+              {/* BLOCO SGA (HINOVA) */}
+              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-emerald-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Database size={24} />
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Integração SGA (Hinova)</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint SGA</label>
+                    <input type="text" value={settings.hinovaUrl} onChange={e => setSettings({...settings, hinovaUrl: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-emerald-500" placeholder="https://api.hinova.com.br/api/sga/v2" />
+                  </div>
+                  
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token SGA (Master / SGA Token)</label>
+                    <div className="relative">
+                      <input 
+                        type={showHinovaToken ? 'text' : 'password'} 
+                        value={settings.hinovaToken} 
+                        onChange={e => setSettings({...settings, hinovaToken: e.target.value})} 
+                        className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-emerald-500 pr-12" 
+                      />
+                      <button type="button" onClick={() => setShowHinovaToken(!showHinovaToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário de Autenticação</label>
+                    <input type="text" value={settings.hinovaUser} onChange={e => setSettings({...settings, hinovaUser: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha de Autenticação</label>
+                    <div className="relative">
+                      <input 
+                        type={showHinovaPass ? 'text' : 'password'} 
+                        value={settings.hinovaPass} 
+                        onChange={e => setSettings({...settings, hinovaPass: e.target.value})} 
+                        className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-emerald-500 pr-12" 
+                      />
+                      <button type="button" onClick={() => setShowHinovaPass(!showHinovaPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* BLOCO K-TAG API */}
+              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Wifi size={24} />
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">K-Tag Intelligence API</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Servidor K-Tag</label>
+                    <input type="text" value={settings.ktagUrl} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" placeholder="http://ip-do-servidor:6176" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário API</label>
+                    <input type="text" value={settings.ktagUser} onChange={e => setSettings({...settings, ktagUser: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha API</label>
+                    <div className="relative">
+                      <input 
+                        type={showKTagPass ? 'text' : 'password'} 
+                        value={settings.ktagPass} 
+                        onChange={e => setSettings({...settings, ktagPass: e.target.value})} 
+                        className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" 
+                      />
+                      <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* BLOCO PROXY & RELAY (FIREBASE) */}
+              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-cyan-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Cloud size={24} />
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Proxy & Relay (Firebase)</h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Proxy Cloud Function URL</label>
+                    <div className="relative">
+                        <Terminal className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                        <input type="text" value={settings.customProxyUrl} onChange={e => setSettings({...settings, customProxyUrl: e.target.value})} className="w-full pl-11 pr-5 py-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl font-mono text-[10px] outline-none focus:border-cyan-500" placeholder="https://us-central1-seu-projeto.cloudfunctions.net/proxyApi" />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 font-medium px-2">Necessário para contornar bloqueios de CORS em navegadores ao acessar o servidor K-Tag diretamente.</p>
+                </div>
+              </div>
+
+              {/* NEGÓCIO E REGIONAIS */}
               <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-10">
                 <div className="flex items-center gap-3 text-zinc-900 dark:text-white border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <LayoutGrid size={24} className="text-primary-500" />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Gestão de Negócio</h2>
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Regionais & Categorias</h2>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                   <div className="space-y-6">
                     <h3 className="text-xs font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14}/> Regionais</h3>
-                    <div className="grid grid-cols-[1fr_48px] gap-2 items-end">
-                      <div className="flex gap-2">
-                        <input placeholder="Nome" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-bold" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} />
-                        <input placeholder="ID" maxLength={3} className="w-20 px-2 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-black text-center uppercase" value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value})} />
-                      </div>
-                      <button onClick={handleAddCompany} className="w-12 h-11 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-2xl flex items-center justify-center"><Plus size={20}/></button>
+                    <div className="flex gap-2 items-end">
+                        <input placeholder="Nome" className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-bold" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} />
+                        <input placeholder="ID" maxLength={3} className="w-16 px-2 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-black text-center uppercase" value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value})} />
+                        <button onClick={handleAddCompany} className="w-12 h-11 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-2xl flex items-center justify-center shrink-0"><Plus size={20}/></button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                       {companies.map(c => (
                         <div key={c.id} className="flex justify-between items-center p-3 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                           <span className="text-xs font-black uppercase">{c.prefix} - {c.name}</span>
@@ -300,18 +382,11 @@ export const Settings = () => {
 
                   <div className="space-y-6">
                     <h3 className="text-xs font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Truck size={14}/> Categorias</h3>
-                    <div className="grid grid-cols-[1fr_48px] gap-2 items-end">
-                      <div className="flex gap-2">
-                        <input placeholder="Veículo" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-bold" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} />
-                        <select className="w-24 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase" value={newCategory.fipeType} onChange={e => setNewCategory({...newCategory, fipeType: e.target.value as any})}>
-                            <option value="carros">Carro</option>
-                            <option value="motos">Moto</option>
-                            <option value="caminhoes">Caminhão</option>
-                        </select>
-                      </div>
-                      <button onClick={handleAddCategory} className="w-12 h-11 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-2xl flex items-center justify-center"><Plus size={20}/></button>
+                    <div className="flex gap-2 items-end">
+                        <input placeholder="Veículo" className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs font-bold" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} />
+                        <button onClick={handleAddCategory} className="w-12 h-11 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-2xl flex items-center justify-center shrink-0"><Plus size={20}/></button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                       {categories.map(cat => (
                         <div key={cat.id} className="flex justify-between items-center p-3 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                           <span className="text-xs font-black uppercase">{cat.name}</span>
@@ -320,31 +395,6 @@ export const Settings = () => {
                       ))}
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* INTEGRATIONS */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-10">
-                <div className="flex items-center gap-3 text-cyan-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
-                  <Server size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Infraestrutura Externa</h2>
-                </div>
-
-                <div className="space-y-6">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Cloud Proxy URL (Firebase)</label>
-                        <input type="text" value={settings.customProxyUrl} onChange={e => setSettings({...settings, customProxyUrl: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-cyan-500" placeholder="https://us-central1-..." />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Hinova User</label>
-                            <input type="text" value={settings.hinovaUser} onChange={e => setSettings({...settings, hinovaUser: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">K-Tag URL</label>
-                            <input type="text" value={settings.ktagUrl} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
-                        </div>
-                    </div>
                 </div>
               </div>
             </>

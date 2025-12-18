@@ -154,13 +154,19 @@ export const storage = {
     if (db) {
       try {
         await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(cleanedUser), { merge: true });
+        // Sincroniza local também
+        const users = getLocal<User[]>(KEYS.USERS_DB, []);
+        const index = users.findIndex(u => u.id === user.id);
+        if (index >= 0) users[index] = cleanedUser;
+        else users.push(cleanedUser);
+        setLocal(KEYS.USERS_DB, users);
         return;
       } catch (e) {
         console.error("Firestore register failed", e);
       }
     }
     
-    // Fallback Local Storage com Lógica de Atualização (Upsert)
+    // Fallback Local Storage
     const users = getLocal<User[]>(KEYS.USERS_DB, []);
     const index = users.findIndex(u => u.email.toLowerCase().trim() === cleanedUser.email);
     
@@ -177,7 +183,10 @@ export const storage = {
     if (db) {
       try {
         const snap = await getDocs(collection(db, KEYS.USERS_DB));
-        return snap.docs.map(d => ({...d.data(), id: d.id} as User));
+        const users = snap.docs.map(d => ({...d.data(), id: d.id} as User));
+        // Sincronização crítica: Atualiza o cache local com os dados do servidor
+        setLocal(KEYS.USERS_DB, users);
+        return users;
       } catch (e) {
         console.warn("Firestore getAllUsers failed", e);
       }
@@ -202,20 +211,21 @@ export const storage = {
   },
 
   updateUserProfile: async (userId: string, data: Partial<User>) => {
+    const cleanedUpdate = cleanData(data);
     if (db) {
       try {
         const userRef = doc(db, KEYS.USERS_DB, userId);
         const docSnap = await getDoc(userRef);
         
         if (docSnap.exists()) {
-           await updateDoc(userRef, cleanData(data));
+           await updateDoc(userRef, cleanedUpdate);
         } else {
            const localSession = getLocal<User | null>(KEYS.USER_SESSION, null);
            if (localSession && localSession.id === userId) {
-               const fullUser = { ...localSession, ...data };
+               const fullUser = { ...localSession, ...cleanedUpdate };
                await setDoc(userRef, cleanData(fullUser));
            } else {
-               await setDoc(userRef, cleanData(data), { merge: true });
+               await setDoc(userRef, cleanedUpdate, { merge: true });
            }
         }
       } catch (e) {
@@ -226,13 +236,13 @@ export const storage = {
     const users = getLocal<User[]>(KEYS.USERS_DB, []);
     const idx = users.findIndex(u => u.id === userId);
     if (idx >= 0) {
-      users[idx] = { ...users[idx], ...data };
+      users[idx] = { ...users[idx], ...cleanedUpdate };
       setLocal(KEYS.USERS_DB, users);
     }
 
     const currentSession = getLocal<User | null>(KEYS.USER_SESSION, null);
     if (currentSession && currentSession.id === userId) {
-        setLocal(KEYS.USER_SESSION, { ...currentSession, ...data });
+        setLocal(KEYS.USER_SESSION, { ...currentSession, ...cleanedUpdate });
     }
   },
 

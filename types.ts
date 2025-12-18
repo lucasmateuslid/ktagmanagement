@@ -61,6 +61,7 @@ export interface Vehicle {
   status?: 'active' | 'stolen' | 'maintenance'; // Vehicle Status
   installationType?: 'tag_only' | 'tag_tracker'; // New field: Tipo de instalação
   createdAt: number; // Timestamp de criação
+  updatedBy?: string; // Nome do usuário que cadastrou/atualizou
 }
 
 export interface StolenRecord {

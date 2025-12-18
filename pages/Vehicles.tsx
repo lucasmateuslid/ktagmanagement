@@ -164,12 +164,6 @@ export const Vehicles = () => {
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
-  const [fipeBrands, setFipeBrands] = useState<FipeReference[]>([]);
-  const [fipeModels, setFipeModels] = useState<FipeReference[]>([]);
-  const [fipeYears, setFipeReference] = useState<FipeReference[]>([]);
-  const [selectedBrand, setSelectedBrand] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [loadingFipe, setLoadingFipe] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -200,7 +194,6 @@ export const Vehicles = () => {
     loadData();
   }, []);
 
-  // Monitora parâmetros de busca para abrir modal automaticamente via Dashboard
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
       setFormData({ status: 'active', installationType: 'tag_only' });
@@ -209,7 +202,6 @@ export const Vehicles = () => {
       setTagSearchTerm('');
       setIsModalOpen(true);
       
-      // Limpa o parâmetro da URL sem recarregar para evitar re-abertura indesejada
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('action');
       setSearchParams(newParams, { replace: true });
@@ -251,7 +243,6 @@ export const Vehicles = () => {
     try {
         const result = await hinovaService.searchVehicle(formData.plate);
         if (result) {
-            // Se encontrou na Hinova, buscamos a empresa "LOCK"
             const lockCompany = companies.find(c => c.name.toUpperCase().includes('LOCK') || c.prefix.toUpperCase().includes('LOCK'));
             
             setFormData(prev => ({ 
@@ -301,7 +292,6 @@ export const Vehicles = () => {
         }
     }
 
-    const isEdit = !!formData.id;
     const newVehicle: Vehicle = {
       id: formData.id || crypto.randomUUID(),
       type: formData.type || 'cat-car',
@@ -314,7 +304,8 @@ export const Vehicles = () => {
       clientId: linkedClientId,
       status: formData.status || 'active',
       installationType: formData.installationType || 'tag_only',
-      createdAt: formData.createdAt || Date.now() 
+      createdAt: formData.createdAt || Date.now(),
+      updatedBy: user?.name
     };
 
     await storage.saveVehicle(newVehicle);
@@ -339,20 +330,21 @@ export const Vehicles = () => {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight">{t('vehicleFleet')}</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium">Gestão centralizada de veículos ativos.</p>
         </div>
         <button
           onClick={() => { setFormData({ status: 'active', installationType: 'tag_only' }); setClientFormData({}); setIsHinovaImport(false); setTagSearchTerm(''); setIsModalOpen(true); }}
-          className="bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-2xl flex items-center gap-2 font-black uppercase text-xs tracking-widest transition-all shadow-xl shadow-primary-500/20"
+          className="w-full md:w-auto bg-primary-500 hover:bg-primary-400 text-black px-6 py-4 md:py-3 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-xs tracking-widest transition-all shadow-xl shadow-primary-500/20"
         >
           <Plus size={20} strokeWidth={3} /> {t('addVehicle')}
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total Veículos', value: stats.total, color: 'zinc', icon: Activity },
             { label: 'Ativos', value: stats.active, color: 'emerald', icon: CheckCircle },
@@ -360,61 +352,144 @@ export const Vehicles = () => {
             { label: 'Alertas Roubo', value: stats.stolen, color: 'red', icon: ShieldAlert },
           ].map((stat, i) => (
             <div key={i} className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-               <div className={`p-3 rounded-2xl bg-${stat.color}-500/10 text-${stat.color}-500`}><stat.icon size={20} /></div>
-               <div>
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{stat.label}</p>
+               <div className={`p-3 rounded-2xl bg-${stat.color}-500/10 text-${stat.color}-500`}><stat.icon size={18} /></div>
+               <div className="min-w-0">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest truncate">{stat.label}</p>
                   <p className="text-xl font-display font-black text-zinc-900 dark:text-white leading-none mt-1">{stat.value}</p>
                </div>
             </div>
           ))}
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 p-3 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
+      {/* Search Bar */}
+      <div className="bg-white dark:bg-zinc-900 p-3 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <div className="relative">
           <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input type="text" placeholder="Buscar por placa, modelo ou cliente..." value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white" />
         </div>
       </div>
 
-      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+      {/* MOBILE VIEW: Cards */}
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {filteredVehicles.length === 0 ? (
+          <div className="py-20 text-center bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800">
+             <CarIcon size={48} className="mx-auto text-zinc-200 dark:text-zinc-800 mb-4" />
+             <p className="text-zinc-400 font-black uppercase text-[10px] tracking-widest">Nenhum veículo localizado</p>
+          </div>
+        ) : (
+          filteredVehicles.map((v) => {
+            const tag = tags.find(t => t.id === v.tagId);
+            const client = clients.find(c => c.id === v.clientId);
+            return (
+              <div key={v.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <span className="font-mono text-lg font-black text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800 px-3 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 inline-block">{v.plate}</span>
+                    <div className="block">{getStatusBadge(v.status)}</div>
+                  </div>
+                  <div className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-2xl text-zinc-400">
+                    {getCategoryIcon(v.type)}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="font-black text-zinc-900 dark:text-white uppercase leading-tight">{v.model}</h3>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{categories.find(c => c.id === v.type)?.name} • {v.year || 'ANO N/I'}</p>
+                </div>
+
+                {tag ? (
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-3">
+                    <LinkIcon size={16} className="text-emerald-600" strokeWidth={3} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 uppercase truncate">{tag.name}</p>
+                      <p className="text-[9px] font-mono text-emerald-600/70 truncate uppercase">SN: {tag.accessoryId}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700 text-center">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Sem Tag Vinculada</p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                   <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black uppercase text-zinc-500">{client?.name?.charAt(0) || '?'}</div>
+                      <span className="text-[10px] font-black uppercase text-zinc-500 truncate max-w-[120px]">{client?.name || 'Sem Cliente'}</span>
+                   </div>
+                   <div className="flex gap-2">
+                      <button onClick={() => { setFormData(v); setClientFormData(client || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tag?.name || ''); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-500 rounded-xl"><Edit2 size={16} /></button>
+                      <button onClick={() => handleDelete(v.id)} className="p-3 bg-zinc-50 dark:bg-zinc-800 text-red-500 rounded-xl"><Trash2 size={16} /></button>
+                   </div>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* DESKTOP VIEW: Table */}
+      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-[32px] shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 text-zinc-400 text-[10px] font-black uppercase tracking-widest">
               <th className="p-5">Placa & Tipo</th>
-              <th className="p-5">Veículo</th>
+              <th className="p-5">Veículo & Conectividade</th>
               <th className="p-5">Cliente</th>
+              <th className="p-5">Responsável</th>
               <th className="p-5 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-            {filteredVehicles.map((v) => (
-              <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
-                <td className="p-5">
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-mono text-base font-black text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 inline-block">{v.plate}</span>
-                      {getStatusBadge(v.status)}
+            {filteredVehicles.map((v) => {
+              const tag = tags.find(t => t.id === v.tagId);
+              return (
+                <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
+                  <td className="p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono text-base font-black text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 inline-block">{v.plate}</span>
+                        {getStatusBadge(v.status)}
+                      </div>
+                      <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-400 group-hover:text-primary-500 transition-colors">
+                        {getCategoryIcon(v.type)}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-400 group-hover:text-primary-500 transition-colors">
-                      {getCategoryIcon(v.type)}
+                  </td>
+                  <td className="p-5">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-zinc-900 dark:text-white uppercase leading-tight">{v.model}</span>
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase">{categories.find(c => c.id === v.type)?.name}</span>
+                      {tag ? (
+                        <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-600 dark:text-emerald-400 w-fit">
+                          <LinkIcon size={12} strokeWidth={3} />
+                          <div className="flex flex-col">
+                            <span className="text-[11px] font-black uppercase leading-none">{tag.name}</span>
+                            <span className="text-[9px] font-mono opacity-70">SN: {tag.accessoryId}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="mt-2 text-[10px] font-bold text-zinc-400 italic">Nenhuma Tag Vinculada</span>
+                      )}
                     </div>
-                  </div>
-                </td>
-                <td className="p-5">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-zinc-900 dark:text-white">{v.model}</span>
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase">{categories.find(c => c.id === v.type)?.name}</span>
-                  </div>
-                </td>
-                <td className="p-5 text-zinc-700 dark:text-zinc-300 font-bold">{clients.find(c => c.id === v.clientId)?.name || '-'}</td>
-                <td className="p-5 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => { setFormData(v); setClientFormData(clients.find(c => c.id === v.clientId) || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
-                    <button onClick={() => handleDelete(v.id)} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl transition-all"><Trash2 size={16} /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="p-5 text-zinc-700 dark:text-zinc-300 font-bold uppercase text-xs">{clients.find(c => c.id === v.clientId)?.name || '-'}</td>
+                  <td className="p-5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black border border-zinc-200 dark:border-zinc-700 uppercase">
+                        {v.updatedBy?.charAt(0) || '-'}
+                      </div>
+                      <span className="text-xs font-bold text-zinc-500 truncate max-w-[120px] uppercase">{v.updatedBy || 'SISTEMA'}</span>
+                    </div>
+                  </td>
+                  <td className="p-5 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setFormData(v); setClientFormData(clients.find(c => c.id === v.clientId) || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
+                      <button onClick={() => handleDelete(v.id)} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl transition-all"><Trash2 size={16} /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
