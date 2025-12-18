@@ -7,11 +7,13 @@ import * as ReactRouterDOM from 'react-router-dom';
 import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const { Navigate } = ReactRouterDOM as any;
+const { useNavigate } = ReactRouterDOM as any;
 
 export const Login = () => {
   const { login, register, isAuthenticated } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -28,7 +30,14 @@ export const Login = () => {
       .catch(() => {});
   }, []);
 
-  if (isAuthenticated) return <Navigate to="/" replace />;
+  // Use useEffect for navigation to avoid rendering side-effects or Location.assign errors
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  if (isAuthenticated) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

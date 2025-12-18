@@ -6,7 +6,7 @@ import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
-import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2, ShieldAlert, AlertTriangle, Lock, ChevronRight } from 'lucide-react';
+import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2, ShieldAlert, AlertTriangle, Lock, ChevronRight, ShoppingCart } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
 
@@ -121,6 +121,10 @@ export const Dashboard = () => {
   const stolenCount = vehicles.filter(v => v.status === 'stolen').length;
   const maintenanceCount = vehicles.filter(v => v.status === 'maintenance').length;
   
+  // Threshold Logic for Stock
+  const isCriticalStock = unlinkedCount <= 40;
+  const isWarningStock = unlinkedCount <= 80;
+
   // Theft Index Calculation
   const totalActiveFleet = vehicles.length;
   const theftRate = totalActiveFleet > 0 ? ((stolenCount / totalActiveFleet) * 100).toFixed(1) : '0.0';
@@ -355,21 +359,38 @@ export const Dashboard = () => {
                     </div>
                 </div>
 
-                 {/* Available Tags for New Vehicles */}
-                 <div className="p-6 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between">
+                 {/* Available Tags for New Vehicles (MODIFIED FOR STOCK MONITORING) */}
+                 <div className={`p-6 rounded-3xl border flex flex-col justify-between transition-all duration-500 ${
+                     isCriticalStock 
+                        ? 'bg-red-600 text-white border-red-700 shadow-lg shadow-red-500/30' 
+                        : isWarningStock 
+                        ? 'bg-yellow-400 text-black border-yellow-500 shadow-md shadow-yellow-500/20' 
+                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+                 }`}>
                      <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-xs uppercase font-bold tracking-wider text-zinc-500 mb-1">Tags Disponíveis</p>
-                            <h2 className="text-4xl font-display font-bold text-zinc-900 dark:text-white">
+                            <p className={`text-xs uppercase font-bold tracking-wider mb-1 ${isWarningStock ? 'opacity-70' : 'text-zinc-500'}`}>Tags Disponíveis</p>
+                            <h2 className={`text-4xl font-display font-bold ${(!isWarningStock) ? 'text-zinc-900 dark:text-white' : ''}`}>
                                 {unlinkedCount}
                             </h2>
                         </div>
-                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 rounded-lg">
-                            <TagIcon size={24} />
+                        <div className={`p-2 rounded-lg ${
+                            isCriticalStock ? 'bg-red-700 text-white' : 
+                            isWarningStock ? 'bg-yellow-500 text-black' : 
+                            'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600'
+                        }`}>
+                            {isWarningStock ? <ShoppingCart size={24} /> : <TagIcon size={24} />}
                         </div>
                     </div>
-                    <div className="mt-auto">
-                        <Link to="/tags" className="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1">
+                    
+                    <div className="mt-4">
+                        {isWarningStock && (
+                             <div className="flex items-center gap-2 text-xs font-black uppercase mb-3 animate-pulse">
+                                 <AlertTriangle size={14} />
+                                 <span>Necessário comprar novos equipamentos</span>
+                             </div>
+                        )}
+                        <Link to="/tags" className={`text-xs font-bold flex items-center gap-1 hover:underline ${isCriticalStock ? 'text-white' : isWarningStock ? 'text-black' : 'text-primary-600'}`}>
                             Vincular a novos veículos <ChevronRight size={12}/>
                         </Link>
                     </div>

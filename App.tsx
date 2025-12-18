@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -18,11 +18,21 @@ import { Users } from './pages/Users';
 import { Reports } from './pages/Reports';
 import { AuditLogs } from './pages/AuditLogs';
 
-const { HashRouter, Routes, Route, Navigate } = ReactRouterDOM as any;
+const { HashRouter, Routes, Route, useNavigate } = ReactRouterDOM as any;
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
-  const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Navigate to="/login" />;
+  const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate('/login', { replace: true });
+    }
+  }, [isAuthenticated, loading, navigate]);
+
+  if (loading) return <div className="h-screen w-screen flex items-center justify-center bg-zinc-50 dark:bg-black text-zinc-500">Loading K-TAG...</div>;
+  if (!isAuthenticated) return null;
+
   return <Layout>{children}</Layout>;
 };
 

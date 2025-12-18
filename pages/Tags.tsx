@@ -6,7 +6,7 @@ import { Tag, Vehicle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Factory } from 'lucide-react';
 
 export const Tags = () => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -32,6 +32,10 @@ export const Tags = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Stock Monitoring Logic
+  const unlinkedCount = tags.length - vehicles.filter(v => v.tagId).length;
+  const isStockLow = unlinkedCount <= 80;
 
   // Search Logic
   const filteredTags = tags.filter(tag => {
@@ -296,6 +300,20 @@ export const Tags = () => {
           </div>
         </div>
       </div>
+
+      {/* Pulsing Stock Alert Banner */}
+      {isStockLow && (
+          <div className="bg-amber-100 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-xl flex items-center justify-between gap-4 animate-pulse shadow-sm shadow-amber-500/10">
+              <div className="flex items-center gap-3 text-amber-800 dark:text-amber-400">
+                  <Factory size={24} className="shrink-0" />
+                  <div>
+                      <p className="font-black text-sm uppercase tracking-tight">Estoque Baixo: {unlinkedCount} Tags Livres</p>
+                      <p className="text-xs font-medium opacity-80">Entrar em contato com a fábrica para novas tags!</p>
+                  </div>
+              </div>
+              <AlertTriangle className="text-amber-600" size={20} />
+          </div>
+      )}
 
       {tags.length > 0 && (
         <div className="flex items-center gap-2 mb-2 px-1">

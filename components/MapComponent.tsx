@@ -46,7 +46,7 @@ const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: Loca
     if (mapRef.current && !googleMap) {
       if ((window as any).google) {
         const map = new google.maps.Map(mapRef.current, {
-          center: { lat: locations[0]?.lat || 40.7128, lng: locations[0]?.lon || -74.006 },
+          center: { lat: locations[0]?.lat || 0, lng: locations[0]?.lon ||0 },
           zoom: 13,
         });
         setGoogleMap(map);
@@ -130,7 +130,7 @@ const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: Loca
 };
 
 export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = false, vehicles = [] }) => {
-  const [provider, setProvider] = useState<'osm' | 'google' | 'mapbox'>('osm');
+  const [provider, setProvider] = useState<'osm' | 'google' | 'mapbox'>('google');
   const [googleKey, setGoogleKey] = useState('');
   const [mapboxKey, setMapboxKey] = useState('');
   const [scriptLoaded, setScriptLoaded] = useState(false);
