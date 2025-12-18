@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { storage } from '../services/storage';
 import { plateLookupService } from '../services/plateLookup';
@@ -10,7 +10,13 @@ import { Tag, Vehicle, Company, VehicleCategory, Client } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, Link as LinkIcon, Search, Loader2, Building2, ChevronDown, Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, MapPin, CheckCircle, XCircle, Database, Settings, BookOpen } from 'lucide-react';
+import { 
+  Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, 
+  Link as LinkIcon, Search, Loader2, Building2, ChevronDown, 
+  Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, 
+  MapPin, CheckCircle, XCircle, Database, Settings, BookOpen,
+  Filter, LayoutGrid, ListFilter, Activity, Mail, FileText, Lock
+} from 'lucide-react';
 
 const { useSearchParams } = ReactRouterDOM as any;
 
@@ -47,7 +53,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
       searchInputRef.current.focus();
     }
     if (!isOpen) {
-      setSearchTerm(''); // Reset search when closed
+      setSearchTerm('');
     }
   }, [isOpen]);
 
@@ -59,47 +65,47 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
 
   return (
     <div className="relative" ref={containerRef}>
-      {label && <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{label}</label>}
+      {label && <label className="block text-[10px] font-black uppercase text-zinc-500 dark:text-zinc-400 tracking-wider mb-2">{label}</label>}
       <button
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full px-3 py-2.5 text-left border rounded-lg flex items-center justify-center sm:justify-between transition-colors
+        className={`w-full px-4 py-2.5 text-left border rounded-xl flex items-center justify-between transition-all
           ${disabled 
-            ? 'bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 border-zinc-200 dark:border-zinc-800 cursor-not-allowed' 
-            : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white hover:border-primary-500 focus:ring-2 focus:ring-primary-500/20'
+            ? 'bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed' 
+            : 'bg-white dark:bg-zinc-850 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white hover:border-primary-500 focus:ring-2 focus:ring-primary-500/10'
           }
         `}
       >
         <div className="flex items-center gap-2 truncate">
           {loading && <Loader2 size={14} className="animate-spin text-primary-500" />}
-          {icon && !loading && <span className="text-zinc-400">{icon}</span>}
-          <span className={!selectedOption ? 'text-zinc-400' : ''}>
-            {selectedOption ? selectedOption.label : (placeholder || 'Select...')}
+          {icon && !loading && <span className="text-zinc-400 dark:text-zinc-500">{icon}</span>}
+          <span className={`text-sm font-bold ${!selectedOption ? 'text-zinc-500 dark:text-zinc-600' : ''}`}>
+            {selectedOption ? selectedOption.label : (placeholder || 'Selecione...')}
           </span>
         </div>
-        <ChevronDown size={16} className={`hidden sm:block text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {!disabled && <ChevronDown size={14} className={`text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
+        {disabled && <Lock size={12} className="text-zinc-400" />}
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
-          <div className="p-2 border-b border-zinc-100 dark:border-zinc-700 sticky top-0 bg-white dark:bg-zinc-800">
+        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-2xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
+          <div className="p-2 border-b border-zinc-100 dark:border-zinc-700 sticky top-0 bg-white dark:bg-zinc-850">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-2.5 text-zinc-400" />
               <input
                 ref={searchInputRef}
                 type="text"
-                className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-md focus:outline-none focus:border-primary-500 text-zinc-900 dark:text-white placeholder-zinc-400"
-                placeholder="Search..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:border-primary-500 text-zinc-900 dark:text-white"
+                placeholder="Filtrar lista..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
-          
-          <div className="overflow-y-auto flex-1 p-1">
+          <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
             {filteredOptions.length === 0 ? (
-               <div className="p-3 text-center text-xs text-zinc-400 italic">No results found</div>
+               <div className="p-3 text-center text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Sem resultados</div>
             ) : (
               filteredOptions.map((opt) => (
                 <div
@@ -108,10 +114,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
                     onChange(opt.value);
                     setIsOpen(false);
                   }}
-                  className={`px-3 py-2 rounded-md text-sm cursor-pointer flex items-center justify-between group transition-colors
+                  className={`px-3 py-2.5 rounded-lg text-xs cursor-pointer flex items-center justify-between group transition-colors font-bold uppercase tracking-tight
                     ${value === opt.value 
-                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 font-medium' 
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                      ? 'bg-primary-500/10 text-primary-500' 
+                      : 'text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
                     }
                   `}
                 >
@@ -136,15 +142,16 @@ export const Vehicles = () => {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Vehicle>>({});
-  const [clientFormData, setClientFormData] = useState<Partial<Client>>({}); // Client Data
+  const [clientFormData, setClientFormData] = useState<Partial<Client>>({});
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [isHinovaImport, setIsHinovaImport] = useState(false);
 
   const { t } = useLanguage();
   const { addNotification } = useNotification();
-  const { user } = useAuth(); // Get current user for audit
+  const { user } = useAuth();
   const [loadingPlate, setLoadingPlate] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // Hinova Status Modal State
   const [hinovaStatus, setHinovaStatus] = useState<{
     open: boolean;
     step: 'idle' | 'loading' | 'success' | 'error';
@@ -152,25 +159,17 @@ export const Vehicles = () => {
     details?: string;
   }>({ open: false, step: 'idle', message: '' });
   
-  // Enhanced Tag Search
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
-  // FIPE Search State
   const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
   const [fipeBrands, setFipeBrands] = useState<FipeReference[]>([]);
   const [fipeModels, setFipeModels] = useState<FipeReference[]>([]);
-  const [fipeYears, setFipeYears] = useState<FipeReference[]>([]);
+  const [fipeYears, setFipeReference] = useState<FipeReference[]>([]);
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [loadingFipe, setLoadingFipe] = useState(false);
-
-
-  const filteredTags = tags.filter(tag => 
-    tag.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
-    tag.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase())
-  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -181,7 +180,6 @@ export const Vehicles = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
 
   const loadData = async () => {
     const [v, t, c, cat, cl] = await Promise.all([
@@ -202,154 +200,78 @@ export const Vehicles = () => {
     loadData();
   }, []);
 
-  // Check for auto-open action from Dashboard
+  // Monitora parâmetros de busca para abrir modal automaticamente via Dashboard
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
-        if (!isModalOpen) {
-            setFormData({ type: categories[0]?.id, status: 'active', installationType: 'tag_only' }); 
-            setClientFormData({});
-            setTagSearchTerm(''); 
-            setIsModalOpen(true);
-        }
-        // Clear param
-        setSearchParams(params => {
-            params.delete('action');
-            return params;
-        });
+      setFormData({ status: 'active', installationType: 'tag_only' });
+      setClientFormData({});
+      setIsHinovaImport(false);
+      setTagSearchTerm('');
+      setIsModalOpen(true);
+      
+      // Limpa o parâmetro da URL sem recarregar para evitar re-abertura indesejada
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('action');
+      setSearchParams(newParams, { replace: true });
     }
-  }, [searchParams, categories, isModalOpen]);
+  }, [searchParams, setSearchParams]);
 
-  // ... (FIPE and Lookup handlers preserved)
-  // --- FIPE HELPERS ---
-  const getCategoryFipeType = (id?: string) => {
-      if (!id) return 'carros'; // default
+  const filteredVehicles = useMemo(() => {
+    const term = globalSearch.toLowerCase().trim();
+    if (!term) return vehicles;
+    return vehicles.filter(v => {
+      const client = clients.find(c => c.id === v.clientId);
+      return v.plate.toLowerCase().includes(term) || v.model.toLowerCase().includes(term) || (client && client.name.toLowerCase().includes(term));
+    });
+  }, [vehicles, globalSearch, clients]);
+
+  const stats = useMemo(() => ({
+      total: vehicles.length,
+      active: vehicles.filter(v => v.status === 'active' || !v.status).length,
+      stolen: vehicles.filter(v => v.status === 'stolen').length,
+      maintenance: vehicles.filter(v => v.status === 'maintenance').length
+  }), [vehicles]);
+
+  const getCategoryIcon = (id: string) => {
       const cat = categories.find(c => c.id === id);
-      return cat?.fipeType && cat.fipeType !== 'none' ? cat.fipeType : 'carros';
-  };
-
-  const openFipeSearch = async () => {
-      setIsFipeModalOpen(true);
-      setLoadingFipe(true);
-      setFipeBrands([]);
-      setFipeModels([]);
-      setFipeYears([]);
-      setSelectedBrand('');
-      setSelectedModel('');
-
-      const type = getCategoryFipeType(formData.type);
-      const brands = await fipeService.getBrands(type as any);
-      setFipeBrands(brands);
-      setLoadingFipe(false);
-  };
-
-  const handleFipeBrandChange = async (brandId: string) => {
-      setSelectedBrand(brandId);
-      setLoadingFipe(true);
-      setFipeModels([]);
-      setFipeYears([]);
-      const type = getCategoryFipeType(formData.type);
-      const models = await fipeService.getModels(type, brandId);
-      setFipeModels(models);
-      setLoadingFipe(false);
-  };
-
-  const handleFipeModelChange = async (modelId: string) => {
-      setSelectedModel(modelId);
-      setLoadingFipe(true);
-      setFipeYears([]);
-      const type = getCategoryFipeType(formData.type);
-      const years = await fipeService.getYears(type, selectedBrand, modelId);
-      setFipeYears(years);
-      setLoadingFipe(false);
-  };
-
-  const handleFipeYearChange = async (yearId: string) => {
-      setLoadingFipe(true);
-      const type = getCategoryFipeType(formData.type);
-      const details = await fipeService.getDetails(type, selectedBrand, selectedModel, yearId);
-      if (details) {
-          setFormData(prev => ({
-              ...prev,
-              model: details.Modelo,
-              year: details.AnoModelo.toString(),
-              fipeCode: details.CodigoFipe
-          }));
-          setIsFipeModalOpen(false);
-          addNotification('success', 'FIPE', 'Dados carregados da tabela FIPE.');
+      if(!cat) return <CarIcon size={18} />;
+      switch(cat.fipeType) {
+          case 'caminhoes': return <Truck size={18} />;
+          case 'motos': return <Bike size={18} />;
+          default: return <CarIcon size={18} />;
       }
-      setLoadingFipe(false);
-  };
-
-  const handlePlateLookup = async () => {
-    if (!formData.plate || formData.plate.length < 7) {
-        addNotification('error', t('searchPlate'), 'Invalid plate format.');
-        return;
-    }
-    
-    setLoadingPlate(true);
-    addNotification('info', t('searchPlate'), t('searchingPlate'));
-    
-    try {
-        const result = await plateLookupService.lookup(formData.plate);
-        if (result && result.found) {
-            setFormData(prev => ({
-                ...prev,
-                model: result.model,
-                year: result.year,
-                fipeCode: result.fipeCode,
-                type: result.suggestedCategoryId || prev.type 
-            }));
-            addNotification('success', t('searchPlate'), t('plateFound'));
-        } else {
-            addNotification('info', t('searchPlate'), t('plateNotFound'));
-        }
-    } catch (e: any) {
-        addNotification('error', t('searchPlate'), e.message);
-    } finally {
-        setLoadingPlate(false);
-    }
   };
 
   const handleHinovaLookup = async () => {
     if (!formData.plate || formData.plate.length < 7) {
-        addNotification('error', 'Hinova Search', 'Insira uma placa válida.');
+        addNotification('error', 'Erro', 'Insira uma placa válida.');
         return;
     }
-
-    setHinovaStatus({ open: true, step: 'loading', message: 'Conectando ao sistema Hinova...' });
-
+    setHinovaStatus({ open: true, step: 'loading', message: 'Conectando Hinova...' });
     try {
         const result = await hinovaService.searchVehicle(formData.plate);
         if (result) {
+            // Se encontrou na Hinova, buscamos a empresa "LOCK"
+            const lockCompany = companies.find(c => c.name.toUpperCase().includes('LOCK') || c.prefix.toUpperCase().includes('LOCK'));
+            
+            setFormData(prev => ({ 
+                ...prev, 
+                ...result.vehicle,
+                companyId: lockCompany ? lockCompany.id : prev.companyId
+            }));
+            setClientFormData(result.client);
+            setIsHinovaImport(true);
+            
             setHinovaStatus({ 
-                open: true, 
-                step: 'success', 
-                message: 'Veículo Localizado!', 
+                open: true, step: 'success', message: 'Localizado!', 
                 details: `${result.vehicle.model} - ${result.client.name}`
             });
-
-            setFormData(prev => ({ ...prev, ...result.vehicle }));
-            setClientFormData(result.client);
-
-            setTimeout(() => {
-                setHinovaStatus(prev => ({ ...prev, open: false }));
-            }, 2000);
-
+            setTimeout(() => setHinovaStatus(prev => ({ ...prev, open: false })), 1500);
         } else {
-            setHinovaStatus({ 
-                open: true, 
-                step: 'error', 
-                message: 'Não Encontrado', 
-                details: 'A placa não consta na base Hinova.' 
-            });
+            setHinovaStatus({ open: true, step: 'error', message: 'Não Encontrado', details: 'A placa não consta na base Hinova.' });
         }
     } catch (e: any) {
-        setHinovaStatus({ 
-            open: true, 
-            step: 'error', 
-            message: 'Erro na Consulta', 
-            details: e.message 
-        });
+        setHinovaStatus({ open: true, step: 'error', message: 'Erro na Consulta', details: e.message });
     }
   };
 
@@ -361,727 +283,287 @@ export const Vehicles = () => {
     }
 
     let linkedClientId = formData.clientId;
-
-    // Handle Client Saving Logic
     if (clientFormData.name) {
-        let client = null;
-        
-        // Find existing client by CPF if provided
-        if (clientFormData.cpf) {
-             client = clients.find(c => c.cpf === clientFormData.cpf);
-        }
-
-        if (client) {
-             linkedClientId = client.id;
-        } else {
-            // Create New Client
-            try {
-                const newClient: Client = {
-                    id: crypto.randomUUID(),
-                    name: clientFormData.name,
-                    cpf: clientFormData.cpf || '',
-                    phone: clientFormData.phone || '',
-                    email: clientFormData.email, // email? is optional, safely passed
-                    createdAt: Date.now()
-                };
-                
-                // Optimistic Client Update
-                setClients(prev => [...prev, newClient]);
-                
-                await storage.saveClient(newClient);
-                linkedClientId = newClient.id;
-            } catch (err) {
-                console.error("Failed to save client:", err);
-                addNotification('error', 'Erro Cliente', 'Falha ao salvar dados do cliente.');
-                return;
-            }
+        let client = clientFormData.cpf ? clients.find(c => c.cpf === clientFormData.cpf) : null;
+        if (client) linkedClientId = client.id;
+        else {
+            const newClient: Client = {
+                id: crypto.randomUUID(),
+                name: clientFormData.name,
+                cpf: clientFormData.cpf || '',
+                phone: clientFormData.phone || '',
+                email: clientFormData.email,
+                createdAt: Date.now()
+            };
+            await storage.saveClient(newClient);
+            linkedClientId = newClient.id;
+            setClients(prev => [...prev, newClient]);
         }
     }
 
-    try {
-        const isEdit = !!formData.id;
-        const newVehicle: Vehicle = {
-          id: formData.id || crypto.randomUUID(),
-          type: formData.type || (categories[0]?.id || 'cat-car'),
-          plate: formData.plate,
-          model: formData.model,
-          year: formData.year || '', // Ensure no undefined
-          fipeCode: formData.fipeCode || '',
-          tagId: formData.tagId === 'none' ? undefined : formData.tagId,
-          companyId: formData.companyId,
-          clientId: linkedClientId,
-          hinovaId: formData.hinovaId,
-          status: formData.status || 'active',
-          installationType: formData.installationType || 'tag_only',
-          createdAt: formData.createdAt || Date.now() 
-        };
+    const isEdit = !!formData.id;
+    const newVehicle: Vehicle = {
+      id: formData.id || crypto.randomUUID(),
+      type: formData.type || 'cat-car',
+      plate: formData.plate.toUpperCase(),
+      model: formData.model,
+      year: formData.year || '',
+      fipeCode: formData.fipeCode || '',
+      tagId: formData.tagId,
+      companyId: formData.companyId,
+      clientId: linkedClientId,
+      status: formData.status || 'active',
+      installationType: formData.installationType || 'tag_only',
+      createdAt: formData.createdAt || Date.now() 
+    };
 
-        // Optimistic Vehicle Update
-        setVehicles(prev => {
-            const exists = prev.find(v => v.id === newVehicle.id);
-            if (exists) return prev.map(v => v.id === newVehicle.id ? newVehicle : v);
-            return [newVehicle, ...prev];
-        });
-
-        await storage.saveVehicle(newVehicle);
-        
-        // AUDIT LOG
-        storage.logAction(
-            user, 
-            isEdit ? 'UPDATE' : 'CREATE', 
-            'Vehicle', 
-            `${isEdit ? 'Updated' : 'Created'} vehicle ${newVehicle.plate} (${newVehicle.model})`,
-            newVehicle.id
-        );
-
-        addNotification('success', 'Sucesso', 'Veículo salvo corretamente.');
-        
-        setIsModalOpen(false);
-        setFormData({});
-        setClientFormData({});
-        setTagSearchTerm('');
-        
-        // Background sync to ensure consistency
-        loadData();
-    } catch (err) {
-        console.error("Failed to save vehicle:", err);
-        addNotification('error', 'Erro', 'Falha ao salvar veículo.');
-        loadData(); // Revert on error
-    }
+    await storage.saveVehicle(newVehicle);
+    addNotification('success', 'Sucesso', 'Veículo salvo.');
+    setIsModalOpen(false);
+    loadData();
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Deseja excluir este veículo?')) {
-      const v = vehicles.find(veh => veh.id === id);
-      // Optimistic Delete
-      setVehicles(prev => prev.filter(v => v.id !== id));
+    if (confirm('Excluir veículo?')) {
       await storage.deleteVehicle(id);
-      
-      // AUDIT LOG
-      storage.logAction(user, 'DELETE', 'Vehicle', `Deleted vehicle ${v?.plate || id}`, id);
-
       loadData();
+      addNotification('success', 'Removido', 'Veículo excluído.');
     }
-  };
-
-  const getCategoryName = (id: string) => {
-      const cat = categories.find(c => c.id === id);
-      return cat ? cat.name : id;
-  };
-
-  const getCategoryIcon = (id: string) => {
-      const cat = categories.find(c => c.id === id);
-      if(!cat) return <CarIcon className="text-zinc-500" size={24} />;
-      
-      switch(cat.fipeType) {
-          case 'caminhoes': return <Truck className="text-zinc-500" size={24} />;
-          case 'motos': return <Bike className="text-zinc-500" size={24} />;
-          default: return <CarIcon className="text-zinc-500" size={24} />;
-      }
-  };
-  
-  const getCompanyPrefix = (id?: string) => {
-      if(!id) return null;
-      const comp = companies.find(c => c.id === id);
-      return comp ? comp.prefix : null;
-  };
-
-  const getTagName = (tagId?: string) => {
-    if (!tagId) return t('noLink');
-    const tag = tags.find(t => t.id === tagId);
-    return tag ? tag.name : 'Unknown Tag';
-  };
-
-  const getClientName = (clientId?: string) => {
-      if (!clientId) return null;
-      const c = clients.find(cl => cl.id === clientId);
-      return c ? c.name : null;
   };
 
   const getStatusBadge = (status?: string) => {
-    if (status === 'stolen') {
-      return (
-        <span className="inline-flex items-center gap-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded text-xs font-bold uppercase border border-red-200 dark:border-red-900/50">
-          <ShieldAlert size={12} /> ROUBADO
-        </span>
-      );
-    }
-    if (status === 'maintenance') {
-      return (
-        <span className="inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded text-xs font-bold uppercase border border-amber-200 dark:border-amber-900/50">
-          <Wrench size={12} /> MANUTENÇÃO
-        </span>
-      );
-    }
-    return null;
-  };
-
-  // --- RENDER HELPERS ---
-  const handleEditClick = (vehicle: Vehicle) => {
-      setFormData(vehicle);
-      if(vehicle.clientId) {
-          const client = clients.find(c => c.id === vehicle.clientId);
-          if(client) setClientFormData(client);
-      } else {
-          setClientFormData({});
-      }
-      const linked = tags.find(t => t.id === vehicle.tagId);
-      setTagSearchTerm(linked ? linked.name : '');
-      setIsModalOpen(true); 
+    if (status === 'stolen') return <span className="bg-red-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">ROUBADO</span>;
+    if (status === 'maintenance') return <span className="bg-amber-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">MANUTENÇÃO</span>;
+    return <span className="bg-emerald-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">ATIVO</span>;
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{t('vehicleFleet')}</h1>
+    <div className="space-y-6 pb-20">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight">{t('vehicleFleet')}</h1>
+          <p className="text-zinc-500 text-sm mt-1 font-medium">Gestão centralizada de veículos ativos.</p>
+        </div>
         <button
-          onClick={() => { 
-              setFormData({ type: categories[0]?.id, status: 'active', installationType: 'tag_only' }); 
-              setClientFormData({});
-              setTagSearchTerm(''); 
-              setIsModalOpen(true); 
-          }}
-          className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-primary-500/20"
+          onClick={() => { setFormData({ status: 'active', installationType: 'tag_only' }); setClientFormData({}); setIsHinovaImport(false); setTagSearchTerm(''); setIsModalOpen(true); }}
+          className="bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-2xl flex items-center gap-2 font-black uppercase text-xs tracking-widest transition-all shadow-xl shadow-primary-500/20"
         >
-          <Plus size={18} /> <span className="hidden sm:inline">{t('addVehicle')}</span>
+          <Plus size={20} strokeWidth={3} /> {t('addVehicle')}
         </button>
       </div>
 
-      {/* --- DESKTOP TABLE VIEW --- */}
-      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-        <table className="w-full text-left border-collapse">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Veículos', value: stats.total, color: 'zinc', icon: Activity },
+            { label: 'Ativos', value: stats.active, color: 'emerald', icon: CheckCircle },
+            { label: 'Manutenção', value: stats.maintenance, color: 'amber', icon: Wrench },
+            { label: 'Alertas Roubo', value: stats.stolen, color: 'red', icon: ShieldAlert },
+          ].map((stat, i) => (
+            <div key={i} className="bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
+               <div className={`p-3 rounded-2xl bg-${stat.color}-500/10 text-${stat.color}-500`}><stat.icon size={20} /></div>
+               <div>
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{stat.label}</p>
+                  <p className="text-xl font-display font-black text-zinc-900 dark:text-white leading-none mt-1">{stat.value}</p>
+               </div>
+            </div>
+          ))}
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 p-3 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input type="text" placeholder="Buscar por placa, modelo ou cliente..." value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white" />
+        </div>
+      </div>
+
+      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+        <table className="w-full text-left">
           <thead>
-            <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 text-sm">
-              <th className="p-4 font-semibold">{t('company')}</th>
-              <th className="p-4 font-semibold">{t('type')}</th>
-              <th className="p-4 font-semibold">{t('model')}</th>
-              <th className="p-4 font-semibold">{t('plate')}</th>
-              <th className="p-4 font-semibold">{t('linkedTag')}</th>
-              <th className="p-4 font-semibold">Cliente</th>
-              <th className="p-4 font-semibold text-right">{t('actions')}</th>
+            <tr className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 text-zinc-400 text-[10px] font-black uppercase tracking-widest">
+              <th className="p-5">Placa & Tipo</th>
+              <th className="p-5">Veículo</th>
+              <th className="p-5">Cliente</th>
+              <th className="p-5 text-right">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {vehicles.map((vehicle) => (
-              <tr key={vehicle.id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${vehicle.status === 'stolen' ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
-                <td className="p-4">
-                    {getCompanyPrefix(vehicle.companyId) ? (
-                        <span className="font-mono font-bold bg-zinc-200 dark:bg-zinc-700 px-2 py-1 rounded text-xs text-zinc-700 dark:text-zinc-200">{getCompanyPrefix(vehicle.companyId)}</span>
-                    ) : '-'}
-                </td>
-                <td className="p-4">
-                   <div className="flex items-center gap-3">
-                     <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                       {getCategoryIcon(vehicle.type)}
-                     </div>
-                     <span className="font-medium text-zinc-900 dark:text-white">{getCategoryName(vehicle.type)}</span>
-                   </div>
-                </td>
-                <td className="p-4 text-zinc-600 dark:text-zinc-300">
-                  <div className="flex flex-col">
-                    <span>{vehicle.model}</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      {vehicle.year && <span className="text-[10px] bg-zinc-100 dark:bg-zinc-700 px-1 rounded">{vehicle.year}</span>}
-                      {vehicle.fipeCode && <span className="text-[10px] text-zinc-400 border border-zinc-200 dark:border-zinc-700 px-1 rounded">FIPE: {vehicle.fipeCode}</span>}
-                      {vehicle.installationType === 'tag_tracker' && <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-1 rounded border border-indigo-200 dark:border-indigo-700 flex items-center gap-1"><Settings size={8} /> +Rastreador</span>}
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+            {filteredVehicles.map((v) => (
+              <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
+                <td className="p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-mono text-base font-black text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 inline-block">{v.plate}</span>
+                      {getStatusBadge(v.status)}
+                    </div>
+                    <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-400 group-hover:text-primary-500 transition-colors">
+                      {getCategoryIcon(v.type)}
                     </div>
                   </div>
                 </td>
-                <td className="p-4 font-mono text-zinc-600 dark:text-zinc-300 font-bold">
-                  <div className="flex flex-col gap-1">
-                    <span>{vehicle.plate}</span>
-                    {getStatusBadge(vehicle.status)}
+                <td className="p-5">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-zinc-900 dark:text-white">{v.model}</span>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">{categories.find(c => c.id === v.type)?.name}</span>
                   </div>
                 </td>
-                <td className="p-4">
-                   <div className={`flex items-center gap-2 text-sm ${vehicle.tagId ? 'text-green-600 dark:text-green-400 font-medium' : 'text-zinc-400'}`}>
-                      <LinkIcon size={14} />
-                      {getTagName(vehicle.tagId)}
-                   </div>
-                </td>
-                <td className="p-4">
-                    {vehicle.clientId ? (
-                        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                            <User size={12} className="text-zinc-400" />
-                            {getClientName(vehicle.clientId)}
-                        </div>
-                    ) : <span className="text-zinc-300">-</span>}
-                </td>
-                <td className="p-4 text-right">
-                  <div className="flex justify-end gap-1">
-                    <button onClick={() => handleEditClick(vehicle)} className="p-2 text-zinc-400 hover:text-primary-600 transition-colors">
-                        <Edit2 size={16} />
-                    </button>
-                    <button onClick={() => handleDelete(vehicle.id)} className="p-2 text-zinc-400 hover:text-red-600 transition-colors">
-                        <Trash2 size={16} />
-                    </button>
+                <td className="p-5 text-zinc-700 dark:text-zinc-300 font-bold">{clients.find(c => c.id === v.clientId)?.name || '-'}</td>
+                <td className="p-5 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => { setFormData(v); setClientFormData(clients.find(c => c.id === v.clientId) || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
+                    <button onClick={() => handleDelete(v.id)} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl transition-all"><Trash2 size={16} /></button>
                   </div>
                 </td>
               </tr>
             ))}
-            {vehicles.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-8 text-center text-zinc-500">{t('noVehicles')}</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
 
-      {/* --- MOBILE CARD VIEW --- */}
-      <div className="md:hidden space-y-4">
-        {vehicles.map((vehicle) => (
-            <div key={vehicle.id} className={`bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border ${vehicle.status === 'stolen' ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-zinc-200 dark:border-zinc-800'}`}>
-                {/* Header */}
-                <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg shrink-0">
-                            {getCategoryIcon(vehicle.type)}
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-zinc-900 dark:text-white">{vehicle.model}</h3>
-                            <div className="flex items-center gap-2 mt-0.5">
-                                <span className="font-mono text-sm font-bold bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">{vehicle.plate}</span>
-                                {getCompanyPrefix(vehicle.companyId) && <span className="text-[10px] font-bold bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">{getCompanyPrefix(vehicle.companyId)}</span>}
-                            </div>
-                        </div>
-                    </div>
-                    {getStatusBadge(vehicle.status)}
-                </div>
-
-                {/* Body Details */}
-                <div className="grid grid-cols-2 gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-4 bg-zinc-50 dark:bg-zinc-950/50 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/50">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] uppercase text-zinc-400 font-bold mb-0.5">Cliente</span>
-                        <span className="truncate font-medium">{getClientName(vehicle.clientId) || '-'}</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-[10px] uppercase text-zinc-400 font-bold mb-0.5">Tag</span>
-                        <div className={`flex items-center gap-1 ${vehicle.tagId ? 'text-green-600 dark:text-green-400 font-bold' : 'text-zinc-400'}`}>
-                            <LinkIcon size={12} />
-                            <span className="truncate">{vehicle.tagId ? 'Vinculado' : 'Sem Tag'}</span>
-                        </div>
-                    </div>
-                    {(vehicle.year || vehicle.installationType === 'tag_tracker') && (
-                        <div className="col-span-2 flex gap-2 mt-1">
-                             {vehicle.year && <span className="text-[10px] bg-white dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">{vehicle.year}</span>}
-                             {vehicle.installationType === 'tag_tracker' && <span className="text-[10px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800 flex items-center gap-1"><Settings size={10} /> +Tracker</span>}
-                        </div>
-                    )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                    <button 
-                        onClick={() => handleEditClick(vehicle)} 
-                        className="flex-1 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm font-medium hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                        <Edit2 size={16} /> Editar
-                    </button>
-                    <button 
-                        onClick={() => handleDelete(vehicle.id)} 
-                        className="w-10 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                    >
-                        <Trash2 size={16} />
-                    </button>
-                </div>
-            </div>
-        ))}
-        {vehicles.length === 0 && (
-            <div className="text-center py-10 text-zinc-500">{t('noVehicles')}</div>
-        )}
-      </div>
-
-       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className={`bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto border-2 ${formData.status === 'stolen' ? 'border-red-500' : 'border-zinc-200 dark:border-zinc-800'}`}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                {formData.id ? t('editVehicle') : t('newVehicle')}
-                {formData.status === 'stolen' && <span className="text-red-500 text-sm font-bold animate-pulse">[ROUBADO]</span>}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)}><X className="text-zinc-400 hover:text-zinc-600" /></button>
+      {/* --- REFACTORED CONCISE MODAL --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-zinc-50 dark:bg-[#121214] rounded-[32px] w-full max-w-4xl p-8 shadow-3xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
+            
+            <div className="flex justify-between items-center mb-10">
+              <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Veículo</h2>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl text-zinc-500 transition-colors"><X size={24} /></button>
             </div>
             
-            <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-              {/* ... (rest of form remains same) ... */}
-              {/* LEFT COLUMN: VEHICLE DETAILS */}
-              <div className="space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 pb-2">Dados do Veículo</h3>
+            <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+              
+              {/* COLUNA ESQUERDA: DADOS DO VEÍCULO */}
+              <div className="space-y-6">
+                  <div className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em] border-b border-zinc-200 dark:border-zinc-800/50 pb-3">DADOS DO VEÍCULO</div>
+
+                  {/* Status Toggle */}
+                  <div className="space-y-2">
+                    <div className="flex p-1 bg-zinc-200 dark:bg-zinc-800/50 rounded-2xl border border-zinc-300 dark:border-zinc-800">
+                        <button type="button" onClick={() => setFormData({...formData, status: 'active'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${(!formData.status || formData.status === 'active') ? 'bg-[#10b981] text-white shadow-lg' : 'text-zinc-500 dark:text-zinc-500'}`}>ATIVO</button>
+                        <button type="button" onClick={() => setFormData({...formData, status: 'maintenance'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${formData.status === 'maintenance' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>MANUTENÇÃO</button>
+                        <button type="button" onClick={() => setFormData({...formData, status: 'stolen'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${formData.status === 'stolen' ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>ROUBADO</button>
+                    </div>
+                  </div>
+
+                  {/* Instalação Toggle */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.1em]">INSTALAÇÃO DO EQUIPAMENTO</label>
+                    <div className="flex p-1 bg-zinc-200 dark:bg-zinc-800/50 rounded-2xl border border-zinc-300 dark:border-zinc-800">
+                        <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_only'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${(!formData.installationType || formData.installationType === 'tag_only') ? 'bg-[#f59e0b] text-black shadow-lg' : 'text-zinc-500'}`}>SÓ TAG</button>
+                        <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_tracker'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${formData.installationType === 'tag_tracker' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}>TAG C/ RASTREADOR</button>
+                    </div>
+                  </div>
+
+                  {/* Placa Input */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Placa</label>
+                    <div className="flex gap-2">
+                        <div className="relative flex-1">
+                           <input type="text" required placeholder="ABC1234" value={formData.plate || ''} onChange={e => setFormData({ ...formData, plate: e.target.value.toUpperCase() })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-lg font-mono font-black text-zinc-900 dark:text-white focus:border-primary-500 outline-none transition-all uppercase placeholder:text-zinc-300 dark:placeholder:text-zinc-700" />
+                           <button type="button" onClick={() => plateLookupService.lookup(formData.plate || '').then(r => r && setFormData({...formData, ...r}))} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-primary-500"><Search size={20}/></button>
+                        </div>
+                        <button type="button" onClick={handleHinovaLookup} className="px-5 bg-[#006e82] hover:bg-[#008ba3] text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">HINOVA</button>
+                    </div>
+                  </div>
+
+                  <SearchableSelect label="Categoria" options={categories.map(c => ({ value: c.id, label: c.name }))} value={formData.type || ''} onChange={val => setFormData({...formData, type: val})} />
                   
-                  {/* Status Selection */}
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-2 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                    <div className="grid grid-cols-3 gap-2">
-                        <button
-                        type="button"
-                        onClick={() => setFormData({...formData, status: 'active'})}
-                        className={`py-1.5 px-1 rounded text-[10px] font-bold transition-all ${(!formData.status || formData.status === 'active') ? 'bg-green-500 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
-                        >
-                        ATIVO
-                        </button>
-                        <button
-                        type="button"
-                        onClick={() => setFormData({...formData, status: 'maintenance'})}
-                        className={`py-1.5 px-1 rounded text-[10px] font-bold transition-all ${formData.status === 'maintenance' ? 'bg-amber-500 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
-                        >
-                        MANUTENÇÃO
-                        </button>
-                        <button
-                        type="button"
-                        onClick={() => setFormData({...formData, status: 'stolen'})}
-                        className={`py-1.5 px-1 rounded text-[10px] font-bold transition-all ${formData.status === 'stolen' ? 'bg-red-600 text-white shadow-md animate-pulse' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'}`}
-                        >
-                        ROUBADO
-                        </button>
-                    </div>
-                  </div>
-
-                  {/* Installation Type Section */}
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 mb-2">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500 mb-2">
-                          Instalação do equipamento
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                          <button
-                              type="button"
-                              onClick={() => setFormData({ ...formData, installationType: 'tag_only' })}
-                              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
-                                  (!formData.installationType || formData.installationType === 'tag_only')
-                                      ? 'bg-primary-600 text-white border-primary-600 shadow-md'
-                                      : 'bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
-                              }`}
-                          >
-                              SÓ TAG
-                          </button>
-                          <button
-                              type="button"
-                              onClick={() => setFormData({ ...formData, installationType: 'tag_tracker' })}
-                              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
-                                  formData.installationType === 'tag_tracker'
-                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
-                                      : 'bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
-                              }`}
-                          >
-                              TAG C/ RASTREADOR
-                          </button>
-                      </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('plate')}</label>
-                    <div className="relative flex gap-2">
-                        <input
-                            type="text"
-                            required
-                            value={formData.plate || ''}
-                            onChange={e => setFormData({ ...formData, plate: e.target.value })}
-                            className="w-full pl-3 pr-8 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors font-mono uppercase"
-                            placeholder="ABC1234"
-                        />
-                        <button 
-                            type="button"
-                            onClick={handlePlateLookup}
-                            disabled={loadingPlate || !formData.plate}
-                            className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 p-2 rounded-lg hover:bg-primary-50 hover:text-primary-600 disabled:opacity-50"
-                            title="Buscar na API de Placas (BrasilAPI)"
-                        >
-                            {loadingPlate ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
-                        </button>
-                        <button 
-                            type="button"
-                            onClick={handleHinovaLookup}
-                            disabled={hinovaStatus.step === 'loading' || !formData.plate}
-                            className="bg-cyan-600 text-white p-2 rounded-lg hover:bg-cyan-700 disabled:opacity-50 shadow-sm"
-                            title="Buscar na HINOVA"
-                        >
-                            {hinovaStatus.step === 'loading' ? <Loader2 size={18} className="animate-spin" /> : <span className="font-bold text-xs">HINOVA</span>}
-                        </button>
-                    </div>
-                  </div>
-
                   <SearchableSelect 
-                    label={t('type')}
-                    placeholder="Select Category"
-                    options={categories.map(c => ({ value: c.id, label: c.name }))}
-                    value={formData.type || ''}
-                    onChange={(val) => {
-                      setFormData({...formData, type: val as any});
-                    }}
+                    label="Empresa" 
+                    options={companies.map(c => ({ value: c.id, label: c.name }))} 
+                    value={formData.companyId || ''} 
+                    onChange={val => setFormData({ ...formData, companyId: val })} 
+                    disabled={isHinovaImport}
+                    icon={<Building2 size={14} />} 
                   />
 
-                  {/* Company Selector */}
-                  <SearchableSelect 
-                    label={t('company')}
-                    placeholder={t('selectCompany')}
-                    icon={<Building2 size={14} />}
-                    options={companies.map(c => ({ value: c.id, label: `${c.name} (${c.prefix})` }))}
-                    value={formData.companyId || ''}
-                    onChange={(val) => setFormData({ ...formData, companyId: val })}
-                  />
-
-                  <div>
-                    <div className="flex justify-between items-end mb-1">
-                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('model')}</label>
-                        <button 
-                            type="button" 
-                            onClick={openFipeSearch}
-                            className="text-[10px] font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 bg-primary-50 dark:bg-primary-900/10 px-2 py-0.5 rounded border border-primary-100 dark:border-primary-900/30"
-                        >
-                            <BookOpen size={10} /> Consultar FIPE
-                        </button>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center mb-1">
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Modelo</label>
+                        <button type="button" onClick={() => setIsFipeModalOpen(true)} className="text-[9px] font-black text-primary-500 flex items-center gap-1 hover:underline border border-primary-500/20 px-2 py-0.5 rounded-md"><BookOpen size={10} /> Consultar FIPE</button>
                     </div>
-                    <input
-                    type="text"
-                    required
-                    value={formData.model || ''}
-                    onChange={e => setFormData({ ...formData, model: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                    />
+                    <input type="text" required value={formData.model || ''} onChange={e => setFormData({ ...formData, model: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500 transition-all" />
                   </div>
 
-                  <div>
-                     <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('year')}</label>
-                     <input
-                     type="text"
-                     value={formData.year || ''}
-                     onChange={e => setFormData({ ...formData, year: e.target.value })}
-                     className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                     />
-                  </div>
-
-                  {/* Tag Selector */}
-                  <div className="relative" ref={tagDropdownRef}>
-                    <label className="block text-sm font-medium mb-1 text-zinc-700 dark:text-zinc-300">{t('linkedTag')}</label>
-                    <div className="relative">
-                        <input 
-                            type="text"
-                            placeholder={t('searchTags')}
-                            className="w-full px-3 py-2 pl-9 border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-                            value={tagSearchTerm}
-                            onChange={(e) => {
-                                setTagSearchTerm(e.target.value);
-                                setShowTagDropdown(true);
-                                if(e.target.value === '') setFormData({...formData, tagId: undefined});
-                            }}
-                            onFocus={() => setShowTagDropdown(true)}
-                        />
-                        <Search size={16} className="absolute left-3 top-3 text-zinc-400" />
-                        {formData.tagId && (
-                            <button 
-                                type="button"
-                                onClick={() => {
-                                    setFormData({...formData, tagId: undefined});
-                                    setTagSearchTerm('');
-                                }}
-                                className="absolute right-2 top-2 p-1 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-full transition-colors"
-                            >
-                                <X size={16} />
-                            </button>
-                        )}
-                    </div>
-                    
-                    {showTagDropdown && (
-                        <div className="absolute top-full left-0 w-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-                            <div 
-                                className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer text-xs text-zinc-500 italic border-b border-zinc-100 dark:border-zinc-700"
-                                onClick={() => {
-                                    setFormData({...formData, tagId: undefined});
-                                    setTagSearchTerm('');
-                                    setShowTagDropdown(false);
-                                }}
-                            >
-                                {t('noLink')}
-                            </div>
-                            {filteredTags.map(tag => (
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ano</label>
+                        <input type="text" value={formData.year || ''} onChange={e => setFormData({ ...formData, year: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                     </div>
+                     <div className="space-y-2 relative" ref={tagDropdownRef}>
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tag Vinculada</label>
+                        <input type="text" placeholder="Busca por Nome ou SN..." value={tagSearchTerm} onFocus={() => setShowTagDropdown(true)} onChange={e => { setTagSearchTerm(e.target.value); setShowTagDropdown(true); }} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                        {showTagDropdown && (
+                          <div className="absolute top-full left-0 w-full mt-1 bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto p-1 custom-scrollbar">
+                              <div className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[10px] font-black uppercase text-zinc-500 cursor-pointer" onClick={() => { setFormData({...formData, tagId: undefined}); setTagSearchTerm(''); setShowTagDropdown(false); }}>-- Sem Tag --</div>
+                              {tags.filter(t => 
+                                t.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
+                                t.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase())
+                              ).map(t => (
                                 <div 
-                                    key={tag.id}
-                                    className={`p-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer text-sm flex flex-col border-b border-zinc-50 dark:border-zinc-700/50 last:border-0 ${formData.tagId === tag.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}
-                                    onClick={() => {
-                                        setFormData({...formData, tagId: tag.id});
-                                        setTagSearchTerm(tag.name);
-                                        setShowTagDropdown(false);
-                                    }}
+                                  key={t.id} 
+                                  onClick={() => { setFormData({...formData, tagId: t.id}); setTagSearchTerm(t.name); setShowTagDropdown(false); }} 
+                                  className={`p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-bold cursor-pointer rounded-lg flex flex-col gap-0.5 ${formData.tagId === t.id ? 'bg-primary-500/10 text-primary-600' : 'text-zinc-700 dark:text-zinc-200'}`}
                                 >
-                                    <span className="font-medium">{tag.name}</span>
-                                    <span className="text-[10px] text-zinc-400 font-mono">SN: {tag.accessoryId}</span>
+                                  <span>{t.name}</span>
+                                  <span className="text-[9px] text-zinc-400 font-mono">SN: {t.accessoryId}</span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                              ))}
+                          </div>
+                        )}
+                     </div>
                   </div>
               </div>
 
-              {/* RIGHT COLUMN: CLIENT & EXTRA DETAILS */}
-              <div className="space-y-4">
-                 <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 pb-2">Dados do Cliente</h3>
+              {/* COLUNA DIREITA: DADOS DO CLIENTE */}
+              <div className="space-y-6 flex flex-col h-full">
+                 <div className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em] border-b border-zinc-200 dark:border-zinc-800/50 pb-3">DADOS DO CLIENTE</div>
                  
-                 <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-3">
-                    <div>
-                        <label className="block text-xs font-medium mb-1 text-zinc-500">Nome do Associado</label>
+                 <div className="p-8 bg-zinc-100/50 dark:bg-zinc-850/50 rounded-[32px] border border-zinc-200 dark:border-zinc-800 space-y-5 flex-1 shadow-inner">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Associado</label>
                         <div className="relative">
-                            <User size={14} className="absolute left-3 top-2.5 text-zinc-400" />
-                            <input
-                                type="text"
-                                value={clientFormData.name || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, name: e.target.value })}
-                                className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                placeholder="Nome Completo"
-                            />
+                            <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <input type="text" value={clientFormData.name || ''} onChange={e => setClientFormData({ ...clientFormData, name: e.target.value })} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="Nome Completo" />
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 gap-3">
-                         <div>
-                            <label className="block text-xs font-medium mb-1 text-zinc-500">CPF</label>
-                            <input
-                                type="text"
-                                value={clientFormData.cpf || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, cpf: e.target.value })}
-                                className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                placeholder="000.000.000-00"
-                            />
-                         </div>
-                         <div>
-                            <label className="block text-xs font-medium mb-1 text-zinc-500">Telefone</label>
-                            <div className="relative">
-                                <Phone size={14} className="absolute left-3 top-2.5 text-zinc-400" />
-                                <input
-                                    type="text"
-                                    value={clientFormData.phone || ''}
-                                    onChange={e => setClientFormData({ ...clientFormData, phone: e.target.value })}
-                                    className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                    placeholder="(00) 00000-0000"
-                                />
-                            </div>
-                         </div>
-                         <div>
-                            <label className="block text-xs font-medium mb-1 text-zinc-500">Email</label>
-                            <input
-                                type="email"
-                                value={clientFormData.email || ''}
-                                onChange={e => setClientFormData({ ...clientFormData, email: e.target.value })}
-                                className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500"
-                                placeholder="cliente@email.com"
-                            />
-                         </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF</label>
+                        <input type="text" value={clientFormData.cpf || ''} onChange={e => setClientFormData({ ...clientFormData, cpf: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="000.000.000-00" />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
+                        <div className="relative">
+                            <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <input type="text" value={clientFormData.phone || ''} onChange={e => setClientFormData({ ...clientFormData, phone: e.target.value })} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
+                        </div>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Email</label>
+                        <input type="email" value={clientFormData.email || ''} onChange={e => setClientFormData({ ...clientFormData, email: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@email.com" />
                     </div>
                  </div>
 
-                 <div className="pt-4 mt-auto">
-                    <button
-                        type="submit"
-                        className={`w-full text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg transition-all ${
-                            formData.status === 'stolen' 
-                            ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20' 
-                            : 'bg-primary-600 hover:bg-primary-700 shadow-primary-500/20'
-                        }`}
-                    >
-                        <Save size={20} /> {t('saveVehicle')}
-                    </button>
-                 </div>
+                 <button type="submit" className="w-full py-5 bg-[#e67e00] hover:bg-[#ff8c00] text-white rounded-2xl font-black uppercase tracking-[0.1em] text-sm flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] transition-all">
+                    <Save size={20} /> Salvar Veículo
+                 </button>
               </div>
 
-              {/* ... Modals (Hinova, FIPE) ... */}
+              {/* Status Hinova Popup */}
               {hinovaStatus.open && (
-                <div className="absolute inset-0 z-[60] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
-                    <div className={`p-4 rounded-full mb-4 shadow-lg ${
-                        hinovaStatus.step === 'loading' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' :
-                        hinovaStatus.step === 'success' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' :
-                        'bg-red-100 text-red-600 dark:bg-red-900/30'
-                    }`}>
-                        {hinovaStatus.step === 'loading' && <Loader2 size={32} className="animate-spin" />}
-                        {hinovaStatus.step === 'success' && <CheckCircle size={32} />}
-                        {hinovaStatus.step === 'error' && <XCircle size={32} />}
+                <div className="absolute inset-0 z-[1100] bg-white/95 dark:bg-zinc-950/98 backdrop-blur-xl rounded-[32px] flex flex-col items-center justify-center p-10 text-center animate-in fade-in">
+                    <div className={`p-8 rounded-[40px] mb-8 ${hinovaStatus.step === 'loading' ? 'bg-primary-500/10 text-primary-500' : hinovaStatus.step === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                        {hinovaStatus.step === 'loading' && <Loader2 size={64} className="animate-spin" />}
+                        {hinovaStatus.step === 'success' && <CheckCircle size={64} />}
+                        {hinovaStatus.step === 'error' && <XCircle size={64} />}
                     </div>
-                    
-                    <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">{hinovaStatus.message}</h3>
-                    {hinovaStatus.details && <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-xs">{hinovaStatus.details}</p>}
-
-                    {hinovaStatus.step === 'success' && (
-                        <div className="mt-4 flex items-center gap-2 text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1 rounded-full">
-                            <Database size={12} /> Dados Preenchidos Automaticamente
-                        </div>
-                    )}
-
-                    {hinovaStatus.step === 'error' && (
-                        <button 
-                            onClick={() => setHinovaStatus(prev => ({ ...prev, open: false }))}
-                            className="mt-6 px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm font-medium hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
-                        >
-                            Fechar e tentar novamente
-                        </button>
-                    )}
+                    <h3 className="text-3xl font-black text-zinc-900 dark:text-white mb-2 uppercase">{hinovaStatus.message}</h3>
+                    {hinovaStatus.details && <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">{hinovaStatus.details}</p>}
+                    {hinovaStatus.step === 'error' && <button onClick={() => setHinovaStatus(prev => ({ ...prev, open: false }))} className="mt-8 px-8 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black text-[10px] uppercase">Tentar Novamente</button>}
                 </div>
               )}
-
-                {/* --- FIPE SEARCH MODAL --- */}
-                {isFipeModalOpen && (
-                    <div className="absolute inset-0 z-[70] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
-                        {/* ... FIPE MODAL CONTENT ... */}
-                        <div className="flex justify-between items-center mb-6">
-                            <div className="flex items-center gap-2 text-primary-600">
-                                <BookOpen size={24} />
-                                <h3 className="text-xl font-bold text-zinc-900 dark:text-white">Consulta FIPE</h3>
-                            </div>
-                            <button onClick={() => setIsFipeModalOpen(false)}><X className="text-zinc-400 hover:text-zinc-600" /></button>
-                        </div>
-
-                        {loadingFipe && (
-                            <div className="flex-1 flex flex-col items-center justify-center text-primary-500">
-                                <Loader2 size={32} className="animate-spin mb-2" />
-                                <span className="text-sm font-medium">Carregando dados...</span>
-                            </div>
-                        )}
-
-                        {!loadingFipe && (
-                            <div className="flex flex-col gap-4 flex-1 overflow-y-auto">
-                                <div className="space-y-1">
-                                    <label className="text-sm font-medium text-zinc-500">1. Selecione a Marca</label>
-                                    <SearchableSelect 
-                                        options={fipeBrands.map(b => ({ value: b.codigo, label: b.nome }))}
-                                        value={selectedBrand}
-                                        onChange={handleFipeBrandChange}
-                                        placeholder="Selecione Marca..."
-                                    />
-                                </div>
-                                
-                                <div className={`space-y-1 transition-opacity ${!selectedBrand ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                                    <label className="text-sm font-medium text-zinc-500">2. Selecione o Modelo</label>
-                                    <SearchableSelect 
-                                        options={fipeModels.map(m => ({ value: m.codigo, label: m.nome }))}
-                                        value={selectedModel}
-                                        onChange={handleFipeModelChange}
-                                        placeholder="Selecione Modelo..."
-                                        disabled={!selectedBrand}
-                                    />
-                                </div>
-
-                                <div className={`space-y-1 transition-opacity ${!selectedModel ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                                    <label className="text-sm font-medium text-zinc-500">3. Selecione o Ano</label>
-                                    <div className="max-h-40 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg">
-                                        {fipeYears.map(y => (
-                                            <button
-                                                key={y.codigo}
-                                                type="button"
-                                                onClick={() => handleFipeYearChange(y.codigo)}
-                                                className="w-full text-left px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 border-b border-zinc-100 dark:border-zinc-800 last:border-0 text-sm font-medium text-zinc-700 dark:text-zinc-300 flex justify-between items-center"
-                                            >
-                                                {y.nome}
-                                                <ChevronDown className="-rotate-90 text-zinc-300" size={14} />
-                                            </button>
-                                        ))}
-                                        {fipeYears.length === 0 && <div className="p-4 text-center text-xs text-zinc-400">Selecione um modelo acima.</div>}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        
-                        <div className="mt-auto pt-4 text-center">
-                            <p className="text-xs text-zinc-400">Fonte: Tabela FIPE (API Parallelum)</p>
-                        </div>
-                    </div>
-                )}
-
             </form>
           </div>
         </div>

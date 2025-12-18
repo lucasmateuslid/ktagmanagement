@@ -1,5 +1,5 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification } from '../types';
 import { db } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, setDoc, writeBatch, getDoc, orderBy, limit } from 'firebase/firestore';
 
@@ -8,17 +8,17 @@ const KEYS = {
   USERS_DB: 'ktag_users_db',
   TAGS: 'ktag_tags',
   VEHICLES: 'ktag_vehicles',
-  CLIENTS: 'ktag_clients', // New Key
+  CLIENTS: 'ktag_clients',
   LOCATIONS: 'ktag_locations',
   THEME: 'ktag_theme',
-  SETTINGS: 'ktag_settings_v3', // VERSION BUMP: Forces refresh of defaults for new Hinova fields
+  SETTINGS: 'ktag_settings_v3',
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
   STOLEN_RECORDS: 'ktag_stolen_records',
   AUDIT_LOGS: 'ktag_audit_logs',
+  NOTIFICATIONS: 'ktag_notifications',
 };
 
-// --- LocalStorage Helpers (Fallback) ---
 const getLocal = <T>(key: string, def: T): T => {
   try {
     const item = localStorage.getItem(key);
@@ -37,8 +37,6 @@ const setLocal = (key: string, value: any) => {
   }
 };
 
-// --- Firestore Helper: Remove undefined values ---
-// Firestore crashes if you pass 'undefined' as a value.
 const cleanData = <T extends Record<string, any>>(data: T): T => {
   const copy = { ...data };
   Object.keys(copy).forEach(key => {
@@ -49,7 +47,6 @@ const cleanData = <T extends Record<string, any>>(data: T): T => {
   return copy;
 };
 
-// Default Settings
 const DEFAULT_SETTINGS: AppSettings = {
   language: 'pt',
   customProxyUrl: '',
@@ -66,7 +63,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   hinovaPass: ''
 };
 
-// Default Categories to initialize
 const DEFAULT_CATEGORIES: VehicleCategory[] = [
   { id: 'cat-car', name: 'Carro de Passeio', fipeType: 'carros' },
   { id: 'cat-truck', name: 'Caminhão', fipeType: 'caminhoes' },
@@ -74,9 +70,17 @@ const DEFAULT_CATEGORIES: VehicleCategory[] = [
 ];
 
 export const storage = {
+  // --- NOTIFICATIONS ---
+  getNotifications: (): AppNotification[] => {
+    return getLocal<AppNotification[]>(KEYS.NOTIFICATIONS, []);
+  },
+  saveNotifications: (notifications: AppNotification[]) => {
+    setLocal(KEYS.NOTIFICATIONS, notifications);
+  },
+
   // --- AUDIT LOGS ---
   logAction: async (user: User | null, action: AuditLog['action'], entity: string, details: string, entityId?: string) => {
-    if (!user) return; // Anonymous actions not logged (or handle differently)
+    if (!user) return;
 
     const logEntry: AuditLog = {
       id: crypto.randomUUID(),
@@ -98,10 +102,8 @@ export const storage = {
       }
     }
     
-    // Also save to local for offline viewing/backup
     const logs = getLocal<AuditLog[]>(KEYS.AUDIT_LOGS, []);
     logs.unshift(logEntry);
-    // Keep local log size manageable (e.g., last 200 actions)
     if (logs.length > 200) logs.pop();
     setLocal(KEYS.AUDIT_LOGS, logs);
   },
@@ -111,8 +113,7 @@ export const storage = {
       try {
         const q = query(collection(db, KEYS.AUDIT_LOGS), orderBy('timestamp', 'desc'), limit(limitCount));
         const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ ...d.data(), id: d.id } as AuditLog));
-        return data;
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as AuditLog));
       } catch (e) {
         console.warn("Firestore getAuditLogs failed, using local", e);
       }
@@ -120,7 +121,6 @@ export const storage = {
     return getLocal<AuditLog[]>(KEYS.AUDIT_LOGS, []);
   },
 
-  // --- USER SESSION (Current Logged In) ---
   getSessionUser: async (): Promise<User | null> => {
     return getLocal<User | null>(KEYS.USER_SESSION, null); 
   },
@@ -131,7 +131,6 @@ export const storage = {
     localStorage.removeItem(KEYS.USER_SESSION);
   },
 
-  // --- USER MANAGEMENT (DB) ---
   findUserByEmail: async (email: string): Promise<User | null> => {
     if (db) {
       try {
@@ -175,7 +174,7 @@ export const storage = {
     return getLocal<User[]>(KEYS.USERS_DB, []);
   },
 
-  updateUserStatus: async (userId: string, status: 'approved' | 'rejected') => {
+  updateUserStatus: async (userId: string, status: 'pending' | 'approved' | 'rejected') => {
     if (db) {
       try {
         await updateDoc(doc(db, KEYS.USERS_DB, userId), { status });
@@ -192,24 +191,19 @@ export const storage = {
   },
 
   updateUserProfile: async (userId: string, data: Partial<User>) => {
-    // 1. Update DB
     if (db) {
       try {
         const userRef = doc(db, KEYS.USERS_DB, userId);
         const docSnap = await getDoc(userRef);
         
         if (docSnap.exists()) {
-           // Normal update if document exists
            await updateDoc(userRef, cleanData(data));
         } else {
-           // Handle cases like 'root-admin' which might exist in session but not in DB yet.
-           // We try to reconstruct the full object from local session to ensure DB integrity.
            const localSession = getLocal<User | null>(KEYS.USER_SESSION, null);
            if (localSession && localSession.id === userId) {
                const fullUser = { ...localSession, ...data };
                await setDoc(userRef, cleanData(fullUser));
            } else {
-               // Fallback: Create partial doc (better than failing)
                await setDoc(userRef, cleanData(data), { merge: true });
            }
         }
@@ -218,7 +212,6 @@ export const storage = {
       }
     }
     
-    // 2. Update Local List
     const users = getLocal<User[]>(KEYS.USERS_DB, []);
     const idx = users.findIndex(u => u.id === userId);
     if (idx >= 0) {
@@ -226,14 +219,12 @@ export const storage = {
       setLocal(KEYS.USERS_DB, users);
     }
 
-    // 3. Update Session if it matches current user
     const currentSession = getLocal<User | null>(KEYS.USER_SESSION, null);
     if (currentSession && currentSession.id === userId) {
         setLocal(KEYS.USER_SESSION, { ...currentSession, ...data });
     }
   },
 
-  // --- COMPANIES ---
   getCompanies: async (): Promise<Company[]> => {
     if (db) {
       try {
@@ -269,9 +260,7 @@ export const storage = {
     setLocal(KEYS.COMPANIES, list.filter(c => c.id !== id));
   },
 
-  // --- VEHICLE CATEGORIES ---
   getCategories: async (): Promise<VehicleCategory[]> => {
-    // Ensure defaults exist locally first time
     let localData = getLocal<VehicleCategory[]>(KEYS.CATEGORIES, []);
     if (localData.length === 0) {
         localData = DEFAULT_CATEGORIES;
@@ -282,7 +271,6 @@ export const storage = {
       try {
         const snap = await getDocs(collection(db, KEYS.CATEGORIES));
         if (snap.empty) {
-            // Seed defaults if empty
             const batch = writeBatch(db);
             DEFAULT_CATEGORIES.forEach(c => batch.set(doc(db, KEYS.CATEGORIES, c.id), c));
             await batch.commit();
@@ -319,7 +307,6 @@ export const storage = {
     setLocal(KEYS.CATEGORIES, list.filter(c => c.id !== id));
   },
 
-  // --- CLIENTS (NEW) ---
   getClients: async (): Promise<Client[]> => {
     if (db) {
       try {
@@ -355,7 +342,6 @@ export const storage = {
     setLocal(KEYS.CLIENTS, list.filter(c => c.id !== id));
   },
 
-  // --- TAGS ---
   getTags: async (): Promise<Tag[]> => {
     if (db) {
       try {
@@ -411,7 +397,6 @@ export const storage = {
     setLocal(KEYS.TAGS, tags.filter((t) => !ids.includes(t.id)));
   },
 
-  // --- VEHICLES ---
   getVehicles: async (): Promise<Vehicle[]> => {
     if (db) {
       try {
@@ -428,7 +413,6 @@ export const storage = {
   saveVehicle: async (vehicle: Vehicle) => {
     if (db) {
       try {
-        // Use cleanData to avoid "undefined" fields which crash Firestore
         await setDoc(doc(db, KEYS.VEHICLES, vehicle.id), cleanData(vehicle));
       } catch (e) {
         console.warn("Firestore saveVehicle failed, saving to local.", e);
@@ -452,19 +436,16 @@ export const storage = {
     setLocal(KEYS.VEHICLES, list.filter((v) => v.id !== id));
   },
 
-  // --- LOCATIONS ---
   pruneHistory: async (tagId: string) => {
     const HOURS_128 = 128 * 60 * 60 * 1000;
     const cutoff = Date.now() - HOURS_128;
     
-    // Prune Local
     const allLocal = getLocal<LocationHistory[]>(KEYS.LOCATIONS, []);
     const prunedLocal = allLocal.filter(l => l.timestamp >= cutoff);
     if (allLocal.length !== prunedLocal.length) {
        setLocal(KEYS.LOCATIONS, prunedLocal);
     }
 
-    // Prune Firestore
     if (db) {
       try {
         const q = query(
@@ -543,7 +524,6 @@ export const storage = {
     }
   },
 
-  // --- STOLEN RECORDS ---
   getStolenRecords: async (): Promise<StolenRecord[]> => {
     if (db) {
       try {
@@ -558,7 +538,6 @@ export const storage = {
   },
 
   reportTheft: async (record: StolenRecord) => {
-    // 1. Save Record
     if (db) {
       try {
         await setDoc(doc(db, KEYS.STOLEN_RECORDS, record.id), cleanData(record));
@@ -568,7 +547,6 @@ export const storage = {
     list.unshift(record);
     setLocal(KEYS.STOLEN_RECORDS, list);
 
-    // 2. Update Vehicle Status
     const vehicle = (await storage.getVehicles()).find(v => v.id === record.vehicleId);
     if (vehicle) {
       const updatedVehicle = { ...vehicle, status: 'stolen' as const };
@@ -579,7 +557,6 @@ export const storage = {
   recoverVehicle: async (recordId: string, vehicleId: string) => {
     const recoveredAt = Date.now();
     
-    // 1. Update Record
     if (db) {
       try {
         await updateDoc(doc(db, KEYS.STOLEN_RECORDS, recordId), { status: 'recovered', recoveredAt });
@@ -592,7 +569,6 @@ export const storage = {
       setLocal(KEYS.STOLEN_RECORDS, list);
     }
 
-    // 2. Update Vehicle Status
     const vehicle = (await storage.getVehicles()).find(v => v.id === vehicleId);
     if (vehicle) {
       const updatedVehicle = { ...vehicle, status: 'active' as const };
@@ -600,9 +576,7 @@ export const storage = {
     }
   },
   
-  // --- SETTINGS ---
   getSettings: async (): Promise<AppSettings> => {
-    // Attempt to load from new key first
     const fallback = () => getLocal<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
     
     if (db) {
@@ -632,7 +606,6 @@ export const storage = {
     setLocal(KEYS.SETTINGS, settings);
   },
 
-  // Theme (Local only)
   getTheme: (): 'light' | 'dark' => getLocal<'light' | 'dark'>(KEYS.THEME, 'light'),
   setTheme: (theme: 'light' | 'dark') => setLocal(KEYS.THEME, theme),
 };

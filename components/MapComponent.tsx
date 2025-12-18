@@ -5,26 +5,23 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L from 'leaflet';
 import { LocationHistory, Vehicle } from '../types';
 import { storage } from '../services/storage';
+import { Loader2, AlertCircle, Map as MapIcon, Navigation } from 'lucide-react';
 
-// Declare google globally to avoid type errors
 declare const google: any;
 
-// Fix Leaflet Default Icon
+// Fix Leaflet Default Icon (Fallback)
 const DefaultIcon = L.icon({
     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
     iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
 interface MapProps {
   locations: LocationHistory[];
-  isFleetMode?: boolean; // New prop for Fleet Mode
-  vehicles?: Vehicle[];  // Needed to resolve Plate/Model in Fleet Mode
+  isFleetMode?: boolean; 
+  vehicles?: Vehicle[];  
 }
 
 const RecenterMap = ({ lat, lon }: { lat: number; lon: number }) => {
@@ -35,231 +32,238 @@ const RecenterMap = ({ lat, lon }: { lat: number; lon: number }) => {
   return null;
 };
 
-// Google Maps Wrapper
+// --- GOOGLE MAPS CUSTOM RENDERER ---
 const GoogleMapCanvas = ({ locations, isFleetMode, vehicles }: { locations: LocationHistory[], isFleetMode?: boolean, vehicles?: Vehicle[] }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [googleMap, setGoogleMap] = useState<any | null>(null);
-  const [markers, setMarkers] = useState<any[]>([]);
-  const [poly, setPoly] = useState<any | null>(null);
+  const markersRef = useRef<any[]>([]);
+  const polyRef = useRef<any | null>(null);
 
+  // Initialize Map
   useEffect(() => {
-    if (mapRef.current && !googleMap) {
-      if ((window as any).google) {
-        const map = new google.maps.Map(mapRef.current, {
-          center: { lat: locations[0]?.lat || 0, lng: locations[0]?.lon ||0 },
-          zoom: 13,
-        });
-        setGoogleMap(map);
-      } else {
-        console.error("Google Maps API not loaded");
-      }
+    if (mapRef.current && !googleMap && typeof google !== 'undefined' && google.maps) {
+      const initialCenter = locations.length > 0 ? { lat: locations[0].lat, lng: locations[0].lon } : { lat: -23.5505, lng: -46.6333 };
+      const map = new google.maps.Map(mapRef.current, {
+        center: initialCenter,
+        zoom: 15,
+        mapId: 'KTAG_PREMIUM_MAP', // Requires Google Cloud Map ID for advanced markers if used
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: false,
+        streetViewControl: false,
+        styles: [
+          { "featureType": "all", "elementType": "labels.text.fill", "stylers": [{ "color": "#747474" }] },
+          { "featureType": "all", "elementType": "labels.text.stroke", "stylers": [{ "visibility": "on" }, { "color": "#27272a" }, { "weight": 2 }] },
+          { "featureType": "administrative", "elementType": "geometry.fill", "stylers": [{ "color": "#000000" }] },
+          { "featureType": "landscape", "elementType": "all", "stylers": [{ "color": "#18181b" }] },
+          { "featureType": "poi", "elementType": "all", "stylers": [{ "visibility": "off" }] },
+          { "featureType": "road", "elementType": "all", "stylers": [{ "saturation": -100 }, { "lightness": -70 }] },
+          { "featureType": "transit", "elementType": "all", "stylers": [{ "visibility": "off" }] },
+          { "featureType": "water", "elementType": "all", "stylers": [{ "color": "#09090b" }] }
+        ]
+      });
+      setGoogleMap(map);
     }
   }, [googleMap, locations]);
 
+  // Update Markers and Paths
   useEffect(() => {
     if (!googleMap) return;
     
-    // Clear old
-    markers.forEach(m => m.setMap(null));
-    if (poly) poly.setMap(null);
+    // Clear existing
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
+    if (polyRef.current) polyRef.current.setMap(null);
 
-    const newMarkers: any[] = [];
-
-    if (isFleetMode && vehicles) {
-        // --- FLEET MODE: Multiple Markers, No Polyline ---
+    if (isFleetMode) {
+        const bounds = new google.maps.LatLngBounds();
         locations.forEach(loc => {
-            const vehicle = vehicles.find(v => v.tagId === loc.tagId);
-            const title = vehicle ? `${vehicle.plate} - ${vehicle.model}` : 'Unknown Tag';
+            const vehicle = vehicles?.find(v => v.tagId === loc.tagId);
+            const isStolen = vehicle?.status === 'stolen';
+            const color = isStolen ? '#ef4444' : '#f59e0b';
             
             const marker = new google.maps.Marker({
                 position: { lat: loc.lat, lng: loc.lon },
                 map: googleMap,
-                title: title,
-                // Optional: Custom icon for fleet could go here
-            });
-            
-            const infoWindow = new google.maps.InfoWindow({
-                content: `<div style="color:black"><b>${title}</b><br/>Conf: ${loc.conf}%<br/>${loc.isodatetime}</div>`
-            });
-            
-            marker.addListener("click", () => {
-                infoWindow.open(googleMap, marker);
+                title: vehicle?.plate || 'Tag',
+                icon: {
+                    path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+                    fillColor: color,
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#ffffff",
+                    scale: 2,
+                    anchor: new google.maps.Point(12, 22)
+                }
             });
 
-            newMarkers.push(marker);
+            const content = `
+                <div style="padding: 12px; font-family: sans-serif; min-width: 150px;">
+                    <div style="font-weight: 800; font-size: 14px; color: #18181b; margin-bottom: 2px;">${vehicle?.plate || 'ID: ' + loc.tagId.slice(0,6)}</div>
+                    <div style="font-size: 11px; color: #71717a; margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">${vehicle?.model || 'Desconhecido'}</div>
+                    <div style="height: 1px; background: #f4f4f5; margin: 8px 0;"></div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px;">
+                        <span style="color: #a1a1aa;">Confiança:</span>
+                        <span style="color: #10b981; font-weight: 800;">${loc.conf}%</span>
+                    </div>
+                </div>
+            `;
+            
+            const info = new google.maps.InfoWindow({ content });
+            marker.addListener('click', () => info.open(googleMap, marker));
+            markersRef.current.push(marker);
+            bounds.extend(marker.getPosition());
         });
-
-        // Fit bounds to show all vehicles
-        if (locations.length > 0) {
-            const bounds = new google.maps.LatLngBounds();
-            locations.forEach(loc => bounds.extend({ lat: loc.lat, lng: loc.lon }));
-            googleMap.fitBounds(bounds);
-        }
+        
+        if (locations.length > 0) googleMap.fitBounds(bounds);
 
     } else {
-        // --- SINGLE MODE: One Marker + Polyline ---
+        // Single Tracking Mode
         if (locations.length > 0) {
             const latest = locations[0];
             const marker = new google.maps.Marker({
                 position: { lat: latest.lat, lng: latest.lon },
                 map: googleMap,
-                title: "Latest Position"
+                icon: {
+                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    scale: 6,
+                    fillColor: '#f59e0b',
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: '#000',
+                    rotation: 0 
+                }
             });
-            googleMap.setCenter({ lat: latest.lat, lng: latest.lon });
-            newMarkers.push(marker);
+            markersRef.current.push(marker);
+            googleMap.panTo(marker.getPosition());
 
-            // Polyline
             const path = locations.map(l => ({ lat: l.lat, lng: l.lon }));
             const polyline = new google.maps.Polyline({
-                path: path,
+                path,
                 geodesic: true,
-                strokeColor: '#2563eb',
-                strokeOpacity: 1.0,
+                strokeColor: '#f59e0b',
+                strokeOpacity: 0.8,
                 strokeWeight: 4,
             });
             polyline.setMap(googleMap);
-            setPoly(polyline);
+            polyRef.current = polyline;
         }
     }
-    
-    setMarkers(newMarkers);
+  }, [locations, googleMap, isFleetMode, vehicles]);
 
-  }, [locations, googleMap, isFleetMode]);
-
-  return <div ref={mapRef} style={{ width: '100%', height: '100%' }} />;
+  return <div ref={mapRef} className="w-full h-full" />;
 };
 
 export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = false, vehicles = [] }) => {
-  const [provider, setProvider] = useState<'osm' | 'google' | 'mapbox'>('google');
+  const [provider, setProvider] = useState<'google' | 'osm' | 'mapbox'>('google');
   const [googleKey, setGoogleKey] = useState('');
   const [mapboxKey, setMapboxKey] = useState('');
-  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [isScriptLoading, setIsScriptLoading] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       const settings = await storage.getSettings();
-      if (settings.googleMapsKey) setGoogleKey(settings.googleMapsKey);
+      if (settings.googleMapsKey) {
+          setGoogleKey(settings.googleMapsKey);
+          loadGoogleMaps(settings.googleMapsKey);
+      } else {
+          setProvider('osm'); // Fallback if no key
+      }
       if (settings.mapboxKey) setMapboxKey(settings.mapboxKey);
     };
     init();
   }, []);
 
-  const loadGoogleMaps = () => {
-    if (!googleKey) return alert("Please enter a Google Maps API Key in Settings");
-    if ((window as any).google) return setProvider('google');
+  const loadGoogleMaps = (key: string) => {
+    if (typeof google !== 'undefined' && google.maps) {
+      setProvider('google');
+      return;
+    }
+    if (document.getElementById('google-maps-script')) return;
 
+    setIsScriptLoading(true);
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleKey}`;
+    script.id = 'google-maps-script';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
     script.async = true;
     script.onload = () => {
-      setScriptLoaded(true);
+      setIsScriptLoading(false);
       setProvider('google');
     };
     document.head.appendChild(script);
   };
 
-  const loadMapbox = () => {
-    if (!mapboxKey) return alert("Please enter a Mapbox Access Token in Settings");
-    setProvider('mapbox');
-  }
-
-  // Determine center based on mode
-  const centerPosition: [number, number] = locations.length > 0 
-    ? [locations[0].lat, locations[0].lon] 
-    : [40.7128, -74.0060];
-
-  const polylinePositions = locations.map(l => [l.lat, l.lon] as [number, number]);
+  const isGoogleReady = typeof google !== 'undefined' && google.maps;
 
   return (
-    <div className="relative h-full w-full rounded-xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-800 bg-slate-100 z-0">
+    <div className="relative h-full w-full rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950 z-0">
       
+      {/* Dynamic Header Badge */}
+      <div className="absolute top-4 left-4 z-[400] flex items-center gap-2">
+          <div className="bg-zinc-900/90 text-white px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 backdrop-blur-md border border-white/10 shadow-xl">
+             <div className={`w-2 h-2 rounded-full ${isScriptLoading ? 'bg-zinc-500 animate-pulse' : 'bg-primary-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]'}`} />
+             {provider.toUpperCase()} Engine
+          </div>
+      </div>
+
       {/* Provider Switcher */}
-      <div className="absolute top-4 right-4 z-[400] bg-white dark:bg-slate-900 p-2 rounded-lg shadow-md flex flex-col gap-2 max-w-[200px]">
-        <div className="flex gap-1 text-xs">
+      <div className="absolute top-4 right-4 z-[400] bg-zinc-900/90 backdrop-blur-md p-1 rounded-xl shadow-2xl border border-white/10 flex gap-1">
           <button 
-            onClick={() => setProvider('osm')}
-            className={`flex-1 px-2 py-1 rounded ${provider === 'osm' ? 'bg-primary-500 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
-          >
-            OSM
-          </button>
-          <button 
-            onClick={() => { if(scriptLoaded || googleKey) loadGoogleMaps(); }}
-            className={`flex-1 px-2 py-1 rounded ${provider === 'google' ? 'bg-primary-500 text-white' : 'bg-slate-100 dark:bg-slate-800'} ${(provider !== 'google' && !scriptLoaded && !googleKey) ? 'opacity-50' : ''}`}
+            onClick={() => setProvider('google')}
+            className={`px-3 py-1.5 rounded-lg transition-all text-[10px] font-black uppercase ${provider === 'google' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-400 hover:text-white'}`}
           >
             Google
           </button>
           <button 
-            onClick={loadMapbox}
-            className={`flex-1 px-2 py-1 rounded ${provider === 'mapbox' ? 'bg-primary-500 text-white' : 'bg-slate-100 dark:bg-slate-800'} ${(provider !== 'mapbox' && !mapboxKey) ? 'opacity-50' : ''}`}
+            onClick={() => setProvider('osm')}
+            className={`px-3 py-1.5 rounded-lg transition-all text-[10px] font-black uppercase ${provider === 'osm' ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-400 hover:text-white'}`}
           >
-            Mapbox
+            OSM
           </button>
-        </div>
       </div>
 
-      {provider !== 'google' ? (
+      {provider === 'google' && isGoogleReady ? (
+        <GoogleMapCanvas locations={locations} isFleetMode={isFleetMode} vehicles={vehicles} />
+      ) : provider === 'google' && isScriptLoading ? (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 text-primary-500 gap-4">
+            <Loader2 size={48} className="animate-spin" />
+            <span className="text-xs font-black uppercase tracking-widest animate-pulse">Initializing K-TAG Maps...</span>
+        </div>
+      ) : (
         <MapContainer 
-          center={centerPosition} 
-          zoom={13} 
-          scrollWheelZoom={true} 
+          center={locations.length > 0 ? [locations[0].lat, locations[0].lon] : [-23.5505, -46.6333]} 
+          zoom={15} 
           style={{ height: "100%", width: "100%" }}
         >
-          {provider === 'osm' && (
-            <TileLayer
-              attribution='&copy; OpenStreetMap'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-          )}
-
-          {provider === 'mapbox' && (
-            <TileLayer
-              attribution='&copy; Mapbox'
-              url={`https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${mapboxKey}`}
-              tileSize={512}
-              zoomOffset={-1}
-            />
-          )}
-
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {!isFleetMode && locations.length > 0 && <RecenterMap lat={locations[0].lat} lon={locations[0].lon} />}
-
-          {/* RENDER LOGIC SWITCH */}
           {isFleetMode ? (
-              // FLEET MODE: Render multiple markers
               locations.map((loc) => {
                   const vehicle = vehicles?.find(v => v.tagId === loc.tagId);
                   return (
-                    <Marker key={loc.id || `${loc.lat}-${loc.lon}`} position={[loc.lat, loc.lon]}>
+                    <Marker key={loc.id} position={[loc.lat, loc.lon]}>
                         <Popup>
-                            <div className="text-sm">
-                                <p className="font-bold text-zinc-900">{vehicle ? `${vehicle.plate}` : 'Unknown'}</p>
-                                <p className="text-xs text-zinc-500 mb-1">{vehicle?.model}</p>
-                                <p className="text-xs">Conf: {loc.conf}%</p>
-                                <p className="text-[10px] text-zinc-400">{new Date(loc.timestamp).toLocaleTimeString()}</p>
+                            <div className="text-sm font-sans p-1">
+                                <p className="font-bold text-zinc-900 uppercase">{vehicle?.plate || 'Tag'}</p>
+                                <p className="text-[10px] text-zinc-500 mb-1">{vehicle?.model}</p>
+                                <div className="h-px bg-zinc-100 my-1"/>
+                                <p className="text-[10px] font-mono">{new Date(loc.timestamp).toLocaleTimeString()}</p>
                             </div>
                         </Popup>
                     </Marker>
                   )
               })
           ) : (
-              // SINGLE MODE: One marker + Polyline
               <>
                 {locations.length > 0 && (
                     <Marker position={[locations[0].lat, locations[0].lon]}>
-                    <Popup>
-                        <div className="text-sm">
-                        <p className="font-bold">Latest Position</p>
-                        <p>Conf: {locations[0].conf}%</p>
-                        </div>
-                    </Popup>
+                        <Popup>Última Posição</Popup>
                     </Marker>
                 )}
-                <Polyline positions={polylinePositions} color="blue" weight={4} opacity={0.6} />
+                <Polyline positions={locations.map(l => [l.lat, l.lon] as [number, number])} color="#f59e0b" weight={5} opacity={0.7} />
               </>
           )}
-
         </MapContainer>
-      ) : (
-        <GoogleMapCanvas locations={locations} isFleetMode={isFleetMode} vehicles={vehicles} />
       )}
     </div>
   );

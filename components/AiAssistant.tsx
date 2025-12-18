@@ -1,7 +1,8 @@
 
 // components/AiAssistant.tsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { GoogleGenAI, FunctionDeclaration, Type, Schema } from "@google/genai";
+// Correct import from @google/genai
+import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
 import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
@@ -212,17 +213,6 @@ export const AiAssistant: React.FC = () => {
   };
 
   /* --------------------------- AI / Gemini ------------------------- */
-  const aiClient = useMemo(() => {
-    const key = process.env.API_KEY;
-    if (!key) return null;
-    try {
-      return new GoogleGenAI({ apiKey: key });
-    } catch (err) {
-      console.error('Erro ao inicializar GoogleGenAI', err);
-      return null;
-    }
-  }, []);
-
   const handleToolExecution = async (call: any): Promise<ToolResult> => {
     try {
       if (call.name === 'get_vehicle_location') {
@@ -250,12 +240,14 @@ export const AiAssistant: React.FC = () => {
     setLoading(true);
 
     try {
-      if (!aiClient) {
+      const key = process.env.API_KEY;
+      if (!key) {
         throw new Error('API key da Gemini não configurada. Defina API_KEY em .env');
       }
+      const ai = new GoogleGenAI({ apiKey: key });
 
-      const response = await aiClient.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
         contents: userMsg,
         config: {
             tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }],
@@ -293,15 +285,28 @@ Comportamento Específico:
       const functionCalls = response.functionCalls;
 
       if (functionCalls && functionCalls.length > 0) {
-        const call = functionCalls[0];
-        const toolResult = await handleToolExecution(call);
+        const toolResponses = await Promise.all(
+          functionCalls.map(async (call) => {
+            const result = await handleToolExecution(call);
+            return {
+              functionResponse: {
+                id: call.id,
+                name: call.name,
+                response: { result },
+              },
+            };
+          })
+        );
 
-        const finalResponse = await aiClient.models.generateContent({
-          model: 'gemini-2.5-flash',
+        // Crucial: preserve the full content of the model turn, including thoughts
+        const modelContent = response.candidates[0].content;
+
+        const finalResponse = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
           contents: [
             { role: 'user', parts: [{ text: userMsg }] },
-            { role: 'model', parts: [{ functionCall: call }] },
-            { role: 'function', parts: [{ functionResponse: { name: call.name, response: { result: toolResult } } }] }
+            modelContent,
+            { role: 'function', parts: toolResponses },
           ],
           config: {
              tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }]

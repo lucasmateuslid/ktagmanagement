@@ -79,7 +79,7 @@ const translations = {
     saveConfirm: 'Are you sure you want to save changes to this tag?',
     massDeleteConfirm: 'Are you sure you want to delete selected tags?',
 
-    vehicleFleet: 'Vehicle Fleet',
+    vehicleFleet: 'Vehicles',
     addVehicle: 'Add Vehicle',
     type: 'Category',
     model: 'Model',
@@ -267,7 +267,7 @@ const translations = {
     saveConfirm: 'Tem certeza que deseja salvar alterações nesta tag?',
     massDeleteConfirm: 'Tem certeza que deseja excluir as tags selecionadas?',
 
-    vehicleFleet: 'Frota de Veículos',
+    vehicleFleet: 'Veículos',
     addVehicle: 'Adicionar Veículo',
     type: 'Categoria',
     model: 'Modelo',

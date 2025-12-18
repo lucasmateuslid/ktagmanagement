@@ -18,9 +18,9 @@ import { Users } from './pages/Users';
 import { Reports } from './pages/Reports';
 import { AuditLogs } from './pages/AuditLogs';
 
-const { HashRouter, Routes, Route, useNavigate } = ReactRouterDOM as any;
+const { HashRouter, Routes, Route, useNavigate, Outlet, Navigate } = ReactRouterDOM as any;
 
-const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
+const ProtectedLayout = () => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -30,10 +30,31 @@ const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
     }
   }, [isAuthenticated, loading, navigate]);
 
-  if (loading) return <div className="h-screen w-screen flex items-center justify-center bg-zinc-50 dark:bg-black text-zinc-500">Loading K-TAG...</div>;
+  if (loading) return (
+    <div className="h-screen w-screen flex items-center justify-center bg-zinc-950 text-primary-500">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+        <span className="font-display font-bold tracking-widest text-sm uppercase">K-TAG Loading</span>
+      </div>
+    </div>
+  );
+  
   if (!isAuthenticated) return null;
 
-  return <Layout>{children}</Layout>;
+  return (
+    <Layout>
+      <Outlet />
+    </Layout>
+  );
+};
+
+// Componente para rotas de Admin e Moderador
+const RoleProtectedRoute = ({ roles, children }: { roles: string[], children: React.ReactNode }) => {
+  const { user } = useAuth();
+  if (!roles.includes(user?.role || 'user')) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
 };
 
 function App() {
@@ -47,60 +68,21 @@ function App() {
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   
-                  <Route path="/" element={
-                    <ProtectedRoute>
-                      <Dashboard />
-                    </ProtectedRoute>
-                  } />
-                  
-                  <Route path="/tags" element={
-                    <ProtectedRoute>
-                      <Tags />
-                    </ProtectedRoute>
-                  } />
-                  
-                  <Route path="/vehicles" element={
-                    <ProtectedRoute>
-                      <Vehicles />
-                    </ProtectedRoute>
-                  } />
-                  
-                  <Route path="/map" element={
-                    <ProtectedRoute>
-                      <LiveMap />
-                    </ProtectedRoute>
-                  } />
+                  <Route element={<ProtectedLayout />}>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/map" element={<LiveMap />} />
+                    <Route path="/vehicles" element={<Vehicles />} />
+                    <Route path="/security" element={<Security />} />
+                    <Route path="/settings" element={<Settings />} />
 
-                  <Route path="/security" element={
-                    <ProtectedRoute>
-                      <Security />
-                    </ProtectedRoute>
-                  } />
-                  
-                  <Route path="/reports" element={
-                    <ProtectedRoute>
-                      <Reports />
-                    </ProtectedRoute>
-                  } />
+                    {/* Rotas restritas a Moderadores e Admins */}
+                    <Route path="/tags" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Tags /></RoleProtectedRoute>} />
+                    <Route path="/reports" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Reports /></RoleProtectedRoute>} />
+                    <Route path="/audit" element={<RoleProtectedRoute roles={['admin', 'moderator']}><AuditLogs /></RoleProtectedRoute>} />
 
-                  <Route path="/users" element={
-                    <ProtectedRoute>
-                      <Users />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/audit" element={
-                    <ProtectedRoute>
-                      <AuditLogs />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/settings" element={
-                    <ProtectedRoute>
-                      <Settings />
-                    </ProtectedRoute>
-                  } />
-
+                    {/* Rotas restritas apenas a Admins */}
+                    <Route path="/users" element={<RoleProtectedRoute roles={['admin']}><Users /></RoleProtectedRoute>} />
+                  </Route>
                 </Routes>
               </HashRouter>
             </ThemeProvider>

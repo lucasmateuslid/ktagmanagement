@@ -4,9 +4,10 @@ export interface User {
   name: string;
   email: string;
   password?: string; // Added for profile updates
-  role?: 'admin' | 'user';
+  role?: 'admin' | 'moderator' | 'user';
   status?: 'pending' | 'approved' | 'rejected'; // Status da aprovação
   ip?: string; // IP do cadastro
+  companySlug?: string; // Added for white-label branding
   createdAt?: number;
 }
 
