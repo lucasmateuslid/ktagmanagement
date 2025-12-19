@@ -6,14 +6,14 @@ import { storage } from '../services/storage';
 import { plateLookupService } from '../services/plateLookup';
 import { hinovaService } from '../services/hinova';
 import { fipeService, FipeReference } from '../services/fipe';
-import { Tag, Vehicle, Company, VehicleCategory, Client } from '../types';
+import { Tag, Vehicle, Company, VehicleCategory, Client, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Plus, Trash2, Edit2, Car as CarIcon, Truck, Bike, Save, X, 
   Link as LinkIcon, Search, Loader2, Building2, ChevronDown, 
-  Check, ShieldAlert, AlertTriangle, Wrench, User, Phone, 
+  Check, ShieldAlert, AlertTriangle, Wrench, User as UserIcon, Phone, 
   MapPin, CheckCircle, XCircle, Database, Settings, BookOpen,
   Filter, LayoutGrid, ListFilter, Activity, Mail, FileText, Lock
 } from 'lucide-react';
@@ -96,7 +96,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ label, options, val
               <input
                 ref={searchInputRef}
                 type="text"
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:border-primary-500 text-zinc-900 dark:text-white"
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:border-primary-500 text-zinc-900 dark:text-white"
                 placeholder="Filtrar lista..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -142,7 +142,7 @@ export const Vehicles = () => {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Vehicle>>({});
-  const [clientFormData, setClientFormData] = useState<Partial<Client>>({});
+  const [clientFormData, setClientFormData] = useState<Partial<Client>>({ hasAccess: false });
   const [globalSearch, setGlobalSearch] = useState('');
   const [isHinovaImport, setIsHinovaImport] = useState(false);
 
@@ -197,7 +197,7 @@ export const Vehicles = () => {
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
       setFormData({ status: 'active', installationType: 'tag_only' });
-      setClientFormData({});
+      setClientFormData({ hasAccess: false });
       setIsHinovaImport(false);
       setTagSearchTerm('');
       setIsModalOpen(true);
@@ -250,7 +250,7 @@ export const Vehicles = () => {
                 ...result.vehicle,
                 companyId: lockCompany ? lockCompany.id : prev.companyId
             }));
-            setClientFormData(result.client);
+            setClientFormData({ ...result.client, hasAccess: false });
             setIsHinovaImport(true);
             
             setHinovaStatus({ 
@@ -274,22 +274,52 @@ export const Vehicles = () => {
     }
 
     let linkedClientId = formData.clientId;
+    let finalClient: Client | null = null;
+
     if (clientFormData.name) {
         let client = clientFormData.cpf ? clients.find(c => c.cpf === clientFormData.cpf) : null;
-        if (client) linkedClientId = client.id;
-        else {
+        if (client) {
+            linkedClientId = client.id;
+            finalClient = { ...client, ...clientFormData as Client, id: client.id };
+            await storage.saveClient(finalClient);
+        } else {
             const newClient: Client = {
                 id: crypto.randomUUID(),
                 name: clientFormData.name,
                 cpf: clientFormData.cpf || '',
                 phone: clientFormData.phone || '',
                 email: clientFormData.email,
+                hasAccess: clientFormData.hasAccess || false,
                 createdAt: Date.now()
             };
             await storage.saveClient(newClient);
             linkedClientId = newClient.id;
+            finalClient = newClient;
             setClients(prev => [...prev, newClient]);
         }
+    }
+
+    // Lógica de Automação de Usuário para Clientes
+    if (finalClient && finalClient.hasAccess) {
+      const cleanCpf = finalClient.cpf.replace(/\D/g, '');
+      const loginEmail = `${cleanCpf}@client.ktag`;
+      const existingUser = await storage.findUserByEmail(loginEmail);
+      
+      if (!existingUser) {
+        const tempPassword = cleanCpf.substring(0, 6); // Primeiros 6 dígitos
+        const newUser: User = {
+          id: crypto.randomUUID(),
+          name: finalClient.name,
+          email: loginEmail,
+          password: tempPassword,
+          role: 'client',
+          status: 'approved',
+          cpf: cleanCpf,
+          createdAt: Date.now()
+        };
+        await storage.registerUserRequest(newUser);
+        addNotification('info', 'Acesso Criado', `Portal do Cliente ativado. Login: ${cleanCpf} / Senha: ${tempPassword}`);
+      }
     }
 
     const newVehicle: Vehicle = {
@@ -336,7 +366,7 @@ export const Vehicles = () => {
           <p className="text-zinc-500 text-sm mt-1 font-medium">Gestão centralizada de veículos ativos.</p>
         </div>
         <button
-          onClick={() => { setFormData({ status: 'active', installationType: 'tag_only' }); setClientFormData({}); setIsHinovaImport(false); setTagSearchTerm(''); setIsModalOpen(true); }}
+          onClick={() => { setFormData({ status: 'active', installationType: 'tag_only' }); setClientFormData({ hasAccess: false }); setIsHinovaImport(false); setTagSearchTerm(''); setIsModalOpen(true); }}
           className="w-full md:w-auto bg-primary-500 hover:bg-primary-400 text-black px-6 py-4 md:py-3 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-xs tracking-widest transition-all shadow-xl shadow-primary-500/20"
         >
           <Plus size={20} strokeWidth={3} /> {t('addVehicle')}
@@ -414,10 +444,13 @@ export const Vehicles = () => {
                 <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                    <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black uppercase text-zinc-500">{client?.name?.charAt(0) || '?'}</div>
-                      <span className="text-[10px] font-black uppercase text-zinc-500 truncate max-w-[120px]">{client?.name || 'Sem Cliente'}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[10px] font-black uppercase text-zinc-500 truncate max-w-[120px]">{client?.name || 'Sem Cliente'}</span>
+                        {client?.hasAccess && <span className="text-[8px] font-black text-emerald-500 uppercase">Portal Ativo</span>}
+                      </div>
                    </div>
                    <div className="flex gap-2">
-                      <button onClick={() => { setFormData(v); setClientFormData(client || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tag?.name || ''); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-500 rounded-xl"><Edit2 size={16} /></button>
+                      <button onClick={() => { setFormData(v); setClientFormData(client || { hasAccess: false }); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tag?.name || ''); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-500 rounded-xl"><Edit2 size={16} /></button>
                       <button onClick={() => handleDelete(v.id)} className="p-3 bg-zinc-50 dark:bg-zinc-800 text-red-500 rounded-xl"><Trash2 size={16} /></button>
                    </div>
                 </div>
@@ -442,6 +475,7 @@ export const Vehicles = () => {
           <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
             {filteredVehicles.map((v) => {
               const tag = tags.find(t => t.id === v.tagId);
+              const client = clients.find(c => c.id === v.clientId);
               return (
                 <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
                   <td className="p-5">
@@ -472,7 +506,12 @@ export const Vehicles = () => {
                       )}
                     </div>
                   </td>
-                  <td className="p-5 text-zinc-700 dark:text-zinc-300 font-bold uppercase text-xs">{clients.find(c => c.id === v.clientId)?.name || '-'}</td>
+                  <td className="p-5">
+                    <div className="flex flex-col">
+                      <span className="text-zinc-700 dark:text-zinc-300 font-bold uppercase text-xs">{client?.name || '-'}</span>
+                      {client?.hasAccess && <span className="text-[9px] font-black text-emerald-500 uppercase mt-0.5">Portal Ativo</span>}
+                    </div>
+                  </td>
                   <td className="p-5">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black border border-zinc-200 dark:border-zinc-700 uppercase">
@@ -483,7 +522,7 @@ export const Vehicles = () => {
                   </td>
                   <td className="p-5 text-right">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setFormData(v); setClientFormData(clients.find(c => c.id === v.clientId) || {}); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
+                      <button onClick={() => { setFormData(v); setClientFormData(client || { hasAccess: false }); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
                       <button onClick={() => handleDelete(v.id)} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl transition-all"><Trash2 size={16} /></button>
                     </div>
                   </td>
@@ -500,7 +539,7 @@ export const Vehicles = () => {
           <div className="bg-zinc-50 dark:bg-[#121214] rounded-[32px] w-full max-w-4xl p-8 shadow-3xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
             
             <div className="flex justify-between items-center mb-10">
-              <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Veículo</h2>
+              <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{formData.id ? 'Editar Veículo' : 'Novo Veículo'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl text-zinc-500 transition-colors"><X size={24} /></button>
             </div>
             
@@ -597,7 +636,7 @@ export const Vehicles = () => {
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Associado</label>
                         <div className="relative">
-                            <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
                             <input type="text" value={clientFormData.name || ''} onChange={e => setClientFormData({ ...clientFormData, name: e.target.value })} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="Nome Completo" />
                         </div>
                     </div>
@@ -618,6 +657,18 @@ export const Vehicles = () => {
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Email</label>
                         <input type="email" value={clientFormData.email || ''} onChange={e => setClientFormData({ ...clientFormData, email: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@email.com" />
+                    </div>
+
+                    {/* Portal Access Toggle - Mantendo design solicitado */}
+                    <div className="pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 block mb-3">Terá acesso ao Portal?</label>
+                        <div className="flex p-1 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-300 dark:border-zinc-800">
+                            <button type="button" onClick={() => setClientFormData({...clientFormData, hasAccess: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${clientFormData.hasAccess ? 'bg-emerald-500 text-white shadow-lg' : 'text-zinc-500'}`}>SIM</button>
+                            <button type="button" onClick={() => setClientFormData({...clientFormData, hasAccess: false})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${!clientFormData.hasAccess ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500'}`}>NÃO</button>
+                        </div>
+                        {clientFormData.hasAccess && (
+                          <p className="text-[9px] text-zinc-500 font-bold uppercase mt-3 animate-pulse">Senha inicial: 6 primeiros dígitos do CPF</p>
+                        )}
                     </div>
                  </div>
 

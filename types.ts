@@ -3,24 +3,38 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password?: string; // Added for profile updates
-  role?: 'admin' | 'moderator' | 'user';
-  status?: 'pending' | 'approved' | 'rejected'; // Status da aprovação
-  ip?: string; // IP do cadastro
-  companySlug?: string; // Added for white-label branding
+  password?: string;
+  role?: 'admin' | 'moderator' | 'user' | 'client'; // Adicionado 'client'
+  status?: 'pending' | 'approved' | 'rejected';
+  ip?: string;
+  companySlug?: string;
   createdAt?: number;
+  cpf?: string; // CPF vinculado para login de clientes
 }
 
 export interface Company {
   id: string;
   name: string;
-  prefix: string; // Iniciais (ex: KTG para K-Tag)
+  prefix: string;
 }
 
 export interface VehicleCategory {
   id: string;
-  name: string; // Ex: Utilitário, Passeio
-  fipeType: 'carros' | 'motos' | 'caminhoes' | 'none'; // Mapeamento para API FIPE
+  name: string;
+  fipeType: 'carros' | 'motos' | 'caminhoes' | 'none';
+}
+
+// Added missing Tag interface used for tracking hardware
+export interface Tag {
+  id: string;
+  name: string;
+  accessoryId: string;
+  hashedAdvKey: string;
+  privateKey: string;
+  macAddress?: string;
+  batteryWarrantyYears?: number;
+  warrantyStartedAt?: number;
+  createdAt: number;
 }
 
 export interface Client {
@@ -32,36 +46,27 @@ export interface Client {
   address?: string;
   city?: string;
   state?: string;
-  createdAt: number;
-}
-
-export interface Tag {
-  id: string;
-  name: string;
-  accessoryId: string;
-  hashedAdvKey: string;
-  privateKey: string;
-  macAddress?: string; // Added MAC address
+  hasAccess?: boolean; // Novo: Indica se o cliente tem login
   createdAt: number;
 }
 
 export interface Vehicle {
   id: string;
-  type: string; // Agora armazena o ID da VehicleCategory ou string legada
+  type: string;
   plate: string;
   model: string;
   year?: string;
   fipeCode?: string;
-  color?: string; // Added Color
-  chassis?: string; // Added Chassis
-  tagId?: string; // Optional link to a tag
-  companyId?: string; // ID da empresa responsável
-  clientId?: string; // ID do cliente (proprietário/associado)
-  hinovaId?: string; // ID externo da Hinova
-  status?: 'active' | 'stolen' | 'maintenance'; // Vehicle Status
-  installationType?: 'tag_only' | 'tag_tracker'; // New field: Tipo de instalação
-  createdAt: number; // Timestamp de criação
-  updatedBy?: string; // Nome do usuário que cadastrou/atualizou
+  color?: string;
+  chassis?: string;
+  tagId?: string;
+  companyId?: string;
+  clientId?: string;
+  hinovaId?: string;
+  status?: 'active' | 'stolen' | 'maintenance';
+  installationType?: 'tag_only' | 'tag_tracker';
+  createdAt: number;
+  updatedBy?: string;
 }
 
 export interface StolenRecord {
@@ -69,33 +74,32 @@ export interface StolenRecord {
   vehicleId: string;
   vehiclePlate: string;
   vehicleModel: string;
-  type: 'theft' | 'robbery'; // Furto vs Roubo (Assalto)
+  type: 'theft' | 'robbery';
   timestamp: number;
   location: {
     lat: number;
     lon: number;
     address?: string;
   };
-  policeReport?: string; // BO
+  policeReport?: string;
   notes?: string;
   status: 'open' | 'recovered';
   recoveredAt?: number;
 }
 
-// K-Tag API Response Shape
 export interface KTagLocationResult {
   lat: number;
   lon: number;
   conf: number;
   status: number;
-  timestamp: number; // UTC ms
+  timestamp: number;
   isodatetime: string;
   key: string;
 }
 
 export interface LocationHistory extends KTagLocationResult {
   tagId: string;
-  id: string; // Internal ID
+  id: string;
 }
 
 export interface DashboardStats {
@@ -120,7 +124,7 @@ export interface AuditLog {
   userName: string;
   userEmail: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE' | 'REPORT' | 'LOGIN' | 'CONFIG';
-  entity: string; // e.g., 'Vehicle', 'Tag', 'User'
+  entity: string;
   entityId?: string;
   details: string;
   timestamp: number;
@@ -128,20 +132,16 @@ export interface AuditLog {
 
 export interface AppSettings {
   language: 'pt' | 'en';
-  customProxyUrl: string; // URL for the Firebase Cloud Function
+  customProxyUrl: string;
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;
   googleMapsKey: string;
   mapboxKey: string;
-  
-  // Real Plate API Config
-  plateApiUrl: string; // e.g. https://api.provider.com/v1/plate/{plate}
+  plateApiUrl: string;
   plateApiToken: string;
-
-  // Hinova API Config
   hinovaUrl: string;
-  hinovaToken: string; // SGA Token (Initial)
-  hinovaUser: string;  // Added: Usuario para autenticacao
-  hinovaPass: string;  // Added: Senha para autenticacao
+  hinovaToken: string;
+  hinovaUser: string;
+  hinovaPass: string;
 }

@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, Firestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -18,8 +18,13 @@ let db: Firestore | null = null;
 try {
   app = initializeApp(firebaseConfig);
   try {
-      db = getFirestore(app);
-      console.log("Firebase initialized successfully");
+      // Use initializeFirestore instead of getFirestore to enable long-polling
+      // this fixes "Could not reach Cloud Firestore backend" in environments where 
+      // standard gRPC/WebChannel connections are blocked.
+      db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+      });
+      console.log("Firebase initialized successfully with Long Polling enabled.");
   } catch (firestoreError: any) {
       console.warn("Firestore initialization failed (Offline Mode enabled):", firestoreError.message);
       db = null;
