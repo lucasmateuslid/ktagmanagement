@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { storage } from '../services/storage';
@@ -68,10 +67,8 @@ export const Tags = () => {
     if (selectedTags.size === 0) return;
     
     const count = selectedTags.size;
-    // Fix: Explicitly type idsToUpdate as string[] to avoid unknown[] error from Set conversion
     const idsToUpdate: string[] = Array.from(selectedTags);
     
-    // Atualiza todas as tags selecionadas em paralelo
     await Promise.all(idsToUpdate.map(async (id) => {
         const tag = tags.find(t => t.id === id);
         if (tag) {
@@ -88,7 +85,6 @@ export const Tags = () => {
   const handleBulkDelete = async () => {
     if (selectedTags.size === 0 || !confirm(`Deseja realmente excluir as ${selectedTags.size} tags selecionadas?`)) return;
     
-    // Fix: Explicitly type ids as string[] to avoid unknown[] error on storage.deleteTags(ids) call
     const ids: string[] = Array.from(selectedTags);
     await storage.deleteTags(ids);
     storage.logAction(user, 'DELETE', 'Tag', `Excluiu ${ids.length} tags em massa`);
@@ -112,7 +108,9 @@ export const Tags = () => {
       createdAt: formData.createdAt || Date.now(),
     };
     await storage.saveTag(newTag);
-    storage.logAction(user, isEdit ? 'UPDATE' : 'CREATE', 'Tag', `${isEdit ? 'Atualizou' : 'Criou'} tag ${newTag.name}`, newTag.id);
+    // Trigger de Auditoria
+    storage.logAction(user, isEdit ? 'UPDATE' : 'CREATE', 'Tag', `${isEdit ? 'Atualizou' : 'Registrou'} tag ${newTag.name} (SN: ${newTag.accessoryId})`, newTag.id);
+    
     await loadData();
     setIsModalOpen(false);
     setFormData({ batteryWarrantyYears: 1 });
@@ -121,8 +119,13 @@ export const Tags = () => {
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const tag = tags.find(t => t.id === id);
     if (!confirm(t('deleteConfirm'))) return;
     await storage.deleteTag(id);
+    
+    // Trigger de Auditoria
+    storage.logAction(user, 'DELETE', 'Tag', `Removeu tag ${tag?.name} (SN: ${tag?.accessoryId})`, id);
+    
     addNotification('success', 'Removido', 'Tag excluída.');
     await loadData();
   };
@@ -147,7 +150,6 @@ export const Tags = () => {
 
   return (
     <div className="space-y-8 pb-20">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight uppercase">{t('tagManagement')}</h1>
@@ -198,7 +200,7 @@ export const Tags = () => {
         </div>
       </div>
 
-      {/* Bulk Actions Bar (Style refined to match image) */}
+      {/* Bulk Actions Bar */}
       {selectedTags.size > 0 && (
           <div className="bg-[#18181b] text-white p-5 rounded-full flex items-center justify-between shadow-2xl animate-in slide-in-from-top-4 duration-300 border border-white/5 mx-auto w-full max-w-6xl">
               <div className="flex items-center gap-4">
@@ -253,7 +255,6 @@ export const Tags = () => {
         </div>
       )}
 
-      {/* Grid of Tags */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {filteredTags.map((tag) => {
           const isSelected = selectedTags.has(tag.id);
@@ -266,7 +267,6 @@ export const Tags = () => {
               onClick={() => toggleSelect(tag.id)}
               className={`bg-white dark:bg-zinc-900 p-8 rounded-[32px] border transition-all cursor-pointer group relative overflow-hidden ${isSelected ? 'border-primary-500 ring-1 ring-primary-500' : 'border-zinc-200 dark:border-zinc-800'}`}
             >
-              {/* Header: Wifi & Tools */}
               <div className="flex justify-between items-start mb-6">
                 <div className={`p-4 rounded-2xl transition-all shadow-sm ${isSelected ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-primary-500'}`}>
                   <Wifi size={24} />
@@ -277,15 +277,12 @@ export const Tags = () => {
                 </div>
               </div>
 
-              {/* Title & SN */}
               <div>
                 <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate">{tag.name}</h3>
                 <p className="text-[10px] font-mono text-zinc-400 mt-1 uppercase tracking-[0.2em] font-bold">SN: {tag.accessoryId}</p>
               </div>
 
-              {/* Body: Sections */}
               <div className="mt-8 space-y-4">
-                 {/* Vínculo Section */}
                  <div className="p-5 bg-zinc-50 dark:bg-zinc-950/50 rounded-[24px] border border-zinc-100 dark:border-zinc-800/50">
                     <div className="flex justify-between text-[10px] font-black uppercase text-zinc-400 mb-3 tracking-widest">
                         <span>Status de Vínculo</span>
@@ -299,7 +296,6 @@ export const Tags = () => {
                     ) : <div className="text-[11px] font-bold text-zinc-400 italic">Aguardando instalação</div>}
                  </div>
 
-                 {/* Battery Warranty Section */}
                  <div className={`p-5 rounded-[24px] border transition-colors ${warranty ? (warranty.isExpired ? 'bg-red-500/5 border-red-500/20' : 'bg-emerald-500/5 border-emerald-500/20') : 'bg-zinc-50 dark:bg-zinc-950/50 border-zinc-100 dark:border-zinc-800/50'}`}>
                     <div className="flex justify-between items-center mb-3">
                         <span className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-1 tracking-widest"><BatteryCharging size={12}/> Garantia Bateria</span>
@@ -326,7 +322,6 @@ export const Tags = () => {
         })}
       </div>
 
-      {/* Modal - Configurar Tag */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-10 shadow-2xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">

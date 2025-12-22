@@ -11,7 +11,7 @@ import {
   Languages, CloudLightning, Trash2, Plus, Search, ShieldAlert, 
   Lock, Edit2, Building2, Truck, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, ChevronRight, Activity, Cpu, MapPin, ShieldCheck,
-  Wifi, Cloud, Terminal
+  Wifi, Cloud, Terminal, UserCircle2
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -22,6 +22,10 @@ export const Settings = () => {
   const [newCompany, setNewCompany] = useState({ name: '', prefix: '' });
   const [newCategory, setNewCategory] = useState({ name: '', fipeType: 'carros' as const });
   
+  // Profile Form State
+  const [profileForm, setProfileForm] = useState({ name: '', avatarInitial: '' });
+  const [profileLoading, setProfileLoading] = useState(false);
+
   // Password State
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' });
   const [showPwds, setShowPwds] = useState(false);
@@ -42,6 +46,13 @@ export const Settings = () => {
     const config = await storage.getSettings();
     setSettings(config);
     
+    if (currentUser) {
+        setProfileForm({ 
+          name: currentUser.name, 
+          avatarInitial: currentUser.avatarInitial || currentUser.name.charAt(0) 
+        });
+    }
+
     if (isAdmin) {
       const [allCompanies, allCategories] = await Promise.all([
         storage.getCompanies(),
@@ -55,7 +66,7 @@ export const Settings = () => {
 
   useEffect(() => {
     loadData();
-  }, [isAdmin]);
+  }, [isAdmin, currentUser]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +78,26 @@ export const Settings = () => {
       addNotification('success', 'Sucesso', 'Configurações salvas.');
     } catch (err) {
       addNotification('error', 'Erro', 'Falha ao salvar configurações.');
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setProfileLoading(true);
+    try {
+        await updateProfile({ 
+            name: profileForm.name, 
+            avatarInitial: profileForm.avatarInitial.substring(0, 2).toUpperCase() 
+        });
+        storage.logAction(currentUser, 'UPDATE', 'User', 'Atualizou dados do perfil (Nome/Avatar)');
+        addNotification('success', 'Perfil Atualizado', 'Seus dados básicos foram salvos.');
+    } catch (err) {
+        addNotification('error', 'Erro', 'Falha ao atualizar perfil.');
+    } finally {
+        setProfileLoading(true);
+        // Refresh local UI
+        setTimeout(() => setProfileLoading(false), 500);
     }
   };
 
@@ -164,7 +195,7 @@ export const Settings = () => {
                 onClick={handleSaveSettings}
                 className="bg-primary-500 hover:bg-primary-400 text-black px-10 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl shadow-primary-500/20 transition-all w-full md:w-auto justify-center"
             >
-                <Save size={18} /> Aplicar Alterações
+                <Save size={18} /> Aplicar Alterações Globais
             </button>
         )}
       </div>
@@ -179,9 +210,9 @@ export const Settings = () => {
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><UserIcon size={14}/> Meu Perfil</h3>
             <div className="flex flex-col items-center text-center">
                 <div className="w-24 h-24 rounded-[32px] bg-zinc-900 flex items-center justify-center text-primary-500 font-black text-4xl mb-4 border-2 border-zinc-800 shadow-inner">
-                  {currentUser?.name.charAt(0)}
+                  {currentUser?.avatarInitial || currentUser?.name.charAt(0)}
                 </div>
-                <h4 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{currentUser?.name}</h4>
+                <h4 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate max-w-full">{currentUser?.name}</h4>
                 <div className="flex items-center gap-2 mt-2">
                   <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${currentUser?.role === 'admin' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
                     {currentUser?.role}
@@ -191,6 +222,39 @@ export const Settings = () => {
                   {currentUser?.email}
                 </p>
             </div>
+            
+            {/* Edit Profile Info Form */}
+            <form onSubmit={handleSaveProfile} className="mt-8 space-y-4 pt-8 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="space-y-1 text-left">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome de Exibição</label>
+                    <input 
+                        type="text" 
+                        required
+                        value={profileForm.name}
+                        onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
+                    />
+                </div>
+                <div className="space-y-1 text-left">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Inicial do Avatar (1-2 letras)</label>
+                    <input 
+                        type="text" 
+                        required
+                        maxLength={2}
+                        value={profileForm.avatarInitial}
+                        onChange={e => setProfileForm({...profileForm, avatarInitial: e.target.value})}
+                        className="w-20 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-black text-center text-sm outline-none focus:border-primary-500 uppercase transition-all"
+                    />
+                </div>
+                <button 
+                    type="submit"
+                    disabled={profileLoading}
+                    className="w-full py-3 bg-primary-500/10 hover:bg-primary-500 text-primary-600 hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all mt-4"
+                >
+                    {profileLoading ? <Activity className="animate-spin" size={14}/> : <UserCircle2 size={16}/>}
+                    Atualizar Dados
+                </button>
+            </form>
           </div>
 
           {/* SECURITY: CHANGE PASSWORD */}

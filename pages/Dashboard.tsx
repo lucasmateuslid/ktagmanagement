@@ -5,15 +5,18 @@ import { Tag, Vehicle, Company, VehicleCategory } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
+import { useAuth } from '../contexts/AuthContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Tag as TagIcon, CarFront, Link2, Wifi, Plus, Activity, Truck, Bike, Car, Clock, Building2, ShieldAlert, AlertTriangle, Lock, ChevronRight, ShoppingCart, LayoutGrid } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
 
-const { Link } = ReactRouterDOM as any;
+const { Link, useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 export const Dashboard = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -23,6 +26,14 @@ export const Dashboard = () => {
   const [trendChartData, setTrendChartData] = useState<any[]>([]);
   const { t } = useLanguage();
   const { lastSync } = useConnection();
+
+  useEffect(() => {
+    if (user?.role === 'client') {
+      navigate('/map', { replace: true });
+      return;
+    }
+    loadData();
+  }, [user, navigate]);
 
   const loadData = async () => {
     const [loadedTags, loadedVehicles, loadedCompanies, loadedCategories] = await Promise.all([
@@ -38,29 +49,6 @@ export const Dashboard = () => {
     processHistoryData(loadedTags, loadedVehicles);
     processCompanyData(loadedVehicles, loadedCompanies);
     processTrendData(loadedVehicles);
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const categoryStats = useMemo(() => {
-    return categories.map(cat => {
-      const count = vehicles.filter(v => v.type === cat.id).length;
-      return {
-        ...cat,
-        count
-      };
-    }).sort((a, b) => b.count - a.count);
-  }, [categories, vehicles]);
-
-  const getIconForCategory = (fipeType: string) => {
-    switch (fipeType) {
-      case 'caminhoes': return <Truck size={14} />;
-      case 'motos': return <Bike size={14} />;
-      case 'carros': return <Car size={14} />;
-      default: return <CarFront size={14} />;
-    }
   };
 
   const processHistoryData = (tags: Tag[], vehicles: Vehicle[]) => {
@@ -119,11 +107,34 @@ export const Dashboard = () => {
   const isCriticalStock = unlinkedCount <= 40;
   const theftRate = vehicles.length > 0 ? ((stolenCount / vehicles.length) * 100).toFixed(1) : '0.0';
 
+  // Fix: Added missing categoryStats and getIconForCategory definitions to resolve component errors.
+  const categoryStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    vehicles.forEach(v => {
+      counts[v.type] = (counts[v.type] || 0) + 1;
+    });
+    return categories.map(cat => ({
+      ...cat,
+      count: counts[cat.id] || 0
+    })).sort((a, b) => b.count - a.count);
+  }, [vehicles, categories]);
+
+  const getIconForCategory = (fipeType: string) => {
+    switch (fipeType) {
+      case 'carros': return <Car size={14} />;
+      case 'caminhoes': return <Truck size={14} />;
+      case 'motos': return <Bike size={14} />;
+      default: return <Activity size={14} />;
+    }
+  };
+
   const quickActions = [
     { label: t('addTag'), path: '/tags', icon: Plus },
     { label: t('addVehicle'), path: '/vehicles?action=new', icon: CarFront },
     { label: t('liveMap'), path: '/map', icon: Activity },
   ];
+
+  if (user?.role === 'client') return null;
 
   return (
     <div className="space-y-6 pb-20">
@@ -164,7 +175,7 @@ export const Dashboard = () => {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorTotal" x1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
                     <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
                   </linearGradient>

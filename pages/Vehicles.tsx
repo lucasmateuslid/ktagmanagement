@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -239,7 +238,7 @@ export const Vehicles = () => {
         addNotification('error', 'Erro', 'Insira uma placa válida.');
         return;
     }
-    setHinovaStatus({ open: true, step: 'loading', message: 'Conectando Hinova...' });
+    setHinovaStatus({ open: true, step: 'loading', message: 'CONECTANDO HINOVA...' });
     try {
         const result = await hinovaService.searchVehicle(formData.plate);
         if (result) {
@@ -254,15 +253,15 @@ export const Vehicles = () => {
             setIsHinovaImport(true);
             
             setHinovaStatus({ 
-                open: true, step: 'success', message: 'Localizado!', 
+                open: true, step: 'success', message: 'LOCALIZADO!', 
                 details: `${result.vehicle.model} - ${result.client.name}`
             });
             setTimeout(() => setHinovaStatus(prev => ({ ...prev, open: false })), 1500);
         } else {
-            setHinovaStatus({ open: true, step: 'error', message: 'Não Encontrado', details: 'A placa não consta na base Hinova.' });
+            setHinovaStatus({ open: true, step: 'error', message: 'NÃO ENCONTRADO', details: 'A placa não consta na base Hinova.' });
         }
     } catch (e: any) {
-        setHinovaStatus({ open: true, step: 'error', message: 'Erro na Consulta', details: e.message });
+        setHinovaStatus({ open: true, step: 'error', message: 'ERRO NA CONSULTA', details: e.message });
     }
   };
 
@@ -271,6 +270,15 @@ export const Vehicles = () => {
     if (!formData.plate || !formData.model || !formData.type) {
         addNotification('error', 'Erro', 'Preencha Placa, Modelo e Categoria.');
         return;
+    }
+
+    // TRAVA DE UNICIDADE: Tag só pode estar em 1 veículo
+    if (formData.tagId) {
+        const alreadyLinked = vehicles.find(v => v.tagId === formData.tagId && v.id !== formData.id);
+        if (alreadyLinked) {
+            addNotification('error', 'Tag Indisponível', `A tag que está tentando vincular ja tem um veiculo cadastrado ativo (Placa ${alreadyLinked.plate}).`);
+            return;
+        }
     }
 
     let linkedClientId = formData.clientId;
@@ -299,29 +307,7 @@ export const Vehicles = () => {
         }
     }
 
-    // Lógica de Automação de Usuário para Clientes
-    if (finalClient && finalClient.hasAccess) {
-      const cleanCpf = finalClient.cpf.replace(/\D/g, '');
-      const loginEmail = `${cleanCpf}@client.ktag`;
-      const existingUser = await storage.findUserByEmail(loginEmail);
-      
-      if (!existingUser) {
-        const tempPassword = cleanCpf.substring(0, 6); // Primeiros 6 dígitos
-        const newUser: User = {
-          id: crypto.randomUUID(),
-          name: finalClient.name,
-          email: loginEmail,
-          password: tempPassword,
-          role: 'client',
-          status: 'approved',
-          cpf: cleanCpf,
-          createdAt: Date.now()
-        };
-        await storage.registerUserRequest(newUser);
-        addNotification('info', 'Acesso Criado', `Portal do Cliente ativado. Login: ${cleanCpf} / Senha: ${tempPassword}`);
-      }
-    }
-
+    const isEdit = !!formData.id;
     const newVehicle: Vehicle = {
       id: formData.id || crypto.randomUUID(),
       type: formData.type || 'cat-car',
@@ -339,14 +325,23 @@ export const Vehicles = () => {
     };
 
     await storage.saveVehicle(newVehicle);
+    
+    // TRIGGER DE AUDITORIA
+    storage.logAction(user, isEdit ? 'UPDATE' : 'CREATE', 'Vehicle', `${isEdit ? 'Atualizou' : 'Vinculou'} veículo ${newVehicle.plate} (${newVehicle.model})`, newVehicle.id);
+
     addNotification('success', 'Sucesso', 'Veículo salvo.');
     setIsModalOpen(false);
     loadData();
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Excluir veículo?')) {
+    const vehicle = vehicles.find(v => v.id === id);
+    if (confirm(`Excluir veículo ${vehicle?.plate}?`)) {
       await storage.deleteVehicle(id);
+      
+      // TRIGGER DE AUDITORIA
+      storage.logAction(user, 'DELETE', 'Vehicle', `Removeu veículo placa ${vehicle?.plate}`, id);
+      
       loadData();
       addNotification('success', 'Removido', 'Veículo excluído.');
     }
@@ -522,7 +517,7 @@ export const Vehicles = () => {
                   </td>
                   <td className="p-5 text-right">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setFormData(v); setClientFormData(client || { hasAccess: false }); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tags.find(t => t.id === v.tagId)?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
+                      <button onClick={() => { setFormData(v); setClientFormData(client || { hasAccess: false }); setIsHinovaImport(!!v.hinovaId); setTagSearchTerm(tag?.name || ''); setIsModalOpen(true); }} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-primary-600 rounded-xl transition-all"><Edit2 size={16} /></button>
                       <button onClick={() => handleDelete(v.id)} className="p-2.5 bg-zinc-50 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl transition-all"><Trash2 size={16} /></button>
                     </div>
                   </td>
@@ -533,7 +528,6 @@ export const Vehicles = () => {
         </table>
       </div>
 
-      {/* --- REFACTORED CONCISE MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
           <div className="bg-zinc-50 dark:bg-[#121214] rounded-[32px] w-full max-w-4xl p-8 shadow-3xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
@@ -544,12 +538,8 @@ export const Vehicles = () => {
             </div>
             
             <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-              
-              {/* COLUNA ESQUERDA: DADOS DO VEÍCULO */}
               <div className="space-y-6">
                   <div className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em] border-b border-zinc-200 dark:border-zinc-800/50 pb-3">DADOS DO VEÍCULO</div>
-
-                  {/* Status Toggle */}
                   <div className="space-y-2">
                     <div className="flex p-1 bg-zinc-200 dark:bg-zinc-800/50 rounded-2xl border border-zinc-300 dark:border-zinc-800">
                         <button type="button" onClick={() => setFormData({...formData, status: 'active'})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${(!formData.status || formData.status === 'active') ? 'bg-[#10b981] text-white shadow-lg' : 'text-zinc-500 dark:text-zinc-500'}`}>ATIVO</button>
@@ -558,7 +548,6 @@ export const Vehicles = () => {
                     </div>
                   </div>
 
-                  {/* Instalação Toggle */}
                   <div className="space-y-2">
                     <label className="text-[9px] font-black uppercase text-zinc-500 tracking-[0.1em]">INSTALAÇÃO DO EQUIPAMENTO</label>
                     <div className="flex p-1 bg-zinc-200 dark:bg-zinc-800/50 rounded-2xl border border-zinc-300 dark:border-zinc-800">
@@ -567,12 +556,11 @@ export const Vehicles = () => {
                     </div>
                   </div>
 
-                  {/* Placa Input */}
                   <div className="space-y-2">
                     <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Placa</label>
                     <div className="flex gap-2">
                         <div className="relative flex-1">
-                           <input type="text" required placeholder="ABC1234" value={formData.plate || ''} onChange={e => setFormData({ ...formData, plate: e.target.value.toUpperCase() })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-lg font-mono font-black text-zinc-900 dark:text-white focus:border-primary-500 outline-none transition-all uppercase placeholder:text-zinc-300 dark:placeholder:text-zinc-700" />
+                           <input type="text" required placeholder="ABC1234" value={formData.plate || ''} onChange={e => setFormData({ ...formData, plate: e.target.value.toUpperCase() })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-lg font-mono font-black text-zinc-900 dark:text-white focus:border-primary-500 outline-none transition-all uppercase" />
                            <button type="button" onClick={() => plateLookupService.lookup(formData.plate || '').then(r => r && setFormData({...formData, ...r}))} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-primary-500"><Search size={20}/></button>
                         </div>
                         <button type="button" onClick={handleHinovaLookup} className="px-5 bg-[#006e82] hover:bg-[#008ba3] text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">HINOVA</button>
@@ -580,20 +568,12 @@ export const Vehicles = () => {
                   </div>
 
                   <SearchableSelect label="Categoria" options={categories.map(c => ({ value: c.id, label: c.name }))} value={formData.type || ''} onChange={val => setFormData({...formData, type: val})} />
-                  
-                  <SearchableSelect 
-                    label="Empresa" 
-                    options={companies.map(c => ({ value: c.id, label: c.name }))} 
-                    value={formData.companyId || ''} 
-                    onChange={val => setFormData({ ...formData, companyId: val })} 
-                    disabled={isHinovaImport}
-                    icon={<Building2 size={14} />} 
-                  />
+                  <SearchableSelect label="Empresa" options={companies.map(c => ({ value: c.id, label: c.name }))} value={formData.companyId || ''} onChange={val => setFormData({ ...formData, companyId: val })} disabled={isHinovaImport} icon={<Building2 size={14} />} />
 
                   <div className="space-y-2">
                     <div className="flex justify-between items-center mb-1">
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Modelo</label>
-                        <button type="button" onClick={() => setIsFipeModalOpen(true)} className="text-[9px] font-black text-primary-500 flex items-center gap-1 hover:underline border border-primary-500/20 px-2 py-0.5 rounded-md"><BookOpen size={10} /> Consultar FIPE</button>
+                        <button type="button" onClick={() => setIsFipeModalOpen(true)} className="text-[9px] font-black text-primary-500 flex items-center gap-1 hover:underline border border-primary-500/20 px-2 py-0.5 rounded-md"><BookOpen size={10} /> FIPE</button>
                     </div>
                     <input type="text" required value={formData.model || ''} onChange={e => setFormData({ ...formData, model: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500 transition-all" />
                   </div>
@@ -605,19 +585,16 @@ export const Vehicles = () => {
                      </div>
                      <div className="space-y-2 relative" ref={tagDropdownRef}>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tag Vinculada</label>
-                        <input type="text" placeholder="Busca por Nome ou SN..." value={tagSearchTerm} onFocus={() => setShowTagDropdown(true)} onChange={e => { setTagSearchTerm(e.target.value); setShowTagDropdown(true); }} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                        <input type="text" placeholder="Busca Nome/SN..." value={tagSearchTerm} onFocus={() => setShowTagDropdown(true)} onChange={e => { setTagSearchTerm(e.target.value); setShowTagDropdown(true); }} className="w-full px-5 py-3 bg-white dark:bg-zinc-850 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
                         {showTagDropdown && (
                           <div className="absolute top-full left-0 w-full mt-1 bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto p-1 custom-scrollbar">
                               <div className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[10px] font-black uppercase text-zinc-500 cursor-pointer" onClick={() => { setFormData({...formData, tagId: undefined}); setTagSearchTerm(''); setShowTagDropdown(false); }}>-- Sem Tag --</div>
-                              {tags.filter(t => 
-                                t.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || 
-                                t.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase())
-                              ).map(t => (
-                                <div 
-                                  key={t.id} 
-                                  onClick={() => { setFormData({...formData, tagId: t.id}); setTagSearchTerm(t.name); setShowTagDropdown(false); }} 
-                                  className={`p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-bold cursor-pointer rounded-lg flex flex-col gap-0.5 ${formData.tagId === t.id ? 'bg-primary-500/10 text-primary-600' : 'text-zinc-700 dark:text-zinc-200'}`}
-                                >
+                              {tags.filter(t => {
+                                // Regra: Tag vinculada a OUTRO veículo some da lista
+                                const isUsedByOther = vehicles.some(v => v.tagId === t.id && v.id !== formData.id);
+                                return !isUsedByOther && (t.name.toLowerCase().includes(tagSearchTerm.toLowerCase()) || t.accessoryId.toLowerCase().includes(tagSearchTerm.toLowerCase()));
+                              }).map(t => (
+                                <div key={t.id} onClick={() => { setFormData({...formData, tagId: t.id}); setTagSearchTerm(t.name); setShowTagDropdown(false); }} className={`p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-bold cursor-pointer rounded-lg flex flex-col gap-0.5 ${formData.tagId === t.id ? 'bg-primary-500/10 text-primary-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
                                   <span>{t.name}</span>
                                   <span className="text-[9px] text-zinc-400 font-mono">SN: {t.accessoryId}</span>
                                 </div>
@@ -628,10 +605,8 @@ export const Vehicles = () => {
                   </div>
               </div>
 
-              {/* COLUNA DIREITA: DADOS DO CLIENTE */}
               <div className="space-y-6 flex flex-col h-full">
                  <div className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em] border-b border-zinc-200 dark:border-zinc-800/50 pb-3">DADOS DO CLIENTE</div>
-                 
                  <div className="p-8 bg-zinc-100/50 dark:bg-zinc-850/50 rounded-[32px] border border-zinc-200 dark:border-zinc-800 space-y-5 flex-1 shadow-inner">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Associado</label>
@@ -640,12 +615,10 @@ export const Vehicles = () => {
                             <input type="text" value={clientFormData.name || ''} onChange={e => setClientFormData({ ...clientFormData, name: e.target.value })} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="Nome Completo" />
                         </div>
                     </div>
-                    
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF</label>
                         <input type="text" value={clientFormData.cpf || ''} onChange={e => setClientFormData({ ...clientFormData, cpf: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="000.000.000-00" />
                     </div>
-
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
                         <div className="relative">
@@ -653,41 +626,37 @@ export const Vehicles = () => {
                             <input type="text" value={clientFormData.phone || ''} onChange={e => setClientFormData({ ...clientFormData, phone: e.target.value })} className="w-full pl-11 pr-4 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
                         </div>
                     </div>
-
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Email</label>
                         <input type="email" value={clientFormData.email || ''} onChange={e => setClientFormData({ ...clientFormData, email: e.target.value })} className="w-full px-5 py-3 bg-white dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@email.com" />
                     </div>
-
-                    {/* Portal Access Toggle - Mantendo design solicitado */}
                     <div className="pt-4 border-t border-zinc-200 dark:border-zinc-700">
                         <label className="text-[10px] font-black uppercase text-zinc-500 block mb-3">Terá acesso ao Portal?</label>
                         <div className="flex p-1 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-300 dark:border-zinc-800">
                             <button type="button" onClick={() => setClientFormData({...clientFormData, hasAccess: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${clientFormData.hasAccess ? 'bg-emerald-500 text-white shadow-lg' : 'text-zinc-500'}`}>SIM</button>
                             <button type="button" onClick={() => setClientFormData({...clientFormData, hasAccess: false})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${!clientFormData.hasAccess ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500'}`}>NÃO</button>
                         </div>
-                        {clientFormData.hasAccess && (
-                          <p className="text-[9px] text-zinc-500 font-bold uppercase mt-3 animate-pulse">Senha inicial: 6 primeiros dígitos do CPF</p>
-                        )}
                     </div>
                  </div>
-
                  <button type="submit" className="w-full py-5 bg-[#e67e00] hover:bg-[#ff8c00] text-white rounded-2xl font-black uppercase tracking-[0.1em] text-sm flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] transition-all">
                     <Save size={20} /> Salvar Veículo
                  </button>
               </div>
 
-              {/* Status Hinova Popup */}
+              {/* POPUP HINOVA REESTILIZADO (FIXED CONTRAST BUG) */}
               {hinovaStatus.open && (
-                <div className="absolute inset-0 z-[1100] bg-white/95 dark:bg-zinc-950/98 backdrop-blur-xl rounded-[32px] flex flex-col items-center justify-center p-10 text-center animate-in fade-in">
-                    <div className={`p-8 rounded-[40px] mb-8 ${hinovaStatus.step === 'loading' ? 'bg-primary-500/10 text-primary-500' : hinovaStatus.step === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                        {hinovaStatus.step === 'loading' && <Loader2 size={64} className="animate-spin" />}
-                        {hinovaStatus.step === 'success' && <CheckCircle size={64} />}
-                        {hinovaStatus.step === 'error' && <XCircle size={64} />}
+                <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center p-10 text-center animate-in fade-in duration-300 rounded-[32px] overflow-hidden">
+                    <div className="absolute inset-0 bg-white dark:bg-zinc-950/95 backdrop-blur-3xl" />
+                    <div className="relative z-10 flex flex-col items-center max-w-sm">
+                        <div className={`p-8 rounded-[40px] mb-8 shadow-2xl transition-all duration-500 scale-110 ${hinovaStatus.step === 'loading' ? 'bg-primary-500 text-black shadow-primary-500/30' : hinovaStatus.step === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                            {hinovaStatus.step === 'loading' && <Loader2 size={48} className="animate-spin" strokeWidth={3} />}
+                            {hinovaStatus.step === 'success' && <CheckCircle size={48} strokeWidth={3} />}
+                            {hinovaStatus.step === 'error' && <XCircle size={48} strokeWidth={3} />}
+                        </div>
+                        <h3 className="text-2xl font-display font-black mb-2 uppercase tracking-tight text-zinc-950 dark:text-white">{hinovaStatus.message}</h3>
+                        {hinovaStatus.details && <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-black uppercase tracking-[0.2em] leading-relaxed">{hinovaStatus.details}</p>}
+                        {hinovaStatus.step === 'error' && <button onClick={() => setHinovaStatus(prev => ({ ...prev, open: false }))} className="mt-10 px-10 py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Tentar Novamente</button>}
                     </div>
-                    <h3 className="text-3xl font-black text-zinc-900 dark:text-white mb-2 uppercase">{hinovaStatus.message}</h3>
-                    {hinovaStatus.details && <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">{hinovaStatus.details}</p>}
-                    {hinovaStatus.step === 'error' && <button onClick={() => setHinovaStatus(prev => ({ ...prev, open: false }))} className="mt-8 px-8 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black text-[10px] uppercase">Tentar Novamente</button>}
                 </div>
               )}
             </form>

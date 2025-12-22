@@ -10,6 +10,7 @@ export interface User {
   companySlug?: string;
   createdAt?: number;
   cpf?: string; // CPF vinculado para login de clientes
+  avatarInitial?: string; // Nova: Inicial customizada para o avatar
 }
 
 export interface Company {

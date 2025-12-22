@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
@@ -186,6 +185,9 @@ export const Reports = () => {
       styles: { fontSize: 8 }
     });
 
+    // Auditoria
+    storage.logAction(user, 'REPORT', 'Vehicle', `Exportou PDF analítico da frota para o período ${appliedStartDate} a ${appliedEndDate}`);
+
     doc.save(`relatorio_detalhado_${appliedStartDate}_${appliedEndDate}.pdf`);
   };
 
@@ -201,6 +203,10 @@ export const Reports = () => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Veículos");
+
+    // Auditoria
+    storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Excel de frota para o período ${appliedStartDate} a ${appliedEndDate}`);
+
     XLSX.writeFile(workbook, `relatorio_veiculos_${appliedStartDate}_${appliedEndDate}.xlsx`);
   };
 
