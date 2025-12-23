@@ -3,6 +3,7 @@ import * as React from 'react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { storage } from '../services/storage';
 import { hinovaService } from '../services/hinova';
+import { fipeService, FipeReference } from '../services/fipe';
 import { Vehicle, Tag, Company, VehicleCategory, Client } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -12,7 +13,7 @@ import {
   Car, Truck, Bike, Edit2, Trash2, Link as LinkIcon, 
   Loader2, X, CheckCircle2, XCircle, Save, Hash, 
   Tag as TagIcon, Building2, User, Palette, Calendar, 
-  Settings2, Smartphone, Cpu, ShieldCheck, Mail, Phone, Book, Check, MoreVertical
+  Settings2, Smartphone, Cpu, ShieldCheck, Mail, Phone, Book, Check, MoreVertical, ChevronRight
 } from 'lucide-react';
 
 // ITEM DA LISTA COM DUPLO LAYOUT (TABELA DESKTOP / CARD MOBILE CONFORME FOTO)
@@ -159,6 +160,14 @@ export const Vehicles = () => {
   const [isTagListOpen, setIsTagListOpen] = useState(false);
   const [hinovaStatus, setHinovaStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
+  // --- FIPE STATES ---
+  const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
+  const [fipeStep, setFipeStep] = useState(1); // 1: Marca, 2: Modelo, 3: Ano
+  const [fipeList, setFipeList] = useState<FipeReference[]>([]);
+  const [fipeLoading, setFipeLoading] = useState(false);
+  const [fipeSearchTerm, setFipeSearchTerm] = useState('');
+  const [fipeSelection, setFipeSelection] = useState({ brandId: '', modelId: '', brandName: '', modelName: '' });
+
   const loadData = useCallback(async () => {
     const [v, t, c, cat, cl] = await Promise.all([
         storage.getVehicles(), storage.getTags(), storage.getCompanies(), 
@@ -181,6 +190,12 @@ export const Vehicles = () => {
       t.name.toLowerCase().includes(term)
     );
   }, [availableTags, tagSearch]);
+
+  const filteredFipeList = useMemo(() => {
+    if (!fipeSearchTerm) return fipeList;
+    const term = fipeSearchTerm.toLowerCase();
+    return fipeList.filter(item => item.nome.toLowerCase().includes(term));
+  }, [fipeList, fipeSearchTerm]);
 
   const handleEdit = (vehicle: Vehicle) => {
     setFormData(vehicle);
@@ -210,6 +225,71 @@ export const Vehicles = () => {
         setHinovaStatus('error');
         setTimeout(() => setHinovaStatus('idle'), 3000);
     }
+  };
+
+  // --- FIPE LOGIC ---
+  const startFipeSearch = async () => {
+    setFipeStep(1);
+    setFipeSearchTerm('');
+    setFipeLoading(true);
+    setIsFipeModalOpen(true);
+    
+    const currentCat = categories.find(c => c.id === formData.type);
+    const type = (currentCat?.fipeType as any) || 'carros';
+    
+    const brands = await fipeService.getBrands(type);
+    setFipeList(brands);
+    setFipeLoading(false);
+  };
+
+  const selectFipeBrand = async (brand: FipeReference) => {
+    setFipeSelection(prev => ({ ...prev, brandId: brand.codigo, brandName: brand.nome }));
+    setFipeSearchTerm('');
+    setFipeLoading(true);
+    setFipeStep(2);
+    
+    const currentCat = categories.find(c => c.id === formData.type);
+    const type = currentCat?.fipeType || 'carros';
+    
+    const models = await fipeService.getModels(type, brand.codigo);
+    setFipeList(models);
+    setFipeLoading(false);
+  };
+
+  const selectFipeModel = async (model: FipeReference) => {
+    setFipeSelection(prev => ({ ...prev, modelId: model.codigo, modelName: model.nome }));
+    setFipeSearchTerm('');
+    setFipeLoading(true);
+    setFipeStep(3);
+    
+    const currentCat = categories.find(c => c.id === formData.type);
+    const type = currentCat?.fipeType || 'carros';
+    
+    const years = await fipeService.getYears(type, fipeSelection.brandId, model.codigo);
+    setFipeList(years);
+    setFipeLoading(false);
+  };
+
+  const selectFipeYear = async (year: FipeReference) => {
+    setFipeLoading(true);
+    
+    const currentCat = categories.find(c => c.id === formData.type);
+    const type = currentCat?.fipeType || 'carros';
+    
+    const details = await fipeService.getDetails(type, fipeSelection.brandId, fipeSelection.modelId, year.codigo);
+    
+    if (details) {
+      setFormData(prev => ({
+        ...prev,
+        model: `${details.Marca} ${details.Modelo}`,
+        year: details.AnoModelo.toString(),
+        fipeCode: details.CodigoFipe
+      }));
+      addNotification('success', 'FIPE', 'Dados do veículo aplicados.');
+    }
+    
+    setIsFipeModalOpen(false);
+    setFipeLoading(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -304,7 +384,6 @@ export const Vehicles = () => {
 
       {/* TABELA / LISTA DE VEÍCULOS */}
       <div className="bg-white dark:bg-zinc-900 rounded-[28px] md:rounded-[32px] border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
-         {/* CABEÇALHO DA TABELA - OCULTO NO MOBILE */}
          <div className="hidden md:flex px-8 py-5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 text-[9px] font-black uppercase tracking-widest text-zinc-400">
             <div className="w-[15%]">Placa & Tipo</div>
             <div className="w-[35%]">Veículo & Conectividade</div>
@@ -400,7 +479,13 @@ export const Vehicles = () => {
                         <div className="space-y-3">
                             <div className="flex justify-between items-center">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Modelo</label>
-                                <button type="button" className="flex items-center gap-1.5 text-[8px] font-black text-primary-500 border border-primary-500/20 bg-primary-500/5 px-2 py-0.5 rounded uppercase tracking-widest"><Book size={10}/> FIPE</button>
+                                <button 
+                                  type="button" 
+                                  onClick={startFipeSearch}
+                                  className="flex items-center gap-1.5 text-[8px] font-black text-primary-500 border border-primary-500/20 bg-primary-500/5 px-2 py-0.5 rounded uppercase tracking-widest active:scale-95 transition-all"
+                                >
+                                  <Book size={10}/> FIPE
+                                </button>
                             </div>
                             <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-5 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold text-sm outline-none focus:border-primary-500" />
                         </div>
@@ -494,6 +579,78 @@ export const Vehicles = () => {
                     </div>
                 </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE BUSCA FIPE */}
+      {isFipeModalOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-10 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Tabela FIPE</h3>
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-1">
+                  Passo {fipeStep} de 3: {fipeStep === 1 ? 'Marca' : fipeStep === 2 ? 'Modelo' : 'Ano'}
+                </p>
+              </div>
+              <button onClick={() => setIsFipeModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"><X size={24}/></button>
+            </div>
+
+            {/* BARRA DE BUSCA INTERNA DO MODAL */}
+            {!fipeLoading && fipeStep < 3 && (
+              <div className="relative mb-6">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <input 
+                  type="text" 
+                  autoFocus
+                  placeholder={`Pesquisar ${fipeStep === 1 ? 'marca' : 'modelo'}...`} 
+                  value={fipeSearchTerm}
+                  onChange={(e) => setFipeSearchTerm(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold outline-none focus:border-primary-500 transition-all"
+                />
+              </div>
+            )}
+
+            <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+              {fipeLoading ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-4 text-zinc-400">
+                  <Loader2 className="animate-spin" size={32} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Acessando API FIPE...</span>
+                </div>
+              ) : filteredFipeList.length > 0 ? (
+                filteredFipeList.map((item) => (
+                  <button 
+                    key={item.codigo} 
+                    onClick={() => {
+                      if (fipeStep === 1) selectFipeBrand(item);
+                      else if (fipeStep === 2) selectFipeModel(item);
+                      else selectFipeYear(item);
+                    }}
+                    className="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 hover:bg-primary-500 hover:text-black rounded-2xl text-left transition-all group"
+                  >
+                    <span className="font-bold text-sm uppercase">{item.nome}</span>
+                    <ChevronRight size={16} className="text-zinc-300 group-hover:text-black" />
+                  </button>
+                ))
+              ) : (
+                <div className="py-10 text-center text-zinc-400 font-bold uppercase text-[10px] tracking-widest">
+                  Nenhum resultado encontrado
+                </div>
+              )}
+            </div>
+            
+            {fipeStep > 1 && !fipeLoading && (
+              <button 
+                onClick={() => {
+                  setFipeStep(fipeStep - 1);
+                  setFipeSearchTerm('');
+                }}
+                className="mt-6 text-[10px] font-black text-zinc-400 hover:text-zinc-900 dark:hover:text-white uppercase tracking-widest flex items-center gap-2"
+              >
+                ← Voltar
+              </button>
+            )}
           </div>
         </div>
       )}
