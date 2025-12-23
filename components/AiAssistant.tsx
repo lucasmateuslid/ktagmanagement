@@ -1,23 +1,25 @@
 
-// components/AiAssistant.tsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-// Correct import from @google/genai
 import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
-import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, HelpCircle } from 'lucide-react';
+import { X, Send, Sparkles, Bot, BarChart3, MapPin, AlertTriangle, Tag as TagIcon, HelpCircle, CheckCircle2, Loader2, ClipboardCheck, ArrowRight, Plus, FileText, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
+import { hinovaService } from '../services/hinova';
+import { Vehicle } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 const MotionDiv = motion.div as any;
 
 const sanitizeHTML = (dirtyHtml: string) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div>${dirtyHtml}</div>`, 'text/html');
-  const ALLOWED_TAGS = new Set(['B', 'BR', 'A', 'DIV', 'SPAN']);
+  const ALLOWED_TAGS = new Set(['B', 'BR', 'A', 'DIV', 'SPAN', 'UL', 'LI', 'STRONG', 'P']);
   const ALLOWED_ATTRS: Record<string, Set<string>> = {
     A: new Set(['href', 'target', 'rel', 'class']),
     DIV: new Set(['class']),
     SPAN: new Set(['class']),
     B: new Set(['class']),
+    STRONG: new Set(['class']),
   };
 
   function walk(node: Node) {
@@ -58,13 +60,12 @@ interface Message {
   text: string;
 }
 
-type ToolResult = any;
-
 export const AiAssistant: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: 'Olá! Sou seu Operador de Frota Inteligente. Posso ajudar a localizar veículos, verificar estatísticas de tags, relatórios de roubo e muito mais. Como posso ajudar?' }
+    { role: 'model', text: 'Olá! Sou seu **Coordenador K-TAG Intelligence**. Posso analisar sua frota, localizar veículos e até **gerar relatórios PDF** profissionais. Como posso agilizar sua operação hoje?' }
   ]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -73,161 +74,249 @@ export const AiAssistant: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen]);
 
-  /* ----------------------------- Tools ----------------------------- */
+  /* ----------------------------- Tool Declarations ----------------------------- */
+  
   const getVehicleLocationTool: FunctionDeclaration = useMemo(() => ({
     name: 'get_vehicle_location',
-    description: 'Obter a localização, status (ativo/roubado) e link de rastreamento de um veículo pela placa.',
+    description: 'Localiza um veículo pela placa e retorna status e link de rastreio.',
     parameters: {
       type: Type.OBJECT,
-      properties: {
-        plate: { type: Type.STRING, description: 'A placa do veículo (ex: ABC-1234)' }
-      },
+      properties: { plate: { type: Type.STRING, description: 'Placa do veículo' } },
       required: ['plate']
     }
   }), []);
 
   const getFleetStatsTool: FunctionDeclaration = useMemo(() => ({
     name: 'get_fleet_stats',
-    description: 'Obter estatísticas gerais da frota: contagem de tags (livres/vinculadas), veículos por categoria, índice de roubo e total de veículos.',
+    description: 'Resumo estatístico da frota, estoque de tags e regionais.',
     parameters: { type: Type.OBJECT, properties: {} }
   }), []);
 
-  const getSecurityLogsTool: FunctionDeclaration = useMemo(() => ({
-    name: 'get_security_logs',
-    description: 'Buscar histórico de roubos e furtos. Retorna lista de veículos roubados, data do roubo, e B.O se disponível.',
-    parameters: { type: Type.OBJECT, properties: {} }
+  const prepareRegistrationDraftTool: FunctionDeclaration = useMemo(() => ({
+    name: 'prepare_registration_draft',
+    description: 'Consulta a Hinova e o estoque para preparar um cadastro semi-automático.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: { plate: { type: Type.STRING, description: 'Placa para consulta' } },
+      required: ['plate']
+    }
   }), []);
 
-  /* ------------------------- Local Tool Logic ----------------------- */
-  const executeVehicleSearch = async (plate: string) => {
-    try {
-      const vehicles = await storage.getVehicles();
-      const cleanPlate = plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      const vehicle = vehicles.find(v => (v.plate || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === cleanPlate);
-      if (!vehicle) return { found: false, message: `Veículo com placa ${plate} não encontrado no banco de dados.` };
+  const generateReportTool: FunctionDeclaration = useMemo(() => ({
+    name: 'generate_pdf_report',
+    description: 'Gera um arquivo PDF analítico com cards e tabelas de veículos.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        startDate: { type: Type.STRING, description: 'Data inicial YYYY-MM-DD. OBRIGATÓRIO SE DEFINIDO PELO USUÁRIO.' },
+        endDate: { type: Type.STRING, description: 'Data final YYYY-MM-DD. OBRIGATÓRIO SE DEFINIDO PELO USUÁRIO.' }
+      }
+    }
+  }), []);
 
-      const isStolen = vehicle.status === 'stolen';
-      if (!vehicle.tagId) {
-        return {
-          found: true,
-          message: `Veículo ${vehicle.model} (${vehicle.plate}) está registrado mas não vinculado a um rastreador.`,
-          status: vehicle.status,
-          isStolen
+  const commitRegistrationTool: FunctionDeclaration = useMemo(() => ({
+    name: 'commit_registration',
+    description: 'Finaliza a gravação do veículo no sistema.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        plate: { type: Type.STRING },
+        model: { type: Type.STRING },
+        year: { type: Type.STRING },
+        type: { type: Type.STRING },
+        tagId: { type: Type.STRING },
+        companyId: { type: Type.STRING },
+        clientId: { type: Type.STRING }
+      },
+      required: ['plate', 'model', 'tagId', 'companyId', 'type']
+    }
+  }), []);
+
+  /* ------------------------- Implementation Logic ----------------------- */
+
+  const handleToolExecution = async (call: any): Promise<any> => {
+    const { name, args } = call;
+    
+    try {
+      if (name === 'get_vehicle_location') {
+        const vehicles = await storage.getVehicles();
+        const cleanPlate = (args.plate || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        const v = vehicles.find(veh => veh.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === cleanPlate);
+        if (!v) return { error: 'Veículo não localizado na base ativa.' };
+        return { 
+            vehicle: { plate: v.plate, model: v.model, status: v.status }, 
+            mapLink: v.tagId ? `${window.location.origin}/#/map?tagId=${v.tagId}&autoStart=true` : null
         };
       }
 
-      const locations = await storage.getLocations(vehicle.tagId);
-      if (!locations || locations.length === 0) {
+      if (name === 'get_fleet_stats') {
+        const [tags, vehs, comps, cats] = await Promise.all([
+          storage.getTags(), storage.getVehicles(), storage.getCompanies(), storage.getCategories()
+        ]);
+        const linkedIds = new Set(vehs.map(v => v.tagId));
         return {
-          found: true,
-          message: `Veículo ${vehicle.model} (${vehicle.plate}) está vinculado mas não possui histórico recente.`,
-          status: vehicle.status,
-          isStolen
+          stock: { total: tags.length, free: tags.filter(t => !linkedIds.has(t.id)).length },
+          vehicles: { total: vehs.length, stolen: vehs.filter(v => v.status === 'stolen').length },
+          companies: comps.map(c => ({ label: c.name, count: vehs.filter(v => v.companyId === c.id).length })),
+          categories: cats.map(cat => ({ label: cat.name, count: vehs.filter(v => v.type === cat.id).length }))
         };
       }
 
-      const lastLoc = locations[0];
-      const internalLink = `${window.location.origin}/#/map?tagId=${vehicle.tagId}&autoStart=true`;
-      const googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${lastLoc.lat},${lastLoc.lon}`;
-
-      return {
-        found: true,
-        vehicle: { model: vehicle.model, plate: vehicle.plate },
-        status: vehicle.status || 'active',
-        isStolen,
-        location: { lat: lastLoc.lat, lon: lastLoc.lon, timestamp: lastLoc.isodatetime },
-        links: { googleMaps: googleMapsLink, internalTracking: internalLink }
-      };
-    } catch (e) {
-      return { found: false, error: 'Erro no banco de dados' };
-    }
-  };
-
-  const executeFleetStats = async () => {
-    try {
-      const [tags, vehicles, categories] = await Promise.all([
-        storage.getTags(),
-        storage.getVehicles(),
-        storage.getCategories()
-      ]);
-
-      const totalTags = tags.length;
-      const linkedTags = vehicles.filter((v: any) => v.tagId).length;
-      const freeTags = totalTags - linkedTags;
-      const totalVehicles = vehicles.length;
-      const stolenVehicles = vehicles.filter((v: any) => v.status === 'stolen').length;
-      const activeVehicles = vehicles.filter((v: any) => v.status === 'active').length;
-      const maintenanceVehicles = vehicles.filter((v: any) => v.status === 'maintenance').length;
-
-      const byCategory: Record<string, number> = {};
-      vehicles.forEach((v: any) => {
-        const catName = categories.find((c: any) => c.id === v.type)?.name || 'Desconhecido';
-        byCategory[catName] = (byCategory[catName] || 0) + 1;
-      });
-
-      return {
-        tags: { total: totalTags, linked: linkedTags, free: freeTags },
-        vehicles: { total: totalVehicles, stolen: stolenVehicles, active: activeVehicles, maintenance: maintenanceVehicles, byCategory }
-      };
-    } catch (e) {
-      return { error: 'Falha ao calcular estatísticas' };
-    }
-  };
-
-  const executeSecurityLogs = async () => {
-    try {
-      const records = await storage.getStolenRecords();
-      return (records || []).map((r: any) => ({
-        plate: r.vehiclePlate,
-        model: r.vehicleModel,
-        type: r.type,
-        date: new Date(r.timestamp).toLocaleString(),
-        policeReport: r.policeReport || 'N/A',
-        status: r.status,
-        recoveredAt: r.recoveredAt ? new Date(r.recoveredAt).toLocaleString() : null
-      })).slice(0, 10);
-    } catch (e) {
-      return { error: 'Erro ao buscar logs de segurança' };
-    }
-  };
-
-  /* ------------------------ Message formatting --------------------- */
-  const formatMessage = (text: string) => {
-    if (!text) return '';
-
-    let clean = text
-      .replace(/```(?:json|xml|html|javascript|typescript)?/gi, '')
-      .replace(/```/g, '');
-
-    clean = clean.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-
-    clean = clean.replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      (_m, title: string, url: string) =>
-        `<a href="${url}" class="flex items-center justify-center gap-2 mt-2 w-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 py-2 px-3 rounded-lg font-bold border border-primary-200 dark:border-primary-800 hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors text-center text-sm decoration-0">${'📍'} ${title}</a>`
-    );
-
-    clean = clean.replace(/\n/g, '<br />');
-
-    return clean;
-  };
-
-  /* --------------------------- AI / Gemini ------------------------- */
-  const handleToolExecution = async (call: any): Promise<ToolResult> => {
-    try {
-      if (call.name === 'get_vehicle_location') {
-        const args = (call.args || {}) as { plate?: string };
-        return await executeVehicleSearch(args.plate || '');
-      } else if (call.name === 'get_fleet_stats') {
-        return await executeFleetStats();
-      } else if (call.name === 'get_security_logs') {
-        return await executeSecurityLogs();
-      } else {
-        return { error: 'Ferramenta não reconhecida' };
+      if (name === 'prepare_registration_draft') {
+        const plate = (args.plate || '').toUpperCase();
+        const [hinovaData, allTags, allVehs, companies, clients, categories] = await Promise.all([
+          hinovaService.searchVehicle(plate).catch(() => null),
+          storage.getTags(),
+          storage.getVehicles(),
+          storage.getCompanies(),
+          storage.getClients(),
+          storage.getCategories()
+        ]);
+        const linkedTagIds = new Set(allVehs.map(v => v.tagId));
+        const freeTags = allTags.filter(t => !linkedTagIds.has(t.id)).slice(0, 5);
+        return {
+          hinova: hinovaData,
+          tags: freeTags.map(t => ({ id: t.id, label: `${t.name} (SN: ${t.accessoryId})` })),
+          companies: companies.map(c => ({ id: c.id, label: c.name })),
+          categories: categories.map(c => ({ id: c.id, label: c.name })),
+          clientExists: hinovaData ? clients.some(c => c.cpf === hinovaData.client.cpf) : false
+        };
       }
-    } catch (err) {
-      console.error('Tool exec error', err);
-      return { error: 'Erro ao executar ferramenta' };
+
+      if (name === 'generate_pdf_report') {
+        // Lógica de Datas CRÍTICA: Pega do Hoje Real se não informado
+        const now = new Date();
+        const start = args.startDate ? new Date(args.startDate + 'T00:00:00').getTime() : now.getTime() - (7 * 24 * 60 * 60 * 1000);
+        const end = args.endDate ? new Date(args.endDate + 'T23:59:59').getTime() : now.getTime();
+        
+        const [vehs, cats] = await Promise.all([storage.getVehicles(), storage.getCategories()]);
+        const filtered = vehs.filter(v => v.createdAt && v.createdAt >= start && v.createdAt <= end);
+        
+        if (filtered.length === 0) return { error: 'Nenhum veículo encontrado para o período solicitado.' };
+
+        const { jsPDF } = await import('jspdf');
+        const { default: autoTable } = await import('jspdf-autotable');
+
+        const doc = new jsPDF();
+        const total = filtered.length;
+        const soTag = filtered.filter(v => v.installationType !== 'tag_tracker').length;
+        const tagTracker = total - soTag;
+
+        // --- DESIGN CONFORME IMAGEM DE REFERÊNCIA ---
+        
+        // 1. HEADER
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(24);
+        doc.setTextColor(24, 24, 27);
+        doc.text("K-TAG INSIGHT REPORT", 14, 22);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`Período: ${new Date(start).toLocaleDateString()} - ${new Date(end).toLocaleDateString()}`, 14, 30);
+        doc.text(`Gerado por: ${currentUser?.name || 'IA Assistant'} (System) em ${new Date().toLocaleString()}`, 14, 36);
+
+        // 2. DASHBOARD CARDS
+        // Total (Dark)
+        doc.setFillColor(24, 24, 27);
+        doc.roundedRect(14, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text("TOTAL ATIVAÇÕES", 19, 53);
+        doc.setFontSize(18);
+        doc.text(total.toString(), 19, 68);
+
+        // Só Tag (Orange)
+        doc.setFillColor(245, 158, 11);
+        doc.roundedRect(76, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(8);
+        doc.text("SÓ TAG", 81, 53);
+        doc.setFontSize(18);
+        const soTagPerc = total > 0 ? ((soTag / total) * 100).toFixed(1) : "0";
+        doc.text(`${soTag} (${soTagPerc}%)`, 81, 68);
+
+        // Tag + Tracker (Grey)
+        doc.setFillColor(244, 244, 245);
+        doc.roundedRect(138, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(24, 24, 27);
+        doc.setFontSize(8);
+        doc.text("TAG + RASTREADOR", 143, 53);
+        doc.setFontSize(18);
+        const tagTrackerPerc = total > 0 ? ((tagTracker / total) * 100).toFixed(1) : "0";
+        doc.text(`${tagTracker} (${tagTrackerPerc}%)`, 143, 68);
+
+        // 3. DISTRIBUIÇÃO POR CATEGORIA
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(24, 24, 27);
+        doc.text("Distribuição por Categoria", 14, 88);
+
+        const counts: Record<string, number> = {};
+        filtered.forEach(v => {
+            const name = cats.find(c => c.id === v.type)?.name || 'Outro';
+            counts[name] = (counts[name] || 0) + 1;
+        });
+
+        const categorySummary = Object.keys(counts).map(name => [
+            name, 
+            counts[name], 
+            total > 0 ? `${((counts[name] / total) * 100).toFixed(1)}%` : '0%'
+        ]);
+
+        autoTable(doc, {
+            startY: 93,
+            head: [['Categoria', 'Quantidade', 'Representatividade (%)']],
+            body: categorySummary,
+            theme: 'striped',
+            headStyles: { fillColor: [63, 63, 70], textColor: [255, 255, 255] }
+        });
+
+        // 4. LISTAGEM DETALHADA
+        doc.setFontSize(14);
+        doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
+
+        const tableBody = filtered.map(v => [
+          new Date(v.createdAt!).toLocaleDateString(),
+          v.plate,
+          v.model,
+          cats.find(c => c.id === v.type)?.name || 'Outro',
+          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+        ]);
+
+        autoTable(doc, {
+          startY: (doc as any).lastAutoTable.finalY + 20,
+          head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento']],
+          body: tableBody,
+          theme: 'striped',
+          headStyles: { fillColor: [245, 158, 11], textColor: [0, 0, 0] },
+          styles: { fontSize: 8 }
+        });
+
+        const fileName = `insight_report_${new Date().getTime()}.pdf`;
+        doc.save(fileName);
+        return { success: true, count: filtered.length, period: `${new Date(start).toLocaleDateString()} a ${new Date(end).toLocaleDateString()}` };
+      }
+
+      if (name === 'commit_registration') {
+        const newVehicle: Vehicle = {
+            id: crypto.randomUUID(),
+            plate: args.plate.toUpperCase(),
+            model: args.model,
+            year: args.year,
+            type: args.type,
+            tagId: args.tagId,
+            companyId: args.companyId,
+            clientId: args.clientId,
+            createdAt: Date.now(),
+            status: 'active'
+        };
+        await storage.saveVehicle(newVehicle);
+        return { success: true, plate: newVehicle.plate };
+      }
+
+    } catch (e: any) {
+      return { error: e.message };
     }
   };
 
@@ -235,193 +324,159 @@ export const AiAssistant: React.FC = () => {
     const userMsg = (textOverride ?? input).trim();
     if (!userMsg || loading) return;
 
+    const todayDate = new Date().toISOString().split('T')[0];
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
 
     try {
-      const key = process.env.API_KEY;
-      if (!key) {
-        throw new Error('API key da Gemini não configurada. Defina API_KEY em .env');
-      }
-      const ai = new GoogleGenAI({ apiKey: key });
-
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: userMsg,
         config: {
-            tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }],
-            systemInstruction: `Você é um Assistente Operacional de Frota altamente inteligente (K-TAG AI). Fale estritamente em Português.
-
-Objetivos:
-1. Ajudar a localizar veículos.
-2. Fornecer estatísticas de frota.
-3. Orientar sobre o uso do sistema.
-
-Regras CRÍTICAS de Resposta:
-- RESPOSTA APENAS EM TEXTO NATURAL.
-- NUNCA USE BLOCOS DE CÓDIGO ( \`\`\` ).
-- NUNCA EXIBA JSON ou XML BRUTO.
-- Se a ferramenta retornar dados técnicos, interprete-os e faça um resumo amigável.
-- Use listas com marcadores (-) para enumerar itens.
-
-Regras de Ferramentas:
-- Use 'get_vehicle_location' para localizar veículos pela placa.
-- Use 'get_fleet_stats' para contagens e estatísticas gerais.
-- Use 'get_security_logs' para histórico de roubos.
-
-Comportamento Específico:
-- **Cadastro de Veículos**: Responda EXATAMENTE com estes passos:
-  1. Vá até a página de **Veículos** (5ª opção na barra lateral).
-  2. Clique no botão **\"Adicionar Veículo\"**.
-  3. Preencha o formulário e clique em **Salvar**.
-  Você pode usar este link direto: [Ir para Veículos](${window.location.origin}/#/vehicles).
-
-- **Roubo**: Se 'isStolen: true', use **NEGRITO** e emojis de alerta 🚨.
-- **Links**: Sempre forneça o link interno como: [📍 Rastrear no Mapa Ao Vivo](link).`
+            tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, prepareRegistrationDraftTool, generateReportTool, commitRegistrationTool] }],
+            systemInstruction: `Você é o **Operador K-TAG Intelligence**, focado em automação e segurança.
+            
+            DATA ATUAL: Hoje é ${todayDate}. Use esta data como referência absoluta para calcular "ontem", "esta semana" ou "mês passado".
+            
+            DIRETRIZES DE RELATÓRIO:
+            - Ao pedirem um relatório/PDF, use 'generate_pdf_report'. 
+            - Se o usuário não disser o período, NÃO peça a ele; assuma automaticamente os últimos 7 dias a partir de hoje (${todayDate}).
+            - Confirme para o usuário: "Estou preparando seu Insight Report referente ao período de [X] a [Y]..."
+            
+            DIRETRIZES DE SEGURANÇA:
+            - NUNCA exponha IDs técnicos (como cat-car) ou código-fonte.
+            - Seja proativo: se o estoque estiver baixo (<10), avise no final da resposta.`
         }
       });
 
-      const functionCalls = response.functionCalls;
-
-      if (functionCalls && functionCalls.length > 0) {
+      let currentResponse = response;
+      
+      while (currentResponse.functionCalls && currentResponse.functionCalls.length > 0) {
         const toolResponses = await Promise.all(
-          functionCalls.map(async (call) => {
+          currentResponse.functionCalls.map(async (call) => {
             const result = await handleToolExecution(call);
             return {
-              functionResponse: {
-                id: call.id,
-                name: call.name,
-                response: { result },
-              },
+              functionResponse: { id: call.id, name: call.name, response: { result } }
             };
           })
         );
 
-        // Crucial: preserve the full content of the model turn, including thoughts
-        const modelContent = response.candidates[0].content;
-
-        const finalResponse = await ai.models.generateContent({
+        currentResponse = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: [
             { role: 'user', parts: [{ text: userMsg }] },
-            modelContent,
-            { role: 'function', parts: toolResponses },
+            currentResponse.candidates[0].content,
+            { role: 'function', parts: toolResponses }
           ],
           config: {
-             tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, getSecurityLogsTool] }]
+             tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, prepareRegistrationDraftTool, generateReportTool, commitRegistrationTool] }]
           }
         });
-
-        const finalText = finalResponse.text;
-        setMessages(prev => [...prev, { role: 'model', text: finalText || 'Tarefa concluída.' }]);
-      } else {
-        const out = response.text;
-        setMessages(prev => [...prev, { role: 'model', text: out || 'Não entendi.' }]);
       }
+
+      setMessages(prev => [...prev, { role: 'model', text: currentResponse.text || 'Operação concluída.' }]);
     } catch (err) {
-      console.error('AI Error:', err);
-      setMessages(prev => [...prev, { role: 'model', text: 'Erro de conexão com a IA ou chave API não configurada.' }]);
+      setMessages(prev => [...prev, { role: 'model', text: 'Ops, tive um problema na rede. Pode tentar de novo?' }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const quickActions = [
-    { label: '📊 Estatísticas Gerais', prompt: 'Me dê um resumo das estatísticas da frota: tags livres, veículos por categoria e total.', icon: BarChart3 },
-    { label: '🚗 Como cadastrar veículo?', prompt: 'Como faço para cadastrar um novo veículo no sistema?', icon: HelpCircle },
-    { label: '🚨 Veículos Roubados', prompt: 'Liste os veículos roubados e seus status.', icon: AlertTriangle },
-    { label: '🏷️ Status Tags', prompt: 'Quantas tags temos no total e quantas estão livres?', icon: TagIcon },
-    { label: '📍 Rastrear Placa', prompt: 'Quero rastrear um veículo pela placa. (Digite a placa)', icon: MapPin },
-  ];
+  const formatMessage = (text: string) => {
+    if (!text) return '';
+    let clean = text.replace(/```.*?```/gs, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    clean = clean.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary-500 font-bold hover:underline">$1</a>');
+    clean = clean.replace(/\n/g, '<br />');
+    return clean;
+  };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-4 font-sans">
+    <div className="fixed bottom-6 right-6 z-[200] flex flex-col items-end gap-4 font-sans">
       <AnimatePresence>
         {isOpen && (
           <MotionDiv
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="w-80 sm:w-[450px] h-[600px] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
+            exit={{ opacity: 0, scale: 0.9, y: 30 }}
+            className="w-[95vw] sm:w-[500px] h-[720px] bg-white dark:bg-zinc-900 rounded-[40px] shadow-[0_25px_100px_rgba(0,0,0,0.4)] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
           >
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-primary-500 rounded-lg text-white">
-                  <Bot size={18} />
+            {/* Header */}
+            <div className="p-6 bg-zinc-950 text-white flex justify-between items-center shrink-0 border-b border-white/5">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary-500 rounded-[18px] flex items-center justify-center text-black shadow-lg shadow-primary-500/30">
+                    <Sparkles size={24} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white">Operador IA</h3>
-                  <p className="text-[10px] text-zinc-500">K-Tag Intelligence</p>
+                  <h3 className="font-display font-black text-sm uppercase tracking-widest leading-none">Intelligence AI</h3>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                      <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Operação Assistida</span>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-                <X size={18} />
-              </button>
+              <button onClick={() => setIsOpen(false)} className="p-2.5 hover:bg-white/10 rounded-2xl transition-all"><X size={20} /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-50/50 dark:bg-black/20">
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-zinc-50/20 dark:bg-black/20 custom-scrollbar">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[90%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-primary-600 text-white rounded-tr-none' : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-tl-none shadow-sm'}`}
-                    dangerouslySetInnerHTML={{ __html: sanitizeHTML(formatMessage(msg.text)) }}
-                  />
+                  <div className={`max-w-[88%] flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`px-6 py-4 rounded-[30px] text-[13px] leading-relaxed shadow-sm border ${
+                        msg.role === 'user' 
+                        ? 'bg-zinc-900 text-white border-zinc-800 rounded-tr-none' 
+                        : 'bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 border-zinc-200 dark:border-zinc-700 rounded-tl-none'
+                    }`}>
+                      <div dangerouslySetInnerHTML={{ __html: sanitizeHTML(formatMessage(msg.text)) }} />
+                    </div>
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.2em] px-3">{msg.role === 'user' ? 'Operador' : 'K-TAG Intelligence'}</span>
+                  </div>
                 </div>
               ))}
               {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-white dark:bg-zinc-800 p-3 rounded-2xl rounded-tl-none border border-zinc-200 dark:border-zinc-700 shadow-sm flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
+                <div className="flex justify-start items-center gap-3">
+                   <div className="px-6 py-4 bg-white dark:bg-zinc-800 rounded-[30px] rounded-tl-none border border-zinc-200 dark:border-zinc-700 shadow-sm flex items-center gap-3">
+                      <Loader2 size={16} className="animate-spin text-primary-500" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Acessando Banco de Dados...</span>
+                   </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 shrink-0 flex flex-col">
-              <div className="flex gap-2 overflow-x-auto p-3 scrollbar-hide border-b border-zinc-50 dark:border-zinc-800/50">
-                {quickActions.map((action, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      if (action.label.includes('Placa')) {
-                        setInput('Localize o veículo com a placa ');
-                      } else {
-                        handleSend(action.prompt);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-full text-xs font-medium whitespace-nowrap transition-colors border border-zinc-200 dark:border-zinc-700"
-                  >
-                    <action.icon size={12} />
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="p-3">
-                <form
-                  onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                  className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-950 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500/20 transition-all"
-                >
+            {/* Input & Quick Actions */}
+            <div className="p-6 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
+               <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+                  {[
+                    { label: '📊 Insight Report', prompt: 'Gere um relatório analítico PDF de hoje.', icon: Download },
+                    { label: '🚗 Novo Cadastro', prompt: 'Preciso cadastrar a placa: ', icon: Plus },
+                    { label: '📦 Estoque Tags', prompt: 'Quantas tags livres temos em estoque agora?', icon: TagIcon }
+                  ].map((btn, i) => (
+                    <button key={i} onClick={() => setInput(btn.prompt)} className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-primary-500 hover:text-black rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <btn.icon size={14} /> {btn.label}
+                    </button>
+                  ))}
+               </div>
+               
+               <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="relative">
                   <input
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Digite sua solicitação..."
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 text-zinc-900 dark:text-white placeholder-zinc-400"
+                    placeholder="Ex: 'Gere o relatório de ontem'..."
+                    className="w-full pl-6 pr-16 py-5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[28px] outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary-500/5 transition-all font-bold text-sm"
                   />
                   <button
                     type="submit"
                     disabled={loading || !input.trim()}
-                    className="p-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    className="absolute right-2 top-2 bottom-2 px-4 bg-zinc-900 dark:bg-primary-500 text-white dark:text-black rounded-[20px] hover:scale-105 active:scale-95 transition-all disabled:opacity-20 flex items-center justify-center"
                   >
-                    <Send size={16} />
+                    <Send size={20} />
                   </button>
-                </form>
-              </div>
+               </form>
             </div>
           </MotionDiv>
         )}
@@ -429,9 +484,19 @@ Comportamento Específico:
 
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-4 rounded-full shadow-xl shadow-primary-500/20 transition-all duration-300 flex items-center justify-center border ${isOpen ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700' : 'bg-primary-600 text-white hover:bg-primary-500 border-transparent hover:scale-105'}`}
+        className={`w-20 h-20 rounded-[30px] shadow-[0_20px_50px_rgba(0,0,0,0.3)] transition-all duration-500 flex items-center justify-center border-[6px] relative ${
+            isOpen 
+            ? 'bg-zinc-950 border-zinc-900 text-white rotate-90 scale-90' 
+            : 'bg-primary-500 border-primary-400 text-black hover:scale-110 active:scale-90'
+        }`}
       >
-        {isOpen ? <X size={24} /> : <Sparkles size={24} />}
+        {isOpen ? <X size={32} /> : <Sparkles size={32} />}
+        {!isOpen && (
+            <span className="absolute -top-1 -right-1 flex h-6 w-6">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-6 w-6 bg-primary-600 border-2 border-white flex items-center justify-center text-[10px] font-black text-white shadow-xl">!</span>
+            </span>
+        )}
       </button>
     </div>
   );

@@ -1,14 +1,12 @@
+
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { storage } from '../services/storage';
 import { Vehicle, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, Calendar, Filter, FileSpreadsheet, Download, PieChart as PieIcon, BarChart3, TrendingUp, Settings, ChevronRight } from 'lucide-react';
-import { ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import { FileText, Filter, FileSpreadsheet, Download, PieChart as PieIcon, BarChart3, TrendingUp, Settings } from 'lucide-react';
+import { ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
 export const Reports = () => {
   const { t } = useLanguage();
@@ -23,6 +21,7 @@ export const Reports = () => {
   const [trendData, setTrendData] = useState<any[]>([]);
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [installData, setInstallData] = useState<any[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -32,230 +31,205 @@ export const Reports = () => {
     load();
   }, []);
 
-  useEffect(() => { 
-    filterData(); 
-  }, [vehicles, appliedStartDate, appliedEndDate, categories]);
-
-  const filterData = () => {
+  const filterData = useCallback(() => {
       const start = new Date(appliedStartDate + 'T00:00:00').getTime();
       const end = new Date(appliedEndDate + 'T23:59:59').getTime();
       const filtered = vehicles.filter(v => v.createdAt && v.createdAt >= start && v.createdAt <= end);
       setFilteredVehicles(filtered);
-      processCharts(filtered, appliedStartDate, appliedEndDate);
-  };
-
-  const processCharts = (data: Vehicle[], startStr: string, endStr: string) => {
+      
       const catMap: Record<string, number> = {};
       const instMap: Record<string, number> = {};
-      
-      data.forEach(v => {
+      filtered.forEach(v => {
           const catName = categories.find(c => c.id === v.type)?.name || 'Outros';
           catMap[catName] = (catMap[catName] || 0) + 1;
           const label = v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag';
           instMap[label] = (instMap[label] || 0) + 1;
       });
-
       setCategoryData(Object.keys(catMap).map(k => ({ name: k, value: catMap[k] })));
       setInstallData(Object.keys(instMap).map(k => ({ name: k, value: instMap[k] })));
 
       const trendMap: Record<string, number> = {};
-      const start = new Date(startStr + 'T00:00:00');
-      const end = new Date(endStr + 'T23:59:59');
-
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const dayKey = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-          trendMap[dayKey] = 0;
+      for (let d = new Date(start); d <= new Date(end); d.setDate(d.getDate() + 1)) {
+          trendMap[d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })] = 0;
       }
-
-      data.forEach(v => {
+      filtered.forEach(v => {
           if (v.createdAt) {
               const dayKey = new Date(v.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-              if (trendMap[dayKey] !== undefined) {
-                  trendMap[dayKey]++;
-              }
+              if (trendMap[dayKey] !== undefined) trendMap[dayKey]++;
           }
       });
-
       setTrendData(Object.keys(trendMap).map(k => ({ name: k, count: trendMap[k] })));
+  }, [vehicles, appliedStartDate, appliedEndDate, categories]);
+
+  useEffect(() => { filterData(); }, [filterData]);
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+        const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable')
+        ]);
+        
+        const doc = new jsPDF();
+        const total = filteredVehicles.length;
+        const soTag = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
+        const tagTracker = total - soTag;
+
+        // --- HEADER ---
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(24, 24, 27);
+        doc.text("K-TAG INSIGHT REPORT", 14, 22);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`Período: ${new Date(appliedStartDate + 'T00:00:00').toLocaleDateString()} - ${new Date(appliedEndDate + 'T23:59:59').toLocaleDateString()}`, 14, 30);
+        doc.text(`Gerado por: ${user?.name || 'Admin'} (${user?.role || 'User'}) em ${new Date().toLocaleString()}`, 14, 36);
+
+        // --- DASHBOARD CARDS ---
+        // Total Ativações (Dark)
+        doc.setFillColor(24, 24, 27);
+        doc.roundedRect(14, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text("TOTAL ATIVAÇÕES", 19, 53);
+        doc.setFontSize(18);
+        doc.text(total.toString(), 19, 68);
+
+        // Só Tag (Orange)
+        doc.setFillColor(245, 158, 11);
+        doc.roundedRect(76, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(8);
+        doc.text("SÓ TAG", 81, 53);
+        doc.setFontSize(18);
+        const soTagPerc = total > 0 ? ((soTag / total) * 100).toFixed(1) : "0";
+        doc.text(`${soTag} (${soTagPerc}%)`, 81, 68);
+
+        // Tag + Rastreador (Grey)
+        doc.setFillColor(244, 244, 245);
+        doc.roundedRect(138, 45, 58, 30, 4, 4, "F");
+        doc.setTextColor(24, 24, 27);
+        doc.setFontSize(8);
+        doc.text("TAG + RASTREADOR", 143, 53);
+        doc.setFontSize(18);
+        const tagTrackerPerc = total > 0 ? ((tagTracker / total) * 100).toFixed(1) : "0";
+        doc.text(`${tagTracker} (${tagTrackerPerc}%)`, 143, 68);
+
+        // --- DISTRIBUIÇÃO POR CATEGORIA ---
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(24, 24, 27);
+        doc.text("Distribuição por Categoria", 14, 88);
+
+        const categorySummary = categoryData.map(c => [
+          c.name,
+          c.value,
+          total > 0 ? `${((c.value / total) * 100).toFixed(1)}%` : '0%'
+        ]);
+
+        autoTable(doc, {
+          startY: 93,
+          head: [['Categoria', 'Quantidade', 'Representatividade (%)']],
+          body: categorySummary,
+          theme: 'striped',
+          headStyles: { fillColor: [63, 63, 70], textColor: [255, 255, 255] },
+          styles: { fontSize: 9 }
+        });
+
+        // --- LISTAGEM DETALHADA ---
+        doc.setFontSize(14);
+        doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
+
+        const detailedData = filteredVehicles.map(v => [
+          new Date(v.createdAt!).toLocaleDateString(),
+          v.plate,
+          v.model,
+          categories.find(c => c.id === v.type)?.name || '-',
+          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+        ]);
+
+        autoTable(doc, {
+          startY: (doc as any).lastAutoTable.finalY + 20,
+          head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento']],
+          body: detailedData,
+          theme: 'striped',
+          headStyles: { fillColor: [245, 158, 11], textColor: [0, 0, 0] },
+          styles: { fontSize: 8 }
+        });
+
+        storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Relatório Insight: ${appliedStartDate} a ${appliedEndDate}`);
+        doc.save(`insight_report_${appliedStartDate}.pdf`);
+    } finally {
+        setIsExporting(false);
+    }
   };
 
-  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }: any) => {
-    const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 1.4;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-  
-    return (
-      <text x={x} y={y} fill={index % 2 === 0 ? '#71717a' : '#a1a1aa'} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-[10px] font-black uppercase">
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
-  };
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+        const XLSX = await import('xlsx');
+        const dataToExport = filteredVehicles.map(v => ({
+            Data: new Date(v.createdAt!).toLocaleDateString(),
+            Placa: v.plate,
+            Modelo: v.model,
+            Categoria: categories.find(c => c.id === v.type)?.name || '-',
+            Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+        }));
 
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    const primaryColor = [245, 158, 11]; // #f59e0b
-    const darkColor = [24, 24, 27]; // #18181b
-    
-    doc.setFontSize(22);
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.setFont("helvetica", "bold");
-    doc.text("K-TAG INSIGHT REPORT", 14, 22);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100);
-    doc.text(`Período: ${new Date(appliedStartDate).toLocaleDateString()} - ${new Date(appliedEndDate).toLocaleDateString()}`, 14, 30);
-    doc.text(`Gerado por: ${user?.name || 'Sistema'} em ${new Date().toLocaleString()}`, 14, 35);
-
-    const totalCount = filteredVehicles.length;
-    const cardWidth = 60;
-    const cardHeight = 25;
-    const cardY = 45;
-
-    // CARD 1: TOTAL
-    doc.setFillColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.roundedRect(14, cardY, cardWidth, cardHeight, 3, 3, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(8);
-    doc.text("TOTAL ATIVAÇÕES", 18, cardY + 8);
-    doc.setFontSize(14);
-    doc.text(`${totalCount}`, 18, cardY + 18);
-
-    // CARD 2: SÓ TAG
-    const soTagCount = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
-    const soTagPercent = totalCount > 0 ? ((soTagCount / totalCount) * 100).toFixed(1) : "0.0";
-    
-    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.roundedRect(14 + cardWidth + 5, cardY, cardWidth, cardHeight, 3, 3, "F");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(8);
-    doc.text("SÓ TAG", 14 + cardWidth + 9, cardY + 8);
-    doc.setFontSize(14);
-    doc.text(`${soTagCount} (${soTagPercent}%)`, 14 + cardWidth + 9, cardY + 18);
-
-    // CARD 3: TAG + RASTREADOR
-    const tagTrackerCount = filteredVehicles.filter(v => v.installationType === 'tag_tracker').length;
-    const tagTrackerPercent = totalCount > 0 ? ((tagTrackerCount / totalCount) * 100).toFixed(1) : "0.0";
-    
-    doc.setFillColor(240, 240, 240);
-    doc.roundedRect(14 + (cardWidth * 2) + 10, cardY, cardWidth, cardHeight, 3, 3, "F");
-    doc.setTextColor(100);
-    doc.setFontSize(8);
-    doc.text("TAG + RASTREADOR", 14 + (cardWidth * 2) + 14, cardY + 8);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
-    doc.text(`${tagTrackerCount} (${tagTrackerPercent}%)`, 14 + (cardWidth * 2) + 14, cardY + 18);
-
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Distribuição por Categoria", 14, 85);
-
-    autoTable(doc, {
-      startY: 90,
-      head: [['Categoria', 'Quantidade', 'Representatividade (%)']],
-      body: categoryData.map(c => [
-        c.name, 
-        c.value, 
-        `${((c.value / filteredVehicles.length) * 100).toFixed(1)}%`
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [80, 80, 80] },
-      styles: { fontSize: 9 }
-    });
-
-    doc.setFontSize(12);
-    doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
-
-    const detailedData = filteredVehicles.map(v => [
-      new Date(v.createdAt!).toLocaleDateString(),
-      v.plate,
-      v.model,
-      categories.find(c => c.id === v.type)?.name || '-',
-      v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
-    ]);
-
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento']],
-      body: detailedData,
-      theme: 'striped',
-      headStyles: { fillColor: primaryColor },
-      styles: { fontSize: 8 }
-    });
-
-    // Auditoria
-    storage.logAction(user, 'REPORT', 'Vehicle', `Exportou PDF analítico da frota para o período ${appliedStartDate} a ${appliedEndDate}`);
-
-    doc.save(`relatorio_detalhado_${appliedStartDate}_${appliedEndDate}.pdf`);
-  };
-
-  const exportExcel = () => {
-    const dataToExport = filteredVehicles.map(v => ({
-      Data: new Date(v.createdAt!).toLocaleDateString(),
-      Placa: v.plate,
-      Modelo: v.model,
-      Categoria: categories.find(c => c.id === v.type)?.name || '-',
-      Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Veículos");
-
-    // Auditoria
-    storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Excel de frota para o período ${appliedStartDate} a ${appliedEndDate}`);
-
-    XLSX.writeFile(workbook, `relatorio_veiculos_${appliedStartDate}_${appliedEndDate}.xlsx`);
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Veículos");
+        storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Excel: ${appliedStartDate} a ${appliedEndDate}`);
+        XLSX.writeFile(workbook, `relatorio_${appliedStartDate}.xlsx`);
+    } finally {
+        setIsExporting(false);
+    }
   };
 
   const COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#71717a'];
 
   return (
-    <div className="space-y-10 pb-20 font-sans">
+    <div className="space-y-10 pb-20">
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-8">
             <div className="flex items-center gap-5">
                 <div className="w-16 h-16 rounded-[24px] bg-primary-500/10 text-primary-500 flex items-center justify-center border border-primary-500/20 shadow-lg shadow-primary-500/10"><FileText size={32} /></div>
                 <div>
                     <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">Insight Reports</h1>
-                    <p className="text-zinc-500 mt-2 font-medium">Relatórios analíticos de crescimento e distribuição.</p>
+                    <p className="text-zinc-500 mt-2 font-medium">Relatórios analíticos otimizados.</p>
                 </div>
             </div>
 
             <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-2 w-full xl:w-auto">
                  <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
                     <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Início</label>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none h-5 w-full cursor-pointer dark:text-white" />
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
                  </div>
                  <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
                     <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Fim</label>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none h-5 w-full cursor-pointer dark:text-white" />
+                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
                  </div>
-                 <button onClick={() => { setAppliedStartDate(startDate); setAppliedEndDate(endDate); }} className="bg-primary-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-500/20 flex items-center justify-center gap-2 transition-all active:scale-95">
+                 <button onClick={() => { setAppliedStartDate(startDate); setAppliedEndDate(endDate); }} className="bg-primary-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">
                      <Filter size={18} /> Filtrar
                  </button>
             </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-             <div className="bg-zinc-900 text-white p-10 rounded-[40px] flex flex-col justify-between shadow-2xl relative overflow-hidden border border-zinc-800">
-                 <div className="absolute top-0 right-0 p-32 bg-primary-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-                 <div className="relative z-10">
+             <div className="bg-zinc-900 text-white p-10 rounded-[40px] flex flex-col justify-between border border-zinc-800">
+                 <div>
                      <p className="text-xs text-zinc-400 font-black uppercase tracking-[0.2em] mb-4">Total Ativações</p>
                      <div className="flex items-baseline gap-2">
                         <h2 className="text-7xl font-display font-black text-white tracking-tighter">{filteredVehicles.length}</h2>
                         <span className="text-sm font-bold text-zinc-500">unid.</span>
                      </div>
                  </div>
-                 <div className="relative z-10 mt-10 flex items-center gap-2 text-primary-500 text-xs font-black uppercase tracking-widest"><TrendingUp size={16} /> Performance Estável</div>
+                 <div className="mt-10 flex items-center gap-2 text-primary-500 text-xs font-black uppercase tracking-widest"><TrendingUp size={16} /> Estabilidade Operacional</div>
              </div>
 
-             <div className="lg:col-span-3 bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm min-h-[300px]">
-                 <div className="flex items-center gap-3 mb-8">
-                    <BarChart3 size={18} className="text-primary-500" />
-                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400">Fluxo de Inclusões Diárias</h3>
-                 </div>
+             <div className="lg:col-span-3 bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800">
                  <div className="h-64 w-full">
                      <ResponsiveContainer width="100%" height="100%">
                          <AreaChart data={trendData}>
@@ -265,125 +239,54 @@ export const Reports = () => {
                                   <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
                                 </linearGradient>
                              </defs>
-                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e2e2" opacity={0.1} />
-                             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} />
-                             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a' }} />
-                             <Tooltip 
-                                contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }} 
-                                itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
-                             />
-                             <Area type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={4} fillOpacity={1} fill="url(#colorCount)" />
+                             <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a' }} />
+                             <Tooltip contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }} />
+                             <Area type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={4} fill="url(#colorCount)" />
                          </AreaChart>
                      </ResponsiveContainer>
                  </div>
              </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><PieIcon size={16} /> Por Categoria</h3>
-                 <div className="h-64 w-full flex items-center justify-center relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie 
-                                data={categoryData} 
-                                innerRadius={70} 
-                                outerRadius={100} 
-                                paddingAngle={8} 
-                                dataKey="value" 
-                                cornerRadius={8}
-                                stroke="none"
-                                label={renderCustomizedLabel}
-                                labelLine={false}
-                            >
-                                {categoryData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                        <div className="text-3xl font-display font-black text-zinc-900 dark:text-white leading-none">{categoryData.reduce((a, b) => a + b.value, 0)}</div>
-                        <div className="text-[10px] uppercase text-zinc-400 font-black tracking-widest mt-1">Total</div>
-                    </div>
-                 </div>
-            </div>
-
-            <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><Settings size={16} /> Por Equipamento</h3>
-                 <div className="h-64 w-full flex items-center justify-center relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie 
-                                data={installData} 
-                                innerRadius={70} 
-                                outerRadius={100} 
-                                paddingAngle={8} 
-                                dataKey="value" 
-                                cornerRadius={8}
-                                stroke="none"
-                                label={renderCustomizedLabel}
-                                labelLine={false}
-                            >
-                                {installData.map((e, i) => <Cell key={i} fill={i === 0 ? '#f59e0b' : '#27272a'} />)}
-                            </Pie>
-                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                        <div className="text-3xl font-display font-black text-zinc-900 dark:text-white leading-none">{filteredVehicles.length > 0 ? "OK" : "0"}</div>
-                        <div className="text-[10px] uppercase text-zinc-400 font-black tracking-widest mt-1">Mix</div>
-                    </div>
-                 </div>
-            </div>
-        </div>
-
-        <div className="bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-            <div className="p-10 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-950/20">
-                <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Lista Detalhada</h3>
+        <div className="bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div className="p-10 flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800">
+                <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Análise Quantitativa</h3>
                 <div className="flex gap-2">
                     <button 
-                      onClick={exportPDF}
-                      disabled={filteredVehicles.length === 0}
-                      className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-red-500 transition-all flex items-center gap-2 text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleExportPDF} 
+                      disabled={isExporting || filteredVehicles.length === 0}
+                      className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
                     >
-                      <Download size={14}/> PDF
+                      <Download size={14}/> {isExporting ? 'Processando...' : 'PDF'}
                     </button>
                     <button 
-                      onClick={exportExcel}
-                      disabled={filteredVehicles.length === 0}
-                      className="px-6 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:text-emerald-500 transition-all flex items-center gap-2 text-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleExportExcel}
+                      disabled={isExporting || filteredVehicles.length === 0}
+                      className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
                     >
                       <FileSpreadsheet size={14}/> Excel
                     </button>
                 </div>
             </div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/30 dark:bg-zinc-950/20 border-b border-zinc-100 dark:border-zinc-800">
+            <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+                <table className="w-full text-left">
+                    <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/20 sticky top-0 z-10 border-b border-zinc-100 dark:border-zinc-800">
                         <tr>
                             <th className="px-10 py-5">Data Inclusão</th>
                             <th className="px-10 py-5">Placa</th>
                             <th className="px-10 py-5">Modelo</th>
-                            <th className="px-10 py-5">Categoria</th>
                             <th className="px-10 py-5 text-right">Instalação</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                        {filteredVehicles.length === 0 ? (
-                            <tr>
-                                <td colSpan={5} className="px-10 py-20 text-center text-zinc-400 font-bold uppercase text-xs">Nenhum registro para este período</td>
+                        {filteredVehicles.map(v => (
+                            <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
+                                <td className="px-10 py-5 text-zinc-500 font-mono text-xs">{new Date(v.createdAt!).toLocaleDateString()}</td>
+                                <td className="px-10 py-5 font-black text-zinc-900 dark:text-white uppercase">{v.plate}</td>
+                                <td className="px-10 py-5 font-bold text-zinc-600 dark:text-zinc-300">{v.model}</td>
+                                <td className="px-10 py-5 text-right"><span className="inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border border-primary-500/20 bg-primary-500/5 text-primary-500">{v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'}</span></td>
                             </tr>
-                        ) : (
-                            filteredVehicles.map(v => (
-                                <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
-                                    <td className="px-10 py-5 text-zinc-500 font-mono text-xs">{new Date(v.createdAt!).toLocaleDateString()}</td>
-                                    <td className="px-10 py-5 font-black text-zinc-900 dark:text-white uppercase">{v.plate}</td>
-                                    <td className="px-10 py-5 font-bold text-zinc-600 dark:text-zinc-300">{v.model}</td>
-                                    <td className="px-10 py-5 text-zinc-400 font-black uppercase text-[10px]">{categories.find(c => c.id === v.type)?.name || '-'}</td>
-                                    <td className="px-10 py-5 text-right"><span className="inline-flex items-center gap-1.5 text-primary-500 bg-primary-500/10 px-3 py-1 rounded-full text-[10px] font-black uppercase border border-primary-500/20">{v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'}</span></td>
-                                </tr>
-                            ))
-                        )}
+                        ))}
                     </tbody>
                 </table>
             </div>
