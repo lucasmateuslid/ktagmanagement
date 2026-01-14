@@ -81,21 +81,25 @@ export const Dashboard = () => {
   };
 
   const processTrendData = (vehicles: Vehicle[]) => {
-    const months: Record<string, number> = {};
+    const monthsArray: any[] = [];
     const now = new Date();
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    // Gerar os últimos 6 meses em ordem cronológica
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months[monthNames[d.getMonth()]] = 0;
+      const monthLabel = monthNames[d.getMonth()];
+      
+      // Contar veículos criados naquele mês/ano específico
+      const count = vehicles.filter(v => {
+        if (!v.createdAt) return false;
+        const vDate = new Date(v.createdAt);
+        return vDate.getMonth() === d.getMonth() && vDate.getFullYear() === d.getFullYear();
+      }).length;
+
+      monthsArray.push({ name: monthLabel, entries: count });
     }
-    vehicles.forEach(v => {
-      if (v.createdAt) {
-        const d = new Date(v.createdAt);
-        const key = monthNames[d.getMonth()];
-        if (months[key] !== undefined) months[key]++;
-      }
-    });
-    setTrendChartData(Object.keys(months).map(k => ({ name: k, entries: months[k] })));
+    setTrendChartData(monthsArray);
   };
 
   const linkedCount = vehicles.filter(v => v.tagId).length;
@@ -107,7 +111,6 @@ export const Dashboard = () => {
   const isCriticalStock = unlinkedCount <= 40;
   const theftRate = vehicles.length > 0 ? ((stolenCount / vehicles.length) * 100).toFixed(1) : '0.0';
 
-  // Fix: Added missing categoryStats and getIconForCategory definitions to resolve component errors.
   const categoryStats = useMemo(() => {
     const counts: Record<string, number> = {};
     vehicles.forEach(v => {
@@ -321,12 +324,26 @@ export const Dashboard = () => {
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trendChartData}>
+              <AreaChart data={trendChartData}>
+                <defs>
+                  <linearGradient id="colorTrend" x1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" opacity={0.1} />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#71717a' }} allowDecimals={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                <Bar dataKey="entries" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={30} />
-              </BarChart>
+                <Area 
+                  type="monotone" 
+                  dataKey="entries" 
+                  stroke="#f59e0b" 
+                  strokeWidth={3} 
+                  fill="url(#colorTrend)" 
+                  animationDuration={1500}
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
