@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
@@ -34,16 +34,23 @@ const SidebarContent = ({
   setCollapsed,
   logout 
 }: any) => (
-  <div className="flex flex-col h-full bg-white dark:bg-zinc-900 transition-colors duration-300">
-    <div className={`h-24 flex items-center border-b border-zinc-100 dark:border-zinc-800/50 ${(!isMobile && collapsed) ? 'justify-center' : 'px-6'} shrink-0 relative`}>
-      <div className={`flex items-center gap-3.5 ${(!isMobile && collapsed) ? 'w-full justify-center' : ''}`}>
-        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-display font-black text-2xl shrink-0 shadow-lg transition-all duration-500 transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-zinc-950 shadow-white/5' : 'bg-zinc-950 text-white shadow-black/10'}`}>
+  <div className="flex flex-col h-full bg-white dark:bg-zinc-900 transition-colors duration-300 select-none">
+    {/* Brand Logo Section */}
+    <div className={`h-24 flex items-center border-b border-zinc-100 dark:border-zinc-800/50 ${(!isMobile && collapsed) ? 'justify-center' : 'px-6'} shrink-0 relative overflow-hidden`}>
+      <div className={`flex items-center gap-4 ${(!isMobile && collapsed) ? 'w-full justify-center' : ''}`}>
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-display font-black text-2xl shrink-0 shadow-lg transition-all duration-500 transform hover:rotate-3 ${theme === 'dark' ? 'bg-white text-zinc-950 shadow-white/5' : 'bg-zinc-950 text-white shadow-black/10'}`}>
           {brand.logo}
         </div>
         {(isMobile || !collapsed) && (
-          <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col leading-none">
+          <motion.div 
+            initial={{ opacity: 0, x: -10 }} 
+            animate={{ opacity: 1, x: 0 }} 
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col leading-tight"
+          >
             <span className="font-display font-black text-xl text-zinc-900 dark:text-white tracking-tighter uppercase">{brand.name}</span>
-            <span className="text-[8px] font-black text-primary-500 uppercase tracking-[0.3em] mt-1">Portal</span>
+            <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Portal de Gestão</span>
           </motion.div>
         )}
       </div>
@@ -54,47 +61,95 @@ const SidebarContent = ({
       )}
     </div>
 
-    <nav className="flex-1 px-3 py-6 overflow-y-auto space-y-8 custom-scrollbar">
-      {menuSections.map((section: any) => (
-        <div key={section.title} className="space-y-1">
-          {(isMobile || !collapsed) && (
-            <h3 className="px-4 mb-3 text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-[0.2em]">{section.title}</h3>
-          )}
-          <div className="space-y-0.5">
-            {section.items.map((item: any) => {
-              const isActive = pathname === item.path;
-              return (
-                <Link key={item.path} to={item.path} className="relative block group">
-                  <div className={`flex items-center relative py-3 rounded-2xl transition-all duration-200 ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-3.5'} ${isActive ? 'text-primary-600 dark:text-primary-500' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}>
-                    {isActive && <motion.div layoutId="sidebar-active-pill" className="absolute inset-0 bg-primary-500/10 dark:bg-primary-500/10 rounded-2xl z-0" transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
-                    <div className={`relative z-10 flex items-center justify-center shrink-0 transition-transform duration-200 ${isActive ? 'scale-105' : 'group-hover:scale-105'}`}>
-                      <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+    {/* Navigation Section */}
+    <nav className="flex-1 px-3 py-8 overflow-y-auto space-y-10 custom-scrollbar overflow-x-hidden">
+      <LayoutGroup id="sidebar-nav">
+        {menuSections.map((section: any) => (
+          <div key={section.title} className="space-y-2">
+            {(isMobile || !collapsed) && (
+              <motion.h3 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="px-5 mb-4 text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.25em]"
+              >
+                {section.title}
+              </motion.h3>
+            )}
+            <div className="space-y-1">
+              {section.items.map((item: any) => {
+                const isActive = pathname === item.path;
+                return (
+                  <Link key={item.path} to={item.path} className="relative block">
+                    <div 
+                      className={`
+                        flex items-center relative h-12 rounded-2xl transition-all duration-300 group
+                        ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'} 
+                        ${isActive ? 'text-primary-600 dark:text-primary-500' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-white/5'}
+                      `}
+                    >
+                      {isActive && (
+                        <motion.div 
+                          layoutId="sidebar-active-pill" 
+                          className="absolute inset-0 bg-primary-500/10 dark:bg-primary-500/10 rounded-2xl z-0" 
+                          transition={{ type: 'spring', stiffness: 400, damping: 35 }} 
+                        />
+                      )}
+                      
+                      <div className={`relative z-10 flex items-center justify-center w-6 shrink-0 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+                        <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+                      </div>
+
+                      {(isMobile || !collapsed) && (
+                        <motion.span 
+                          initial={{ opacity: 0, x: -5 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className={`relative z-10 text-[14px] font-bold truncate tracking-tight whitespace-nowrap ${isActive ? 'font-black' : ''}`}
+                        >
+                          {item.label}
+                        </motion.span>
+                      )}
+
+                      {isActive && !isMobile && !collapsed && (
+                        <motion.div 
+                          layoutId="sidebar-active-bar" 
+                          className="absolute left-0 w-1.5 h-6 bg-primary-500 rounded-r-full" 
+                          transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                        />
+                      )}
                     </div>
-                    {(isMobile || !collapsed) && <span className={`relative z-10 text-[13px] font-bold truncate tracking-tight ${isActive ? 'font-black' : ''}`}>{item.label}</span>}
-                    {isActive && !isMobile && !collapsed && <motion.div layoutId="sidebar-active-bar" className="absolute left-0 w-1 h-5 bg-primary-500 rounded-r-full" />}
-                  </div>
-                </Link>
-              );
-            })}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </LayoutGroup>
     </nav>
 
-    <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 shrink-0">
-      <Link to="/settings" className="block mb-1">
-        <div className={`flex items-center p-3 rounded-2xl gap-3.5 transition-all ${pathname === '/settings' ? 'bg-primary-500/10 text-primary-500' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'} ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4'}`}>
-           <Settings size={20} />
-           {(isMobile || !collapsed) && <span className="text-[13px] font-bold">Configurações</span>}
+    {/* Footer Section */}
+    <div className="p-4 border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/50 dark:bg-zinc-950/20 shrink-0 space-y-2">
+      <Link to="/settings" className="block">
+        <div className={`flex items-center h-12 rounded-2xl transition-all duration-300 group ${pathname === '/settings' ? 'bg-primary-500/10 text-primary-500' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'} ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'}`}>
+           <div className="w-6 flex items-center justify-center group-hover:rotate-45 transition-transform duration-500">
+             <Settings size={22} />
+           </div>
+           {(isMobile || !collapsed) && <span className="text-[14px] font-bold tracking-tight">Configurações</span>}
         </div>
       </Link>
-      <button onClick={logout} className={`flex items-center p-3 rounded-2xl gap-3.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all w-full group ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4'}`}>
-        <LogOut size={20} className="group-hover:translate-x-0.5 transition-transform" />
-        {(isMobile || !collapsed) && <span className="text-[13px] font-bold">Sair</span>}
+      
+      <button onClick={logout} className={`flex items-center h-12 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all w-full group ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'}`}>
+        <div className="w-6 flex items-center justify-center group-hover:translate-x-1 transition-transform">
+          <LogOut size={22} />
+        </div>
+        {(isMobile || !collapsed) && <span className="text-[14px] font-bold tracking-tight">Sair da Conta</span>}
       </button>
+
       {!isMobile && (
-        <button onClick={() => setCollapsed(!collapsed)} className="w-full flex items-center justify-center p-2.5 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all mt-4 border border-dashed border-zinc-200 dark:border-zinc-800">
-          {collapsed ? <ChevronRight size={16} /> : <div className="flex items-center gap-2"><ChevronLeft size={16} /><span className="text-[10px] font-black uppercase tracking-widest">Recolher</span></div>}
+        <button 
+          onClick={() => setCollapsed(!collapsed)} 
+          className="w-full flex items-center justify-center h-10 mt-4 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all border border-dashed border-zinc-200 dark:border-zinc-800"
+        >
+          {collapsed ? <ChevronRight size={18} /> : <div className="flex items-center gap-2"><ChevronLeft size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Recolher</span></div>}
         </button>
       )}
     </div>
@@ -167,15 +222,32 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] md:hidden" />
-            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed inset-y-0 left-0 w-[280px] bg-white dark:bg-zinc-900 z-[2001] md:hidden shadow-2xl">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setSidebarOpen(false)} 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] md:hidden" 
+            />
+            <motion.div 
+              initial={{ x: '-100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '-100%' }} 
+              transition={{ type: 'spring', damping: 30, stiffness: 250 }} 
+              className="fixed inset-y-0 left-0 w-[280px] bg-white dark:bg-zinc-900 z-[2001] md:hidden shadow-2xl"
+            >
               <SidebarContent isMobile collapsed={false} brand={brand} menuSections={menuSections} pathname={location.pathname} theme={theme} setSidebarOpen={setSidebarOpen} logout={logout} />
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      <motion.aside initial={false} animate={{ width: collapsed ? 84 : 280 }} className="hidden md:flex flex-col h-full bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 relative z-50 shadow-xl overflow-hidden">
+      <motion.aside 
+        initial={false} 
+        animate={{ width: collapsed ? 88 : 280 }} 
+        transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+        className="hidden md:flex flex-col h-full bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 relative z-50 shadow-xl overflow-hidden"
+      >
         <SidebarContent collapsed={collapsed} brand={brand} menuSections={menuSections} pathname={location.pathname} theme={theme} setCollapsed={setCollapsed} logout={logout} />
       </motion.aside>
 
