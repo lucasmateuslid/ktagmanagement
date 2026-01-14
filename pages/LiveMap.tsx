@@ -14,7 +14,8 @@ import {
   RefreshCw, Search, MapPin, Car, Activity, 
   Clock, Navigation, Copy, X, LayoutGrid,
   ChevronRight, ArrowLeft, Play, Share2, 
-  FileText, FileSpreadsheet, ChevronUp, ChevronDown, Signal, Download
+  FileText, FileSpreadsheet, ChevronUp, ChevronDown, Signal, Download,
+  History, MapPinned
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -36,6 +37,7 @@ export const LiveMap = () => {
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [showHistoryList, setShowHistoryList] = useState(false);
   
   const { addNotification } = useNotification();
   const [searchParams] = useSearchParams(); 
@@ -111,6 +113,7 @@ export const LiveMap = () => {
     setSelectedTagId(tagId);
     setIsFleetMode(false);
     setIsSheetExpanded(false); 
+    setShowHistoryList(false);
     setTagSearchTerm('');
     setIsSearchFocused(false);
   };
@@ -180,6 +183,24 @@ export const LiveMap = () => {
     if (!term && isSearchFocused) return vehicles.slice(0, 5);
     return vehicles.filter(v => v.plate.toLowerCase().includes(term) || v.model.toLowerCase().includes(term));
   }, [vehicles, tagSearchTerm, isSearchFocused]);
+
+  const recentHistory = useMemo(() => {
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+    return locations.filter(l => l.timestamp >= threeDaysAgo);
+  }, [locations]);
+
+  const handleToggleHistory = async () => {
+    setShowHistoryList(!showHistoryList);
+    if (!showHistoryList) {
+      // Tentar resolver endereços da lista visível se necessário
+      const toResolve = recentHistory.slice(0, 10);
+      for (const loc of toResolve) {
+        if (!resolvedAddresses[loc.id]) {
+          await resolveAddress(loc);
+        }
+      }
+    }
+  };
 
   return (
     <div className="relative h-full w-full flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
@@ -252,13 +273,13 @@ export const LiveMap = () => {
             animate={{ y: isSheetExpanded ? 0 : 'calc(100% - 85px)' }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 250 }}
-            className="absolute bottom-0 left-0 right-0 z-[150] bg-white dark:bg-zinc-900 rounded-t-[28px] shadow-[0_-10px_40px_rgba(0,0,0,0.15)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col lg:left-auto lg:right-4 lg:bottom-4 lg:w-[350px] lg:rounded-[28px] overflow-hidden"
+            className="absolute bottom-0 left-0 right-0 z-[150] bg-white dark:bg-zinc-900 rounded-t-[28px] shadow-[0_-10px_40px_rgba(0,0,0,0.15)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col lg:left-auto lg:right-4 lg:bottom-4 lg:w-[380px] lg:rounded-[28px] overflow-hidden"
             style={{ maxHeight: '70vh' }}
           >
             {/* COMPACT HEADER (Sempre visível) */}
             <div 
               className="h-[85px] px-6 flex items-center justify-between cursor-pointer group shrink-0"
-              onClick={() => setIsSheetExpanded(!isSheetExpanded)}
+              onClick={() => { setIsSheetExpanded(!isSheetExpanded); if(isSheetExpanded) setShowHistoryList(false); }}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-primary-500 text-black flex items-center justify-center shadow-lg">
@@ -284,33 +305,77 @@ export const LiveMap = () => {
 
             {/* EXPANDED CONTENT */}
             <div className="px-5 pb-6 space-y-4 overflow-y-auto no-scrollbar flex-1 border-t border-zinc-50 dark:border-zinc-800/50 pt-4">
-                  <div className="bg-zinc-50/50 dark:bg-zinc-950/40 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
-                    <div className="flex justify-between items-start mb-2">
-                        <span className="text-[8px] font-black uppercase text-primary-500 tracking-[0.2em]">Localização Exata</span>
-                        <span className="text-[8px] font-mono text-zinc-400">{lastLoc?.lat.toFixed(6)}, {lastLoc?.lon.toFixed(6)}</span>
+                  
+                  {showHistoryList ? (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-2 text-primary-500">
+                            <History size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Trajeto Últimos 3 Dias</span>
+                         </div>
+                         <button onClick={() => setShowHistoryList(false)} className="text-[9px] font-black uppercase text-zinc-400 hover:text-zinc-600 transition-colors">Voltar</button>
+                      </div>
+                      
+                      <div className="space-y-2 max-h-[350px] overflow-y-auto custom-scrollbar pr-1">
+                         {recentHistory.length === 0 ? (
+                           <div className="py-10 text-center opacity-30 text-[10px] font-black uppercase">Nenhum registro no período</div>
+                         ) : (
+                           recentHistory.map((loc, idx) => (
+                             <div key={loc.id} className="p-3 bg-zinc-50 dark:bg-zinc-950/40 rounded-xl border border-zinc-100 dark:border-zinc-800/50 flex gap-3 group">
+                                <div className="flex flex-col items-center gap-1 mt-1">
+                                   <div className="w-2 h-2 rounded-full bg-primary-500" />
+                                   {idx < recentHistory.length - 1 && <div className="w-px flex-1 bg-zinc-200 dark:bg-zinc-800" />}
+                                </div>
+                                <div className="flex-1">
+                                   <div className="flex justify-between items-start mb-1">
+                                      <span className="text-[9px] font-black text-zinc-900 dark:text-zinc-200">{new Date(loc.timestamp).toLocaleString()}</span>
+                                      <span className="text-[7px] font-mono text-zinc-400 group-hover:text-primary-500 transition-colors cursor-pointer" onClick={() => { navigator.clipboard.writeText(`${loc.lat}, ${loc.lon}`); addNotification('success', 'Copiado', 'Coordenadas salvas.'); }}>GPS</span>
+                                   </div>
+                                   <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 leading-snug">
+                                      {resolvedAddresses[loc.id] || 'Buscando endereço...'}
+                                   </p>
+                                </div>
+                             </div>
+                           ))
+                         )}
+                      </div>
                     </div>
-                    <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-200 leading-snug">
-                      {lastLoc ? (resolvedAddresses[lastLoc.id] || 'Buscando endereço...') : 'Sinal indisponível'}
-                    </p>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="bg-zinc-50/50 dark:bg-zinc-950/40 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-[8px] font-black uppercase text-primary-500 tracking-[0.2em]">Localização Exata</span>
+                            <span className="text-[8px] font-mono text-zinc-400">{lastLoc?.lat.toFixed(6)}, {lastLoc?.lon.toFixed(6)}</span>
+                        </div>
+                        <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-200 leading-snug">
+                          {lastLoc ? (resolvedAddresses[lastLoc.id] || 'Buscando endereço...') : 'Sinal indisponível'}
+                        </p>
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => lastLoc && window.open(`https://www.google.com/maps/dir/?api=1&destination=${lastLoc.lat},${lastLoc.lon}`)} className="h-11 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase tracking-widest shadow-lg">
-                      <Navigation size={14}/> Rota GPS
-                    </button>
-                    <button onClick={() => { if(lastLoc) { navigator.clipboard.writeText(`${lastLoc.lat}, ${lastLoc.lon}`); addNotification('success', 'Copiado', 'Coordenadas salvas.'); } }} className="h-11 bg-white dark:bg-zinc-800 text-zinc-500 rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase border border-zinc-100 dark:border-zinc-700 shadow-sm">
-                      <Copy size={14}/> Copiar
-                    </button>
-                  </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => lastLoc && window.open(`https://www.google.com/maps/dir/?api=1&destination=${lastLoc.lat},${lastLoc.lon}`)} className="h-11 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase tracking-widest shadow-lg active:scale-95 transition-all">
+                          <Navigation size={14}/> Rota GPS
+                        </button>
+                        <button onClick={handleToggleHistory} className="h-11 bg-primary-500 text-black rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase tracking-widest shadow-lg active:scale-95 transition-all border border-primary-600">
+                          <History size={14}/> Histórico
+                        </button>
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={handleExportPDF} className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center gap-2 font-black text-[8px] uppercase tracking-widest border border-zinc-100 dark:border-zinc-800">
-                      <FileText size={12}/> Relatório PDF
-                    </button>
-                    <button onClick={handleExportExcel} className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center gap-2 font-black text-[8px] uppercase tracking-widest border border-zinc-100 dark:border-zinc-800">
-                      <FileSpreadsheet size={12}/> Planilha XLS
-                    </button>
-                  </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => { if(lastLoc) { navigator.clipboard.writeText(`${lastLoc.lat}, ${lastLoc.lon}`); addNotification('success', 'Copiado', 'Coordenadas salvas.'); } }} className="h-10 bg-white dark:bg-zinc-800 text-zinc-500 rounded-lg flex items-center justify-center gap-2 font-black text-[9px] uppercase border border-zinc-100 dark:border-zinc-700 shadow-sm active:scale-95 transition-all">
+                          <Copy size={14}/> Copiar Coordenadas
+                        </button>
+                        <div className="grid grid-cols-2 gap-1.5">
+                           <button onClick={handleExportPDF} title="PDF" className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center border border-zinc-100 dark:border-zinc-800 active:scale-95 transition-all">
+                             <FileText size={14}/>
+                           </button>
+                           <button onClick={handleExportExcel} title="XLS" className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center border border-zinc-100 dark:border-zinc-800 active:scale-95 transition-all">
+                             <FileSpreadsheet size={14}/>
+                           </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   
                   <button onClick={() => setSelectedTagId('')} className="w-full py-2 text-[8px] font-black text-zinc-300 hover:text-red-500 uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5 mt-2">
                     <X size={12} /> Fechar Monitoramento
