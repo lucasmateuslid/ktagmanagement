@@ -7,7 +7,10 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const MotionDiv = motion.div as any;
 
 export const Tags = () => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -36,6 +39,7 @@ export const Tags = () => {
 
   const unlinkedCount = tags.length - vehicles.filter(v => v.tagId).length;
   const isStockLow = unlinkedCount <= 80;
+  const isStockCritical = unlinkedCount <= 40;
 
   const filteredTags = useMemo(() => {
     const term = searchTerm.toLowerCase();
@@ -144,17 +148,6 @@ export const Tags = () => {
     await loadData();
   };
 
-  const getWarrantyInfo = (tag: Tag) => {
-    if (!tag.warrantyStartedAt || !tag.batteryWarrantyYears) return null;
-    const startDate = new Date(tag.warrantyStartedAt);
-    const expiryDate = new Date(tag.warrantyStartedAt);
-    expiryDate.setFullYear(startDate.getFullYear() + tag.batteryWarrantyYears);
-    const isExpired = Date.now() > expiryDate.getTime();
-    const diffTime = expiryDate.getTime() - Date.now();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return { expiryDate, isExpired, daysRemaining: diffDays > 0 ? diffDays : 0 };
-  };
-
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -171,6 +164,38 @@ export const Tags = () => {
             </button>
         </div>
       </div>
+
+      {/* BANNER DE ALERTA DE ESTOQUE */}
+      {isStockLow && (
+        <MotionDiv
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`p-6 rounded-[32px] border flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl ${
+            isStockCritical ? 'bg-red-600 border-red-500 text-white' : 'bg-amber-400 border-amber-300 text-black'
+          }`}
+        >
+          <div className="flex items-center gap-5 text-center md:text-left">
+            <div className={`p-4 rounded-[20px] ${isStockCritical ? 'bg-white/20' : 'bg-black/10'}`}>
+              <ShoppingBag size={28} />
+            </div>
+            <div>
+              <h2 className="text-xl font-display font-black uppercase tracking-tight">Estoque Reduzido ({unlinkedCount} unidades livres)</h2>
+              <p className={`text-xs font-bold uppercase tracking-widest mt-1 ${isStockCritical ? 'text-white/80' : 'text-black/60'}`}>
+                Novos equipamentos precisam ser adquiridos imediatamente.
+              </p>
+            </div>
+          </div>
+          <motion.div 
+            animate={{ scale: [1, 1.05, 1], opacity: [1, 0.7, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className={`px-8 py-3 rounded-full font-black uppercase text-[11px] tracking-[0.2em] shadow-lg ${
+              isStockCritical ? 'bg-white text-red-600' : 'bg-black text-amber-400'
+            }`}
+          >
+            Contact factory for new tags
+          </motion.div>
+        </MotionDiv>
+      )}
 
       <input type="file" ref={fileInputRef} onChange={() => {}} accept=".csv" className="hidden" />
 
@@ -205,7 +230,6 @@ export const Tags = () => {
         {filteredTags.map((tag) => {
           const isSelected = selectedTags.has(tag.id);
           const vehicle = vehicles.find(v => v.tagId === tag.id);
-          const warranty = getWarrantyInfo(tag);
 
           return (
             <div key={tag.id} onClick={() => toggleSelect(tag.id)} className={`bg-white dark:bg-zinc-900 p-8 rounded-[32px] border transition-all cursor-pointer group relative overflow-hidden ${isSelected ? 'border-primary-500 ring-1 ring-primary-500 shadow-xl' : 'border-zinc-200 dark:border-zinc-800'}`}>
@@ -281,7 +305,7 @@ export const Tags = () => {
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Private Key</label>
-                                <input type="password" required value={formData.privateKey || ''} onChange={e => setFormData({...formData, privateKey: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-zinc-900 dark:text-white outline-none" />
+                                <input type="password" required value={formData.privateKey || ''} onChange={e => setFormData({...formData, privateKey: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
                             </div>
                         </>
                     ) : (
