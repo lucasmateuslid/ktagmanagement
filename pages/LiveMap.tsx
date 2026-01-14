@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -10,9 +11,10 @@ import { MapComponent } from '../components/MapComponent';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { 
-  RefreshCw, Play, Square, Search, Share2, 
-  ChevronDown, Car, Activity, MapPin, 
-  CheckCircle2, Clock, Hash, Download, FileText, FileSpreadsheet, Map as MapIcon
+  RefreshCw, Search, MapPin, Car, Activity, 
+  Clock, Navigation, Copy, X, LayoutGrid,
+  ChevronRight, ArrowLeft, Play, Share2, 
+  FileText, FileSpreadsheet, ChevronUp, ChevronDown, Signal, Download
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,24 +30,21 @@ export const LiveMap = () => {
   const [locations, setLocations] = useState<LocationHistory[]>([]);
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
   const [resolvedAddresses, setResolvedAddresses] = useState<Record<string, string>>({});
-  const [isTracking, setIsTracking] = useState(false);
-  const [isFleetMode, setIsFleetMode] = useState(false);
+  
+  const [isFleetMode, setIsFleetMode] = useState(false); 
   const [loading, setLoading] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [tagSearchTerm, setTagSearchTerm] = useState('');
+  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   
   const { addNotification } = useNotification();
-  const [searchParams, setSearchParams] = useSearchParams(); 
+  const [searchParams] = useSearchParams(); 
   const timerRef = useRef<number | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const isClient = user?.role === 'client';
-  const isMobile = window.innerWidth < 1024;
 
   const loadData = async () => {
     let [allTags, allVehicles] = await Promise.all([storage.getTags(), storage.getVehicles()]);
     
-    if (isClient && user?.cpf) {
+    if (user?.role === 'client' && user?.cpf) {
       const myClientData = (await storage.getClients()).find(c => c.cpf.replace(/\D/g, '') === user.cpf);
       if (myClientData) {
         allVehicles = allVehicles.filter(v => v.clientId === myClientData.id);
@@ -56,23 +55,14 @@ export const LiveMap = () => {
     setVehicles(allVehicles);
 
     const urlTagId = searchParams.get('tagId');
-    if (urlTagId && allTags.find(t => t.id === urlTagId)) {
-      setSelectedTagId(urlTagId);
-      if (searchParams.get('autoStart') === 'true') setIsTracking(true);
+    if (urlTagId) {
+      handleVehicleSelect(urlTagId);
     }
   };
 
-  useEffect(() => { loadData(); }, [searchParams, user]);
+  useEffect(() => { loadData(); }, [user]);
 
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setIsSearchOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  const resolveAddressForLocation = async (loc: LocationHistory) => {
+  const resolveAddress = async (loc: LocationHistory) => {
     if (resolvedAddresses[loc.id]) return;
     try {
       const addr = await geocodingService.reverseGeocode(loc.lat, loc.lon);
@@ -80,7 +70,7 @@ export const LiveMap = () => {
     } catch (e) {}
   };
 
-  const fetchUpdate = async (isInitial = false) => {
+  const fetchUpdate = async () => {
     if (isFleetMode) {
       setLoading(true);
       try {
@@ -92,305 +82,243 @@ export const LiveMap = () => {
         }));
         const valid = results.filter((r): r is LocationHistory => r !== null);
         setFleetLocations(valid);
-        if (valid[0]) resolveAddressForLocation(valid[0]);
+        valid.forEach(l => { if (l.tagId === selectedTagId) resolveAddress(l); });
       } finally { setLoading(false); }
-      return;
-    }
-
-    if (!selectedTagId) return;
-    const tag = tags.find(t => t.id === selectedTagId);
-    if (!tag) return;
-
-    if (!isInitial) setLoading(true);
-    try {
-      const results = await fetchTagLocation(tag);
-      if (results.length > 0) {
-        const locs = results.map(l => ({ ...l, tagId: tag.id, id: `${tag.id}-${l.timestamp}` } as LocationHistory));
-        for (const loc of locs) await storage.addLocation(loc);
-        const sorted = locs.sort((a, b) => b.timestamp - a.timestamp);
-        setLocations(sorted);
-        // Resolve os endereços dos 3 pontos mais recentes
-        sorted.slice(0, 3).forEach(l => resolveAddressForLocation(l));
-      }
-    } catch (e: any) {
-      if (!isInitial) addNotification('error', 'Erro K-Tag', e.message);
-    } finally {
-      if (!isInitial) setLoading(false);
+    } else if (selectedTagId) {
+      const tag = tags.find(t => t.id === selectedTagId);
+      if (!tag) return;
+      setLoading(true);
+      try {
+        const results = await fetchTagLocation(tag);
+        if (results.length > 0) {
+          const locs = results.map(l => ({ ...l, tagId: tag.id, id: `${tag.id}-${l.timestamp}` } as LocationHistory));
+          setLocations(locs.sort((a, b) => b.timestamp - a.timestamp));
+          resolveAddress(locs[0]);
+        }
+      } catch (e: any) {
+        addNotification('error', 'Erro', e.message);
+      } finally { setLoading(false); }
     }
   };
 
   useEffect(() => {
-    if (selectedTagId && !isTracking) {
-        setLocations([]); 
-        fetchUpdate(true); 
-    }
-  }, [selectedTagId]);
-
-  useEffect(() => {
-    if (isTracking || isFleetMode) {
-      fetchUpdate();
-      timerRef.current = window.setInterval(fetchUpdate, 30000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
+    fetchUpdate();
+    timerRef.current = window.setInterval(fetchUpdate, 30000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isTracking, isFleetMode, selectedTagId]);
+  }, [isFleetMode, selectedTagId, tags]);
 
-  const exportPDF = () => {
-    if (locations.length === 0) return;
-    const activeV = vehicles.find(v => v.tagId === selectedTagId);
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.setTextColor(24, 24, 27);
-    doc.text("Relatório de Trajetória", 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Veículo: ${activeV?.plate || 'N/A'} - ${activeV?.model || 'N/A'}`, 14, 28);
-    doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 34);
-    
-    const tableData = locations.map(l => [
-      new Date(l.timestamp).toLocaleString(),
-      `${l.lat.toFixed(6)}, ${l.lon.toFixed(6)}`,
-      `${l.conf}%`,
-      resolvedAddresses[l.id] || 'Endereço não resolvido'
-    ]);
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Horário', 'Coordenadas', 'Precisão', 'Endereço Aproximado']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [24, 24, 27] }
-    });
-    doc.save(`trajetoria_${activeV?.plate || selectedTagId}.pdf`);
+  const handleVehicleSelect = (tagId: string) => {
+    setSelectedTagId(tagId);
+    setIsFleetMode(false);
+    setIsSheetExpanded(false); 
+    setTagSearchTerm('');
+    setIsSearchFocused(false);
   };
-
-  const exportExcel = () => {
-    if (locations.length === 0) return;
-    const activeV = vehicles.find(v => v.tagId === selectedTagId);
-    const data = locations.map(l => ({
-      'Data/Hora': new Date(l.timestamp).toLocaleString(),
-      'Latitude': l.lat,
-      'Longitude': l.lon,
-      'Confianca %': l.conf,
-      'Endereco': resolvedAddresses[l.id] || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Trajetória");
-    XLSX.writeFile(wb, `trajetoria_${activeV?.plate || selectedTagId}.xlsx`);
-  };
-
-  const handleShare = () => {
-    const lastLoc = locations[0] || fleetLocations.find(l => l.tagId === selectedTagId);
-    if (!lastLoc) return;
-    const url = `https://www.google.com/maps?q=${lastLoc.lat},${lastLoc.lon}`;
-    navigator.clipboard.writeText(url);
-    addNotification('success', 'Compartilhamento', 'Link de localização copiado.');
-  };
-
-  const filteredSearchTags = useMemo(() => {
-    const term = tagSearchTerm.toLowerCase().trim();
-    if (!term) return tags.slice(0, 10);
-    return tags.filter(t => {
-      const v = vehicles.find(v => v.tagId === t.id);
-      return t.name.toLowerCase().includes(term) || 
-             t.accessoryId.toLowerCase().includes(term) || 
-             v?.plate.toLowerCase().includes(term);
-    });
-  }, [tags, vehicles, tagSearchTerm]);
 
   const activeVehicle = vehicles.find(v => v.tagId === selectedTagId);
-  const activeTag = tags.find(t => t.id === selectedTagId);
+  const lastLoc = isFleetMode 
+    ? fleetLocations.find(l => l.tagId === selectedTagId)
+    : locations[0];
+
+  const handleExportPDF = () => {
+    if (!activeVehicle || !lastLoc) return;
+    const doc = new jsPDF();
+    const address = resolvedAddresses[lastLoc.id] || 'Endereço não disponível';
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("RELATÓRIO DE LOCALIZAÇÃO", 14, 25);
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 32);
+    
+    autoTable(doc, {
+      startY: 40,
+      head: [['Campo', 'Informação']],
+      body: [
+        ['Veículo', activeVehicle.plate],
+        ['Modelo', activeVehicle.model],
+        ['Data/Hora Sinal', new Date(lastLoc.timestamp).toLocaleString()],
+        ['Latitude', lastLoc.lat.toString()],
+        ['Longitude', lastLoc.lon.toString()],
+        ['Precisão (Conf)', `${lastLoc.conf}%`],
+        ['Endereço Aproximado', address]
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [24, 24, 27] }
+    });
+    
+    doc.save(`localizacao_${activeVehicle.plate}_${Date.now()}.pdf`);
+    addNotification('success', 'PDF Gerado', 'Relatório salvo com sucesso.');
+  };
+
+  const handleExportExcel = () => {
+    if (!activeVehicle || !lastLoc) return;
+    const address = resolvedAddresses[lastLoc.id] || 'Endereço não disponível';
+    
+    const data = [{
+      Placa: activeVehicle.plate,
+      Modelo: activeVehicle.model,
+      DataHora: new Date(lastLoc.timestamp).toLocaleString(),
+      Latitude: lastLoc.lat,
+      Longitude: lastLoc.lon,
+      Precisao: lastLoc.conf,
+      Endereco: address
+    }];
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Localização");
+    XLSX.writeFile(wb, `localizacao_${activeVehicle.plate}.xlsx`);
+    addNotification('success', 'Excel Gerado', 'Arquivo pronto para download.');
+  };
+
+  const filteredVehicles = useMemo(() => {
+    const term = tagSearchTerm.toLowerCase().trim();
+    if (!term && !isSearchFocused) return [];
+    if (!term && isSearchFocused) return vehicles.slice(0, 5);
+    return vehicles.filter(v => v.plate.toLowerCase().includes(term) || v.model.toLowerCase().includes(term));
+  }, [vehicles, tagSearchTerm, isSearchFocused]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] lg:h-[calc(100vh-10rem)] gap-4 font-sans overflow-hidden">
+    <div className="relative h-full w-full flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
       
-      {/* BARRA DE AÇÕES */}
-      <div className="bg-white dark:bg-zinc-900 p-2.5 md:px-6 md:py-4 rounded-3xl md:rounded-full shadow-sm border border-zinc-100 dark:border-zinc-800 flex flex-wrap lg:flex-nowrap items-center gap-2 w-full relative z-30">
-        
-        <div className="relative flex-1 min-w-[200px]" ref={dropdownRef}>
-          <div className={`relative transition-all rounded-2xl border-2 ${isSearchOpen ? 'border-primary-500 shadow-lg shadow-primary-500/10' : 'border-transparent'}`}>
-            <Search size={16} className={`absolute left-4 top-1/2 -translate-y-1/2 ${isSearchOpen ? 'text-primary-500' : 'text-zinc-400'}`} />
-            <input 
-              type="text"
-              placeholder="Buscar por Placa, SN ou Nome..." 
-              value={tagSearchTerm}
-              onFocus={() => setIsSearchOpen(true)}
-              onChange={e => { setTagSearchTerm(e.target.value); setIsSearchOpen(true); }}
-              className="w-full pl-11 pr-10 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-xs font-black outline-none text-zinc-900 dark:text-white"
-            />
-            <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <ChevronDown size={14} className={`text-zinc-300 transition-transform ${isSearchOpen ? 'rotate-180' : ''}`} />
+      {/* BUSCA COM Z-INDEX AJUSTADO (Abaixo de 2000 da sidebar) */}
+      <div className="absolute top-6 left-0 right-0 z-[100] px-4 pointer-events-none">
+        <div className="w-full max-w-4xl mx-auto relative pointer-events-auto">
+          <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl rounded-full shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-white/20 dark:border-zinc-800 p-1 flex items-center gap-2 transition-all">
+            <div className="flex-1 flex items-center gap-3 pl-4">
+              <Search size={16} className="text-zinc-400 shrink-0" />
+              <input 
+                type="text" 
+                placeholder="Buscar veículo..." 
+                value={tagSearchTerm}
+                onFocus={() => setIsSearchFocused(true)}
+                onChange={e => setTagSearchTerm(e.target.value)}
+                className="bg-transparent border-none outline-none text-[12px] font-bold w-full text-zinc-900 dark:text-white uppercase placeholder:text-zinc-400 placeholder:normal-case h-9"
+              />
+            </div>
+            <div className="flex items-center gap-1 pr-1">
+              <button onClick={fetchUpdate} className="p-2 text-zinc-400 hover:text-primary-500 rounded-full transition-colors">
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
+              <div className="w-px h-5 bg-zinc-100 dark:bg-zinc-800 mx-1" />
+              <button 
+                onClick={() => { setIsFleetMode(!isFleetMode); if(!isFleetMode) setSelectedTagId(''); }}
+                className={`px-4 py-2 rounded-full font-black text-[8px] uppercase tracking-widest transition-all ${isFleetMode ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-white'}`}
+              >
+                Frota
+              </button>
             </div>
           </div>
 
           <AnimatePresence>
-            {isSearchOpen && (
-              <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[28px] shadow-2xl z-50 overflow-hidden flex flex-col">
-                <div className="max-h-64 overflow-y-auto p-2 custom-scrollbar">
-                  {filteredSearchTags.map(t => {
-                    const v = vehicles.find(veh => veh.tagId === t.id);
-                    const isSelected = selectedTagId === t.id;
-                    return (
-                      <button key={t.id} onClick={() => { setSelectedTagId(t.id); setIsSearchOpen(false); setTagSearchTerm(''); }} className={`w-full p-4 mb-1 text-left rounded-2xl flex items-center justify-between transition-all ${isSelected ? 'bg-primary-500 text-black shadow-lg' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
-                         <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-xl ${isSelected ? 'bg-black/10' : 'bg-zinc-100 dark:bg-zinc-700'}`}><Car size={18} /></div>
-                            <div className="flex flex-col">
-                               <div className="flex items-center gap-2">
-                                  <span className="font-black text-xs uppercase">{v?.plate || 'S/ PLACA'}</span>
-                                  <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${isSelected ? 'bg-black/10 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>SN: {t.accessoryId}</span>
-                               </div>
-                               <span className={`text-[9px] font-bold uppercase tracking-tight ${isSelected ? 'text-black/60' : 'text-zinc-400'}`}>{v?.model || t.name}</span>
-                            </div>
-                         </div>
-                         {isSelected && <CheckCircle2 size={16} className="text-black" />}
-                      </button>
-                    );
-                  })}
+            {isSearchFocused && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                className="absolute top-full mt-2 left-0 right-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-2xl rounded-[24px] shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden z-[101] max-h-[40vh] overflow-y-auto no-scrollbar"
+              >
+                <div className="p-1.5 space-y-1">
+                   {filteredVehicles.map(v => (
+                     <button key={v.id} onClick={() => handleVehicleSelect(v.tagId!)} className="w-full p-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800/80 rounded-[18px] transition-all group">
+                        <div className="flex items-center gap-3">
+                           <div className="w-9 h-9 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors"><Car size={18} /></div>
+                           <div className="text-left">
+                              <div className="text-[13px] font-black text-zinc-900 dark:text-white uppercase leading-none mb-0.5 tracking-tight">{v.plate}</div>
+                              <div className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{v.model}</div>
+                           </div>
+                        </div>
+                        <ChevronRight size={16} className="text-zinc-200" />
+                     </button>
+                   ))}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 shrink-0">
-          <button 
-            disabled={!selectedTagId}
-            onClick={() => { setIsTracking(!isTracking); setIsFleetMode(false); }} 
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all disabled:opacity-30 ${isTracking ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'bg-zinc-900 dark:bg-zinc-800 text-white'}`}
-          >
-            {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-            {isTracking ? 'PARAR' : 'RASTREAR'}
-          </button>
-
-          <button onClick={() => fetchUpdate()} className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-2xl">
-            <RefreshCw size={20} className={loading ? 'animate-spin text-primary-500' : ''}/>
-          </button>
-
-          <button onClick={handleShare} disabled={!selectedTagId} className="p-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-2xl disabled:opacity-30">
-            <Share2 size={20} />
-          </button>
-
-          <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-          <button 
-            onClick={() => { setIsFleetMode(!isFleetMode); setIsTracking(false); }}
-            className={`px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest border transition-all ${isFleetMode ? 'bg-primary-500 text-black border-primary-500 shadow-lg shadow-primary-500/20' : 'bg-white dark:bg-zinc-900 text-zinc-400 border-zinc-200 dark:border-zinc-800'}`}
-          >
-            FROTA
-          </button>
+          {isSearchFocused && <div className="fixed inset-0 z-[-1]" onClick={() => setIsSearchFocused(false)} />}
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
-        <div className="flex-1 order-1 lg:order-2 rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 relative z-0 shadow-inner h-full min-h-[350px]">
-           <MapComponent locations={isFleetMode ? fleetLocations : locations} isFleetMode={isFleetMode} vehicles={vehicles} highlightedTagId={selectedTagId} />
-           
-           {isFleetMode && (
-             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md px-6 py-2 rounded-full border border-white/10 text-white font-black text-[9px] uppercase tracking-[0.2em] flex items-center gap-3 z-10 shadow-2xl">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Monitorando {fleetLocations.length} Veículos
-             </div>
-           )}
-        </div>
-
-        {/* PAINEL LATERAL */}
-        <div className={`w-full lg:w-[360px] order-2 lg:order-1 bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-sm transition-all h-full`}>
-          
-          <AnimatePresence mode="wait">
-            {selectedTagId ? (
-              <motion.div key="selected" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex-1 flex flex-col h-full">
-                <div className={`p-6 border-b transition-colors ${isTracking ? 'bg-red-500/5 border-red-500/10' : 'bg-primary-500/10 border-primary-500/20'}`}>
-                   <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl shrink-0 ${isTracking ? 'bg-red-600 text-white animate-pulse' : 'bg-zinc-900 text-primary-500'}`}><Car size={28}/></div>
-                      <div className="min-w-0">
-                         <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase leading-none">{activeVehicle?.plate || 'S/ PLACA'}</h3>
-                         <div className="flex items-center gap-1.5 mt-2"><div className={`w-1.5 h-1.5 rounded-full ${isTracking ? 'bg-red-500 animate-ping' : 'bg-primary-500'}`} /><p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{isTracking ? 'RASTREAMENTO EM TEMPO REAL' : 'DISPOSITIVO VINCULADO'}</p></div>
-                      </div>
-                   </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                   {/* Botões de Exportação */}
-                   <div className="flex gap-2">
-                      <button onClick={exportPDF} disabled={locations.length === 0} className="flex-1 py-3 bg-zinc-900 text-white dark:bg-zinc-800 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-800 transition-all disabled:opacity-30"><FileText size={14}/> Trajetória PDF</button>
-                      <button onClick={exportExcel} disabled={locations.length === 0} className="flex-1 py-3 bg-primary-500 text-black rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-primary-400 transition-all disabled:opacity-30"><FileSpreadsheet size={14}/> Excel</button>
-                   </div>
-
-                   {/* Dados Técnicos */}
-                   <div className="p-5 bg-zinc-50 dark:bg-zinc-850 rounded-[28px] border border-zinc-100 dark:border-zinc-800">
-                      <span className="text-[8px] font-black uppercase text-zinc-400 tracking-widest block mb-4">Identificação Técnica</span>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-[10px] font-bold">
-                           <div className="flex items-center gap-2 uppercase text-zinc-500"><Hash size={12} className="text-primary-500" /> Serial</div>
-                           <span className="font-mono text-zinc-900 dark:text-zinc-200">{activeTag?.accessoryId}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] font-bold">
-                           <div className="flex items-center gap-2 uppercase text-zinc-500"><Activity size={12} className="text-primary-500" /> Tag</div>
-                           <span className="truncate max-w-[160px] text-zinc-900 dark:text-zinc-200">{activeTag?.name}</span>
-                        </div>
-                      </div>
-                   </div>
-
-                   {/* Localização Atual com Endereço */}
-                   {locations.length > 0 && (
-                     <div className="p-5 bg-zinc-50 dark:bg-zinc-850 rounded-[28px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
-                        <div className="flex justify-between items-start mb-3">
-                          <span className="text-[8px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1"><MapPin size={10} className="text-primary-500"/> Localização Atual</span>
-                          <span className="text-[8px] font-mono text-zinc-400">{new Date(locations[0].timestamp).toLocaleTimeString()}</span>
-                        </div>
-                        <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-100 leading-relaxed italic">{resolvedAddresses[locations[0].id] || 'Buscando endereço legível...'}</p>
-                        <div className="mt-3 flex items-center justify-between pt-3 border-t border-zinc-200/50 dark:border-zinc-800">
-                            <span className="text-[9px] font-black text-emerald-500 uppercase">{locations[0].conf}% de Precisão</span>
-                            <span className="text-[9px] text-zinc-400 font-medium">{locations[0].lat.toFixed(5)}, {locations[0].lon.toFixed(5)}</span>
-                        </div>
-                     </div>
-                   )}
-
-                   <div className="pt-2">
-                      <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest block mb-4 flex items-center gap-2"><Clock size={12}/> Histórico Recente</span>
-                      <div className="space-y-2">
-                        {isFleetMode ? fleetLocations.map(loc => {
-                              const v = vehicles.find(veh => veh.tagId === loc.tagId);
-                              const t = tags.find(tag => tag.id === loc.tagId);
-                              const isThisSelected = selectedTagId === loc.tagId;
-                              return (
-                                 <div key={loc.id} onClick={() => setSelectedTagId(loc.tagId)} className={`p-4 rounded-[22px] border cursor-pointer transition-all group ${isThisSelected ? 'bg-primary-500 border-primary-500 shadow-lg' : 'bg-white dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:border-primary-500/50'}`}>
-                                   <div className="flex justify-between items-center mb-1.5">
-                                      <div className="flex flex-col">
-                                         <span className={`text-xs font-black uppercase ${isThisSelected ? 'text-black' : 'text-zinc-900 dark:text-white'}`}>{v?.plate || 'S/ PLACA'}</span>
-                                         <span className={`text-[8px] font-mono ${isThisSelected ? 'text-black/60' : 'text-zinc-400'}`}>SN: {t?.accessoryId}</span>
-                                      </div>
-                                      <div className={`w-2 h-2 rounded-full ${isThisSelected ? 'bg-white shadow-[0_0_8px_white]' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`} />
-                                   </div>
-                                   <p className={`text-[9px] font-bold uppercase ${isThisSelected ? 'text-black/60' : 'text-zinc-400'}`}>Visto em {new Date(loc.timestamp).toLocaleTimeString()}</p>
-                                 </div>
-                              );
-                           }) : locations.slice(0, 20).map(loc => (
-                             <div key={loc.id} className="p-4 rounded-[22px] bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700 transition-colors group hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                                <div className="flex justify-between items-center mb-2">
-                                   <span className="text-[10px] font-black uppercase dark:text-zinc-200">{new Date(loc.timestamp).toLocaleTimeString()}</span>
-                                   <div className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-900 rounded-lg text-[8px] font-black text-zinc-500 uppercase">{loc.conf}%</div>
-                                </div>
-                                {resolvedAddresses[loc.id] && <p className="text-[9px] text-zinc-500 font-medium line-clamp-1 italic">{resolvedAddresses[loc.id]}</p>}
-                                {!resolvedAddresses[loc.id] && <p className="text-[9px] text-zinc-400 font-mono">{loc.lat.toFixed(5)}, {loc.lon.toFixed(5)}</p>}
-                             </div>
-                           ))
-                        }
-                      </div>
-                   </div>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center p-12 text-center gap-6">
-                {/* Fixed: Use Car instead of CarIcon as per imports */}
-                <div className="w-24 h-24 rounded-[40px] bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-200 dark:text-zinc-700 border border-zinc-100 dark:border-zinc-800"><Car size={48} /></div>
-                <div><h3 className="text-base font-black uppercase text-zinc-400 tracking-widest">Painel Operacional</h3><p className="text-[11px] font-medium text-zinc-500 mt-2 leading-relaxed">Selecione um veículo ou inicie o modo frota para visualizar posições e trajetórias.</p></div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+      <div className="flex-1 relative z-0">
+        <MapComponent locations={isFleetMode ? fleetLocations : (selectedTagId ? locations : [])} isFleetMode={isFleetMode} vehicles={vehicles} highlightedTagId={selectedTagId} onMarkerClick={handleVehicleSelect} />
       </div>
+
+      {/* PAINEL ULTRA COMPACTO (Abaixo de 2000 da sidebar) */}
+      <AnimatePresence>
+        {selectedTagId && !isSearchFocused && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: isSheetExpanded ? 0 : 'calc(100% - 85px)' }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 250 }}
+            className="absolute bottom-0 left-0 right-0 z-[150] bg-white dark:bg-zinc-900 rounded-t-[28px] shadow-[0_-10px_40px_rgba(0,0,0,0.15)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col lg:left-auto lg:right-4 lg:bottom-4 lg:w-[350px] lg:rounded-[28px] overflow-hidden"
+            style={{ maxHeight: '70vh' }}
+          >
+            {/* COMPACT HEADER (Sempre visível) */}
+            <div 
+              className="h-[85px] px-6 flex items-center justify-between cursor-pointer group shrink-0"
+              onClick={() => setIsSheetExpanded(!isSheetExpanded)}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary-500 text-black flex items-center justify-center shadow-lg">
+                  <Car size={20} strokeWidth={3} />
+                </div>
+                <div className="flex flex-col">
+                  <h2 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase leading-none tracking-tight">{activeVehicle?.plate}</h2>
+                  <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-1.5 truncate max-w-[140px]">{lastLoc ? (resolvedAddresses[lastLoc.id]?.split(',')[0] || 'Localizando...') : 'Sem sinal'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col items-end mr-1">
+                   <div className="flex items-center gap-1.5">
+                      <Signal size={12} className="text-emerald-500" />
+                      <span className="text-[11px] font-black text-zinc-900 dark:text-white leading-none">{lastLoc?.conf || 0}%</span>
+                   </div>
+                </div>
+                <div className="w-7 h-7 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-300">
+                  {isSheetExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                </div>
+              </div>
+            </div>
+
+            {/* EXPANDED CONTENT */}
+            <div className="px-5 pb-6 space-y-4 overflow-y-auto no-scrollbar flex-1 border-t border-zinc-50 dark:border-zinc-800/50 pt-4">
+                  <div className="bg-zinc-50/50 dark:bg-zinc-950/40 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                    <div className="flex justify-between items-start mb-2">
+                        <span className="text-[8px] font-black uppercase text-primary-500 tracking-[0.2em]">Localização Exata</span>
+                        <span className="text-[8px] font-mono text-zinc-400">{lastLoc?.lat.toFixed(6)}, {lastLoc?.lon.toFixed(6)}</span>
+                    </div>
+                    <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-200 leading-snug">
+                      {lastLoc ? (resolvedAddresses[lastLoc.id] || 'Buscando endereço...') : 'Sinal indisponível'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => lastLoc && window.open(`https://www.google.com/maps/dir/?api=1&destination=${lastLoc.lat},${lastLoc.lon}`)} className="h-11 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase tracking-widest shadow-lg">
+                      <Navigation size={14}/> Rota GPS
+                    </button>
+                    <button onClick={() => { if(lastLoc) { navigator.clipboard.writeText(`${lastLoc.lat}, ${lastLoc.lon}`); addNotification('success', 'Copiado', 'Coordenadas salvas.'); } }} className="h-11 bg-white dark:bg-zinc-800 text-zinc-500 rounded-xl flex items-center justify-center gap-2 font-black text-[9px] uppercase border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                      <Copy size={14}/> Copiar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={handleExportPDF} className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center gap-2 font-black text-[8px] uppercase tracking-widest border border-zinc-100 dark:border-zinc-800">
+                      <FileText size={12}/> Relatório PDF
+                    </button>
+                    <button onClick={handleExportExcel} className="h-10 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 rounded-lg flex items-center justify-center gap-2 font-black text-[8px] uppercase tracking-widest border border-zinc-100 dark:border-zinc-800">
+                      <FileSpreadsheet size={12}/> Planilha XLS
+                    </button>
+                  </div>
+                  
+                  <button onClick={() => setSelectedTagId('')} className="w-full py-2 text-[8px] font-black text-zinc-300 hover:text-red-500 uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5 mt-2">
+                    <X size={12} /> Fechar Monitoramento
+                  </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

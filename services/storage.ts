@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   ktagUrl: 'http://47.113.127.14:6176',
   ktagUser: 'TagLocation',
   ktagPass: 'a9B3xQ7z',
+  traqcareToken: '', // Token padrão vazio
   googleMapsKey: '',
   mapboxKey: '',
   plateApiUrl: '',
@@ -70,7 +71,7 @@ const DEFAULT_CATEGORIES: VehicleCategory[] = [
 ];
 
 export const storage = {
-  // --- NOTIFICATIONS ---
+  // ... (métodos existentes preservados)
   getNotifications: (): AppNotification[] => {
     return getLocal<AppNotification[]>(KEYS.NOTIFICATIONS, []);
   },
@@ -78,7 +79,6 @@ export const storage = {
     setLocal(KEYS.NOTIFICATIONS, notifications);
   },
 
-  // --- AUDIT LOGS ---
   logAction: async (user: User | null, action: AuditLog['action'], entity: string, details: string, entityId?: string) => {
     if (!user) return;
 
@@ -154,7 +154,6 @@ export const storage = {
     if (db) {
       try {
         await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(cleanedUser), { merge: true });
-        // Sincroniza local também
         const users = getLocal<User[]>(KEYS.USERS_DB, []);
         const index = users.findIndex(u => u.id === user.id);
         if (index >= 0) users[index] = cleanedUser;
@@ -166,7 +165,6 @@ export const storage = {
       }
     }
     
-    // Fallback Local Storage
     const users = getLocal<User[]>(KEYS.USERS_DB, []);
     const index = users.findIndex(u => u.email.toLowerCase().trim() === cleanedUser.email);
     
@@ -184,7 +182,6 @@ export const storage = {
       try {
         const snap = await getDocs(collection(db, KEYS.USERS_DB));
         const users = snap.docs.map(d => ({...d.data(), id: d.id} as User));
-        // Sincronização crítica: Atualiza o cache local com os dados do servidor
         setLocal(KEYS.USERS_DB, users);
         return users;
       } catch (e) {

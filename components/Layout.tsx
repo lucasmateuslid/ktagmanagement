@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -22,7 +23,6 @@ const BRAND_CONFIGS: Record<string, any> = {
   alorastreamento: { name: 'ALO', logo: 'A' }
 };
 
-// COMPONENTE MOVIDO PARA FORA PARA EVITAR REMOUNT NO CLICK
 const SidebarContent = ({ 
   isMobile = false, 
   collapsed, 
@@ -160,13 +160,15 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     ];
   }, [user]);
 
+  const isMapPage = location.pathname === '/map';
+
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 font-sans antialiased">
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] md:hidden" />
-            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed inset-y-0 left-0 w-[280px] bg-white dark:bg-zinc-900 z-[101] md:hidden shadow-2xl">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] md:hidden" />
+            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed inset-y-0 left-0 w-[280px] bg-white dark:bg-zinc-900 z-[2001] md:hidden shadow-2xl">
               <SidebarContent isMobile collapsed={false} brand={brand} menuSections={menuSections} pathname={location.pathname} theme={theme} setSidebarOpen={setSidebarOpen} logout={logout} />
             </motion.div>
           </>
@@ -232,8 +234,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto scroll-smooth p-4 md:p-10 custom-scrollbar">
-          <div className="max-w-[1600px] mx-auto">{children}</div>
+        <div className={`flex-1 overflow-y-auto scroll-smooth custom-scrollbar ${isMapPage ? 'p-0' : 'p-4 md:p-10'}`}>
+          <div className={`${isMapPage ? 'max-w-none h-full' : 'max-w-[1600px] mx-auto'}`}>{children}</div>
         </div>
         {user?.role !== 'client' && <AiAssistant />}
       </main>

@@ -1,3 +1,4 @@
+
 /* These directives are for the build process */
 @tailwind base;
 @tailwind components;
@@ -40,6 +41,12 @@
   background: #09090b !important;
 }
 
+/* Fix for custom div icons centering */
+.custom-div-icon {
+  background: none !important;
+  border: none !important;
+}
+
 /* Hide scrollbar for clean UI */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -47,4 +54,16 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* App-like interactions */
+button:active {
+  transform: scale(0.96);
+}
+
+/* Garantir que inputs não deem zoom no iOS */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }

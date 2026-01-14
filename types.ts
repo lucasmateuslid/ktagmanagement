@@ -4,13 +4,13 @@ export interface User {
   name: string;
   email: string;
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client'; // Adicionado 'client'
+  role?: 'admin' | 'moderator' | 'user' | 'client';
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
   companySlug?: string;
   createdAt?: number;
-  cpf?: string; // CPF vinculado para login de clientes
-  avatarInitial?: string; // Nova: Inicial customizada para o avatar
+  cpf?: string; 
+  avatarInitial?: string;
 }
 
 export interface Company {
@@ -25,13 +25,24 @@ export interface VehicleCategory {
   fipeType: 'carros' | 'motos' | 'caminhoes' | 'none';
 }
 
-// Added missing Tag interface used for tracking hardware
+export type TagType = 'K_TAG' | 'XADTAG';
+
 export interface Tag {
   id: string;
   name: string;
-  accessoryId: string;
-  hashedAdvKey: string;
-  privateKey: string;
+  type: TagType; // Novo: Identificador do hardware
+  
+  // Campos K-TAG
+  accessoryId: string; // Também usado como identificador visual para XADTAG
+  hashedAdvKey?: string;
+  privateKey?: string;
+  
+  // Campos XADTAG (Traqcare)
+  imei?: string;
+  traqcareId?: string;
+  isActivated?: boolean;
+  lastBattery?: number;
+  
   macAddress?: string;
   batteryWarrantyYears?: number;
   warrantyStartedAt?: number;
@@ -47,7 +58,7 @@ export interface Client {
   address?: string;
   city?: string;
   state?: string;
-  hasAccess?: boolean; // Novo: Indica se o cliente tem login
+  hasAccess?: boolean;
   createdAt: number;
 }
 
@@ -137,6 +148,8 @@ export interface AppSettings {
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;
+  // Novo: Configuração Traqcare
+  traqcareToken: string;
   googleMapsKey: string;
   mapboxKey: string;
   plateApiUrl: string;
