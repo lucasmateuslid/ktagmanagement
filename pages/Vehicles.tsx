@@ -1,6 +1,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import * as ReactRouterDOM from 'react-router-dom';
 import { storage } from '../services/storage';
 import { hinovaService } from '../services/hinova';
 import { fipeService, FipeReference } from '../services/fipe';
@@ -18,6 +19,8 @@ import {
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+
+const { useSearchParams } = ReactRouterDOM as any;
 
 const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete }: any) => {
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
@@ -81,6 +84,7 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
 });
 
 export const Vehicles = () => {
+  const [searchParams] = useSearchParams();
   const { addNotification } = useNotification();
   const { user: currentUser } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -112,7 +116,14 @@ export const Vehicles = () => {
     setVehicles(v); setTags(t); setCompanies(c); setCategories(cat); setClients(cl);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    loadData();
+    // Auto-abrir modal se solicitado via parâmetro
+    if (searchParams.get('action') === 'new') {
+        setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car' }); 
+        setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
+    }
+  }, [loadData, searchParams]);
 
   const filteredVehicles = useMemo(() => {
     const term = globalSearch.toLowerCase().trim();

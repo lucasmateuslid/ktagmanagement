@@ -7,7 +7,12 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { Tag as TagIcon, CarFront, Link2, Plus, Activity, Truck, Bike, Car, Clock, Building2, AlertTriangle, Lock, ChevronRight, ShoppingCart, ShoppingBag } from 'lucide-react';
+import { 
+  Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
+  Car, Clock, Building2, AlertTriangle, Lock, 
+  ShoppingCart, ShoppingBag, Map as MapIcon, FileText,
+  Zap, ChevronRight, ShieldAlert, TrendingUp
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
 
@@ -42,16 +47,19 @@ export const Dashboard = () => {
       storage.getCompanies(),
       storage.getCategories()
     ]);
+
     setTags(loadedTags);
     setVehicles(loadedVehicles);
     setCompanies(loadedCompanies);
     setCategories(loadedCategories);
-    processHistoryData(loadedTags, loadedVehicles);
+
+    // Processar dados usando as variáveis locais recém-carregadas para evitar delays de estado do React
+    processHistoryData(loadedTags);
     processCompanyData(loadedVehicles, loadedCompanies);
     processTrendData(loadedVehicles);
   };
 
-  const processHistoryData = (tags: Tag[], vehicles: Vehicle[]) => {
+  const processHistoryData = (tagsList: Tag[]) => {
     const days = 7;
     const data = [];
     const now = new Date();
@@ -60,39 +68,59 @@ export const Dashboard = () => {
       date.setDate(date.getDate() - i);
       const dateStr = date.toLocaleDateString(undefined, { weekday: 'short' });
       const timestamp = date.setHours(23, 59, 59, 999);
-      const existingTags = tags.filter(t => t.createdAt <= timestamp);
+      const existingTags = tagsList.filter(t => t.createdAt <= timestamp);
       data.push({ name: dateStr, total: existingTags.length });
     }
     setChartData(data);
   };
 
-  const processCompanyData = (vehicles: Vehicle[], companies: Company[]) => {
+  const processCompanyData = (vehiclesList: Vehicle[], companiesList: Company[]) => {
     const counts: Record<string, number> = {};
-    vehicles.forEach(v => {
+    
+    // Filtra apenas veículos ativos para este gráfico específico
+    const activeVehicles = vehiclesList.filter(v => v.status === 'active');
+    
+    activeVehicles.forEach(v => {
       const id = v.companyId || 'unknown';
       counts[id] = (counts[id] || 0) + 1;
     });
-    const data = companies.map(c => ({
-      name: c.prefix || c.name,
+
+    let data = companiesList.map(c => ({
+      name: c.prefix || c.name.substring(0, 8),
       fullName: c.name,
       count: counts[c.id] || 0
     }));
-    setCompanyChartData(data.sort((a, b) => b.count - a.count));
+
+    // Adiciona "Não Identificados" se houver veículos vinculados a IDs inexistentes
+    const unknownCount = counts['unknown'] || 0;
+    if (unknownCount > 0) {
+      data.push({
+        name: 'OUTROS',
+        fullName: 'Não Identificados',
+        count: unknownCount
+      });
+    }
+
+    // Ordenar por volume e limitar aos top 10 para visualização clara
+    setCompanyChartData(data.sort((a, b) => b.count - a.count).slice(0, 10));
   };
 
-  const processTrendData = (vehicles: Vehicle[]) => {
+  const processTrendData = (vehiclesList: Vehicle[]) => {
     const monthsArray: any[] = [];
     const now = new Date();
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     
+    // Gera os últimos 6 meses retroativamente
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthLabel = monthNames[d.getMonth()];
-      const count = vehicles.filter(v => {
+      
+      const count = vehiclesList.filter(v => {
         if (!v.createdAt) return false;
         const vDate = new Date(v.createdAt);
         return vDate.getMonth() === d.getMonth() && vDate.getFullYear() === d.getFullYear();
       }).length;
+
       monthsArray.push({ name: monthLabel, entries: count });
     }
     setTrendChartData(monthsArray);
@@ -105,73 +133,134 @@ export const Dashboard = () => {
   
   const isWarningStock = unlinkedCount <= 80;
   const isCriticalStock = unlinkedCount <= 40;
-  const theftRate = vehicles.length > 0 ? ((stolenCount / vehicles.length) * 100).toFixed(1) : '0.0';
 
   const categoryStats = useMemo(() => {
     const counts: Record<string, number> = {};
+    const othersCount: Record<string, number> = {};
+
     vehicles.forEach(v => {
-      counts[v.type] = (counts[v.type] || 0) + 1;
+      const typeKey = v.type || 'Sem Categoria';
+      const categoryExists = categories.find(c => c.id === typeKey);
+      if (categoryExists) {
+        counts[typeKey] = (counts[typeKey] || 0) + 1;
+      } else {
+        othersCount[typeKey] = (othersCount[typeKey] || 0) + 1;
+      }
     });
-    return categories.map(cat => ({
-      ...cat,
+
+    const officialStats = categories.map(cat => ({
+      id: cat.id,
+      name: cat.name.toUpperCase(),
+      fipeType: cat.fipeType,
       count: counts[cat.id] || 0
-    })).sort((a, b) => b.count - a.count);
+    }));
+
+    const extraStats = Object.keys(othersCount).map(name => ({
+      id: name,
+      name: name.toUpperCase(),
+      fipeType: 'none' as const,
+      count: othersCount[name]
+    }));
+
+    return [...officialStats, ...extraStats]
+      .filter(item => item.count > 0 || categories.some(c => c.id === item.id))
+      .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
+      .sort((a, b) => b.count - a.count);
   }, [vehicles, categories]);
 
-  const getIconForCategory = (fipeType: string) => {
-    switch (fipeType) {
-      case 'carros': return <Car size={14} />;
-      case 'caminhoes': return <Truck size={14} />;
-      case 'motos': return <Bike size={14} />;
-      default: return <Activity size={14} />;
-    }
+  const getIconForCategory = (fipeType: string, name?: string) => {
+    const n = name?.toLowerCase() || '';
+    if (fipeType === 'caminhoes' || n.includes('caminhão')) return <Truck size={18} strokeWidth={2.5} />;
+    if (fipeType === 'motos' || n.includes('moto')) return <Bike size={18} strokeWidth={2.5} />;
+    if (n.includes('pickup') || n.includes('suv')) return <Activity size={18} strokeWidth={2.5} />;
+    return <Car size={18} strokeWidth={2.5} />;
   };
 
   if (user?.role === 'client') return null;
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-8 pb-24 font-sans max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-display font-bold text-zinc-900 dark:text-white">
+          <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
             {t('overview')}
           </h1>
-          <p className="text-zinc-500 text-sm">Monitoramento inteligente da frota K-TAG.</p>
+          <p className="text-zinc-500 font-medium text-[10px] uppercase tracking-[0.4em] opacity-70">Console de Gestão em Tempo Real</p>
         </div>
         {lastSync && (
-          <div className="text-[10px] text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <Clock size={12} /> Sincronizado: {new Date(lastSync).toLocaleTimeString()}
+          <div className="text-[10px] text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-5 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            SISTEMA ONLINE: {new Date(lastSync).toLocaleTimeString()}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* CARDS PRINCIPAIS */}
+      {/* Ações Rápidas */}
+      <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 p-8 shadow-sm">
+        <div className="flex items-center gap-3 mb-8">
+            <div className="w-1 h-4 bg-primary-500 rounded-full" />
+            <span className="text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400">Fluxos de Trabalho</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <Link to="/tags?action=new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
+              <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
+                <Plus size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Tags</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Vincular Hardware</span>
+              </div>
+            </Link>
+            <Link to="/vehicles?action=new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
+              <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
+                <CarFront size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Frota</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Veículo</span>
+              </div>
+            </Link>
+            <Link to="/map" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
+              <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
+                <Zap size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Atividade</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Monitoramento Geral</span>
+              </div>
+            </Link>
+        </div>
+      </div>
+
+      {/* Métricas Principais */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <MotionDiv 
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-zinc-900 rounded-[32px] p-6 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm min-h-[280px]"
+          className="bg-white dark:bg-zinc-900 rounded-[32px] p-10 border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm min-h-[350px]"
         >
           <div className="flex justify-between items-start">
             <div>
-              <h3 className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">{t('totalTags')}</h3>
-              <p className="text-5xl font-display font-black text-zinc-900 dark:text-white mt-2 tracking-tighter">{tags.length}</p>
+              <h3 className="text-zinc-400 text-[11px] font-black uppercase tracking-[0.4em]">{t('totalTags')}</h3>
+              <p className="text-7xl md:text-8xl font-display font-black text-zinc-900 dark:text-white mt-3 tracking-tighter">{tags.length}</p>
+              <div className="flex items-center gap-2 mt-4">
+                  <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">Hardware Ativo</div>
+              </div>
             </div>
-            <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-primary-500 border border-zinc-200 dark:border-zinc-700">
-              <TagIcon size={24} />
+            <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl text-primary-500 border border-zinc-100 dark:border-zinc-700/50 shadow-inner flex items-center justify-center">
+              <TagIcon size={32} strokeWidth={1.5} />
             </div>
           </div>
-          
-          <div className="h-28 mt-6">
+          <div className="h-28 mt-8">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorTotal" x1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2}/>
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.1}/>
                     <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={3} fill="url(#colorTotal)" />
+                <Area type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={4} fill="url(#colorTotal)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -179,25 +268,26 @@ export const Dashboard = () => {
 
         <MotionDiv 
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="bg-zinc-950 rounded-[32px] p-6 border border-zinc-800 text-white flex flex-col justify-between shadow-xl min-h-[280px]"
+          className="bg-zinc-950 rounded-[40px] p-10 border border-zinc-800 text-white flex flex-col shadow-2xl min-h-[350px]"
         >
-          <div className="flex justify-between mb-2">
+          <div className="flex justify-between items-start mb-10">
             <div>
-              <span className="text-zinc-400 text-[10px] uppercase font-black tracking-widest">{t('totalVehicles')}</span>
-              <p className="text-5xl font-display font-black mb-2 tracking-tighter text-white">{vehicles.length}</p>
+              <span className="text-zinc-500 text-[11px] uppercase font-black tracking-[0.4em]">{t('totalVehicles')}</span>
+              <p className="text-7xl md:text-8xl font-display font-black mb-1 tracking-tighter text-white">{vehicles.length}</p>
             </div>
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/10 text-primary-500">
-              <CarFront size={24} />
+            <div className="w-14 h-14 bg-white/5 rounded-2xl border border-white/10 text-primary-500 flex items-center justify-center shadow-lg">
+              <CarFront size={28} strokeWidth={2} />
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-2 mt-4">
+          <div className="grid grid-cols-2 gap-3 flex-1">
             {categoryStats.slice(0, 4).map((cat) => (
-              <div key={cat.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl border border-white/5">
-                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-primary-500">{getIconForCategory(cat.fipeType)}</div>
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black uppercase text-zinc-500 truncate">{cat.name.split(' ')[0]}</span>
-                  <span className="text-lg font-bold leading-none">{cat.count}</span>
+              <div key={cat.id} className="flex items-center gap-4 p-5 bg-zinc-900/80 rounded-[24px] border border-zinc-800 hover:bg-zinc-800 transition-all group">
+                <div className="w-11 h-11 rounded-xl bg-zinc-800 dark:bg-zinc-950 flex items-center justify-center text-primary-500 border border-zinc-700/50 shadow-inner group-hover:scale-105 transition-transform shrink-0">
+                  {getIconForCategory(cat.fipeType, cat.name)}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest truncate">{cat.name}</span>
+                  <span className="text-2xl font-black leading-none mt-1 text-zinc-100">{cat.count}</span>
                 </div>
               </div>
             ))}
@@ -205,108 +295,102 @@ export const Dashboard = () => {
         </MotionDiv>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* GRÁFICO TENDÊNCIA 6 MESES */}
-        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-2">
-              <Activity size={18} className="text-primary-500" />
-              <h3 className="text-zinc-900 dark:text-white text-[11px] font-black uppercase tracking-widest">Tendência de Ativações (6 Meses)</h3>
+      {/* Status Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className={`p-8 rounded-[32px] border transition-all duration-500 shadow-sm flex flex-col justify-between min-h-[220px] ${stolenCount > 0 ? 'bg-red-500/5 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Incidência Criminal</p>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stolenCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                <ShieldAlert size={24} strokeWidth={2} />
             </div>
-            <span className="text-[10px] font-bold text-zinc-400">Mensal</span>
           </div>
-          <div className="h-64">
+          <div>
+            <h2 className={`text-6xl font-display font-black ${stolenCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-white'}`}>{stolenCount}</h2>
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-2">Alertas de Roubo/Furto</p>
+          </div>
+        </div>
+        <div className="p-8 bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm min-h-[220px]">
+          <div className="flex justify-between items-start">
+            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Frota Assistida</p>
+            <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                <Lock size={24} strokeWidth={2} />
+            </div>
+          </div>
+          <div>
+            <h2 className="text-6xl font-display font-black text-zinc-900 dark:text-white">{maintenanceCount}</h2>
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-2">Veículos Offline</p>
+          </div>
+        </div>
+        <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm min-h-[220px] ${isCriticalStock ? 'bg-red-600 text-white border-red-700' : isWarningStock ? 'bg-amber-500 text-black border-amber-600' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
+          <div className="flex justify-between items-start">
+            <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Suprimentos</p>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                <ShoppingCart size={24} strokeWidth={2} />
+            </div>
+          </div>
+          <div>
+            <h2 className="text-6xl font-display font-black tracking-tighter">{unlinkedCount}</h2>
+            <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Hardware Disponível</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Gráficos Detalhados */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {/* Tendência de Entrada */}
+        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-10 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="flex items-center gap-4 mb-12">
+             <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center shadow-inner border border-primary-500/20"><TrendingUp size={22} strokeWidth={2.5} /></div>
+             <div className="flex flex-col">
+                <h3 className="text-zinc-900 dark:text-white text-[12px] font-black uppercase tracking-[0.3em]">Crescimento Operacional</h3>
+                <span className="text-[10px] text-zinc-400 uppercase font-bold">Ativações Mensais</span>
+             </div>
+          </div>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendChartData}>
-                <defs>
-                  <linearGradient id="colorTrend" x1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" opacity={0.1} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" opacity={0.05} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '12px', color: '#fff' }}
-                  itemStyle={{ color: '#f59e0b', fontSize: '12px', fontWeight: 'bold' }}
+                  contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                  itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="entries" 
-                  stroke="#f59e0b" 
-                  strokeWidth={4} 
-                  fill="url(#colorTrend)" 
-                  animationDuration={2000}
-                />
+                <Area type="monotone" dataKey="entries" stroke="#f59e0b" strokeWidth={4} fillOpacity={0.05} fill="#f59e0b" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* REGIONAIS */}
-        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <div className="flex items-center gap-2 mb-8">
-            <Building2 size={18} className="text-primary-500" />
-            <h3 className="text-zinc-900 dark:text-white text-[11px] font-black uppercase tracking-widest">Veículos por Regional</h3>
+        {/* Veículos Ativos por Empresa */}
+        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-10 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <div className="flex items-center gap-4 mb-12">
+             <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center shadow-inner border border-primary-500/20"><Building2 size={22} strokeWidth={2.5} /></div>
+             <div className="flex flex-col">
+                <h3 className="text-zinc-900 dark:text-white text-[12px] font-black uppercase tracking-[0.3em]">Veículos Ativos por Regional</h3>
+                <span className="text-[10px] text-zinc-400 uppercase font-bold">Market Share por Unidade</span>
+             </div>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={companyChartData} layout="vertical">
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} barSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="h-72">
+            {companyChartData.length === 0 ? (
+               <div className="h-full flex flex-col items-center justify-center opacity-20">
+                  <Building2 size={48} />
+                  <span className="text-[9px] font-black uppercase mt-4">Aguardando dados ativos</span>
+               </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={companyChartData} layout="vertical" margin={{ left: 20 }}>
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                  <Tooltip 
+                    cursor={{fill: 'transparent'}} 
+                    contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff', fontSize: '12px' }} 
+                  />
+                  <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className={`p-6 rounded-[32px] border transition-colors shadow-sm ${stolenCount > 0 ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
-          <div className="flex justify-between items-start mb-4">
-            <p className="text-[10px] uppercase font-black tracking-widest text-zinc-500">Veículos Roubados</p>
-            <AlertTriangle size={20} className={stolenCount > 0 ? 'text-red-500' : 'text-zinc-300'} />
-          </div>
-          <h2 className={`text-4xl font-display font-black ${stolenCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-white'}`}>{stolenCount}</h2>
-        </div>
-
-        <div className="p-6 bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <p className="text-[10px] uppercase font-black tracking-widest text-zinc-500">Em Manutenção</p>
-            <Lock size={20} className="text-zinc-300" />
-          </div>
-          <h2 className="text-4xl font-display font-black text-zinc-900 dark:text-white">{maintenanceCount}</h2>
-        </div>
-
-        <div className={`p-6 rounded-[32px] border flex flex-col justify-between transition-all duration-500 shadow-sm ${
-          isCriticalStock ? 'bg-red-600 text-white border-red-700' : 
-          isWarningStock ? 'bg-amber-400 text-black border-amber-500' : 
-          'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
-        }`}>
-          <div className="flex justify-between items-start mb-2">
-            <div>
-              <p className="text-[10px] uppercase font-black tracking-widest opacity-60">Tags em Estoque</p>
-              <h2 className="text-4xl font-display font-black mt-1">{unlinkedCount}</h2>
-            </div>
-            <ShoppingCart size={20} className="opacity-40" />
-          </div>
-          
-          {isWarningStock && (
-            <motion.div 
-              initial={{ opacity: 0, x: -5 }} 
-              animate={{ opacity: 1, x: 0 }}
-              className="mt-4 flex items-center gap-2"
-            >
-              <div className={`p-1.5 rounded-lg ${isCriticalStock ? 'bg-white/20' : 'bg-black/10'}`}>
-                <ShoppingBag size={14} />
-              </div>
-              <span className="text-[9px] font-black uppercase tracking-tight leading-tight">
-                Novos equipamentos precisam ser adquiridos
-              </span>
-            </motion.div>
-          )}
         </div>
       </div>
     </div>

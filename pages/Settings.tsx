@@ -6,13 +6,12 @@ import { AppSettings, User, Company, VehicleCategory } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-// Fix: Added RefreshCw to the lucide-react imports
 import { 
   Save, Settings as SettingsIcon, Database, Globe, Key, 
   Languages, Trash2, Plus, ShieldAlert, 
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
-  UserCircle2, ChevronRight, Check, RefreshCw
+  UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -227,6 +226,36 @@ export const Settings = () => {
           
           {isAdmin && (
             <>
+              {/* CONFIGURAÇÃO API K-TAG */}
+              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Key size={24} />
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Configuração API K-Tag</h2>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
+                    <div className="relative">
+                      <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300" size={16} />
+                      <input type="text" value={settings.ktagUrl} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" placeholder="https://api.ktag.example.com" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
+                        <input type="text" value={settings.ktagUser} onChange={e => setSettings({...settings, ktagUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
+                        <div className="relative">
+                           <input type={showKTagPass ? 'text' : 'password'} value={settings.ktagPass} onChange={e => setSettings({...settings, ktagPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" />
+                           <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                        </div>
+                      </div>
+                  </div>
+                </div>
+              </div>
+
               {/* SGA HINOVA */}
               <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-emerald-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">

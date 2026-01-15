@@ -50,7 +50,7 @@ const SidebarContent = ({
             className="flex flex-col leading-tight"
           >
             <span className="font-display font-black text-xl text-zinc-900 dark:text-white tracking-tighter uppercase">{brand.name}</span>
-            <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Portal de Gestão</span>
+            <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Console Operacional</span>
           </motion.div>
         )}
       </div>
@@ -70,7 +70,7 @@ const SidebarContent = ({
               <motion.h3 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="px-5 mb-4 text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.25em]"
+                className="px-5 mb-4 text-[10px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.4em]"
               >
                 {section.title}
               </motion.h3>
@@ -90,20 +90,20 @@ const SidebarContent = ({
                       {isActive && (
                         <motion.div 
                           layoutId="sidebar-active-pill" 
-                          className="absolute inset-0 bg-primary-500/10 dark:bg-primary-500/10 rounded-2xl z-0" 
+                          className="absolute inset-0 bg-primary-500/10 dark:bg-primary-500/5 rounded-2xl z-0" 
                           transition={{ type: 'spring', stiffness: 400, damping: 35 }} 
                         />
                       )}
                       
                       <div className={`relative z-10 flex items-center justify-center w-6 shrink-0 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
-                        <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+                        <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
                       </div>
 
                       {(isMobile || !collapsed) && (
                         <motion.span 
                           initial={{ opacity: 0, x: -5 }}
                           animate={{ opacity: 1, x: 0 }}
-                          className={`relative z-10 text-[14px] font-bold truncate tracking-tight whitespace-nowrap ${isActive ? 'font-black' : ''}`}
+                          className={`relative z-10 text-[13px] font-bold truncate tracking-tight whitespace-nowrap uppercase ${isActive ? 'font-black' : ''}`}
                         >
                           {item.label}
                         </motion.span>
@@ -131,17 +131,17 @@ const SidebarContent = ({
       <Link to="/settings" className="block">
         <div className={`flex items-center h-12 rounded-2xl transition-all duration-300 group ${pathname === '/settings' ? 'bg-primary-500/10 text-primary-500' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'} ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'}`}>
            <div className="w-6 flex items-center justify-center group-hover:rotate-45 transition-transform duration-500">
-             <Settings size={22} />
+             <Settings size={20} />
            </div>
-           {(isMobile || !collapsed) && <span className="text-[14px] font-bold tracking-tight">Configurações</span>}
+           {(isMobile || !collapsed) && <span className="text-[13px] font-black uppercase tracking-tight">Sistema</span>}
         </div>
       </Link>
       
       <button onClick={logout} className={`flex items-center h-12 rounded-2xl text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all w-full group ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'}`}>
         <div className="w-6 flex items-center justify-center group-hover:translate-x-1 transition-transform">
-          <LogOut size={22} />
+          <LogOut size={20} />
         </div>
-        {(isMobile || !collapsed) && <span className="text-[14px] font-bold tracking-tight">Sair da Conta</span>}
+        {(isMobile || !collapsed) && <span className="text-[13px] font-black uppercase tracking-tight">Desconectar</span>}
       </button>
 
       {!isMobile && (
@@ -193,24 +193,27 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     const role = user?.role || 'user';
     if (role === 'client') {
       return [
-        { title: 'Meu Painel', items: [{ label: 'Meu Veículo', path: '/map', icon: Map }] },
-        { title: 'Configurações', items: [{ label: 'Meus Dados', path: '/settings', icon: UserCircle }] }
+        { title: 'MEU PAINEL', items: [{ label: 'MEU VEÍCULO', path: '/map', icon: Map }] },
+        { title: 'CONFIGURAÇÕES', items: [{ label: 'MEUS DADOS', path: '/settings', icon: UserCircle }] }
       ];
     }
     return [
-      { title: 'Monitoramento', items: [{ label: 'Dashboard', path: '/', icon: LayoutGrid }, { label: 'Mapa ao Vivo', path: '/map', icon: Map }] },
-      { title: 'Operações', items: [
-        { label: 'Segurança', path: '/security', icon: ShieldAlert }, 
-        { label: 'Veículos', path: '/vehicles', icon: CarFront },
-        { label: 'Clientes', path: '/clients', icon: Users },
-        ...(role === 'admin' || role === 'moderator' ? [{ label: 'Tags / Estoque', path: '/tags', icon: Tags }] : [])
+      { title: 'MONITORAMENTO', items: [
+        { label: 'DASHBOARD', path: '/', icon: LayoutGrid }, 
+        { label: 'MAPA AO VIVO', path: '/map', icon: Map }
       ]},
-      { title: 'Gestão', items: [
+      { title: 'OPERAÇÕES', items: [
+        { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert }, 
+        { label: 'FROTA', path: '/vehicles', icon: CarFront },
+        { label: 'CLIENTES', path: '/clients', icon: Users },
+        ...(role === 'admin' || role === 'moderator' ? [{ label: 'LOGÍSTICA / TAGS', path: '/tags', icon: Tags }] : [])
+      ]},
+      { title: 'GESTÃO', items: [
         ...(role === 'admin' || role === 'moderator' ? [
-          { label: 'Relatórios', path: '/reports', icon: FileText },
-          { label: 'Audit Logs', path: '/audit', icon: ClipboardList }
+          { label: 'RELATÓRIOS', path: '/reports', icon: FileText },
+          { label: 'AUDITORIA', path: '/audit', icon: ClipboardList }
         ] : []),
-        ...(role === 'admin' ? [{ label: 'Acessos Adm', path: '/users', icon: UserCircle }] : [])
+        ...(role === 'admin' ? [{ label: 'USUÁRIOS ADM', path: '/users', icon: UserCircle }] : [])
       ]}
     ];
   }, [user]);
@@ -259,7 +262,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-400">Portal de Operações</h2>
                <div className="flex items-center gap-2 mt-1">
                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                 <p className="text-[11px] font-bold text-zinc-500 uppercase">{user?.role === 'client' ? 'Acesso do Cliente' : 'Console Profissional'}</p>
+                 <p className="text-[11px] font-bold text-zinc-500 uppercase">{user?.role === 'client' ? 'Painel do Associado' : 'Console Profissional'}</p>
                </div>
             </div>
           </div>
@@ -274,19 +277,19 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   {notificationsOpen && (
                     <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="fixed inset-x-4 top-24 md:absolute md:inset-auto md:right-0 md:top-full md:mt-3 w-auto md:w-[400px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] shadow-2xl z-[100] overflow-hidden">
                       <div className="p-6 border-b bg-zinc-50/50 dark:bg-zinc-950/50 flex justify-between items-center">
-                        <div className="flex items-center gap-3"><Bell size={18} className="text-primary-500" /><h3 className="text-[11px] font-black uppercase tracking-widest">Alertas</h3></div>
+                        <div className="flex items-center gap-3"><Bell size={18} className="text-primary-500" /><h3 className="text-[11px] font-black uppercase tracking-widest">Alertas de Sistema</h3></div>
                         <div className="flex gap-2">
-                           <button onClick={markAllAsRead} className="p-2 text-zinc-400 hover:text-primary-500 transition-colors"><Check size={16}/></button>
-                           <button onClick={clearAll} className="p-2 text-zinc-400 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                           <button onClick={markAllAsRead} title="Marcar lidas" className="p-2 text-zinc-400 hover:text-primary-500 transition-colors"><Check size={16}/></button>
+                           <button onClick={clearAll} title="Limpar tudo" className="p-2 text-zinc-400 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                         </div>
                       </div>
                       <div className="max-h-[450px] overflow-y-auto custom-scrollbar p-2">
-                        {notifications.length === 0 ? <div className="py-12 text-center opacity-30"><Bell size={48} className="mx-auto" /><p className="text-[10px] font-black mt-3">Sem notificações</p></div> : 
+                        {notifications.length === 0 ? <div className="py-12 text-center opacity-30"><Bell size={48} className="mx-auto" /><p className="text-[10px] font-black mt-3 uppercase tracking-widest">Sem novas notificações</p></div> : 
                           notifications.map((note) => (
                             <div key={note.id} onClick={() => markAsRead(note.id)} className={`p-4 mb-1 rounded-[24px] cursor-pointer transition-all border ${note.read ? 'bg-transparent opacity-60' : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-700 shadow-sm'}`}>
                               <div className="flex gap-4">
                                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${note.type === 'error' ? 'bg-red-500/10 text-red-500' : note.type === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-primary-500/10 text-primary-500'}`}>{note.type === 'error' ? <AlertCircle size={20}/> : note.type === 'success' ? <CheckCircle2 size={20}/> : <Info size={20}/>}</div>
-                                <div className="flex-1 min-w-0"><div className="flex justify-between mb-1"><h4 className="font-black text-[11px] uppercase truncate">{note.title}</h4><span className="text-[8px] font-mono text-zinc-400">{new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div><p className="text-[11px] text-zinc-500 leading-relaxed line-clamp-2">{note.message}</p></div>
+                                <div className="flex-1 min-w-0"><div className="flex justify-between mb-1"><h4 className="font-black text-[11px] uppercase truncate tracking-tight">{note.title}</h4><span className="text-[8px] font-mono text-zinc-400">{new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div><p className="text-[11px] text-zinc-500 leading-relaxed line-clamp-2">{note.message}</p></div>
                               </div>
                             </div>
                           ))
@@ -301,7 +304,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
              <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-1 md:mx-2" />
              <div className="flex items-center gap-3">
                 <div className="hidden lg:block text-right"><p className="text-sm font-black text-zinc-900 dark:text-white uppercase truncate max-w-[160px] tracking-tight">{user?.name}</p><p className="text-[10px] font-bold text-primary-500 uppercase tracking-widest mt-0.5">{user?.role}</p></div>
-                <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black border border-zinc-700/30 shadow-lg">{user?.avatarInitial || user?.name.charAt(0)}</div>
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black border border-zinc-700/30 shadow-lg">{user?.avatarInitial || user?.name.charAt(0).toUpperCase()}</div>
              </div>
           </div>
         </header>
