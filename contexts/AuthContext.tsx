@@ -24,79 +24,67 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const init = async () => {
+    const initSession = async () => {
       try {
-        const u = await storage.getSessionUser();
-        if (u) {
-          // Mantém a sessão ativa imediatamente
-          setUser(u);
+        const cachedUser = await storage.getSessionUser();
+        if (cachedUser) {
+          // Inicializa o motor de criptografia com o usuário da sessão
+          await storage.initEncryption(cachedUser);
           
-          // Validação silenciosa no banco de dados (pode ser Firestore ou Cache Local sincronizado)
-          const dbUser = await storage.findUserByEmail(u.email);
-          if (dbUser) {
-            if (dbUser.status === 'approved') {
-              setUser(dbUser); 
-              await storage.setSessionUser(dbUser);
-            } else {
-              await storage.clearSessionUser();
-              setUser(null);
-            }
+          // Verifica se o acesso ainda é válido no Firebase
+          const dbUser = await storage.findUserByEmail(cachedUser.email);
+          if (dbUser && dbUser.status === 'approved') {
+            setUser(dbUser);
+            await storage.setSessionUser(dbUser);
+          } else if (dbUser) {
+            // Conta desativada ou alterada
+            await storage.clearSessionUser();
+            setUser(null);
+          } else {
+            // Em caso de erro de rede ou usuário deletado, mantém o cache local por enquanto
+            setUser(cachedUser);
           }
         }
       } catch (e) {
-        console.error("Auth Init Error:", e);
+        console.error("Auth Boot Error", e);
       } finally {
         setLoading(false);
       }
     };
-    init();
+    initSession();
   }, []);
 
   const login = async (email: string, password?: string): Promise<string | void> => {
     setLoading(true);
-    const cleanEmail = email.trim().toLowerCase();
-    
-    if (!password) {
+    try {
+      const dbUser = await storage.findUserByEmail(email.toLowerCase().trim());
+      
+      if (!dbUser) {
         setLoading(false);
-        return "Por favor, insira sua senha.";
-    }
+        return "Usuário não encontrado ou erro de conexão.";
+      }
 
-    // Busca no Banco de Dados (Prioriza Firestore, depois cache local sincronizado via Database Sync)
-    const dbUser = await storage.findUserByEmail(cleanEmail);
-
-    if (dbUser) {
-        // Validação estrita de senha
-        if (dbUser.password && password !== dbUser.password) {
-            setLoading(false);
-            return "Senha incorreta. Verifique os dados e tente novamente.";
-        }
-
-        // Caso o usuário não tenha senha (migração legada)
-        if (!dbUser.password && (password === 'admin' || password === '123456')) {
-            if (cleanEmail !== ADMIN_EMAIL) {
-                setLoading(false);
-                return "Usuário sem senha definida no servidor. Contate o administrador.";
-            }
-        }
-
-        if (dbUser.status === 'pending' && cleanEmail !== ADMIN_EMAIL) {
-            setLoading(false);
-            return "Sua conta ainda não foi aprovada pelo gestor.";
-        }
-
-        if (dbUser.status === 'rejected') {
-            setLoading(false);
-            return "Seu acesso foi revogado. Contate o administrador.";
-        }
-
-        await storage.setSessionUser(dbUser);
-        setUser(dbUser);
+      if (dbUser.password && password !== dbUser.password) {
         setLoading(false);
-        return;
-    }
+        return "Senha incorreta.";
+      }
 
-    setLoading(false);
-    return "E-mail não localizado no cache de usuários. Se for novo, peça ao admin para sincronizar o banco.";
+      if (dbUser.status !== 'approved' && dbUser.email !== ADMIN_EMAIL) {
+        setLoading(false);
+        return "Seu acesso está pendente de aprovação.";
+      }
+
+      // IMPORTANTE: Inicializar criptografia ANTES de salvar a sessão
+      await storage.initEncryption(dbUser);
+      await storage.setSessionUser(dbUser);
+      setUser(dbUser);
+      return;
+    } catch (e) {
+      setLoading(false);
+      return "Falha na comunicação com o servidor.";
+    } finally {
+      setLoading(false);
+    }
   };
 
   const register = async (name: string, email: string, password: string, ip: string) => {
@@ -110,16 +98,18 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         ip,
         createdAt: Date.now()
     };
-    
     await storage.registerUserRequest(newUser);
   };
 
   const updateProfile = async (data: Partial<User>) => {
     if (!user) return;
-    await storage.updateUserProfile(user.id, data);
     const updatedUser = { ...user, ...data };
-    setUser(updatedUser);
+    // Se mudar a senha, precisamos reinicializar a criptografia futuramente
+    if (data.password) await storage.initEncryption(updatedUser);
+    
+    await storage.registerUserRequest(updatedUser);
     await storage.setSessionUser(updatedUser);
+    setUser(updatedUser);
   };
 
   const logout = async () => {
@@ -131,18 +121,14 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     <div className="h-screen w-screen flex items-center justify-center bg-zinc-950">
       <div className="flex flex-col items-center gap-6">
         <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Autenticando</h2>
+        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Protegendo sua Conexão</h2>
       </div>
     </div>
   );
 
   return (
     <AuthContext.Provider value={{ 
-      user, 
-      login, 
-      register,
-      updateProfile,
-      logout, 
+      user, login, register, updateProfile, logout, 
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin',
       loading

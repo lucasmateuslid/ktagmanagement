@@ -57,14 +57,14 @@ export const xadtagService = {
             const data = await response.json();
             
             // Adapter: Traqcare (lng) -> K-Tag UI (lon)
+            // Fix: Removed 'key' property as it is not part of KTagLocationResult
             return [{
                 lat: data.lat,
                 lon: data.lng, // Mapeamento correto
                 conf: data.battery * 10, // Mock de precisão baseado em bateria se necessário
                 status: data.isActived ? 1 : 0,
                 timestamp: data.timestamp * 1000,
-                isodatetime: new Date(data.timestamp * 1000).toISOString(),
-                key: `xad-${data.id}-${data.timestamp}`
+                isodatetime: new Date(data.timestamp * 1000).toISOString()
             }];
         } catch (e) {
             console.error("XADTAG Fetch Error:", e);
@@ -93,14 +93,14 @@ export const xadtagService = {
             if (!response.ok) return [];
 
             const points: any[] = await response.json();
+            // Fix: Removed 'key' property as it is not part of KTagLocationResult
             return points.map(p => ({
                 lat: p.lat,
                 lon: p.lng,
                 conf: 100,
                 status: 1,
                 timestamp: p.timestamp * 1000,
-                isodatetime: new Date(p.timestamp * 1000).toISOString(),
-                key: `xad-hist-${p.timestamp}`
+                isodatetime: new Date(p.timestamp * 1000).toISOString()
             }));
         } catch (e) {
             console.error("XADTAG History Error:", e);

@@ -30,22 +30,15 @@ export type TagType = 'K_TAG' | 'XADTAG';
 export interface Tag {
   id: string;
   name: string;
-  type: TagType; // Novo: Identificador do hardware
-  
-  // Campos K-TAG
-  accessoryId: string; // Também usado como identificador visual para XADTAG
+  type: TagType;
+  accessoryId: string;
   hashedAdvKey?: string;
   privateKey?: string;
-  
-  // Campos XADTAG (Traqcare)
   imei?: string;
   traqcareId?: string;
   isActivated?: boolean;
   lastBattery?: number;
-  
-  macAddress?: string;
   batteryWarrantyYears?: number;
-  warrantyStartedAt?: number;
   createdAt: number;
 }
 
@@ -68,37 +61,32 @@ export interface Vehicle {
   plate: string;
   model: string;
   year?: string;
-  fipeCode?: string;
   color?: string;
-  chassis?: string;
   tagId?: string;
   companyId?: string;
   clientId?: string;
-  hinovaId?: string;
   status?: 'active' | 'stolen' | 'maintenance';
   installationType?: 'tag_only' | 'tag_tracker';
   createdAt: number;
   updatedBy?: string;
+  // Added properties for Hinova and Plate API integrations
+  chassis?: string;
+  fipeCode?: string;
+  hinovaId?: string;
 }
 
-export interface StolenRecord {
+export interface LocationHistory {
   id: string;
-  vehicleId: string;
-  vehiclePlate: string;
-  vehicleModel: string;
-  type: 'theft' | 'robbery';
+  tagId: string;
+  lat: number;
+  lon: number;
+  conf: number;
+  status: number;
   timestamp: number;
-  location: {
-    lat: number;
-    lon: number;
-    address?: string;
-  };
-  policeReport?: string;
-  notes?: string;
-  status: 'open' | 'recovered';
-  recoveredAt?: number;
+  isodatetime: string;
 }
 
+// Result format for location fetching APIs
 export interface KTagLocationResult {
   lat: number;
   lon: number;
@@ -106,19 +94,21 @@ export interface KTagLocationResult {
   status: number;
   timestamp: number;
   isodatetime: string;
-  key: string;
 }
 
-export interface LocationHistory extends KTagLocationResult {
-  tagId: string;
+// Record for vehicle theft/robbery incidents
+export interface StolenRecord {
   id: string;
-}
-
-export interface DashboardStats {
-  totalTags: number;
-  totalVehicles: number;
-  linkedTags: number;
-  onlineTags: number;
+  vehicleId: string;
+  vehiclePlate: string;
+  vehicleModel: string;
+  type: 'theft' | 'robbery';
+  timestamp: number;
+  status: 'open' | 'recovered';
+  location: { lat: number; lon: number; address: string };
+  policeReport?: string;
+  notes?: string;
+  recoveredAt?: number;
 }
 
 export interface AppNotification {
@@ -148,14 +138,14 @@ export interface AppSettings {
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;
-  // Novo: Configuração Traqcare
   traqcareToken: string;
   googleMapsKey: string;
   mapboxKey: string;
-  plateApiUrl: string;
-  plateApiToken: string;
   hinovaUrl: string;
   hinovaToken: string;
   hinovaUser: string;
   hinovaPass: string;
+  // Added properties for Plate API configuration
+  plateApiUrl?: string;
+  plateApiToken?: string;
 }

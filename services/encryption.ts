@@ -7,38 +7,63 @@
 class EncryptionService {
   private key: CryptoKey | null = null;
   private readonly algorithm = 'AES-GCM';
+  private initializationPromise: Promise<void> | null = null;
+  private resolveReady: (() => void) | null = null;
+  public isReady: boolean = false;
+
+  constructor() {
+    this.initializationPromise = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  // Garante que qualquer chamada aguarde a inicialização
+  async waitReady() {
+    if (this.isReady) return;
+    return this.initializationPromise;
+  }
 
   // Deriva uma chave robusta a partir do ID do usuário ou senha
   async initialize(seed: string) {
     if (!seed) return;
-    const encoder = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(seed),
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
+    
+    try {
+      const encoder = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(seed),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+      );
 
-    this.key = await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: encoder.encode('ktag-enterprise-salt-2025'),
-        iterations: 100000,
-        hash: 'SHA-256'
-      },
-      keyMaterial,
-      { name: this.algorithm, length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+      this.key = await crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: encoder.encode('ktag-enterprise-salt-2025'),
+          iterations: 100000,
+          hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: this.algorithm, length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+
+      this.isReady = true;
+      if (this.resolveReady) this.resolveReady();
+    } catch (e) {
+      console.error("Erro ao inicializar motor de segurança:", e);
+    }
   }
 
   async encrypt(text: string): Promise<string> {
-    if (!this.key || !text) return text;
+    if (!text) return text;
+    await this.waitReady(); // Bloqueia até ter a chave
+    if (!this.key) return text;
     
     try {
-      const iv = crypto.getRandomValues(new Uint8Array(12)); // IV único para cada operação
+      const iv = crypto.getRandomValues(new Uint8Array(12));
       const encoder = new TextEncoder();
       const encoded = encoder.encode(text);
 
@@ -48,7 +73,6 @@ class EncryptionService {
         encoded
       );
 
-      // Concatena IV + Dados Criptografados e converte para Base64
       const combined = new Uint8Array(iv.length + encrypted.byteLength);
       combined.set(iv);
       combined.set(new Uint8Array(encrypted), iv.length);
@@ -61,8 +85,13 @@ class EncryptionService {
   }
 
   async decrypt(base64: string): Promise<string> {
-    // Se não houver chave ou o texto for muito curto, provavelmente não está criptografado
-    if (!this.key || !base64 || base64.length < 16) return base64;
+    // Se a string não parecer base64 ou for muito curta, retorna original
+    if (!base64 || base64.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(base64)) {
+        return base64;
+    }
+
+    await this.waitReady(); // Crucial: aguarda a chave estar na memória
+    if (!this.key) return base64;
 
     try {
       const binaryString = atob(base64);
@@ -82,7 +111,8 @@ class EncryptionService {
 
       return new TextDecoder().decode(decrypted);
     } catch (e) {
-      // Falha silenciosa para permitir leitura de dados legados em texto plano
+      // Se falhar a decriptografia, provavelmente o dado não está encriptado 
+      // ou a chave mudou. Retorna o original para evitar quebra da UI.
       return base64;
     }
   }

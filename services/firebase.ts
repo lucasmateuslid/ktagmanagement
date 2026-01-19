@@ -1,8 +1,8 @@
 
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, Firestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
 
-// Your web app's Firebase configuration
+// Configuração do Firebase do seu Web App
 const firebaseConfig = {
   apiKey: "AIzaSyC3KcC5ySMCU58Af1Lqv5jtcpZPdC__WlQ",
   authDomain: "ktag-d15b6.firebaseapp.com",
@@ -17,21 +17,30 @@ let db: Firestore | null = null;
 
 try {
   app = initializeApp(firebaseConfig);
-  try {
-      // Use initializeFirestore instead of getFirestore to enable long-polling
-      // this fixes "Could not reach Cloud Firestore backend" in environments where 
-      // standard gRPC/WebChannel connections are blocked.
-      db = initializeFirestore(app, {
-        experimentalForceLongPolling: true,
-      });
-      console.log("Firebase initialized successfully with Long Polling enabled.");
-  } catch (firestoreError: any) {
-      console.warn("Firestore initialization failed (Offline Mode enabled):", firestoreError.message);
-      db = null;
-  }
+  
+  // Inicializa o Firestore com Long Polling forçado para evitar bloqueios de gRPC/WebSocket
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    // Garante que propriedades undefined não quebrem a gravação no banco
+    ignoreUndefinedProperties: true,
+  });
+
+  // Habilita persistência offline para que o app funcione mesmo sem conexão
+  // Isso resolve o erro "Failed to get document because the client is offline"
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Múltiplas abas abertas, persistência habilitada apenas na primeira.
+      console.warn("Firestore Persistence: Múltiplas abas detectadas. Cache ativo apenas na aba principal.");
+    } else if (err.code === 'unimplemented') {
+      // Browser não suporta IndexedDB
+      console.warn("Firestore Persistence: Este navegador não suporta armazenamento offline.");
+    }
+  });
+
+  console.log("Firebase initialized: Long Polling & Offline Persistence enabled.");
 } catch (e: any) {
   console.error("Firebase App initialization error:", e);
-  console.warn("Falling back to LocalStorage (Offline Mode)");
+  console.warn("Falling back to LocalStorage (Offline Mode Only)");
   db = null;
 }
 

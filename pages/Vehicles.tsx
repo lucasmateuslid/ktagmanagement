@@ -14,7 +14,7 @@ import {
   Car, Truck, Bike, Edit2, Trash2, Link as LinkIcon, 
   Loader2, X, CheckCircle2, XCircle, Save, Hash, 
   Tag as TagIcon, Building2, User, Phone, Book, ChevronRight, Mail, Calendar,
-  Download, FileText, FileSpreadsheet, FileCode
+  Download, FileText, FileSpreadsheet, FileCode, AlertCircle
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -108,6 +108,20 @@ export const Vehicles = () => {
   const [fipeList, setFipeList] = useState<FipeReference[]>([]);
   const [fipeLoading, setFipeLoading] = useState(false);
 
+  // Validação de Placa em tempo real
+  const isPlateValid = useMemo(() => {
+    if (!formData.plate) return false;
+    // Regex para Brasil (AAA0000) e Mercosul (AAA0A00)
+    const regex = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
+    return regex.test(formData.plate);
+  }, [formData.plate]);
+
+  const plateStatus = useMemo(() => {
+    if (!formData.plate || formData.plate.length === 0) return 'idle';
+    if (formData.plate.length < 7) return 'typing';
+    return isPlateValid ? 'valid' : 'invalid';
+  }, [formData.plate, isPlateValid]);
+
   const loadData = useCallback(async () => {
     const [v, t, c, cat, cl] = await Promise.all([
         storage.getVehicles(), storage.getTags(), storage.getCompanies(), 
@@ -118,7 +132,6 @@ export const Vehicles = () => {
 
   useEffect(() => { 
     loadData();
-    // Auto-abrir modal se solicitado via parâmetro
     if (searchParams.get('action') === 'new') {
         setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car' }); 
         setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
@@ -165,7 +178,7 @@ export const Vehicles = () => {
       
       doc.setFontSize(20);
       doc.setTextColor(24, 24, 27);
-      doc.text("RELATÓRIO GERAL DE FROTA", 14, 20);
+      doc.text("RELATÓRIO GERAL DE VEÍCULOS", 14, 20);
       
       doc.setFontSize(10);
       doc.setTextColor(113, 113, 122);
@@ -182,7 +195,7 @@ export const Vehicles = () => {
         styles: { fontSize: 8 }
       });
 
-      doc.save(`frota_ktag_${Date.now()}.pdf`);
+      doc.save(`veiculos_ktag_${Date.now()}.pdf`);
       addNotification('success', 'Exportação PDF', 'O relatório foi gerado com sucesso.');
     } finally {
       setIsExporting(false);
@@ -194,7 +207,7 @@ export const Vehicles = () => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Veículos");
-    XLSX.writeFile(wb, `frota_ktag_${Date.now()}.xlsx`);
+    XLSX.writeFile(wb, `veiculos_ktag_${Date.now()}.xlsx`);
     addNotification('success', 'Exportação Excel', 'Planilha gerada com sucesso.');
   };
 
@@ -210,7 +223,7 @@ export const Vehicles = () => {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `frota_ktag_${Date.now()}.csv`);
+    link.setAttribute("download", `veiculos_ktag_${Date.now()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -266,6 +279,10 @@ export const Vehicles = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isPlateValid) {
+      addNotification('error', 'Placa Inválida', 'Por favor, corrija o formato da placa (ex: AAA0000).');
+      return;
+    }
     if (!formData.plate || !formData.model || !clientData.cpf) return;
 
     const cleanCpf = clientData.cpf.replace(/\D/g, '');
@@ -390,8 +407,29 @@ export const Vehicles = () => {
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">PLACA</label>
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
-                                    <input type="text" required maxLength={7} value={formData.plate || ''} onChange={e => setFormData({...formData, plate: e.target.value.toUpperCase()})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-base font-mono font-black shadow-inner outline-none focus:border-zinc-400" placeholder="ABC1234" />
-                                    <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-200" />
+                                    <input 
+                                      type="text" 
+                                      required 
+                                      maxLength={7} 
+                                      value={formData.plate || ''} 
+                                      onChange={e => setFormData({...formData, plate: e.target.value.toUpperCase()})} 
+                                      className={`w-full px-4 h-12 bg-white dark:bg-zinc-950 border rounded-xl text-base font-mono font-black shadow-inner outline-none transition-all ${
+                                        plateStatus === 'invalid' 
+                                          ? 'border-red-500 dark:border-red-500 ring-4 ring-red-500/5' 
+                                          : plateStatus === 'valid' 
+                                          ? 'border-emerald-500 dark:border-emerald-500' 
+                                          : 'border-zinc-200 dark:border-zinc-800 focus:border-zinc-400'
+                                      }`} 
+                                      placeholder="ABC1234" 
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                      {plateStatus === 'valid' && <CheckCircle2 size={16} className="text-emerald-500 animate-in zoom-in duration-300" />}
+                                      {plateStatus === 'invalid' && <AlertCircle size={16} className="text-red-500 animate-shake" />}
+                                      <Search size={16} className="text-zinc-200" />
+                                    </div>
+                                    {plateStatus === 'invalid' && (
+                                      <p className="text-[8px] font-black text-red-500 uppercase mt-1 ml-1 animate-in slide-in-from-top-1">Formato inválido (ex: AAA0000 ou AAA0A00)</p>
+                                    )}
                                 </div>
                                 <button type="button" onClick={handleHinovaLookup} disabled={hinovaStatus === 'loading'} className="px-6 h-12 rounded-xl bg-[#006e82] hover:bg-[#008ba3] text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[100px]">
                                     {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 'HINOVA'}
@@ -502,7 +540,11 @@ export const Vehicles = () => {
                             </div>
                         </div>
 
-                        <button type="submit" className="mt-8 w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3">
+                        <button 
+                          type="submit" 
+                          disabled={!isPlateValid}
+                          className="mt-8 w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
+                        >
                             <Save size={20} /> SALVAR VEÍCULO
                         </button>
                     </div>
@@ -514,7 +556,7 @@ export const Vehicles = () => {
 
       {isFipeModalOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-[28px] w-full max-w-sm p-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-[28px] w-full max-sm p-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Tabela FIPE</h3>
                 <button onClick={() => setIsFipeModalOpen(false)} className="text-zinc-400"><X size={20}/></button>
