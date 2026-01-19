@@ -53,7 +53,6 @@ export const Dashboard = () => {
     setCompanies(loadedCompanies);
     setCategories(loadedCategories);
 
-    // Processar dados usando as variáveis locais recém-carregadas para evitar delays de estado do React
     processHistoryData(loadedTags);
     processCompanyData(loadedVehicles, loadedCompanies);
     processTrendData(loadedVehicles);
@@ -76,8 +75,6 @@ export const Dashboard = () => {
 
   const processCompanyData = (vehiclesList: Vehicle[], companiesList: Company[]) => {
     const counts: Record<string, number> = {};
-    
-    // Filtra apenas veículos ativos para este gráfico específico
     const activeVehicles = vehiclesList.filter(v => v.status === 'active');
     
     activeVehicles.forEach(v => {
@@ -88,21 +85,19 @@ export const Dashboard = () => {
     let data = companiesList.map(c => ({
       name: c.prefix || c.name.substring(0, 8),
       fullName: c.name,
-      count: counts[c.id] || 0
+      contador: counts[c.id] || 0
     }));
 
-    // Adiciona "Não Identificados" se houver veículos vinculados a IDs inexistentes
     const unknownCount = counts['unknown'] || 0;
     if (unknownCount > 0) {
       data.push({
         name: 'OUTROS',
         fullName: 'Não Identificados',
-        count: unknownCount
+        contador: unknownCount
       });
     }
 
-    // Ordenar por volume e limitar aos top 10 para visualização clara
-    setCompanyChartData(data.sort((a, b) => b.count - a.count).slice(0, 10));
+    setCompanyChartData(data.sort((a, b) => b.contador - a.contador).slice(0, 10));
   };
 
   const processTrendData = (vehiclesList: Vehicle[]) => {
@@ -110,18 +105,15 @@ export const Dashboard = () => {
     const now = new Date();
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     
-    // Gera os últimos 6 meses retroativamente
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthLabel = monthNames[d.getMonth()];
-      
       const count = vehiclesList.filter(v => {
         if (!v.createdAt) return false;
         const vDate = new Date(v.createdAt);
         return vDate.getMonth() === d.getMonth() && vDate.getFullYear() === d.getFullYear();
       }).length;
-
-      monthsArray.push({ name: monthLabel, entries: count });
+      monthsArray.push({ name: monthLabel, ' entradas': count });
     }
     setTrendChartData(monthsArray);
   };
@@ -152,20 +144,20 @@ export const Dashboard = () => {
       id: cat.id,
       name: cat.name.toUpperCase(),
       fipeType: cat.fipeType,
-      count: counts[cat.id] || 0
+      contador: counts[cat.id] || 0
     }));
 
     const extraStats = Object.keys(othersCount).map(name => ({
       id: name,
       name: name.toUpperCase(),
       fipeType: 'none' as const,
-      count: othersCount[name]
+      contador: othersCount[name]
     }));
 
     return [...officialStats, ...extraStats]
-      .filter(item => item.count > 0 || categories.some(c => c.id === item.id))
+      .filter(item => item.contador > 0 || categories.some(c => c.id === item.id))
       .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => b.contador - a.contador);
   }, [vehicles, categories]);
 
   const getIconForCategory = (fipeType: string, name?: string) => {
@@ -180,7 +172,6 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-8 pb-24 font-sans max-w-[1600px] mx-auto">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
@@ -196,11 +187,10 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {/* Ações Rápidas */}
       <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 p-8 shadow-sm">
         <div className="flex items-center gap-3 mb-8">
             <div className="w-1 h-4 bg-primary-500 rounded-full" />
-            <span className="text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400">Fluxos de Trabalho</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400">{t('quickActions')}</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <Link to="/tags?action=new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
@@ -208,8 +198,8 @@ export const Dashboard = () => {
                 <Plus size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
               </div>
               <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Tags</span>
-                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Vincular Hardware</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Equipamentos</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Adicionar Equipamento</span>
               </div>
             </Link>
             <Link to="/vehicles?action=new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
@@ -217,23 +207,22 @@ export const Dashboard = () => {
                 <CarFront size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
               </div>
               <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Frota</span>
-                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Veículo</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Veículos</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Cadastro</span>
               </div>
             </Link>
             <Link to="/map" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
               <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
-                <Zap size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
+                <MapIcon size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
               </div>
               <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Atividade</span>
-                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Monitoramento Geral</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Tempo Real</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{t('liveMap')}</span>
               </div>
             </Link>
         </div>
       </div>
 
-      {/* Métricas Principais */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <MotionDiv 
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -244,7 +233,7 @@ export const Dashboard = () => {
               <h3 className="text-zinc-400 text-[11px] font-black uppercase tracking-[0.4em]">{t('totalTags')}</h3>
               <p className="text-7xl md:text-8xl font-display font-black text-zinc-900 dark:text-white mt-3 tracking-tighter">{tags.length}</p>
               <div className="flex items-center gap-2 mt-4">
-                  <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">Hardware Ativo</div>
+                  <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">Equipamento Ativo</div>
               </div>
             </div>
             <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl text-primary-500 border border-zinc-100 dark:border-zinc-700/50 shadow-inner flex items-center justify-center">
@@ -287,7 +276,7 @@ export const Dashboard = () => {
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest truncate">{cat.name}</span>
-                  <span className="text-2xl font-black leading-none mt-1 text-zinc-100">{cat.count}</span>
+                  <span className="text-2xl font-black leading-none mt-1 text-zinc-100">{cat.contador}</span>
                 </div>
               </div>
             ))}
@@ -295,7 +284,6 @@ export const Dashboard = () => {
         </MotionDiv>
       </div>
 
-      {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className={`p-8 rounded-[32px] border transition-all duration-500 shadow-sm flex flex-col justify-between min-h-[220px] ${stolenCount > 0 ? 'bg-red-500/5 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
           <div className="flex justify-between items-start">
@@ -311,7 +299,7 @@ export const Dashboard = () => {
         </div>
         <div className="p-8 bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm min-h-[220px]">
           <div className="flex justify-between items-start">
-            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Frota Assistida</p>
+            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Atendimento Ativo</p>
             <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
                 <Lock size={24} strokeWidth={2} />
             </div>
@@ -323,21 +311,19 @@ export const Dashboard = () => {
         </div>
         <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm min-h-[220px] ${isCriticalStock ? 'bg-red-600 text-white border-red-700' : isWarningStock ? 'bg-amber-500 text-black border-amber-600' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
           <div className="flex justify-between items-start">
-            <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Suprimentos</p>
+            <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Estoque</p>
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
                 <ShoppingCart size={24} strokeWidth={2} />
             </div>
           </div>
           <div>
             <h2 className="text-6xl font-display font-black tracking-tighter">{unlinkedCount}</h2>
-            <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Hardware Disponível</p>
+            <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Equipamento Disponível</p>
           </div>
         </div>
       </div>
 
-      {/* Gráficos Detalhados */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        {/* Tendência de Entrada */}
         <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-10 border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="flex items-center gap-4 mb-12">
              <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center shadow-inner border border-primary-500/20"><TrendingUp size={22} strokeWidth={2.5} /></div>
@@ -356,18 +342,17 @@ export const Dashboard = () => {
                   contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
                   itemStyle={{ color: '#f59e0b', fontWeight: 'bold' }}
                 />
-                <Area type="monotone" dataKey="entries" stroke="#f59e0b" strokeWidth={4} fillOpacity={0.05} fill="#f59e0b" />
+                <Area type="monotone" dataKey=" entradas" stroke="#f59e0b" strokeWidth={4} fillOpacity={0.05} fill="#f59e0b" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Veículos Ativos por Empresa */}
         <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-10 border border-zinc-200 dark:border-zinc-800 shadow-sm">
           <div className="flex items-center gap-4 mb-12">
              <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center shadow-inner border border-primary-500/20"><Building2 size={22} strokeWidth={2.5} /></div>
              <div className="flex flex-col">
-                <h3 className="text-zinc-900 dark:text-white text-[12px] font-black uppercase tracking-[0.3em]">Veículos Ativos por Regional</h3>
+                <h3 className="text-zinc-900 dark:text-white text-[12px] font-black uppercase tracking-[0.3em]">Veículos por Regional</h3>
                 <span className="text-[10px] text-zinc-400 uppercase font-bold">Market Share por Unidade</span>
              </div>
           </div>
@@ -386,7 +371,7 @@ export const Dashboard = () => {
                     cursor={{fill: 'transparent'}} 
                     contentStyle={{ backgroundColor: '#09090b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff', fontSize: '12px' }} 
                   />
-                  <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} barSize={20} />
+                  <Bar dataKey="contador" fill="#f59e0b" radius={[0, 8, 8, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             )}

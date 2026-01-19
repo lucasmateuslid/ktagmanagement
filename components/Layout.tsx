@@ -35,7 +35,6 @@ const SidebarContent = ({
   logout 
 }: any) => (
   <div className="flex flex-col h-full bg-white dark:bg-zinc-900 transition-colors duration-300 select-none">
-    {/* Brand Logo Section */}
     <div className={`h-24 flex items-center border-b border-zinc-100 dark:border-zinc-800/50 ${(!isMobile && collapsed) ? 'justify-center' : 'px-6'} shrink-0 relative overflow-hidden`}>
       <div className={`flex items-center gap-4 ${(!isMobile && collapsed) ? 'w-full justify-center' : ''}`}>
         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-display font-black text-2xl shrink-0 shadow-lg transition-all duration-500 transform hover:rotate-3 ${theme === 'dark' ? 'bg-white text-zinc-950 shadow-white/5' : 'bg-zinc-950 text-white shadow-black/10'}`}>
@@ -50,7 +49,7 @@ const SidebarContent = ({
             className="flex flex-col leading-tight"
           >
             <span className="font-display font-black text-xl text-zinc-900 dark:text-white tracking-tighter uppercase">{brand.name}</span>
-            <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Console Operacional</span>
+            <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Console de Operações</span>
           </motion.div>
         )}
       </div>
@@ -61,7 +60,6 @@ const SidebarContent = ({
       )}
     </div>
 
-    {/* Navigation Section */}
     <nav className="flex-1 px-3 py-8 overflow-y-auto space-y-10 custom-scrollbar overflow-x-hidden">
       <LayoutGroup id="sidebar-nav">
         {menuSections.map((section: any) => (
@@ -126,7 +124,6 @@ const SidebarContent = ({
       </LayoutGroup>
     </nav>
 
-    {/* Footer Section */}
     <div className="p-4 border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/50 dark:bg-zinc-950/20 shrink-0 space-y-2">
       <Link to="/settings" className="block">
         <div className={`flex items-center h-12 rounded-2xl transition-all duration-300 group ${pathname === '/settings' ? 'bg-primary-500/10 text-primary-500' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5'} ${!isMobile && collapsed ? 'justify-center px-0' : 'px-4 gap-4'}`}>
@@ -204,9 +201,9 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       ]},
       { title: 'OPERAÇÕES', items: [
         { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert }, 
-        { label: 'FROTA', path: '/vehicles', icon: CarFront },
+        { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront },
         { label: 'CLIENTES', path: '/clients', icon: Users },
-        ...(role === 'admin' || role === 'moderator' ? [{ label: 'LOGÍSTICA / TAGS', path: '/tags', icon: Tags }] : [])
+        ...(role === 'admin' || role === 'moderator' ? [{ label: 'ESTOQUE EQUIP.', path: '/tags', icon: Tags }] : [])
       ]},
       { title: 'GESTÃO', items: [
         ...(role === 'admin' || role === 'moderator' ? [
