@@ -3,6 +3,8 @@ import * as React from 'react';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
 import { storage } from '../services/storage';
+import { rateLimitService } from '../services/rateLimit';
+import { securityService } from '../services/security';
 
 interface AuthContextType {
   user: User | null;
@@ -27,26 +29,24 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     const initSession = async () => {
       try {
         const cachedUser = await storage.getSessionUser();
+        
         if (cachedUser) {
-          // Inicializa o motor de criptografia com o usuário da sessão
           await storage.initEncryption(cachedUser);
           
-          // Verifica se o acesso ainda é válido no Firebase
           const dbUser = await storage.findUserByEmail(cachedUser.email);
           if (dbUser && dbUser.status === 'approved') {
             setUser(dbUser);
             await storage.setSessionUser(dbUser);
           } else if (dbUser) {
-            // Conta desativada ou alterada
             await storage.clearSessionUser();
             setUser(null);
           } else {
-            // Em caso de erro de rede ou usuário deletado, mantém o cache local por enquanto
             setUser(cachedUser);
           }
         }
       } catch (e) {
         console.error("Auth Boot Error", e);
+        await storage.clearSessionUser();
       } finally {
         setLoading(false);
       }
@@ -55,16 +55,39 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   }, []);
 
   const login = async (email: string, password?: string): Promise<string | void> => {
+    // RATE LIMIT: 5 tentativas por 15 min
+    const limitCheck = rateLimitService.check('login_attempt', 5, 900);
+    if (!limitCheck.allowed) {
+      return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
+    }
+
     setLoading(true);
     try {
       const dbUser = await storage.findUserByEmail(email.toLowerCase().trim());
       
       if (!dbUser) {
+        rateLimitService.record('login_attempt');
         setLoading(false);
         return "Usuário não encontrado ou erro de conexão.";
       }
 
-      if (dbUser.password && password !== dbUser.password) {
+      // --- LÓGICA DE VALIDAÇÃO DE SENHA SEGURA ---
+      let isPasswordValid = false;
+      let needsMigration = false;
+
+      // 1. Tenta verificar como Hash
+      if (dbUser.password) {
+        isPasswordValid = await securityService.verifyPassword(password || '', dbUser.password);
+        
+        // 2. Fallback: Se falhar, verifica se é texto plano (Legacy Migration)
+        if (!isPasswordValid && dbUser.password === password) {
+            isPasswordValid = true;
+            needsMigration = true;
+        }
+      }
+
+      if (!isPasswordValid) {
+        rateLimitService.record('login_attempt');
         setLoading(false);
         return "Senha incorreta.";
       }
@@ -74,9 +97,17 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         return "Seu acesso está pendente de aprovação.";
       }
 
-      // IMPORTANTE: Inicializar criptografia ANTES de salvar a sessão
+      // --- MIGRAÇÃO AUTOMÁTICA PARA HASH ---
+      if (needsMigration && password) {
+          const newHash = await securityService.hashPassword(password);
+          await storage.updateUserProfile(dbUser.id, { password: newHash });
+          dbUser.password = newHash; // Atualiza objeto local
+      }
+
+      rateLimitService.clear('login_attempt');
       await storage.initEncryption(dbUser);
       await storage.setSessionUser(dbUser);
+      
       setUser(dbUser);
       return;
     } catch (e) {
@@ -88,11 +119,14 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   };
 
   const register = async (name: string, email: string, password: string, ip: string) => {
+    // Hash da senha antes de enviar para o storage
+    const hashedPassword = await securityService.hashPassword(password);
+    
     const newUser: User = { 
         id: crypto.randomUUID(), 
         name, 
         email: email.trim().toLowerCase(), 
-        password,
+        password: hashedPassword,
         role: email.trim().toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user', 
         status: email.trim().toLowerCase() === ADMIN_EMAIL ? 'approved' : 'pending',
         ip,
@@ -103,11 +137,16 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
   const updateProfile = async (data: Partial<User>) => {
     if (!user) return;
-    const updatedUser = { ...user, ...data };
-    // Se mudar a senha, precisamos reinicializar a criptografia futuramente
-    if (data.password) await storage.initEncryption(updatedUser);
     
-    await storage.registerUserRequest(updatedUser);
+    // Se estiver atualizando a senha, faz o hash antes
+    const dataToUpdate = { ...data };
+    if (dataToUpdate.password) {
+        dataToUpdate.password = await securityService.hashPassword(dataToUpdate.password);
+    }
+
+    const updatedUser = { ...user, ...dataToUpdate };
+    
+    await storage.registerUserRequest(updatedUser); // Usa método genérico de save
     await storage.setSessionUser(updatedUser);
     setUser(updatedUser);
   };
@@ -121,7 +160,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     <div className="h-screen w-screen flex items-center justify-center bg-zinc-950">
       <div className="flex flex-col items-center gap-6">
         <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Protegendo sua Conexão</h2>
+        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Verificando Credenciais</h2>
       </div>
     </div>
   );

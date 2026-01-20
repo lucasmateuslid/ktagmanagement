@@ -6,11 +6,12 @@ import { User } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { securityService } from '../services/security';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
   Shield, User as UserIcon, Lock, Save, MoreVertical, ShieldQuestion, 
-  Activity, RefreshCcw, Database, Eye, EyeOff, Smartphone
+  Activity, RefreshCcw, Database, Eye, EyeOff, Smartphone, Key, Copy, Share2
 } from 'lucide-react';
 
 export const Users = () => {
@@ -18,10 +19,16 @@ export const Users = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
+  
   const [selectedUser, setSelectedUser] = useState<Partial<User> | null>(null);
-  const [formData, setFormData] = useState<Partial<User>>({ role: 'user', status: 'approved', password: '' });
+  const [formData, setFormData] = useState<Partial<User>>({ role: 'user', status: 'approved' });
+  
+  // New Credentials State (Only shown once)
+  const [newCredentials, setNewCredentials] = useState({ email: '', password: '' });
 
   const { addNotification } = useNotification();
   const { t } = useLanguage();
@@ -30,7 +37,6 @@ export const Users = () => {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     if (isAdmin) {
-      // getAllUsers no storage.ts já foi atualizado para sincronizar o cache local
       const allUsers = await storage.getAllUsers();
       setUsers(allUsers);
     }
@@ -42,13 +48,12 @@ export const Users = () => {
   const handleSyncDatabase = async () => {
     setSyncing(true);
     try {
-        // Força a atualização do localStorage com os dados do servidor
         const freshUsers = await storage.getAllUsers();
         setUsers(freshUsers);
         storage.logAction(currentUser, 'CONFIG', 'Database', 'Sincronizou manualmente o banco de usuários para acesso local');
-        addNotification('success', 'Banco Sincronizado', 'As credenciais mais recentes foram carregadas para este dispositivo.');
+        addNotification('success', 'Banco Sincronizado', 'As credenciais mais recentes foram carregadas.');
     } catch (err) {
-        addNotification('error', 'Erro na Sincronização', 'Não foi possível conectar ao servidor de dados.');
+        addNotification('error', 'Erro na Sincronização', 'Não foi possível conectar ao servidor.');
     } finally {
         setSyncing(false);
     }
@@ -70,6 +75,15 @@ export const Users = () => {
       const isEdit = !!selectedUser;
       const userId = isEdit ? selectedUser!.id! : crypto.randomUUID();
       
+      let generatedPassword = '';
+      let hashedPassword = '';
+
+      // Se for novo usuário, gera senha e hash
+      if (!isEdit) {
+          generatedPassword = securityService.generateStrongPassword();
+          hashedPassword = await securityService.hashPassword(generatedPassword);
+      }
+
       const userToSave: User = { 
         ...formData as User, 
         id: userId, 
@@ -82,13 +96,17 @@ export const Users = () => {
         await storage.updateUserProfile(userId, userToSave);
         await storage.updateUserStatus(userId, userToSave.status!);
       } else {
-        if (!userToSave.password) userToSave.password = '123456';
+        userToSave.password = hashedPassword; // Salva o Hash
         await storage.registerUserRequest(userToSave);
+        
+        // Abre modal de credenciais
+        setNewCredentials({ email: userToSave.email, password: generatedPassword });
+        setIsCredentialsModalOpen(true);
       }
       
-      storage.logAction(currentUser, isEdit ? 'UPDATE' : 'CREATE', 'User', `${isEdit ? 'Editou' : 'Criou'} o colaborador ${userToSave.name} com senha personalizada`, userId);
+      storage.logAction(currentUser, isEdit ? 'UPDATE' : 'CREATE', 'User', `${isEdit ? 'Editou' : 'Criou'} o colaborador ${userToSave.name}`, userId);
       
-      addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso no servidor e sincronizado localmente.');
+      addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso.');
       setIsModalOpen(false);
       loadData(true);
     } catch (err) { 
@@ -96,17 +114,29 @@ export const Users = () => {
     }
   };
 
-  const handleResetPassword = async (userId: string) => {
-    if (!confirm('Deseja realmente resetar a senha deste usuário para o padrão "123456"?')) return;
+  const handleResetPassword = async (userId: string, userName: string, userEmail: string) => {
+    if (!confirm(`Deseja gerar uma nova senha aleatória para ${userName}? A senha atual será invalidada.`)) return;
     
     try {
-        await storage.updateUserProfile(userId, { password: '123456' });
-        storage.logAction(currentUser, 'UPDATE', 'User', `Resetou a senha do usuário ${users.find(u => u.id === userId)?.name} para o padrão`, userId);
-        addNotification('success', 'Senha Resetada', 'A senha padrão agora é: 123456');
+        const newPassword = securityService.generateStrongPassword();
+        const newHash = await securityService.hashPassword(newPassword);
+
+        await storage.updateUserProfile(userId, { password: newHash });
+        storage.logAction(currentUser, 'UPDATE', 'User', `Resetou a senha do usuário ${userName}`, userId);
+        
+        // Mostra credenciais
+        setNewCredentials({ email: userEmail, password: newPassword });
+        setIsCredentialsModalOpen(true);
+
         loadData(true);
     } catch (e) {
         addNotification('error', 'Erro', 'Falha ao resetar senha.');
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    addNotification('success', 'Copiado', 'Transferido para a área de transferência.');
   };
 
   const getRoleBadge = (role?: string) => {
@@ -136,7 +166,7 @@ export const Users = () => {
                 {syncing ? 'Sincronizando...' : 'Database Sync'}
             </button>
             <button 
-                onClick={() => { setSelectedUser(null); setFormData({ role: 'user', status: 'approved', name: '', email: '', password: '' }); setIsModalOpen(true); }} 
+                onClick={() => { setSelectedUser(null); setFormData({ role: 'user', status: 'approved', name: '', email: '' }); setIsModalOpen(true); }} 
                 className="flex-1 sm:flex-none bg-primary-500 text-black px-8 py-4 rounded-[24px] flex items-center justify-center gap-3 font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl shadow-primary-500/20 hover:scale-[1.02] transition-all"
             >
                 <Plus size={20} strokeWidth={3} /> NOVO USUÁRIO
@@ -149,10 +179,6 @@ export const Users = () => {
         <div className="relative flex-1">
           <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input type="text" placeholder="Filtrar por nome ou e-mail..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white" />
-        </div>
-        <div className="hidden md:flex px-5 items-center gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-2xl border border-zinc-200 dark:border-zinc-700">
-            <Activity size={14} className="text-primary-500" />
-            <span className="text-[10px] font-black uppercase text-zinc-500">{users.length} Colaboradores</span>
         </div>
       </div>
 
@@ -180,7 +206,7 @@ export const Users = () => {
 
              <div className="flex gap-2">
                 <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest"><Edit2 size={14}/> Editar</button>
-                <button onClick={() => handleResetPassword(user.id)} className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-2xl flex items-center justify-center"><RefreshCcw size={18}/></button>
+                <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-2xl flex items-center justify-center"><Key size={18}/></button>
              </div>
           </div>
         ))}
@@ -215,7 +241,7 @@ export const Users = () => {
                 </td>
                 <td className="px-8 py-5 text-right">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => handleResetPassword(user.id)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Resetar Senha Padrão"><RefreshCcw size={16} /></button>
+                    <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
                     <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
                   </div>
                 </td>
@@ -225,7 +251,7 @@ export const Users = () => {
         </table>
       </div>
 
-      {/* Modal de Usuário Reestilizado */}
+      {/* Modal de Usuário */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-8 md:p-10 border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
@@ -248,31 +274,16 @@ export const Users = () => {
                     </div>
                 </div>
 
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-zinc-500">Definir Senha de Acesso</label>
-                    <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                        <input 
-                            type={showPassword ? 'text' : 'password'} 
-                            required={!selectedUser}
-                            value={formData.password || ''} 
-                            onChange={e => setFormData({...formData, password: e.target.value})} 
-                            className="w-full pl-11 pr-12 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:border-primary-500 transition-all font-bold text-sm" 
-                            placeholder={selectedUser ? "Mantenha vazio para não alterar" : "Mínimo 6 caracteres"}
-                        />
-                        <button 
-                            type="button" 
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                        >
-                            {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                        </button>
+                {!selectedUser && (
+                    <div className="p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-start gap-3">
+                        <ShieldCheck size={20} className="shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold leading-relaxed uppercase tracking-wide">Uma senha segura será gerada automaticamente e exibida na próxima tela para compartilhamento.</p>
                     </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-zinc-500">Cargo / Permissão</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500">Cargo</label>
                         <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as any})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none font-bold text-[10px] uppercase tracking-widest">
                             <option value="user">Usuário</option>
                             <option value="moderator">Moderador</option>
@@ -289,17 +300,56 @@ export const Users = () => {
                     </div>
                 </div>
 
-                <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-3">
-                    <button type="submit" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
-                        <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Criar Novo Acesso'}
-                    </button>
-                    <div className="flex items-center gap-2 px-4 py-3 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                       <Smartphone size={14} className="text-zinc-400" />
-                       <span className="text-[9px] font-bold text-zinc-400 uppercase leading-tight">O usuário poderá logar imediatamente após salvar e sincronizar o banco.</span>
-                    </div>
-                </div>
+                <button type="submit" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
+                    <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Gerar Acesso Seguro'}
+                </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Modal de Credenciais (Sucesso) */}
+      {isCredentialsModalOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
+            <div className="bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-800 shadow-2xl relative animate-in zoom-in-95">
+                <div className="flex flex-col items-center text-center mb-8">
+                    <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-black mb-6 shadow-2xl shadow-emerald-500/30">
+                        <ShieldCheck size={40} />
+                    </div>
+                    <h2 className="text-2xl font-display font-black text-white uppercase tracking-tight">Credenciais Geradas</h2>
+                    <p className="text-zinc-400 text-xs mt-2 font-medium">Copie ou envie os dados abaixo. Por segurança, esta senha não será exibida novamente.</p>
+                </div>
+
+                <div className="space-y-4 bg-black/30 p-6 rounded-3xl border border-zinc-800">
+                    <div>
+                        <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Login / E-mail</label>
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-white font-bold">{newCredentials.email}</span>
+                            <button onClick={() => copyToClipboard(newCredentials.email)} className="text-zinc-500 hover:text-white"><Copy size={14}/></button>
+                        </div>
+                    </div>
+                    <div className="h-px bg-zinc-800 w-full" />
+                    <div>
+                        <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Senha Temporária</label>
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-emerald-400 font-mono text-xl font-bold tracking-wider">{newCredentials.password}</span>
+                            <button onClick={() => copyToClipboard(newCredentials.password)} className="text-zinc-500 hover:text-emerald-400"><Copy size={16}/></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                    <button 
+                        onClick={() => window.open(securityService.generateShareLink('Colaborador', newCredentials.email, newCredentials.password), '_blank')}
+                        className="py-4 bg-[#25D366] hover:bg-[#20bd5a] text-black rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg"
+                    >
+                        <Share2 size={16} /> Enviar WhatsApp
+                    </button>
+                    <button onClick={() => setIsCredentialsModalOpen(false)} className="py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all">
+                        Fechar Janela
+                    </button>
+                </div>
+            </div>
         </div>
       )}
     </div>

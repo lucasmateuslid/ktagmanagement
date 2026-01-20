@@ -1,36 +1,73 @@
 
 import * as React from 'react';
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, LayersControl } from 'react-leaflet';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MapContainer, TileLayer, Marker, Polyline, useMap, LayersControl, Popup } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
-import { LocationHistory, Vehicle } from '../types';
+import { LocationHistory, Vehicle, VehicleCategory } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
+import { FaCar, FaMotorcycle, FaTruck, FaQuestion } from 'react-icons/fa';
 
 const { BaseLayer } = LayersControl;
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 
-const createVehicleIcon = (isSelected: boolean, color = '#f59e0b') => L.divIcon({
-  className: 'custom-div-icon',
-  html: `
-    <div style="
-        background: ${isSelected ? color : '#ffffff'};
-        width: ${isSelected ? '42px' : '32px'};
-        height: ${isSelected ? '42px' : '32px'};
-        border: 4px solid ${isSelected ? '#ffffff' : '#18181b'};
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        transform: translate(-50%, -50%);
-        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    ">
-        <svg xmlns="http://www.w3.org/2000/svg" width="${isSelected ? '24' : '18'}" height="${isSelected ? '24' : '18'}" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? '#000000' : '#18181b'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+// Componente auxiliar para renderizar o ícone correto
+const VehicleIconComponent = ({ type, catName, size = 16, className = '' }: { type?: string, catName?: string, size?: number, className?: string }) => {
+  const t = (type || '').toLowerCase();
+  const n = (catName || '').toLowerCase();
+  
+  if (t === 'motos' || n.includes('moto')) return <FaMotorcycle size={size} className={className} />;
+  if (t === 'caminhoes' || n.includes('caminhão') || n.includes('truck')) return <FaTruck size={size} className={className} />;
+  if (t === 'carros' || n.includes('carro') || n.includes('passeio')) return <FaCar size={size} className={className} />;
+  
+  // Default/Unknown
+  return <FaQuestion size={size} className={className} />;
+};
+
+const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryName?: string, color = '#f59e0b') => {
+  const size = isSelected ? 20 : 16;
+  
+  // Renderiza o componente React Icon para string HTML
+  const iconHtml = renderToStaticMarkup(
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+        <VehicleIconComponent type={categoryType} catName={categoryName} size={size} />
     </div>
-  `,
-  iconSize: [0, 0],
-  iconAnchor: [0, 0]
-});
+  );
+  
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `
+      <div style="
+          background: ${isSelected ? color : '#ffffff'};
+          width: ${isSelected ? '48px' : '36px'};
+          height: ${isSelected ? '48px' : '36px'};
+          border: ${isSelected ? '4px' : '3px'} solid ${isSelected ? '#ffffff' : '#18181b'};
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+          transform: translate(-50%, -50%);
+          transition: all 0.3s ease;
+          color: ${isSelected ? '#000000' : '#18181b'};
+      ">
+          ${iconHtml}
+      </div>
+    `,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0]
+  });
+};
+
+// Custom Cluster Icon
+const createClusterCustomIcon = function (cluster: any) {
+  return L.divIcon({
+    html: `<div>${cluster.getChildCount()}</div>`,
+    className: 'marker-cluster-custom',
+    iconSize: L.point(40, 40, true),
+  });
+};
 
 const RecenterMap = ({ lat, lon, zoom }: { lat: number; lon: number, zoom?: number }) => {
   const map = useMap();
@@ -44,12 +81,26 @@ interface MapProps {
   locations: LocationHistory[];
   isFleetMode?: boolean; 
   vehicles?: Vehicle[];
+  categories?: VehicleCategory[];
   highlightedTagId?: string;
   onMarkerClick?: (tagId: string) => void;
 }
 
-export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = false, vehicles = [], highlightedTagId, onMarkerClick }) => {
+export const MapComponent: React.FC<MapProps> = ({ 
+  locations, 
+  isFleetMode = false, 
+  vehicles = [], 
+  categories = [],
+  highlightedTagId, 
+  onMarkerClick 
+}) => {
   const { theme } = useTheme();
+  
+  // Se houver um veículo selecionado, filtramos para mostrar APENAS ele no mapa
+  const displayLocations = highlightedTagId 
+    ? locations.filter(l => l.tagId === highlightedTagId) 
+    : locations;
+
   const highlightedLoc = highlightedTagId ? locations.find(l => l.tagId === highlightedTagId) : null;
 
   return (
@@ -72,21 +123,58 @@ export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = fals
             </BaseLayer>
           </LayersControl>
           
-          {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={17} />}
+          {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
 
           {isFleetMode ? (
-              locations.map((loc) => {
-                  const isSelected = highlightedTagId === loc.tagId;
-                  return (
-                    <Marker 
-                        key={loc.id} 
-                        position={[loc.lat, loc.lon]} 
-                        icon={createVehicleIcon(isSelected)}
-                        eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
-                    />
-                  )
-              })
+              <MarkerClusterGroup
+                chunkedLoading
+                iconCreateFunction={createClusterCustomIcon}
+                spiderfyOnMaxZoom={true}
+                showCoverageOnHover={false}
+              >
+                {displayLocations.map((loc) => {
+                    const isSelected = highlightedTagId === loc.tagId;
+                    const vehicle = vehicles.find(v => v.tagId === loc.tagId);
+                    const category = categories.find(c => c.id === vehicle?.type);
+
+                    return (
+                      <Marker 
+                          key={loc.id} 
+                          position={[loc.lat, loc.lon]} 
+                          icon={createVehicleIcon(isSelected, category?.fipeType, category?.name)}
+                          eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
+                      >
+                          <Popup closeButton={false} className="custom-popup" offset={[0, -20]}>
+                              <div className="min-w-[180px] p-1 font-sans">
+                                  <div className="flex items-center justify-between mb-2">
+                                      <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">{vehicle?.plate || 'SEM PLACA'}</h3>
+                                      <span className={`text-[8px] font-black text-white px-1.5 py-0.5 rounded uppercase tracking-widest ${vehicle?.status === 'stolen' ? 'bg-red-600' : vehicle?.status === 'maintenance' ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                                          {vehicle?.status === 'stolen' ? 'ROUBO' : vehicle?.status === 'maintenance' ? 'MANUT' : 'ATIVO'}
+                                      </span>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2 mb-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
+                                      <div className="text-zinc-500">
+                                          <VehicleIconComponent type={category?.fipeType} catName={category?.name} size={16} />
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] font-black text-zinc-700 uppercase leading-none">{vehicle?.model || 'Desconhecido'}</span>
+                                        <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">{category?.name || 'Geral'}</span>
+                                      </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[9px] font-mono text-zinc-400">
+                                      <span>{new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                      <span>{new Date(loc.timestamp).toLocaleDateString()}</span>
+                                  </div>
+                              </div>
+                          </Popup>
+                      </Marker>
+                    )
+                })}
+              </MarkerClusterGroup>
           ) : (
+              // Modo Histórico (Single Path)
               <>
                 {locations.length > 0 && (
                     <Marker 
@@ -98,8 +186,8 @@ export const MapComponent: React.FC<MapProps> = ({ locations, isFleetMode = fals
                     positions={locations.map(l => [l.lat, l.lon] as [number, number])} 
                     color="#f59e0b" 
                     weight={6} 
-                    opacity={0.4} 
-                    dashArray="1, 15"
+                    opacity={0.6} 
+                    dashArray="1, 10"
                     lineCap="round"
                 />
               </>

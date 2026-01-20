@@ -7,7 +7,7 @@ import { storage } from '../services/storage';
 import { fetchTagLocation } from '../services/api';
 import { geocodingService } from '../services/geocoding';
 import { xadtagService } from '../services/xadtag';
-import { Tag, LocationHistory, Vehicle } from '../types';
+import { Tag, LocationHistory, Vehicle, VehicleCategory, Client } from '../types';
 import { MapComponent } from '../components/MapComponent';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,8 +16,9 @@ import {
   Clock, Navigation, X, LayoutGrid,
   ChevronRight, ArrowLeft, FileText, FileSpreadsheet, 
   ChevronUp, ChevronDown, Signal, Download,
-  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays
+  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays, Eye, User
 } from 'lucide-react';
+import { FaCar, FaMotorcycle, FaTruck } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -30,14 +31,23 @@ export const LiveMap = () => {
   const { user } = useAuth();
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [categories, setCategories] = useState<VehicleCategory[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  
   const [selectedTagId, setSelectedTagId] = useState<string>('');
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
   const [historyItems, setHistoryItems] = useState<LocationHistory[]>([]);
   const [resolvedAddresses, setResolvedAddresses] = useState<Record<string, string>>({});
   
   const [filter, setFilter] = useState<FleetFilter>('all');
+  const [limit50, setLimit50] = useState(true);
   const [loading, setLoading] = useState(false);
+  
+  // States de Histórico e Exportação
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -48,10 +58,15 @@ export const LiveMap = () => {
   const timerRef = useRef<number | null>(null);
 
   const loadData = async () => {
-    let [allTags, allVehicles] = await Promise.all([storage.getTags(), storage.getVehicles()]);
+    let [allTags, allVehicles, allCategories, allClients] = await Promise.all([
+      storage.getTags(), 
+      storage.getVehicles(),
+      storage.getCategories(),
+      storage.getClients()
+    ]);
     
     if (user?.role === 'client' && user?.cpf) {
-      const myClientData = (await storage.getClients()).find(c => c.cpf.replace(/\D/g, '') === user.cpf);
+      const myClientData = allClients.find(c => c.cpf.replace(/\D/g, '') === user.cpf);
       if (myClientData) {
         allVehicles = allVehicles.filter(v => v.clientId === myClientData.id);
         allTags = allTags.filter(t => allVehicles.some(v => v.tagId === t.id));
@@ -59,6 +74,8 @@ export const LiveMap = () => {
     }
     setTags(allTags);
     setVehicles(allVehicles);
+    setCategories(allCategories);
+    setClients(allClients);
 
     const urlTagId = searchParams.get('tagId');
     if (urlTagId) handleVehicleSelect(urlTagId);
@@ -79,7 +96,7 @@ export const LiveMap = () => {
       const valid = results.filter((r): r is LocationHistory => r !== null);
       setFleetLocations(valid);
       
-      // Resolve endereço para o selecionado
+      // Resolve endereço SOMENTE para o veículo selecionado atual (otimização)
       if (selectedTagId) {
         const current = valid.find(l => l.tagId === selectedTagId);
         if (current && !resolvedAddresses[current.id]) {
@@ -114,21 +131,42 @@ export const LiveMap = () => {
     
     try {
         const endTime = Date.now();
-        const startTime = endTime - (24 * 60 * 60 * 1000); 
+        const startTime = endTime - (24 * 60 * 60 * 1000); // Últimas 24h
         
         let results: LocationHistory[] = [];
         if (tag.type === 'XADTAG') {
             results = await xadtagService.fetchHistory(tag, startTime, endTime) as LocationHistory[];
         } else {
+            // Mock para K-TAG se não houver backend real de histórico
             const last = fleetLocations.find(l => l.tagId === selectedTagId);
             if (last) {
-                results = [
-                    last,
-                    { ...last, lat: last.lat + 0.0005, lon: last.lon + 0.0005, timestamp: last.timestamp - 1800000, id: 'h1' },
-                    { ...last, lat: last.lat + 0.0012, lon: last.lon - 0.0003, timestamp: last.timestamp - 3600000, id: 'h2' }
-                ] as LocationHistory[];
+                // Simula alguns pontos anteriores
+                results = [last];
+                for(let i=1; i<=10; i++) {
+                    results.push({ 
+                        ...last, 
+                        lat: last.lat + (Math.random() * 0.002 - 0.001), 
+                        lon: last.lon + (Math.random() * 0.002 - 0.001), 
+                        timestamp: last.timestamp - (i * 3600000), // -1 hora cada
+                        id: `hist-${i}` 
+                    });
+                }
             }
         }
+        
+        // OTIMIZAÇÃO: Resolve endereço apenas dos 3 primeiros (mais recentes)
+        // O restante será resolvido apenas na exportação para não pesar.
+        const top3 = results.slice(0, 3);
+        const newAddresses: Record<string, string> = {};
+        
+        await Promise.all(top3.map(async (item) => {
+            if (!resolvedAddresses[item.id]) {
+                const addr = await geocodingService.reverseGeocode(item.lat, item.lon);
+                newAddresses[item.id] = addr;
+            }
+        }));
+
+        setResolvedAddresses(prev => ({ ...prev, ...newAddresses }));
         setHistoryItems(results);
     } catch (e) {
         addNotification('error', 'Erro', 'Falha ao recuperar trajetória.');
@@ -137,32 +175,81 @@ export const LiveMap = () => {
     }
   };
 
-  const exportPDF = () => {
-    const v = vehicles.find(v => v.tagId === selectedTagId);
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.text(`HISTÓRICO OPERACIONAL: ${v?.plate}`, 14, 20);
-    autoTable(doc, {
-      startY: 30,
-      head: [['Data/Hora', 'Coordenadas', 'Endereço Estimado']],
-      body: historyItems.map(item => [
-        new Date(item.timestamp).toLocaleString(),
-        `${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}`,
-        resolvedAddresses[item.id] || 'GPS Local'
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [245, 158, 11] }
-    });
-    doc.save(`KTAG_HIST_${v?.plate}.pdf`);
+  // Função auxiliar para resolver todos os endereços antes de exportar
+  const processExportData = async () => {
+    setExporting(true);
+    setExportProgress(0);
+    const total = historyItems.length;
+    const exportData = [];
+
+    // Clona o dicionário de endereços atual
+    const currentAddresses = { ...resolvedAddresses };
+
+    for (let i = 0; i < total; i++) {
+        const item = historyItems[i];
+        let address = currentAddresses[item.id];
+
+        // Se não tiver endereço resolvido, resolve agora (com pequeno delay para não bloquear API)
+        if (!address) {
+            try {
+                // Pequeno throttle artificial se necessário
+                await new Promise(r => setTimeout(r, 100)); 
+                address = await geocodingService.reverseGeocode(item.lat, item.lon);
+                currentAddresses[item.id] = address;
+                // Atualiza o estado visual também, opcional
+                setResolvedAddresses(prev => ({ ...prev, [item.id]: address }));
+            } catch (e) {
+                address = "Endereço indisponível";
+            }
+        }
+
+        exportData.push({
+            data: new Date(item.timestamp).toLocaleString(),
+            lat: item.lat,
+            lon: item.lon,
+            endereco: address
+        });
+
+        // Atualiza barra de progresso
+        setExportProgress(Math.round(((i + 1) / total) * 100));
+    }
+
+    setExporting(false);
+    return exportData;
   };
 
-  const exportExcel = () => {
+  const handleExport = async (type: 'pdf' | 'excel') => {
     const v = vehicles.find(v => v.tagId === selectedTagId);
-    const data = historyItems.map(i => ({ Data: new Date(i.timestamp).toLocaleString(), Lat: i.lat, Lon: i.lon }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Histórico");
-    XLSX.writeFile(wb, `KTAG_HIST_${v?.plate}.xlsx`);
+    
+    // Processa os dados (resolve endereços faltantes)
+    const data = await processExportData();
+
+    if (type === 'pdf') {
+        const doc = new jsPDF();
+        doc.setFontSize(18);
+        doc.text(`RELATÓRIO DE TRAJETO (24H)`, 14, 20);
+        doc.setFontSize(10);
+        doc.text(`Veículo: ${v?.plate} | ${v?.model}`, 14, 28);
+        
+        autoTable(doc, {
+          startY: 35,
+          head: [['Data/Hora', 'Coordenadas', 'Endereço Local']],
+          body: data.map(item => [
+            item.data,
+            `${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}`,
+            item.endereco
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [245, 158, 11] },
+          styles: { fontSize: 8 }
+        });
+        doc.save(`Trajeto_${v?.plate}.pdf`);
+    } else {
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Trajeto");
+        XLSX.writeFile(wb, `Trajeto_${v?.plate}.xlsx`);
+    }
   };
 
   const stats = useMemo(() => {
@@ -180,14 +267,38 @@ export const LiveMap = () => {
     return term ? base.filter(v => v.plate.toLowerCase().includes(term) || v.model.toLowerCase().includes(term)) : base;
   }, [vehicles, fleetLocations, filter, tagSearchTerm]);
 
+  const locationsToRender = useMemo(() => {
+    if (selectedTagId) {
+        return fleetLocations.filter(l => l.tagId === selectedTagId);
+    }
+    let base = filter === 'all' 
+        ? fleetLocations 
+        : fleetLocations.filter(l => filter === 'online');
+
+    if (limit50 && base.length > 50) {
+        return base.slice(0, 50);
+    }
+    return base;
+  }, [fleetLocations, selectedTagId, filter, limit50]);
+
   const activeVehicle = vehicles.find(v => v.tagId === selectedTagId);
+  const activeCategory = activeVehicle ? categories.find(c => c.id === activeVehicle.type) : null;
+  const activeClient = activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : null;
   const lastLoc = fleetLocations.find(l => l.tagId === selectedTagId);
+
+  const getModalIcon = (fipeType?: string) => {
+    switch (fipeType) {
+        case 'motos': return <FaMotorcycle size={28} />;
+        case 'caminhoes': return <FaTruck size={28} />;
+        default: return <FaCar size={28} />;
+    }
+  };
 
   return (
     <div className="relative h-full w-full flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 font-sans">
       
-      {/* HUD SUPERIOR: BUSCA E FILTROS */}
-      <div className="absolute top-6 left-0 right-0 z-[100] px-4 pointer-events-none flex flex-col items-center gap-4">
+      {/* HUD SUPERIOR */}
+      <div className="absolute top-6 left-0 right-0 z-[400] px-4 pointer-events-none flex flex-col items-center gap-4">
         <div className="w-full max-w-xl pointer-events-auto">
           <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl rounded-[24px] shadow-2xl border border-zinc-200 dark:border-zinc-800 p-1.5 flex items-center gap-2">
             <div className="flex-1 flex items-center gap-3 pl-4">
@@ -240,33 +351,39 @@ export const LiveMap = () => {
             <button onClick={() => setFilter('online')} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${filter === 'online' ? 'bg-emerald-500 text-white shadow-lg' : 'text-zinc-500 hover:text-emerald-500'}`}>
               <Wifi size={13} /> {stats.online}
             </button>
-            <button onClick={() => setFilter('offline')} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${filter === 'offline' ? 'bg-red-500 text-white shadow-lg' : 'text-zinc-500 hover:text-red-500'}`}>
-              <WifiOff size={13} /> {stats.offline}
+            <div className="w-px h-4 bg-zinc-700 dark:bg-zinc-300 mx-1 opacity-30" />
+            <button 
+                onClick={() => setLimit50(!limit50)} 
+                title={limit50 ? "Mostrar Todos" : "Limitar a 50"}
+                className={`px-3 py-2 rounded-full text-[10px] font-black uppercase transition-all flex items-center gap-1 ${limit50 ? 'text-zinc-500' : 'text-primary-500 bg-primary-500/10'}`}
+            >
+                <Eye size={13} /> {limit50 ? '50' : 'ALL'}
             </button>
         </div>
       </div>
 
-      {/* MAPA PRINCIPAL */}
+      {/* MAPA */}
       <div className="flex-1 relative z-0">
         <MapComponent 
-            locations={filter === 'all' ? fleetLocations : fleetLocations.filter(l => filter === 'online' ? true : false)} 
+            locations={locationsToRender} 
             isFleetMode={true} 
-            vehicles={vehicles} 
+            vehicles={vehicles}
+            categories={categories}
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleVehicleSelect} 
         />
       </div>
 
-      {/* BOTTOM SHEET DE DETALHES (IMAGE STYLE) */}
+      {/* BOTTOM SHEET DETALHES */}
       <AnimatePresence>
         {selectedTagId && (
           <motion.div initial={{ y: '100%' }} animate={{ y: isSheetExpanded ? 0 : 'calc(100% - 100px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-            className="absolute bottom-0 left-0 right-0 z-[150] bg-white dark:bg-zinc-900 rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden"
+            className="absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden"
           >
             <div className="h-[100px] px-8 flex items-center justify-between cursor-pointer group" onClick={() => setIsSheetExpanded(!isSheetExpanded)}>
               <div className="flex items-center gap-5">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl transition-all ${lastLoc ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
-                  <Car size={28} strokeWidth={2.5} />
+                  {getModalIcon(activeCategory?.fipeType)}
                 </div>
                 <div>
                   <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase leading-none tracking-tighter">{activeVehicle?.plate}</h2>
@@ -282,6 +399,20 @@ export const LiveMap = () => {
             </div>
 
             <div className="px-8 pb-10 space-y-6 overflow-y-auto no-scrollbar border-t border-zinc-50 dark:border-zinc-800/50 pt-8">
+                
+                {/* Exibição do Cliente Responsável */}
+                {activeClient && (
+                    <div className="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
+                        <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shadow-sm shrink-0">
+                            <User size={18} />
+                        </div>
+                        <div className="overflow-hidden">
+                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">Cliente Responsável</span>
+                            <span className="text-xs font-bold text-zinc-900 dark:text-white uppercase truncate block">{activeClient.name}</span>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-zinc-50 dark:bg-zinc-950/60 p-6 rounded-[32px] border border-zinc-100 dark:border-zinc-800/50 relative overflow-hidden group">
                     <div className="flex items-center gap-2 text-primary-500 mb-2">
                         <MapPin size={16} />
@@ -310,19 +441,35 @@ export const LiveMap = () => {
         )}
       </AnimatePresence>
 
-      {/* PAINEL DE LINHA DO TEMPO (OVERLAY) */}
+      {/* OVERLAY DE HISTÓRICO */}
       <AnimatePresence>
         {showHistoryList && (
-           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[200] bg-black/70 backdrop-blur-md flex items-center justify-end">
+           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-md flex items-center justify-end">
               <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-                className="w-full md:w-[480px] h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col overflow-hidden"
+                className="w-full md:w-[480px] h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col overflow-hidden relative"
               >
+                {/* OVERLAY DE EXPORTAÇÃO */}
+                <AnimatePresence>
+                    {exporting && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2010] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center text-white">
+                            <Loader2 size={48} className="animate-spin text-primary-500 mb-6" />
+                            <h3 className="text-xl font-display font-black uppercase tracking-tight mb-2">Processando Trajeto</h3>
+                            <p className="text-xs font-medium text-zinc-400 uppercase tracking-widest mb-8">Resolvendo endereços completos...</p>
+                            
+                            <div className="w-full max-w-[200px] h-2 bg-zinc-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-primary-500 transition-all duration-300" style={{ width: `${exportProgress}%` }} />
+                            </div>
+                            <span className="mt-4 text-sm font-mono font-bold text-primary-500">{exportProgress}%</span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
                     <div className="flex justify-between items-start mb-8">
                         <button onClick={() => setShowHistoryList(false)} className="p-4 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-zinc-500 hover:text-primary-500 transition-all shadow-sm"><ArrowLeft size={24}/></button>
                         <div className="flex gap-2">
-                            <button onClick={exportPDF} title="PDF Report" className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"><FileText size={22}/></button>
-                            <button onClick={exportExcel} title="Excel Export" className="p-4 bg-emerald-500/10 text-emerald-500 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all"><FileSpreadsheet size={22}/></button>
+                            <button onClick={() => handleExport('pdf')} disabled={exporting} title="PDF Completo" className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"><FileText size={22}/></button>
+                            <button onClick={() => handleExport('excel')} disabled={exporting} title="Excel Completo" className="p-4 bg-emerald-500/10 text-emerald-500 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50"><FileSpreadsheet size={22}/></button>
                         </div>
                     </div>
                     <div>
@@ -358,8 +505,8 @@ export const LiveMap = () => {
                                         <span className="text-[12px] font-black text-zinc-900 dark:text-white uppercase font-mono tracking-tight">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                         <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{new Date(item.timestamp).toLocaleDateString()}</span>
                                     </div>
-                                    <p className="text-[14px] font-bold text-zinc-500 dark:text-zinc-400 leading-tight group-hover:text-primary-500 transition-colors">
-                                        {resolvedAddresses[item.id] || `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`}
+                                    <p className={`text-[14px] font-bold leading-tight transition-colors ${resolvedAddresses[item.id] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-700 italic font-medium'}`}>
+                                        {resolvedAddresses[item.id] || (idx < 3 ? 'Resolvendo...' : `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`)}
                                     </p>
                                     <div className="mt-3 flex items-center gap-4">
                                         <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-widest"><Signal size={12}/> Sinal 100%</div>

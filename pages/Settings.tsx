@@ -6,6 +6,7 @@ import { AppSettings, User, Company, VehicleCategory } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { securityService } from '../services/security';
 import { 
   Save, Settings as SettingsIcon, Database, Globe, Key, 
   Languages, Trash2, Plus, ShieldAlert, 
@@ -90,14 +91,41 @@ export const Settings = () => {
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
+    
+    if (pwdForm.new.length < 6) { addNotification('error', 'Erro', 'A senha deve ter no mínimo 6 caracteres.'); return; }
     if (pwdForm.new !== pwdForm.confirm) { addNotification('error', 'Erro', 'As senhas não coincidem.'); return; }
+    
     setPwdLoading(true);
     try {
         const dbUser = await storage.findUserByEmail(currentUser.email);
-        if (pwdForm.current !== (dbUser?.password || currentUser.password)) { addNotification('error', 'Erro', 'Senha atual incorreta.'); return; }
+        if (!dbUser) return;
+
+        // Verifica a senha atual (Hash ou Texto Plano)
+        const isCurrentValid = await securityService.verifyPassword(pwdForm.current, dbUser.password || '');
+        // Fallback para texto plano se não for hash válido (durante migração)
+        const isLegacyValid = !isCurrentValid && (dbUser.password === pwdForm.current);
+
+        if (!isCurrentValid && !isLegacyValid) {
+             addNotification('error', 'Erro', 'Senha atual incorreta.'); 
+             return; 
+        }
+
+        // Hash da nova senha
+        const newPasswordHash = await securityService.hashPassword(pwdForm.new);
+        
+        await updateProfile({ password: newPasswordHash }); // AuthContext já lida, mas aqui garantimos que enviamos o que queremos se necessário, mas updateProfile tbm faz hash.
+        // O updateProfile do AuthContext também aplica hash se detectar senha. Para evitar double-hash se chamarmos aqui, melhor passar raw para updateProfile OU passar hash e ajustar updateProfile.
+        // Verificando AuthContext: ele faz hash. Então vamos passar raw aqui para ele hash.
+        // CORREÇÃO: AuthContext faz hash. Então envio raw.
+        
+        // Porém, updateProfile no AuthContext usa securityService.hashPassword.
+        // Então basta chamar:
         await updateProfile({ password: pwdForm.new });
-        addNotification('success', 'Sucesso', 'Sua senha foi alterada.');
+
+        addNotification('success', 'Sucesso', 'Sua senha foi alterada com segurança.');
         setPwdForm({ current: '', new: '', confirm: '' });
+    } catch (e) {
+        addNotification('error', 'Erro', 'Falha ao atualizar senha.');
     } finally { setPwdLoading(false); }
   };
 

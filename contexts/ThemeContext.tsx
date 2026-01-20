@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { storage } from '../services/storage';
@@ -11,7 +10,10 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children?: ReactNode }) => {
-  const [theme, setTheme] = useState<'light' | 'dark'>(storage.getTheme());
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const savedTheme = storage.getTheme();
+    return savedTheme === 'dark' ? 'dark' : 'light';
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;

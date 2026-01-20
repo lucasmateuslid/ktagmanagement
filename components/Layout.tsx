@@ -189,75 +189,77 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
       {/* MAIN VIEWPORT */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="h-20 flex items-center justify-between px-6 md:px-8 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-900 sticky top-0 z-[1000]">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400"><Menu size={22} /></button>
-            <div className="hidden sm:block">
-               <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-400">Portal de Rastreio</h2>
-               <div className="flex items-center gap-2 mt-0.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="text-[11px] font-bold text-zinc-500 uppercase leading-none">{user?.role === 'client' ? 'Painel de Associado' : 'Console de Operações'}</p>
+        <header className="h-20 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-900 sticky top-0 z-[1000]">
+          <div className="h-full w-full max-w-[1600px] mx-auto flex items-center justify-between px-6 md:px-8 lg:px-10">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400"><Menu size={22} /></button>
+              <div className="hidden sm:block">
+                 <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-400">Portal de Rastreio</h2>
+                 <div className="flex items-center gap-2 mt-0.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <p className="text-[11px] font-bold text-zinc-500 uppercase leading-none">{user?.role === 'client' ? 'Painel de Associado' : 'Console de Operações'}</p>
+                 </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 md:gap-5">
+               {/* NOTIFICATIONS (Sino no Canto Superior Direito) */}
+               <div className="relative" ref={notificationRef}>
+                  <button onClick={() => setNotificationsOpen(!notificationsOpen)} className={`p-3 rounded-2xl transition-all border ${notificationsOpen ? 'bg-primary-500 text-black border-primary-500 shadow-xl scale-105' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50'}`}>
+                    <Bell size={20} className={unreadCount > 0 ? 'animate-bounce' : ''} />
+                    {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-950">{unreadCount}</span>}
+                  </button>
+                  <AnimatePresence>
+                    {notificationsOpen && (
+                      <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="fixed inset-x-4 top-24 md:absolute md:inset-auto md:right-0 md:top-full md:mt-4 w-auto md:w-[380px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] shadow-2xl z-[1100] overflow-hidden">
+                        <div className="p-6 border-b bg-zinc-50/50 dark:bg-zinc-950/50 flex justify-between items-center">
+                          <div>
+                             <h3 className="text-[11px] font-black uppercase tracking-widest text-zinc-900 dark:text-white">Central de Alertas</h3>
+                             <p className="text-[9px] font-bold text-zinc-400 uppercase mt-0.5">Notificações de Sistema</p>
+                          </div>
+                          <button onClick={clearAll} className="p-2 text-zinc-400 hover:text-red-500 transition-colors bg-zinc-100 dark:bg-zinc-800 rounded-xl" title="Limpar Tudo"><Trash2 size={16}/></button>
+                        </div>
+                        <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-3 space-y-1">
+                          {notifications.length === 0 ? (
+                             <div className="py-20 text-center flex flex-col items-center gap-4 opacity-20">
+                                <Bell size={48} />
+                                <span className="text-[10px] font-black uppercase italic tracking-widest">Nenhum alerta pendente</span>
+                             </div>
+                          ) : 
+                            notifications.map((note) => (
+                              <div key={note.id} onClick={() => markAsRead(note.id)} className={`p-5 rounded-2xl cursor-pointer transition-all border ${note.read ? 'bg-transparent opacity-60 border-transparent' : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-700 shadow-sm'}`}>
+                                  <div className="flex justify-between items-start gap-3">
+                                     <h4 className="font-black text-[11px] uppercase truncate tracking-tight text-zinc-900 dark:text-white">{note.title}</h4>
+                                     {!note.read && <div className="w-2 h-2 rounded-full bg-primary-500 shrink-0 mt-1" />}
+                                  </div>
+                                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 mt-1.5 leading-snug font-medium">{note.message}</p>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+               </div>
+
+               {/* THEME TOGGLE */}
+               <button onClick={toggleTheme} className="p-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border border-zinc-200 dark:border-zinc-800 hover:text-primary-500 transition-all">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
+               
+               <div className="h-10 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
+
+               {/* USER IDENTITY */}
+               <div className="flex items-center gap-4">
+                  <div className="hidden lg:flex flex-col items-end text-right">
+                      <p className="text-sm font-black text-zinc-900 dark:text-white uppercase truncate max-w-[160px] leading-none tracking-tight">{user?.name}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                         <span className="text-[9px] font-black text-primary-500 uppercase tracking-widest bg-primary-500/10 px-2 py-0.5 rounded-lg border border-primary-500/20">{user?.role}</span>
+                      </div>
+                  </div>
+                  <div className="w-12 h-12 rounded-[18px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-zinc-100 font-black border border-zinc-700/30 shadow-2xl shrink-0 text-lg">
+                    {user?.avatarInitial || user?.name.charAt(0).toUpperCase()}
+                  </div>
                </div>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-3 md:gap-5">
-             {/* NOTIFICATIONS (Sino no Canto Superior Direito) */}
-             <div className="relative" ref={notificationRef}>
-                <button onClick={() => setNotificationsOpen(!notificationsOpen)} className={`p-3 rounded-2xl transition-all border ${notificationsOpen ? 'bg-primary-500 text-black border-primary-500 shadow-xl scale-105' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50'}`}>
-                  <Bell size={20} className={unreadCount > 0 ? 'animate-bounce' : ''} />
-                  {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-950">{unreadCount}</span>}
-                </button>
-                <AnimatePresence>
-                  {notificationsOpen && (
-                    <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="fixed inset-x-4 top-24 md:absolute md:inset-auto md:right-0 md:top-full md:mt-4 w-auto md:w-[380px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] shadow-2xl z-[1100] overflow-hidden">
-                      <div className="p-6 border-b bg-zinc-50/50 dark:bg-zinc-950/50 flex justify-between items-center">
-                        <div>
-                           <h3 className="text-[11px] font-black uppercase tracking-widest text-zinc-900 dark:text-white">Central de Alertas</h3>
-                           <p className="text-[9px] font-bold text-zinc-400 uppercase mt-0.5">Notificações de Sistema</p>
-                        </div>
-                        <button onClick={clearAll} className="p-2 text-zinc-400 hover:text-red-500 transition-colors bg-zinc-100 dark:bg-zinc-800 rounded-xl" title="Limpar Tudo"><Trash2 size={16}/></button>
-                      </div>
-                      <div className="max-h-[400px] overflow-y-auto custom-scrollbar p-3 space-y-1">
-                        {notifications.length === 0 ? (
-                           <div className="py-20 text-center flex flex-col items-center gap-4 opacity-20">
-                              <Bell size={48} />
-                              <span className="text-[10px] font-black uppercase italic tracking-widest">Nenhum alerta pendente</span>
-                           </div>
-                        ) : 
-                          notifications.map((note) => (
-                            <div key={note.id} onClick={() => markAsRead(note.id)} className={`p-5 rounded-2xl cursor-pointer transition-all border ${note.read ? 'bg-transparent opacity-60 border-transparent' : 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-700 shadow-sm'}`}>
-                                <div className="flex justify-between items-start gap-3">
-                                   <h4 className="font-black text-[11px] uppercase truncate tracking-tight text-zinc-900 dark:text-white">{note.title}</h4>
-                                   {!note.read && <div className="w-2 h-2 rounded-full bg-primary-500 shrink-0 mt-1" />}
-                                </div>
-                                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 mt-1.5 leading-snug font-medium">{note.message}</p>
-                            </div>
-                          ))
-                        }
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-             </div>
-
-             {/* THEME TOGGLE */}
-             <button onClick={toggleTheme} className="p-3 rounded-2xl bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border border-zinc-200 dark:border-zinc-800 hover:text-primary-500 transition-all">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
-             
-             <div className="h-10 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-             {/* USER IDENTITY */}
-             <div className="flex items-center gap-4">
-                <div className="hidden lg:flex flex-col items-end text-right">
-                    <p className="text-sm font-black text-zinc-900 dark:text-white uppercase truncate max-w-[160px] leading-none tracking-tight">{user?.name}</p>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                       <span className="text-[9px] font-black text-primary-500 uppercase tracking-widest bg-primary-500/10 px-2 py-0.5 rounded-lg border border-primary-500/20">{user?.role}</span>
-                    </div>
-                </div>
-                <div className="w-12 h-12 rounded-[18px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-zinc-100 font-black border border-zinc-700/30 shadow-2xl shrink-0 text-lg">
-                  {user?.avatarInitial || user?.name.charAt(0).toUpperCase()}
-                </div>
-             </div>
           </div>
         </header>
 

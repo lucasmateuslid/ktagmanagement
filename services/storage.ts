@@ -6,9 +6,11 @@ import {
   query, where, setDoc, getDoc, orderBy, limit, getDocsFromCache, getDocsFromServer 
 } from 'firebase/firestore';
 import { encryption } from './encryption';
+import { jwtService } from './jwt';
+import { securityService } from './security';
 
 const KEYS = {
-  USER_SESSION: 'ktag_user_session',
+  USER_SESSION: 'ktag_auth_token', 
   USERS_DB: 'ktag_users_db',
   TAGS: 'ktag_tags',
   VEHICLES: 'ktag_vehicles',
@@ -41,7 +43,7 @@ const cleanData = <T extends Record<string, any>>(data: T): T => {
   return copy;
 };
 
-// Helper para buscar dados de forma resiliente (Tenta servidor, cai no cache silenciosamente)
+// Helper para buscar dados de forma resiliente
 const fetchResilient = async (colName: string) => {
   if (!db) return [];
   try {
@@ -59,20 +61,30 @@ const fetchResilient = async (colName: string) => {
 };
 
 export const storage = {
-  // --- SEGURANÇA E SESSÃO ---
+  // --- SEGURANÇA E SESSÃO (JWT UPDATED) ---
   initEncryption: async (user: User) => {
-    const seed = `${user.id}-${user.email}-${user.password || 'ktag-default-vault'}`;
+    const seed = `${user.id}-${user.email}-ktag-vault-secure`;
     await encryption.initialize(seed);
   },
 
   getSessionUser: async (): Promise<User | null> => {
-    const u = cache.get<User | null>(KEYS.USER_SESSION, null);
-    if (u) await storage.initEncryption(u);
-    return u;
+    const token = localStorage.getItem(KEYS.USER_SESSION);
+    if (!token) return null;
+
+    const user = await jwtService.verify(token);
+    
+    if (user) {
+      await storage.initEncryption(user);
+      return user;
+    } else {
+      await storage.clearSessionUser();
+      return null;
+    }
   },
 
   setSessionUser: async (user: User) => {
-    cache.set(KEYS.USER_SESSION, user);
+    const token = await jwtService.sign(user);
+    localStorage.setItem(KEYS.USER_SESSION, token);
     await storage.initEncryption(user);
   },
 
@@ -139,7 +151,7 @@ export const storage = {
     }
   },
 
-  // --- GESTÃO DE VEÍCULOS E CLIENTES ---
+  // --- GESTÃO DE VEÍCULOS E CLIENTES (E2EE PROTECTED) ---
   getVehicles: async (): Promise<Vehicle[]> => {
     const raw = await fetchResilient(KEYS.VEHICLES) as Vehicle[];
     if (raw.length > 0) cache.set(KEYS.VEHICLES, raw);
@@ -147,13 +159,20 @@ export const storage = {
     await encryption.waitReady();
     return Promise.all(raw.map(async v => ({
       ...v,
-      plate: await encryption.decrypt(v.plate)
+      plate: await encryption.decrypt(v.plate),
+      chassis: v.chassis ? await encryption.decrypt(v.chassis) : undefined
     })));
   },
 
   saveVehicle: async (v: Vehicle) => {
     await encryption.waitReady();
-    const encryptedVehicle = { ...v, plate: await encryption.encrypt(v.plate) };
+    const encryptedVehicle = { 
+      ...v, 
+      plate: await encryption.encrypt(v.plate),
+      chassis: v.chassis ? await encryption.encrypt(v.chassis) : undefined,
+      plateHash: await securityService.generateSearchIndex(v.plate) // Blind Index
+    };
+    
     if (db) await setDoc(doc(db, KEYS.VEHICLES, v.id), cleanData(encryptedVehicle));
     
     const list = cache.get<Vehicle[]>(KEYS.VEHICLES, []);
@@ -172,7 +191,8 @@ export const storage = {
       name: await encryption.decrypt(c.name),
       cpf: await encryption.decrypt(c.cpf),
       phone: await encryption.decrypt(c.phone),
-      email: c.email ? await encryption.decrypt(c.email) : undefined
+      email: c.email ? await encryption.decrypt(c.email) : undefined,
+      address: c.address ? await encryption.decrypt(c.address) : undefined
     })));
   },
 
@@ -183,8 +203,11 @@ export const storage = {
       name: await encryption.encrypt(c.name),
       cpf: await encryption.encrypt(c.cpf),
       phone: await encryption.encrypt(c.phone),
-      email: c.email ? await encryption.encrypt(c.email) : undefined
+      email: c.email ? await encryption.encrypt(c.email) : undefined,
+      address: c.address ? await encryption.encrypt(c.address) : undefined,
+      cpfHash: await securityService.generateSearchIndex(c.cpf) // Blind Index
     };
+    
     if (db) await setDoc(doc(db, KEYS.CLIENTS, c.id), cleanData(encryptedClient));
     const list = cache.get<Client[]>(KEYS.CLIENTS, []);
     const idx = list.findIndex(item => item.id === c.id);

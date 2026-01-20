@@ -53,6 +53,8 @@ export interface Client {
   state?: string;
   hasAccess?: boolean;
   createdAt: number;
+  // Security Index
+  cpfHash?: string;
 }
 
 export interface Vehicle {
@@ -69,10 +71,11 @@ export interface Vehicle {
   installationType?: 'tag_only' | 'tag_tracker';
   createdAt: number;
   updatedBy?: string;
-  // Added properties for Hinova and Plate API integrations
   chassis?: string;
   fipeCode?: string;
   hinovaId?: string;
+  // Security Index
+  plateHash?: string;
 }
 
 export interface LocationHistory {

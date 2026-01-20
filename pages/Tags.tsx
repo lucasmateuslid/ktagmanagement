@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -8,8 +7,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
@@ -76,6 +75,31 @@ export const Tags = () => {
     }
   };
 
+  const handleMassDelete = async () => {
+    const count = selectedTags.size;
+    if (count === 0) return;
+    
+    if (!confirm(`ATENÇÃO: Você está prestes a excluir ${count} equipamentos.\n\nEquipamentos vinculados a veículos perderão a associação.\nDeseja continuar?`)) return;
+
+    try {
+        const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
+        await Promise.all(promises);
+        
+        // Remove associações nos veículos se houver
+        const vehicleUpdates = vehicles
+            .filter(v => v.tagId && selectedTags.has(v.tagId))
+            .map(v => storage.saveVehicle({ ...v, tagId: undefined }));
+        await Promise.all(vehicleUpdates);
+
+        addNotification('success', 'Exclusão em Massa', `${count} equipamentos foram removidos do estoque.`);
+        setSelectedTags(new Set());
+        loadData();
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Falha ao processar exclusão em massa.';
+        addNotification('error', 'Erro', errorMessage);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const isEdit = !!formData.id;
@@ -137,14 +161,55 @@ export const Tags = () => {
 
       <input type="file" ref={fileInputRef} onChange={() => {}} accept=".csv" className="hidden" />
 
-      <div className="bg-white dark:bg-zinc-900 p-3 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input type="text" placeholder="Pesquisar por SN, IMEI ou Placa..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-primary-500/5 transition-all" />
+      {/* BARRA DE CONTROLE REFORMULADA */}
+      <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
+        <div className="relative flex-1 w-full">
+          <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input 
+            type="text" 
+            placeholder="Pesquisar por SN, IMEI ou Placa..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
+          />
         </div>
-        <button onClick={handleSelectAll} className="px-8 py-3.5 bg-zinc-50 dark:bg-zinc-800 rounded-2xl font-black uppercase text-[9px] tracking-widest text-zinc-500 border border-zinc-200 dark:border-zinc-700 flex items-center gap-3 transition-all">
-          {selectedTags.size === filteredTags.length ? <CheckSquare size={16} /> : <Square size={16} />} Multi-Seleção
-        </button>
+        
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2">
+            <AnimatePresence mode="popLayout">
+                {selectedTags.size > 0 && (
+                    <motion.div 
+                        initial={{ opacity: 0, x: 20 }} 
+                        animate={{ opacity: 1, x: 0 }} 
+                        exit={{ opacity: 0, x: 20 }}
+                        className="flex items-center gap-2"
+                    >
+                        <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
+                            <ListChecks size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size} SELECIONADOS</span>
+                        </div>
+                        <button 
+                            onClick={handleMassDelete} 
+                            className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                        >
+                            <Trash2 size={14} /> Remover em Massa
+                        </button>
+                        <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <button 
+                onClick={handleSelectAll} 
+                className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center gap-2 transition-all border ${
+                    selectedTags.size === filteredTags.length && filteredTags.length > 0 
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
+                    : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                }`}
+            >
+                {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
+                {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? 'Desmarcar Todos' : 'Selecionar Todos'}
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -153,15 +218,33 @@ export const Tags = () => {
           const vehicle = vehicles.find(v => v.tagId === tag.id);
 
           return (
-            <div key={tag.id} onClick={() => toggleSelect(tag.id)} className={`bg-white dark:bg-zinc-900 p-10 rounded-[40px] border transition-all cursor-pointer group flex flex-col justify-between min-h-[360px] ${isSelected ? 'border-primary-500 ring-2 ring-primary-500/10 shadow-2xl' : 'border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700'}`}>
+            <motion.div 
+                layout
+                key={tag.id} 
+                onClick={() => toggleSelect(tag.id)} 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ y: -5 }}
+                className={`bg-white dark:bg-zinc-900 p-10 rounded-[40px] border transition-all cursor-pointer group flex flex-col justify-between min-h-[360px] relative overflow-hidden ${isSelected ? 'border-primary-500 ring-4 ring-primary-500/10 shadow-2xl' : 'border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+            >
+              {isSelected && (
+                  <div className="absolute top-0 right-0 p-6">
+                      <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white shadow-lg animate-in zoom-in duration-200">
+                          <Check size={16} strokeWidth={4} />
+                      </div>
+                  </div>
+              )}
+
               <div className="flex justify-between items-start">
-                <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
+                <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
                   {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all"><Edit2 size={16}/></button>
-                    <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all"><Trash2 size={16}/></button>
-                </div>
+                {!isSelected && (
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all"><Edit2 size={16}/></button>
+                        <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all"><Trash2 size={16}/></button>
+                    </div>
+                )}
               </div>
 
               <div className="mt-8">
@@ -188,7 +271,7 @@ export const Tags = () => {
                     </div>
                  )}
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
