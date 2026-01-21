@@ -1,9 +1,10 @@
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification } from '../types';
+// ... keep imports ...
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory } from '../types';
 import { db } from './firebase';
 import { 
   collection, getDocs, addDoc, doc, updateDoc, deleteDoc, 
-  query, where, setDoc, getDoc, orderBy, limit, getDocsFromCache, getDocsFromServer 
+  query, where, setDoc, getDoc, orderBy, limit, getDocsFromCache, onSnapshot 
 } from 'firebase/firestore';
 import { encryption } from './encryption';
 import { jwtService } from './jwt';
@@ -21,8 +22,11 @@ const KEYS = {
   STOLEN_RECORDS: 'ktag_stolen_records',
   AUDIT_LOGS: 'ktag_audit_logs',
   NOTIFICATIONS: 'ktag_notifications',
+  SCHEDULES: 'ktag_schedules',
+  TECHNICIANS: 'ktag_technicians',
 };
 
+// ... keep cache and cleanData ...
 const cache = {
   get: <T>(key: string, def: T): T => {
     try {
@@ -61,9 +65,12 @@ const fetchResilient = async (colName: string) => {
 };
 
 export const storage = {
+  // ... existing methods (initEncryption, sessions, users, vehicles, clients, tags, companies, categories, stolen, settings, audit) ...
+  
   // --- SEGURANÇA E SESSÃO (JWT UPDATED) ---
   initEncryption: async (user: User) => {
-    const seed = `${user.id}-${user.email}-ktag-vault-secure`;
+    const scope = user.companySlug || 'default-global-scope';
+    const seed = `ktag-enterprise-master-key-${scope}-v2`; 
     await encryption.initialize(seed);
   },
 
@@ -97,7 +104,7 @@ export const storage = {
   },
 
   // --- GESTÃO DE USUÁRIOS ---
-  findUserByEmail: async (email: string): Promise<User | null> => {
+  findUserByEmail: async (email: string, decrypt = true): Promise<User | null> => {
     const cleanEmail = email.toLowerCase().trim();
     if (db) {
       try {
@@ -105,11 +112,14 @@ export const storage = {
         const snap = await getDocs(q);
         if (!snap.empty) {
           const userData = { ...snap.docs[0].data(), id: snap.docs[0].id } as User;
-          return {
-            ...userData,
-            name: await encryption.decrypt(userData.name),
-            cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
-          };
+          if (decrypt) {
+             return {
+                ...userData,
+                name: await encryption.decrypt(userData.name),
+                cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
+             };
+          }
+          return userData;
         }
       } catch (e) { console.error("DB User Lookup Error", e); }
     }
@@ -353,6 +363,51 @@ export const storage = {
     } catch (e) {
       return [];
     }
+  },
+
+  // --- AGENDAMENTOS E TÉCNICOS (NOVO) ---
+  
+  // Técnicos
+  getTechnicians: async (): Promise<Technician[]> => {
+    if (!db) return [];
+    const res = await fetchResilient(KEYS.TECHNICIANS);
+    return res as Technician[];
+  },
+
+  saveTechnician: async (tech: Technician) => {
+    if (db) await setDoc(doc(db, KEYS.TECHNICIANS, tech.id), cleanData(tech));
+  },
+
+  // Agendamentos
+  getSchedules: async (role: string, userId: string): Promise<Schedule[]> => {
+    if (!db) return [];
+    let q;
+    if (role === 'user') {
+      q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    } else {
+      q = query(collection(db, KEYS.SCHEDULES)); // Admin/Mod vê tudo
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as Schedule);
+  },
+
+  saveSchedule: async (s: Schedule) => {
+    if (db) await setDoc(doc(db, KEYS.SCHEDULES, s.id), cleanData(s));
+  },
+
+  deleteSchedule: async (id: string) => {
+    if (db) await deleteDoc(doc(db, KEYS.SCHEDULES, id));
+  },
+
+  // Realtime Listener para Notificações de Agendamento
+  subscribeToSchedules: (userId: string, onUpdate: (schedules: Schedule[]) => void) => {
+    if (!db) return () => {};
+    // Escuta agendamentos onde o usuário é o solicitante para notificar mudanças
+    const q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    return onSnapshot(q, (snap) => {
+        const schedules = snap.docs.map(d => d.data() as Schedule);
+        onUpdate(schedules);
+    });
   },
 
   deleteTag: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.TAGS, id)); },

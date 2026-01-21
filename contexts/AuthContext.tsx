@@ -33,11 +33,17 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         if (cachedUser) {
           await storage.initEncryption(cachedUser);
           
-          const dbUser = await storage.findUserByEmail(cachedUser.email);
-          if (dbUser && dbUser.status === 'approved') {
-            setUser(dbUser);
-            await storage.setSessionUser(dbUser);
-          } else if (dbUser) {
+          // Busca usuário RAW para evitar travamentos caso a chave tenha mudado
+          const dbUserRaw = await storage.findUserByEmail(cachedUser.email, false);
+          
+          if (dbUserRaw && dbUserRaw.status === 'approved') {
+            // Agora com a criptografia inicializada, buscamos a versão completa/decriptada
+            const dbUserDecrypted = await storage.findUserByEmail(cachedUser.email, true);
+            const finalUser = dbUserDecrypted || dbUserRaw;
+            
+            setUser(finalUser);
+            await storage.setSessionUser(finalUser);
+          } else if (dbUserRaw) {
             await storage.clearSessionUser();
             setUser(null);
           } else {
@@ -63,7 +69,8 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
     setLoading(true);
     try {
-      const dbUser = await storage.findUserByEmail(email.toLowerCase().trim());
+      // 1. Buscamos o usuário RAW (sem tentar decriptar ainda) para evitar deadlocks de chave
+      const dbUser = await storage.findUserByEmail(email.toLowerCase().trim(), false);
       
       if (!dbUser) {
         rateLimitService.record('login_attempt');
@@ -75,11 +82,11 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       let isPasswordValid = false;
       let needsMigration = false;
 
-      // 1. Tenta verificar como Hash
+      // Valida senha hashada (segura)
       if (dbUser.password) {
         isPasswordValid = await securityService.verifyPassword(password || '', dbUser.password);
         
-        // 2. Fallback: Se falhar, verifica se é texto plano (Legacy Migration)
+        // Fallback para migração de texto plano (se necessário)
         if (!isPasswordValid && dbUser.password === password) {
             isPasswordValid = true;
             needsMigration = true;
@@ -97,20 +104,28 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         return "Seu acesso está pendente de aprovação.";
       }
 
-      // --- MIGRAÇÃO AUTOMÁTICA PARA HASH ---
+      // Migração automática para Hash se necessário
       if (needsMigration && password) {
           const newHash = await securityService.hashPassword(password);
           await storage.updateUserProfile(dbUser.id, { password: newHash });
-          dbUser.password = newHash; // Atualiza objeto local
+          dbUser.password = newHash;
       }
 
       rateLimitService.clear('login_attempt');
-      await storage.initEncryption(dbUser);
-      await storage.setSessionUser(dbUser);
       
-      setUser(dbUser);
+      // 2. AGORA inicializamos a criptografia usando os dados do usuário validado (companySlug)
+      await storage.initEncryption(dbUser);
+      
+      // 3. E buscamos a versão completa (decriptada) para o estado da aplicação
+      const decryptedUser = await storage.findUserByEmail(dbUser.email, true);
+      
+      const userFinal = decryptedUser || dbUser;
+      await storage.setSessionUser(userFinal);
+      setUser(userFinal);
+      
       return;
     } catch (e) {
+      console.error(e);
       setLoading(false);
       return "Falha na comunicação com o servidor.";
     } finally {

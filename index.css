@@ -1,4 +1,3 @@
-
 /* These directives are for the build process */
 @tailwind base;
 @tailwind components;
@@ -66,4 +65,32 @@ button:active {
   input, select, textarea {
     font-size: 16px !important;
   }
+}
+
+/* Fix Google Places Autocomplete Z-Index in Modals */
+.pac-container {
+  z-index: 99999 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px -5px rgba(0,0,0,0.3) !important;
+  border: none !important;
+  font-family: 'Inter', sans-serif !important;
+  margin-top: 8px !important;
+}
+.pac-item {
+  padding: 10px 16px !important;
+  cursor: pointer !important;
+  border-top: 1px solid #f4f4f5 !important;
+}
+.dark .pac-container {
+  background-color: #18181b !important;
+  color: white !important;
+}
+.dark .pac-item {
+  border-color: #27272a !important;
+}
+.dark .pac-item:hover {
+  background-color: #27272a !important;
+}
+.dark .pac-item-query {
+  color: white !important;
 }

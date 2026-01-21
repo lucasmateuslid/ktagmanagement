@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { storage } from '../services/storage';
@@ -12,7 +11,8 @@ import {
   Languages, Trash2, Plus, ShieldAlert, 
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
-  UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon
+  UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
+  MapPin
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -33,6 +33,7 @@ export const Settings = () => {
   const [showHinovaPass, setShowHinovaPass] = useState(false);
   const [showKTagPass, setShowKTagPass] = useState(false);
   const [showTraqToken, setShowTraqToken] = useState(false);
+  const [showGoogleKey, setShowGoogleKey] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotification();
@@ -72,6 +73,10 @@ export const Settings = () => {
       setLanguage(settings.language);
       storage.logAction(currentUser, 'CONFIG', 'Settings', 'Atualizou configurações globais do sistema');
       addNotification('success', 'Sucesso', 'Configurações salvas.');
+      // Reload para aplicar a nova chave do Google Maps se alterada
+      if ((window as any).google && (window as any).google.maps) {
+         setTimeout(() => window.location.reload(), 1000);
+      }
     } catch (err) {
       addNotification('error', 'Erro', 'Falha ao salvar configurações.');
     }
@@ -100,9 +105,7 @@ export const Settings = () => {
         const dbUser = await storage.findUserByEmail(currentUser.email);
         if (!dbUser) return;
 
-        // Verifica a senha atual (Hash ou Texto Plano)
         const isCurrentValid = await securityService.verifyPassword(pwdForm.current, dbUser.password || '');
-        // Fallback para texto plano se não for hash válido (durante migração)
         const isLegacyValid = !isCurrentValid && (dbUser.password === pwdForm.current);
 
         if (!isCurrentValid && !isLegacyValid) {
@@ -110,16 +113,6 @@ export const Settings = () => {
              return; 
         }
 
-        // Hash da nova senha
-        const newPasswordHash = await securityService.hashPassword(pwdForm.new);
-        
-        await updateProfile({ password: newPasswordHash }); // AuthContext já lida, mas aqui garantimos que enviamos o que queremos se necessário, mas updateProfile tbm faz hash.
-        // O updateProfile do AuthContext também aplica hash se detectar senha. Para evitar double-hash se chamarmos aqui, melhor passar raw para updateProfile OU passar hash e ajustar updateProfile.
-        // Verificando AuthContext: ele faz hash. Então vamos passar raw aqui para ele hash.
-        // CORREÇÃO: AuthContext faz hash. Então envio raw.
-        
-        // Porém, updateProfile no AuthContext usa securityService.hashPassword.
-        // Então basta chamar:
         await updateProfile({ password: pwdForm.new });
 
         addNotification('success', 'Sucesso', 'Sua senha foi alterada com segurança.');
@@ -254,6 +247,30 @@ export const Settings = () => {
           
           {isAdmin && (
             <>
+              {/* GOOGLE MAPS API */}
+              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-red-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <MapPin size={24} />
+                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Integração Google Maps</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Chave da API (Places & Geocoding)</label>
+                    <div className="relative">
+                      <input 
+                        type={showGoogleKey ? 'text' : 'password'} 
+                        value={settings.googleMapsKey} 
+                        onChange={e => setSettings({...settings, googleMapsKey: e.target.value})} 
+                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-red-500 pr-12" 
+                        placeholder="AIza..."
+                      />
+                      <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showGoogleKey ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                    </div>
+                    <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-tight">Necessário habilitar: Maps JavaScript API, Places API, Geocoding API.</p>
+                  </div>
+                </div>
+              </div>
+
               {/* CONFIGURAÇÃO API K-TAG */}
               <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">

@@ -152,3 +152,55 @@ export interface AppSettings {
   plateApiUrl?: string;
   plateApiToken?: string;
 }
+
+// --- NEW TYPES FOR SCHEDULING SYSTEM ---
+
+export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Confirmada' | 'Reagendada' | 'Cancelada' | 'Concluída';
+export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag';
+export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada';
+
+export interface Technician {
+  id: string;
+  name: string;
+  phone: string;
+  active: boolean;
+  color?: string; // Hex color for calendar
+}
+
+export interface ScheduleHistory {
+  actionBy: string; // User Name
+  action: string; // "Confirmou", "Reagendou", "Solicitou"
+  timestamp: number;
+  details?: string;
+}
+
+export interface Schedule {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  
+  // Vehicle Data
+  vehiclePlate: string;
+  vehicleModel: string;
+  fipeValue: string; // Formatted R$ string
+  deviceType: DeviceType;
+  serviceType: ServiceType;
+
+  // Preferences
+  preferredDate: string; // YYYY-MM-DD
+  preferredTime: string; // HH:mm
+  
+  // Location
+  locationAddress: string;
+  locationLat: number;
+  locationLng: number;
+
+  // Status & Assignment
+  status: ScheduleStatus;
+  technicianId?: string;
+  confirmedDate?: string; // YYYY-MM-DD
+  confirmedTime?: string; // HH:mm
+  
+  history: ScheduleHistory[];
+  createdAt: number;
+}

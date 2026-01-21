@@ -1,3 +1,4 @@
+
 import React, { useEffect, Suspense, lazy } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -6,6 +7,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { ConnectionProvider } from './contexts/ConnectionContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { Layout } from './components/Layout';
+import { useScheduleNotifications } from './hooks/useScheduleNotifications'; // New hook import
 
 // Carregamento Preguiçoso (Lazy Loading) - Otimiza o bundle inicial
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -19,6 +21,12 @@ const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.S
 const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const AuditLogs = lazy(() => import('./pages/AuditLogs').then(m => ({ default: m.AuditLogs })));
+
+// New Pages
+const ScheduleRequest = lazy(() => import('./pages/ScheduleRequest').then(m => ({ default: m.ScheduleRequest })));
+const Schedules = lazy(() => import('./pages/Schedules').then(m => ({ default: m.Schedules })));
+const Calendar = lazy(() => import('./pages/Calendar').then(m => ({ default: m.Calendar })));
+const Technicians = lazy(() => import('./pages/Technicians').then(m => ({ default: m.Technicians })));
 
 const { HashRouter, Routes, Route, useNavigate, Outlet, Navigate } = ReactRouterDOM as any;
 
@@ -34,6 +42,9 @@ const LoadingFallback = () => (
 const ProtectedLayout = () => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
+  
+  // Ativa notificações globais
+  useScheduleNotifications();
 
   useEffect(() => {
     if (!loading && !isAuthenticated) navigate('/login', { replace: true });
@@ -74,6 +85,13 @@ function App() {
                       <Route path="/vehicles" element={<Vehicles />} />
                       <Route path="/security" element={<Security />} />
                       <Route path="/settings" element={<Settings />} />
+                      
+                      {/* Agendamentos - Permite User, Admin e Moderator */}
+                      <Route path="/schedule/new" element={<RoleProtectedRoute roles={['user', 'admin', 'moderator']}><ScheduleRequest /></RoleProtectedRoute>} />
+                      <Route path="/schedules" element={<Schedules />} /> {/* Acesso condicional gerido dentro da página */}
+                      <Route path="/calendar" element={<Calendar />} />
+                      <Route path="/technicians" element={<RoleProtectedRoute roles={['admin']}><Technicians /></RoleProtectedRoute>} />
+
                       <Route path="/clients" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Clients /></RoleProtectedRoute>} />
                       <Route path="/tags" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Tags /></RoleProtectedRoute>} />
                       <Route path="/reports" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Reports /></RoleProtectedRoute>} />

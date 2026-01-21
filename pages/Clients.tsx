@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { 
   Users, Search, User as UserIcon, Phone, Mail, MapPin, 
   Car, ShieldCheck, ShieldX, Edit2, Trash2, X, Plus, Save, ChevronRight, Check,
-  KeyRound, RotateCcw, ShieldQuestion, Fingerprint
+  KeyRound, RotateCcw, ShieldQuestion, Fingerprint, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -35,6 +35,13 @@ export const Clients = () => {
 
   useEffect(() => { loadData(); }, []);
 
+  // Função para detectar se o dado está provavelmente encriptado (corrompido visualmente)
+  const isCorrupted = (str?: string) => {
+    if (!str) return false;
+    // Heurística: Strings Base64 típicas são longas, sem espaços e contêm caracteres específicos
+    return str.length > 20 && !str.includes(' ') && /^[A-Za-z0-9+/=]+$/.test(str);
+  };
+
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -51,7 +58,6 @@ export const Clients = () => {
     );
   }, [allVehicles, vehicleSearchTerm]);
 
-  // Fix: Added missing toggleVehicleSelection function
   const toggleVehicleSelection = (id: string) => {
     const newSelection = new Set(selectedVehicleIds);
     if (newSelection.has(id)) {
@@ -64,6 +70,10 @@ export const Clients = () => {
 
   const handleOpenModal = (client?: Client) => {
     if (client) {
+      if (isCorrupted(client.name)) {
+          addNotification('error', 'Dados Protegidos', 'Este registro está criptografado com uma chave antiga ou diferente. A edição foi bloqueada para prevenir perda de dados.');
+          return;
+      }
       setSelectedClient(client);
       const linkedIds = allVehicles
         .filter(v => v.clientId === client.id)
@@ -202,16 +212,18 @@ export const Clients = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredClients.map(client => {
           const clientVehicles = allVehicles.filter(v => v.clientId === client.id);
+          const dataCorrupted = isCorrupted(client.name);
+
           return (
-            <div key={client.id} className="bg-white dark:bg-zinc-850 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-sm group hover:border-primary-500/50 transition-all relative overflow-hidden flex flex-col justify-between min-h-[420px]">
+            <div key={client.id} className={`bg-white dark:bg-zinc-850 p-8 rounded-[40px] border shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[420px] ${dataCorrupted ? 'border-red-500/30' : 'border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50'}`}>
               
               <div>
                 <div className="flex justify-between items-start mb-6">
-                  <div className={`p-4 rounded-2xl ${client.hasAccess ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'} shadow-lg transition-colors`}>
-                    <UserIcon size={24} />
+                  <div className={`p-4 rounded-2xl ${dataCorrupted ? 'bg-red-500/10 text-red-500' : client.hasAccess ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'} shadow-lg transition-colors`}>
+                    {dataCorrupted ? <Lock size={24} /> : <UserIcon size={24} />}
                   </div>
                   <div className="flex gap-1">
-                    {client.hasAccess && (
+                    {client.hasAccess && !dataCorrupted && (
                       <button 
                         onClick={() => { setSelectedClient(client); setIsResetModalOpen(true); }}
                         className="p-2.5 text-zinc-400 hover:text-primary-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"
@@ -220,25 +232,36 @@ export const Clients = () => {
                         <KeyRound size={18}/>
                       </button>
                     )}
-                    <button onClick={() => handleOpenModal(client)} className="p-2.5 text-zinc-400 hover:text-primary-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"><Edit2 size={18}/></button>
+                    <button 
+                        onClick={() => handleOpenModal(client)} 
+                        className={`p-2.5 rounded-xl transition-all ${dataCorrupted ? 'text-zinc-300 cursor-not-allowed opacity-50' : 'text-zinc-400 hover:text-primary-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+                        disabled={dataCorrupted}
+                        title={dataCorrupted ? "Edição bloqueada: Dados de outra sessão" : "Editar"}
+                    >
+                        <Edit2 size={18}/>
+                    </button>
                     <button onClick={() => handleDelete(client.id)} className="p-2.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"><Trash2 size={18}/></button>
                   </div>
                 </div>
 
-                <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate leading-tight">{client.name}</h3>
+                <h3 className={`text-xl font-display font-black uppercase tracking-tight truncate leading-tight ${dataCorrupted ? 'text-zinc-400 break-all whitespace-normal text-[10px] font-mono' : 'text-zinc-900 dark:text-white'}`}>
+                    {client.name}
+                </h3>
+                {dataCorrupted && <span className="text-[9px] text-red-500 font-bold uppercase mt-1 block">Erro de Decriptação - Chave Inválida</span>}
+                
                 <div className="flex items-center gap-2 mt-1">
                     <span className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">CPF:</span>
-                    <span className="text-[10px] font-mono text-zinc-600 dark:text-zinc-300 font-bold">{client.cpf}</span>
+                    <span className={`text-[10px] font-mono font-bold ${dataCorrupted ? 'text-zinc-400 truncate w-24' : 'text-zinc-600 dark:text-zinc-300'}`}>{client.cpf}</span>
                 </div>
 
                 <div className="mt-8 space-y-4">
                   <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400 font-bold group/item">
                     <div className="w-8 h-8 rounded-lg bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-primary-500 border border-zinc-100 dark:border-zinc-800 shadow-sm"><Phone size={14} /></div>
-                    <span className="group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">{client.phone || 'Sem telefone'}</span>
+                    <span className={`group-hover:text-zinc-900 dark:group-hover:text-white transition-colors ${dataCorrupted ? 'truncate w-32 font-mono text-[9px]' : ''}`}>{client.phone || 'Sem telefone'}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400 font-bold group/item">
                     <div className="w-8 h-8 rounded-lg bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center text-primary-500 border border-zinc-100 dark:border-zinc-800 shadow-sm"><Mail size={14} /></div>
-                    <span className="group-hover:text-zinc-900 dark:group-hover:text-white transition-colors truncate">{client.email || 'Sem e-mail'}</span>
+                    <span className={`group-hover:text-zinc-900 dark:group-hover:text-white transition-colors truncate ${dataCorrupted ? 'truncate w-32 font-mono text-[9px]' : ''}`}>{client.email || 'Sem e-mail'}</span>
                   </div>
                 </div>
 
@@ -259,15 +282,17 @@ export const Clients = () => {
               <div className="mt-8">
                   <div className={`
                     w-full py-4 px-6 rounded-2xl flex items-center justify-between border transition-all
-                    ${client.hasAccess 
-                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-zinc-800 dark:border-white shadow-xl' 
-                        : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 border-zinc-100 dark:border-zinc-800'}
+                    ${dataCorrupted
+                        ? 'bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 opacity-50'
+                        : client.hasAccess 
+                            ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-zinc-800 dark:border-white shadow-xl' 
+                            : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-600 border-zinc-100 dark:border-zinc-800'}
                   `}>
                     <div className="flex flex-col">
                         <span className="text-[10px] font-black uppercase tracking-[0.15em]">Portal do Cliente</span>
                         <span className="text-[8px] font-bold uppercase opacity-60">{client.hasAccess ? 'Acesso Ativado' : 'Acesso Bloqueado'}</span>
                     </div>
-                    {client.hasAccess ? <ShieldCheck size={20} className="text-primary-500" /> : <ShieldX size={20} />}
+                    {client.hasAccess ? <ShieldCheck size={20} className={dataCorrupted ? 'text-zinc-400' : 'text-primary-500'} /> : <ShieldX size={20} />}
                   </div>
               </div>
             </div>
