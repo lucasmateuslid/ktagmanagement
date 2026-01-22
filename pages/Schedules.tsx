@@ -4,8 +4,47 @@ import { storage } from '../services/storage';
 import { Schedule, Technician, ScheduleStatus } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, User, MapPin, ChevronRight, History, Filter, AlertCircle, Wrench, Check, RotateCcw, Trash2, LayoutGrid, CheckSquare, X } from 'lucide-react';
+import { Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, User, MapPin, ChevronRight, History, Filter, AlertCircle, Wrench, Check, RotateCcw, Trash2, LayoutGrid, CheckSquare, X, Hourglass } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Componente de Cronômetro
+const PendingTimer = ({ startTime }: { startTime: number }) => {
+    const [elapsed, setElapsed] = useState('');
+    const [isCritical, setIsCritical] = useState(false);
+
+    useEffect(() => {
+        const updateTimer = () => {
+            const now = Date.now();
+            const diff = now - startTime;
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+            const minutes = Math.floor((diff / 1000 / 60) % 60);
+            const seconds = Math.floor((diff / 1000) % 60);
+
+            let timeString = '';
+            if (days > 0) timeString += `${days}d `;
+            if (hours > 0 || days > 0) timeString += `${hours}h `;
+            timeString += `${minutes}m ${seconds}s`;
+
+            setElapsed(timeString);
+            
+            // Marca como crítico se passar de 30 minutos
+            if (diff > 30 * 60 * 1000) setIsCritical(true);
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [startTime]);
+
+    return (
+        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${isCritical ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse' : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700'}`}>
+            <Hourglass size={10} className={isCritical ? 'text-red-500' : 'text-zinc-400'} />
+            <span>Aguardando: {elapsed}</span>
+        </div>
+    );
+};
 
 export const Schedules = () => {
   const { user, isAdmin } = useAuth();
@@ -175,7 +214,6 @@ export const Schedules = () => {
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-300'}`}>
                               {isCompleted ? <Check size={14} strokeWidth={4} /> : <span className="text-[10px] font-black">{step.id}</span>}
                           </div>
-                          {/* Oculta label no mobile muito pequeno para evitar quebra */}
                           <span className={`text-[8px] font-black uppercase tracking-widest absolute -bottom-6 whitespace-nowrap hidden sm:block ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-300 dark:text-zinc-600'}`}>{step.label}</span>
                       </div>
                   );
@@ -349,7 +387,12 @@ export const Schedules = () => {
                         <div>
                             <div className="flex justify-between items-start mb-4">
                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${statusColors[sch.status]}`}>{sch.status}</span>
-                                <span className="text-[10px] font-bold text-zinc-400">{new Date(sch.preferredDate).toLocaleDateString()}</span>
+                                {sch.status === 'Solicitada' ? (
+                                    // CRONÔMETRO PARA SOLICITAÇÕES PENDENTES
+                                    <PendingTimer startTime={sch.createdAt} />
+                                ) : (
+                                    <span className="text-[10px] font-bold text-zinc-400">{new Date(sch.preferredDate).toLocaleDateString()}</span>
+                                )}
                             </div>
                             
                             <h3 className="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">{sch.vehiclePlate}</h3>
@@ -399,7 +442,10 @@ export const Schedules = () => {
                                 <div className="space-y-6">
                                     <div className="bg-zinc-50 dark:bg-zinc-800/50 p-5 rounded-2xl space-y-3">
                                         <div>
-                                            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Solicitante</p>
+                                            <div className="flex justify-between items-start">
+                                                <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Solicitante</p>
+                                                {selectedSchedule.status === 'Solicitada' && <PendingTimer startTime={selectedSchedule.createdAt} />}
+                                            </div>
                                             <p className="font-bold text-zinc-900 dark:text-white">{selectedSchedule.requesterName}</p>
                                         </div>
                                         <div>
