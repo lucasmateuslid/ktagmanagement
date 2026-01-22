@@ -9,7 +9,8 @@ import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
-  ChevronLeft, ChevronRight, X, AlertTriangle
+  ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
+  Crown, Briefcase, User as UserIcon, Wallet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -32,12 +33,32 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     navigate('/login');
   };
 
+  // Helper para estilização baseada no cargo
+  const getRoleStyle = (role?: string) => {
+    switch (role) {
+      // Admin: Dourado, sem ícone (ícone null)
+      case 'admin': return { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: null, label: 'Administrador' };
+      // Moderator: Azul, sem ícone (ícone null)
+      case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
+      // Client: Retorna null para não renderizar
+      case 'client': return null;
+      // Default (Operador): Cinza, Label "Usuário"
+      default: return { color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-200 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
+    }
+  };
+
+  const roleStyle = getRoleStyle(user?.role);
+  const RoleIcon = roleStyle?.icon;
+
   const getMenuSections = () => {
     const role = user?.role || 'user';
     
     if (role === 'client') {
       return [
-        { title: 'MEU PAINEL', items: [{ label: 'MEU VEÍCULO', path: '/map', icon: Map }] }
+        { title: 'MEU PAINEL', items: [
+            { label: 'MAPA TEMPO REAL', path: '/map', icon: Map },
+            { label: 'MINHA FROTA', path: '/vehicles', icon: CarFront }
+        ]}
       ];
     }
 
@@ -82,7 +103,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
             initial={{ height: 0, opacity: 0 }} 
             animate={{ height: 'auto', opacity: 1 }} 
             exit={{ height: 0, opacity: 0 }}
-            className="bg-red-600 text-white z-[9999] flex flex-col items-center justify-center shadow-lg"
+            className="bg-red-600 text-white z-[9999] flex flex-col items-center justify-center shadow-lg relative"
           >
              {criticalAlerts.map((msg, idx) => (
                 <div key={idx} className="flex items-center gap-2 py-2 px-4 text-[10px] md:text-xs font-black uppercase tracking-widest animate-pulse">
@@ -133,13 +154,13 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         `}>
           <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center px-0' : 'px-8'} border-b border-zinc-100 dark:border-zinc-800 transition-all`}>
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-black dark:bg-white rounded-2xl flex items-center justify-center shrink-0 shadow-xl">
-                <span className="font-display font-black text-white dark:text-black text-xl">K</span>
+              <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl">
+                <span className="font-display font-black text-white dark:text-black text-lg">K</span>
               </div>
               {!isCollapsed && (
                 <div className="flex flex-col">
-                  <span className="font-display font-black text-xl leading-none text-zinc-900 dark:text-white tracking-tight">K-TAG</span>
-                  <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">Gestão de Frota</span>
+                  <span className="font-display font-black text-lg leading-none text-zinc-900 dark:text-white tracking-tight">K-TAG</span>
+                  <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.2em]">Manager Pro</span>
                 </div>
               )}
             </div>
@@ -202,28 +223,28 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         </aside>
 
         <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-50 dark:bg-black">
-          <header className="h-24 shrink-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-10 z-30">
+          <header className="h-24 shrink-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-30 sticky top-0">
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
               >
                 <Menu size={24} />
               </button>
               
               <div className="hidden md:flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-6 h-10 justify-center">
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Portal de Rastreio</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Portal K-TAG</span>
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-xs font-black text-zinc-600 dark:text-zinc-300 uppercase tracking-wide">Console de Operações</span>
+                    <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>
                   </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setIsNotifOpen(!isNotifOpen)}
-                  className="w-12 h-12 flex items-center justify-center rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all relative border border-zinc-100 dark:border-zinc-700"
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all relative border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
                 >
                   <Bell size={20} />
                   {notifications.filter(n => !n.read).length > 0 && (
@@ -233,20 +254,27 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
                 <button 
                   onClick={toggleTheme}
-                  className="w-12 h-12 flex items-center justify-center rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all border border-zinc-100 dark:border-zinc-700"
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
                 >
                   {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
                 
-                <div className="h-10 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
+                {/* Separator */}
+                <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
 
-                <div className="flex items-center gap-4 pl-2">
-                  <div className="text-right hidden sm:block">
-                      <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight">{user?.name}</p>
-                      <span className="text-[9px] font-bold text-primary-500 bg-primary-500/10 px-2 py-0.5 rounded uppercase tracking-widest border border-primary-500/20">{user?.role}</span>
+                {/* USER PROFILE PILL */}
+                <div className="flex items-center gap-3 pl-2 group cursor-default">
+                  <div className="flex flex-col items-end hidden sm:flex">
+                      <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight leading-none mb-1">{user?.name}</p>
+                      {roleStyle && (
+                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
+                            {RoleIcon && <RoleIcon size={8} className={roleStyle.color} strokeWidth={3} />}
+                            <span className={`text-[8px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
+                        </div>
+                      )}
                   </div>
-                  <div className="w-12 h-12 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-black flex items-center justify-center font-black text-lg shadow-lg">
-                      {user?.name?.charAt(0) || 'U'}
+                  <div className={`w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}>
+                      <span className="font-black text-lg text-zinc-700 dark:text-zinc-300">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
                 </div>
 
@@ -286,8 +314,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
             </div>
           </header>
 
-          {/* CONTENT - Padding removido se for /map */}
-          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-50 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-10'}`}>
+          {/* CONTENT - Padronização Global de Padding */}
+          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-50 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-8'}`}>
               {children || <Outlet />}
           </div>
           

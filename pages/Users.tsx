@@ -140,10 +140,26 @@ export const Users = () => {
   };
 
   const getRoleBadge = (role?: string) => {
-    const style = role === 'admin' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' : 
-                  role === 'moderator' ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20' : 
-                  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700';
-    return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${style}`}>{role}</span>;
+    let style = '';
+    let label = '';
+
+    switch(role) {
+        case 'admin':
+            style = 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+            label = 'Administrador';
+            break;
+        case 'moderator':
+            style = 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+            label = 'Moderador';
+            break;
+        case 'client':
+            return null; // Ocultar cliente
+        default: // 'user'
+            style = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700';
+            label = 'Usuário';
+    }
+
+    return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${style}`}>{label}</span>;
   };
 
   if (!isAdmin) return <div className="py-20 text-center text-zinc-500 uppercase font-black">Acesso Negado</div>;

@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 
 const { useSearchParams } = ReactRouterDOM as any;
 
-const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete }: any) => {
+const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly }: any) => {
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
@@ -54,11 +54,13 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
                 {getIcon(14)}
             </div>
         </div>
-        {/* Mobile Actions */}
-        <div className="flex md:hidden gap-1">
-            <button onClick={() => onEdit(vehicle)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
-            <button onClick={() => onDelete(vehicle.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
-        </div>
+        {/* Mobile Actions - Ocultar se readonly */}
+        {!isReadOnly && (
+            <div className="flex md:hidden gap-1">
+                <button onClick={() => onEdit(vehicle)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
+                <button onClick={() => onDelete(vehicle.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
+            </div>
+        )}
       </div>
 
       {/* VEÍCULO */}
@@ -86,21 +88,25 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
         {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
       </div>
 
-      {/* RESPONSÁVEL E DATA */}
-      <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
-         <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
-           {vehicle.updatedBy || 'SISTEMA'}
-         </span>
-         <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
-           <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
-         </span>
-      </div>
+      {/* RESPONSÁVEL E DATA - Visível só para operadores */}
+      {!isReadOnly && (
+          <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
+             <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
+               {vehicle.updatedBy || 'SISTEMA'}
+             </span>
+             <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
+               <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
+             </span>
+          </div>
+      )}
 
       {/* AÇÕES DESKTOP */}
-      <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => onEdit(vehicle)} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-        <button onClick={() => onDelete(vehicle.id)} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
-      </div>
+      {!isReadOnly && (
+          <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => onEdit(vehicle)} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
+            <button onClick={() => onDelete(vehicle.id)} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+          </div>
+      )}
     </div>
   );
 });
@@ -130,6 +136,9 @@ export const Vehicles = () => {
   const [fipeList, setFipeList] = useState<FipeReference[]>([]);
   const [fipeLoading, setFipeLoading] = useState(false);
 
+  // Determina se é visualização de cliente (apenas leitura de seus próprios veículos)
+  const isClientView = currentUser?.role === 'client';
+
   // Validação de Placa em tempo real
   const isPlateValid = useMemo(() => {
     if (!formData.plate) return false;
@@ -149,16 +158,37 @@ export const Vehicles = () => {
         storage.getVehicles(), storage.getTags(), storage.getCompanies(), 
         storage.getCategories(), storage.getClients()
     ]);
-    setVehicles(v); setTags(t); setCompanies(c); setCategories(cat); setClients(cl);
-  }, []);
+    
+    // FILTRAGEM POR PERFIL DE USUÁRIO
+    if (currentUser?.role === 'client' && currentUser.cpf) {
+        // Normaliza o CPF do usuário logado
+        const myCpf = currentUser.cpf.replace(/\D/g, '');
+        // Busca o registro de cliente correspondente
+        const myClientData = cl.find(client => client.cpf.replace(/\D/g, '') === myCpf);
+        
+        if (myClientData) {
+            // Filtra apenas os veículos deste cliente
+            const myVehicles = v.filter(veh => veh.clientId === myClientData.id);
+            setVehicles(myVehicles);
+        } else {
+            setVehicles([]); // Não encontrou vínculo de cliente
+        }
+    } else {
+        // Admin, Moderator, User vêem tudo
+        setVehicles(v);
+    }
+
+    setTags(t); setCompanies(c); setCategories(cat); setClients(cl);
+  }, [currentUser]);
 
   useEffect(() => { 
     loadData();
-    if (searchParams.get('action') === 'new') {
+    // Se for cliente, não abre modal de novo veículo mesmo se tiver action=new
+    if (searchParams.get('action') === 'new' && !isClientView) {
         setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
         setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
     }
-  }, [loadData, searchParams]);
+  }, [loadData, searchParams, isClientView]);
 
   const filteredVehicles = useMemo(() => {
     const term = globalSearch.toLowerCase().trim();
@@ -345,8 +375,8 @@ export const Vehicles = () => {
     <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Veículos</h1>
-          <p className="text-zinc-500 text-xs mt-1 font-medium">Gestão operacional da frota.</p>
+          <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{isClientView ? 'Minha Frota' : 'Veículos'}</h1>
+          <p className="text-zinc-500 text-xs mt-1 font-medium">{isClientView ? 'Gestão dos seus veículos e equipamentos.' : 'Gestão operacional da frota.'}</p>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {/* Export Group */}
@@ -355,21 +385,23 @@ export const Vehicles = () => {
              <button onClick={handleExportExcel} title="Exportar Excel" className="p-2.5 text-zinc-400 hover:text-emerald-500 transition-colors"><FileSpreadsheet size={18}/></button>
              <button onClick={handleExportCSV} title="Exportar CSV" className="p-2.5 text-zinc-400 hover:text-blue-500 transition-colors"><FileCode size={18}/></button>
           </div>
-          <button
-            onClick={() => { 
-              setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
-              setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
-            }}
-            className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
-          >
-            <Plus size={16} strokeWidth={3} /> ADICIONAR VEÍCULO
-          </button>
+          {!isClientView && (
+              <button
+                onClick={() => { 
+                  setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
+                  setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
+                }}
+                className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
+              >
+                <Plus size={16} strokeWidth={3} /> ADICIONAR VEÍCULO
+              </button>
+          )}
         </div>
       </div>
 
       <div className="relative">
         <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" />
-        <input type="text" placeholder="Buscar placa, modelo ou cliente..." value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-sm text-sm font-bold outline-none focus:border-primary-500" />
+        <input type="text" placeholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."} value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-sm text-sm font-bold outline-none focus:border-primary-500" />
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -378,8 +410,8 @@ export const Vehicles = () => {
             <div className="w-[15%] shrink-0">Placa & Status</div>
             <div className="w-[35%] px-3">Veículo</div>
             <div className="w-[25%] px-2">Cliente</div>
-            <div className="w-[15%]">Responsável & Data</div>
-            <div className="w-[10%] text-right">Ações</div>
+            {!isClientView && <div className="w-[15%]">Responsável & Data</div>}
+            {!isClientView && <div className="w-[10%] text-right">Ações</div>}
          </div>
          <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
             {filteredVehicles.length === 0 ? (
@@ -389,14 +421,23 @@ export const Vehicles = () => {
                </div>
             ) : (
               filteredVehicles.map(v => (
-                <VehicleRow key={v.id} vehicle={v} tags={tags} categories={categories} clients={clients} onEdit={(v: any) => { setFormData(v); setClientData(clients.find(c => c.id === v.clientId) || {}); setTagSearch(tags.find(t => t.id === v.tagId)?.accessoryId || ''); setIsModalOpen(true); }} onDelete={async (id: string) => { if(confirm('Excluir?')) { await storage.deleteVehicle(id); loadData(); } }} />
+                <VehicleRow 
+                    key={v.id} 
+                    vehicle={v} 
+                    tags={tags} 
+                    categories={categories} 
+                    clients={clients} 
+                    isReadOnly={isClientView}
+                    onEdit={(v: any) => { setFormData(v); setClientData(clients.find(c => c.id === v.clientId) || {}); setTagSearch(tags.find(t => t.id === v.tagId)?.accessoryId || ''); setIsModalOpen(true); }} 
+                    onDelete={async (id: string) => { if(confirm('Excluir?')) { await storage.deleteVehicle(id); loadData(); } }} 
+                />
               ))
             )}
          </div>
       </div>
 
-      {/* MODAL PRINCIPAL */}
-      {isModalOpen && (
+      {/* MODAL PRINCIPAL (Apenas renderiza se não for cliente ou se cliente tentar editar algo permitido, mas bloqueamos a abertura no useEffect) */}
+      {!isClientView && isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-950 rounded-[32px] w-full max-w-4xl shadow-2xl relative my-auto animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
             
@@ -561,7 +602,7 @@ export const Vehicles = () => {
 
                             <div className="space-y-2">
                                 <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">EMAIL</label>
-                                <input type="email" value={clientData.email || ''} onChange={e => setClientData({...clientData, email: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="cliente@email.com" />
+                                <input type="email" value={clientData.email || ''} onChange={e => setClientData({...clientData, email: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="cliente@provedor.com" />
                             </div>
 
                             <div className="space-y-3">
@@ -587,7 +628,7 @@ export const Vehicles = () => {
         </div>
       )}
 
-      {isFipeModalOpen && (
+      {isFipeModalOpen && !isClientView && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="bg-white dark:bg-zinc-900 rounded-[28px] w-full max-sm p-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-6">

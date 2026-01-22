@@ -13,7 +13,7 @@ import {
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
-  MapPin, ShoppingBag, AlertTriangle
+  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -65,6 +65,19 @@ export const Settings = () => {
   useEffect(() => {
     loadData();
   }, [currentUser]);
+
+  // Helper de Cargo atualizado
+  const getRoleStyle = (role?: string) => {
+    switch (role) {
+      case 'admin': return { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: null, label: 'Administrador' };
+      case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
+      case 'client': return null;
+      default: return { color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-200 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
+    }
+  };
+
+  const roleStyle = getRoleStyle(currentUser?.role);
+  const RoleIcon = roleStyle?.icon;
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,16 +193,28 @@ export const Settings = () => {
         {/* COLUNA ESQUERDA (PERFIL E SEGURANÇA) */}
         <div className="lg:col-span-4 space-y-6 md:space-y-10">
           
-          {/* MEU PERFIL */}
-          <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
+          {/* MEU PERFIL - Redesenhado */}
+          <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4">
+                {roleStyle && (
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
+                        {RoleIcon && <RoleIcon size={10} className={roleStyle.color} strokeWidth={3}/>}
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
+                    </div>
+                )}
+            </div>
+
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><UserIcon size={14}/> Meu Perfil</h3>
+            
             <div className="flex flex-col items-center">
-                <div className="w-24 h-24 rounded-[32px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-primary-500 font-black text-4xl mb-4 border border-zinc-800 shadow-xl">{profileForm.avatarInitial}</div>
+                <div className="w-28 h-28 rounded-[28px] bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-300 font-black text-5xl mb-4 border-4 border-white dark:border-zinc-700 shadow-xl">
+                    {profileForm.avatarInitial}
+                </div>
                 <div className="text-center mb-8">
                     <h4 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase leading-tight">{currentUser?.name}</h4>
-                    <span className="inline-flex mt-2 px-3 py-1 bg-primary-500/10 text-primary-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-primary-500/20">{currentUser?.role}</span>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-3 italic max-w-[200px] truncate">{currentUser?.email}</p>
+                    <p className="text-[10px] text-zinc-400 font-medium mt-1 italic max-w-[200px] truncate">{currentUser?.email}</p>
                 </div>
+                
                 <form onSubmit={handleSaveProfile} className="w-full space-y-4">
                     <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Nome de Exibição</label>
@@ -197,9 +222,9 @@ export const Settings = () => {
                     </div>
                     <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Inicial do Avatar</label>
-                        <input type="text" maxLength={2} value={profileForm.avatarInitial} onChange={e => setProfileForm({...profileForm, avatarInitial: e.target.value.toUpperCase()})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
+                        <input type="text" maxLength={2} value={profileForm.avatarInitial} onChange={e => setProfileForm({...profileForm, avatarInitial: e.target.value.toUpperCase()})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 text-center" />
                     </div>
-                    <button type="submit" disabled={profileLoading} className="w-full py-4 bg-primary-500/10 text-primary-500 hover:bg-primary-500 hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2">
+                    <button type="submit" disabled={profileLoading} className="w-full py-4 bg-primary-500/10 text-primary-500 hover:bg-primary-500 hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 mt-2">
                         {profileLoading ? <RefreshCw className="animate-spin" size={14}/> : <UserCircle2 size={14}/>} ATUALIZAR DADOS
                     </button>
                 </form>
@@ -210,7 +235,7 @@ export const Settings = () => {
           <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
             <div className="flex justify-between items-center mb-8">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2"><Lock size={14}/> Segurança</h3>
-                <button type="button" onClick={() => setShowPwds(!showPwds)} className="text-zinc-400">{showPwds ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                <button type="button" onClick={() => setShowPwds(!showPwds)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-white transition-colors">{showPwds ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
             </div>
             <form onSubmit={handleUpdatePassword} className="space-y-5">
                 <div className="space-y-1">
@@ -225,7 +250,7 @@ export const Settings = () => {
                     <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Confirmar Nova Senha</label>
                     <input type={showPwds ? 'text' : 'password'} required value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                 </div>
-                <button type="submit" disabled={pwdLoading} className="w-full py-4 bg-zinc-900 dark:bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border border-zinc-800 shadow-xl">
+                <button type="submit" disabled={pwdLoading} className="w-full py-4 bg-zinc-900 dark:bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border border-zinc-800 shadow-xl hover:bg-zinc-800 dark:hover:bg-zinc-700">
                     <Check size={16}/> SALVAR SENHA
                 </button>
             </form>
@@ -250,7 +275,7 @@ export const Settings = () => {
           
           {isAdmin && (
             <>
-              {/* CONFIGURAÇÃO DE ESTOQUE (NOVO) */}
+              {/* CONFIGURAÇÃO DE ESTOQUE */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <ShoppingBag size={24} />

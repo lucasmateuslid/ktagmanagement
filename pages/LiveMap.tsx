@@ -16,7 +16,7 @@ import {
   Clock, Navigation, X, LayoutGrid,
   ChevronRight, ArrowLeft, FileText, FileSpreadsheet, 
   ChevronUp, ChevronDown, Signal, Download,
-  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays, Eye, User
+  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays, Eye, User, Tag as TagIcon, Box
 } from 'lucide-react';
 import { FaCar, FaMotorcycle, FaTruck } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
@@ -78,25 +78,44 @@ export const LiveMap = () => {
     setClients(allClients);
 
     const urlTagId = searchParams.get('tagId');
-    if (urlTagId) handleVehicleSelect(urlTagId);
+    if (urlTagId) handleSelection(urlTagId);
   };
 
   useEffect(() => { loadData(); }, [user]);
 
+  // Função de Fetch Otimizada: Busca apenas veículos vinculados + Tag selecionada (se houver)
   const fetchUpdate = async () => {
     if (tags.length === 0) return;
     setLoading(true);
+    
     try {
-      const results = await Promise.all(tags.map(async (tag) => {
+      // Filtra quais tags devem ser consultadas
+      const tagsToTrack = tags.filter(t => {
+          // 1. Sempre rastrear tags vinculadas a veículos
+          const isLinked = vehicles.some(v => v.tagId === t.id);
+          // 2. Rastrear tag solta APENAS se ela estiver selecionada no momento
+          const isSelected = t.id === selectedTagId;
+          
+          return isLinked || isSelected;
+      });
+
+      const results = await Promise.all(tagsToTrack.map(async (tag) => {
          try {
            const res = await fetchTagLocation(tag);
            return res.length > 0 ? { ...res[0], tagId: tag.id, id: `${tag.id}-${res[0].timestamp}` } as LocationHistory : null;
          } catch(e) { return null; }
       }));
-      const valid = results.filter((r): r is LocationHistory => r !== null);
-      setFleetLocations(valid);
       
-      // Resolve endereço SOMENTE para o veículo selecionado atual (otimização)
+      const valid = results.filter((r): r is LocationHistory => r !== null);
+      
+      // Merge com localizações existentes para não piscar, mas atualizando as novas
+      setFleetLocations(prev => {
+          const newMap = new Map(prev.map(i => [i.tagId, i]));
+          valid.forEach(v => newMap.set(v.tagId, v));
+          return Array.from(newMap.values());
+      });
+      
+      // Resolve endereço SOMENTE para o item selecionado atual (otimização)
       if (selectedTagId) {
         const current = valid.find(l => l.tagId === selectedTagId);
         if (current && !resolvedAddresses[current.id]) {
@@ -111,14 +130,16 @@ export const LiveMap = () => {
     fetchUpdate();
     timerRef.current = window.setInterval(fetchUpdate, 30000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [selectedTagId, tags]);
+  }, [selectedTagId, tags, vehicles]); // Adicionado dependencies críticas
 
-  const handleVehicleSelect = (tagId: string) => {
+  const handleSelection = (tagId: string) => {
     setSelectedTagId(tagId);
     setIsSheetExpanded(true); 
     setShowHistoryList(false);
     setTagSearchTerm('');
     setIsSearchFocused(false);
+    // Força um update imediato para buscar a tag caso ela não esteja sendo rastreada (ex: tag solta)
+    setTimeout(fetchUpdate, 100);
   };
 
   const fetchHistory = async () => {
@@ -155,7 +176,6 @@ export const LiveMap = () => {
         }
         
         // OTIMIZAÇÃO: Resolve endereço apenas dos 3 primeiros (mais recentes)
-        // O restante será resolvido apenas na exportação para não pesar.
         const top3 = results.slice(0, 3);
         const newAddresses: Record<string, string> = {};
         
@@ -175,28 +195,22 @@ export const LiveMap = () => {
     }
   };
 
-  // Função auxiliar para resolver todos os endereços antes de exportar
   const processExportData = async () => {
     setExporting(true);
     setExportProgress(0);
     const total = historyItems.length;
     const exportData = [];
-
-    // Clona o dicionário de endereços atual
     const currentAddresses = { ...resolvedAddresses };
 
     for (let i = 0; i < total; i++) {
         const item = historyItems[i];
         let address = currentAddresses[item.id];
 
-        // Se não tiver endereço resolvido, resolve agora (com pequeno delay para não bloquear API)
         if (!address) {
             try {
-                // Pequeno throttle artificial se necessário
                 await new Promise(r => setTimeout(r, 100)); 
                 address = await geocodingService.reverseGeocode(item.lat, item.lon);
                 currentAddresses[item.id] = address;
-                // Atualiza o estado visual também, opcional
                 setResolvedAddresses(prev => ({ ...prev, [item.id]: address }));
             } catch (e) {
                 address = "Endereço indisponível";
@@ -209,8 +223,6 @@ export const LiveMap = () => {
             lon: item.lon,
             endereco: address
         });
-
-        // Atualiza barra de progresso
         setExportProgress(Math.round(((i + 1) / total) * 100));
     }
 
@@ -220,8 +232,9 @@ export const LiveMap = () => {
 
   const handleExport = async (type: 'pdf' | 'excel') => {
     const v = vehicles.find(v => v.tagId === selectedTagId);
+    const t = tags.find(t => t.id === selectedTagId);
+    const label = v ? `${v.plate} - ${v.model}` : `Tag: ${t?.name || 'Desconhecida'}`;
     
-    // Processa os dados (resolve endereços faltantes)
     const data = await processExportData();
 
     if (type === 'pdf') {
@@ -229,7 +242,7 @@ export const LiveMap = () => {
         doc.setFontSize(18);
         doc.text(`RELATÓRIO DE TRAJETO (24H)`, 14, 20);
         doc.setFontSize(10);
-        doc.text(`Veículo: ${v?.plate} | ${v?.model}`, 14, 28);
+        doc.text(`Alvo: ${label}`, 14, 28);
         
         autoTable(doc, {
           startY: 35,
@@ -243,12 +256,12 @@ export const LiveMap = () => {
           headStyles: { fillColor: [245, 158, 11] },
           styles: { fontSize: 8 }
         });
-        doc.save(`Trajeto_${v?.plate}.pdf`);
+        doc.save(`Trajeto_${label}.pdf`);
     } else {
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Trajeto");
-        XLSX.writeFile(wb, `Trajeto_${v?.plate}.xlsx`);
+        XLSX.writeFile(wb, `Trajeto_${label}.xlsx`);
     }
   };
 
@@ -259,29 +272,82 @@ export const LiveMap = () => {
     return { linked, online, offline };
   }, [vehicles, fleetLocations]);
 
-  const filteredVehiclesList = useMemo(() => {
+  // Lógica de Busca Unificada (Veículos + Tags Soltas)
+  const filteredList = useMemo(() => {
     const term = tagSearchTerm.toLowerCase().trim();
-    let base = vehicles.filter(v => v.tagId);
-    if (filter === 'online') base = base.filter(v => fleetLocations.some(l => l.tagId === v.tagId));
-    if (filter === 'offline') base = base.filter(v => !fleetLocations.some(l => l.tagId === v.tagId));
-    return term ? base.filter(v => v.plate.toLowerCase().includes(term) || v.model.toLowerCase().includes(term)) : base;
-  }, [vehicles, fleetLocations, filter, tagSearchTerm]);
+    if (!term) {
+        // Se não tem busca, retorna apenas veículos (comportamento padrão)
+        // Aplicando filtros de online/offline apenas em veículos
+        let base = vehicles.filter(v => v.tagId);
+        if (filter === 'online') base = base.filter(v => fleetLocations.some(l => l.tagId === v.tagId));
+        if (filter === 'offline') base = base.filter(v => !fleetLocations.some(l => l.tagId === v.tagId));
+        return base;
+    }
+
+    // Se tem busca, procura em Veículos e em Tags Soltas
+    
+    // 1. Veículos
+    let matchingVehicles = vehicles.filter(v => {
+        if (!v.tagId) return false;
+        
+        if (user?.role === 'client') {
+            return v.plate.toLowerCase().includes(term);
+        }
+
+        const tag = tags.find(t => t.id === v.tagId);
+        const client = clients.find(c => c.id === v.clientId);
+        
+        return (
+            v.plate.toLowerCase().includes(term) ||
+            v.model.toLowerCase().includes(term) ||
+            (tag && (tag.name.toLowerCase().includes(term) || tag.accessoryId.toLowerCase().includes(term))) ||
+            (client && client.name.toLowerCase().includes(term))
+        );
+    });
+
+    // 2. Tags Soltas (Apenas para não-clientes)
+    let matchingTags: any[] = [];
+    if (user?.role !== 'client') {
+        const unlinkedTags = tags.filter(t => !vehicles.some(v => v.tagId === t.id));
+        matchingTags = unlinkedTags.filter(t => 
+            t.name.toLowerCase().includes(term) || 
+            t.accessoryId.toLowerCase().includes(term) ||
+            (t.imei && t.imei.includes(term))
+        ).map(t => ({
+            id: 'TAG-' + t.id, // ID virtual para lista
+            tagId: t.id,
+            isTag: true, // Flag para renderizar diferente
+            name: t.name,
+            serial: t.accessoryId
+        }));
+    }
+
+    return [...matchingVehicles, ...matchingTags];
+  }, [vehicles, fleetLocations, filter, tagSearchTerm, tags, clients, user]);
 
   const locationsToRender = useMemo(() => {
     if (selectedTagId) {
         return fleetLocations.filter(l => l.tagId === selectedTagId);
     }
-    let base = filter === 'all' 
-        ? fleetLocations 
-        : fleetLocations.filter(l => filter === 'online');
+    // Se não tem nada selecionado, mostra frota
+    // Filtra para remover tags soltas que não estão selecionadas
+    const activeVehicleTagIds = new Set(vehicles.map(v => v.tagId));
+    
+    let base = fleetLocations.filter(l => activeVehicleTagIds.has(l.tagId));
 
+    if (filter === 'online') {
+        // Já filtrado implicitamente pois fleetLocations são os onlines
+    } 
+    
     if (limit50 && base.length > 50) {
         return base.slice(0, 50);
     }
     return base;
-  }, [fleetLocations, selectedTagId, filter, limit50]);
+  }, [fleetLocations, selectedTagId, filter, limit50, vehicles]);
 
+  // Identifica o objeto ativo (Veículo ou Tag Solta)
   const activeVehicle = vehicles.find(v => v.tagId === selectedTagId);
+  const activeTag = tags.find(t => t.id === selectedTagId);
   const activeCategory = activeVehicle ? categories.find(c => c.id === activeVehicle.type) : null;
   const activeClient = activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : null;
   const lastLoc = fleetLocations.find(l => l.tagId === selectedTagId);
@@ -292,6 +358,11 @@ export const LiveMap = () => {
         case 'caminhoes': return <FaTruck size={28} />;
         default: return <FaCar size={28} />;
     }
+  };
+
+  const getSearchPlaceholder = () => {
+      if (user?.role === 'client') return "Pesquisar por placa...";
+      return "Placa, Modelo, Equipamento ou Cliente...";
   };
 
   return (
@@ -305,7 +376,7 @@ export const LiveMap = () => {
               <Search size={18} className="text-zinc-400" />
               <input 
                 type="text" 
-                placeholder="Pesquisar por placa ou modelo..." 
+                placeholder={getSearchPlaceholder()}
                 value={tagSearchTerm}
                 onFocus={() => setIsSearchFocused(true)}
                 onChange={e => setTagSearchTerm(e.target.value)}
@@ -322,28 +393,56 @@ export const LiveMap = () => {
               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full mt-3 left-0 right-0 bg-white dark:bg-zinc-900 rounded-[28px] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden max-h-[40vh] overflow-y-auto p-2"
               >
-                 {filteredVehiclesList.length === 0 ? <div className="py-10 text-center text-zinc-400 text-[10px] font-black uppercase tracking-widest opacity-40 italic">Nenhum veículo nesta categoria</div> : 
-                   filteredVehiclesList.map(v => (
-                     <button key={v.id} onClick={() => handleVehicleSelect(v.tagId!)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
-                        <div className="flex items-center gap-4">
-                           <div className={`w-11 h-11 rounded-xl flex items-center justify-center border ${fleetLocations.some(l => l.tagId === v.tagId) ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
-                             <Car size={20} />
-                           </div>
-                           <div>
-                              <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{v.plate}</div>
-                              <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">{v.model}</div>
-                           </div>
-                        </div>
-                        <ChevronRight size={16} className="text-zinc-300 group-hover:text-primary-500" />
-                     </button>
-                   ))
+                 {filteredList.length === 0 ? <div className="py-10 text-center text-zinc-400 text-[10px] font-black uppercase tracking-widest opacity-40 italic">Nenhum resultado encontrado</div> : 
+                   filteredList.map((item: any) => {
+                     // Lógica de Renderização Mista (Veículo vs Tag)
+                     if (item.isTag) {
+                         // Renderização de TAG SOLTA
+                         return (
+                            <button key={item.id} onClick={() => handleSelection(item.tagId)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left border-l-4 border-transparent hover:border-primary-500">
+                                <div className="flex items-center gap-4 min-w-0">
+                                    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700">
+                                        <TagIcon size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{item.name}</div>
+                                        <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">
+                                            Serial: {item.serial} • <span className="text-amber-500">ESTOQUE (SEM VÍNCULO)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <Search size={16} className="text-zinc-300 group-hover:text-primary-500 shrink-0" />
+                            </button>
+                         );
+                     } else {
+                         // Renderização de VEÍCULO
+                         const v = item as Vehicle;
+                         const cliName = clients.find(c => c.id === v.clientId)?.name;
+                         return (
+                            <button key={v.id} onClick={() => handleSelection(v.tagId!)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
+                                <div className="flex items-center gap-4 min-w-0">
+                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${fleetLocations.some(l => l.tagId === v.tagId) ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
+                                        <Car size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{v.plate}</div>
+                                        <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">
+                                            {v.model} {cliName && user?.role !== 'client' ? `• ${cliName}` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <ChevronRight size={16} className="text-zinc-300 group-hover:text-primary-500 shrink-0" />
+                            </button>
+                         );
+                     }
+                   })
                  }
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* STATUS CHIPS */}
+        {/* STATUS CHIPS (Apenas visível se não estiver pesquisando tag solta) */}
         <div className="pointer-events-auto flex items-center bg-zinc-900/90 dark:bg-white/90 backdrop-blur-md rounded-full p-1 shadow-2xl border border-zinc-800 dark:border-zinc-200 gap-1">
             <button onClick={() => setFilter('all')} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${filter === 'all' ? 'bg-white dark:bg-zinc-950 text-black dark:text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300 dark:hover:text-zinc-600'}`}>
               <LayoutGrid size={13} /> {stats.linked}
@@ -368,9 +467,10 @@ export const LiveMap = () => {
             locations={locationsToRender} 
             isFleetMode={true} 
             vehicles={vehicles}
+            tags={tags} /* Passa tags para o mapa conseguir nomear as soltas */
             categories={categories}
             highlightedTagId={selectedTagId} 
-            onMarkerClick={handleVehicleSelect} 
+            onMarkerClick={handleSelection} 
         />
       </div>
 
@@ -383,13 +483,17 @@ export const LiveMap = () => {
             <div className="h-[100px] px-8 flex items-center justify-between cursor-pointer group" onClick={() => setIsSheetExpanded(!isSheetExpanded)}>
               <div className="flex items-center gap-5">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl transition-all ${lastLoc ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
-                  {getModalIcon(activeCategory?.fipeType)}
+                  {activeVehicle ? getModalIcon(activeCategory?.fipeType) : <Box size={28}/>}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase leading-none tracking-tighter">{activeVehicle?.plate}</h2>
+                  <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase leading-none tracking-tighter">
+                      {activeVehicle ? activeVehicle.plate : (activeTag?.name || 'Tag Desconhecida')}
+                  </h2>
                   <div className="flex items-center gap-2 mt-1.5">
                       <div className={`w-2 h-2 rounded-full ${lastLoc ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{lastLoc ? 'Sinal Ativo Online' : 'Sem Resposta (Offline)'}</span>
+                      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                          {lastLoc ? 'Sinal Ativo Online' : 'Sem Resposta (Offline)'}
+                      </span>
                   </div>
                 </div>
               </div>
@@ -400,8 +504,8 @@ export const LiveMap = () => {
 
             <div className="px-8 pb-10 space-y-6 overflow-y-auto no-scrollbar border-t border-zinc-50 dark:border-zinc-800/50 pt-8">
                 
-                {/* Exibição do Cliente Responsável */}
-                {activeClient && (
+                {/* Exibição do Cliente Responsável - Apenas para não clientes e se for veículo */}
+                {activeVehicle && activeClient && user?.role !== 'client' && (
                     <div className="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
                         <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shadow-sm shrink-0">
                             <User size={18} />
@@ -409,6 +513,16 @@ export const LiveMap = () => {
                         <div className="overflow-hidden">
                             <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">Cliente Responsável</span>
                             <span className="text-xs font-bold text-zinc-900 dark:text-white uppercase truncate block">{activeClient.name}</span>
+                        </div>
+                    </div>
+                )}
+
+                {!activeVehicle && activeTag && (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-[20px] flex gap-3 items-center">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center shadow-sm shrink-0 font-bold"><TagIcon size={18}/></div>
+                        <div>
+                            <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block">Modo Estoque</span>
+                            <span className="text-xs font-bold text-zinc-900 dark:text-white">Serial: {activeTag.accessoryId}</span>
                         </div>
                     </div>
                 )}
@@ -434,7 +548,7 @@ export const LiveMap = () => {
                 </div>
 
                 <button onClick={() => setSelectedTagId('')} className="w-full py-2 text-[10px] font-black text-zinc-300 hover:text-red-500 uppercase tracking-widest transition-colors flex items-center justify-center gap-2 opacity-60 hover:opacity-100">
-                    <X size={16} /> Fechar Detalhes do Veículo
+                    <X size={16} /> Fechar Detalhes
                 </button>
             </div>
           </motion.div>
@@ -475,7 +589,7 @@ export const LiveMap = () => {
                     <div>
                         <h2 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">Linha do Tempo</h2>
                         <div className="flex items-center gap-3 mt-2">
-                            <span className="text-sm font-black text-primary-500 uppercase tracking-widest">{activeVehicle?.plate}</span>
+                            <span className="text-sm font-black text-primary-500 uppercase tracking-widest">{activeVehicle ? activeVehicle.plate : (activeTag?.name || 'TAG')}</span>
                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700"/>
                             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Últimas 24 Horas</span>
                         </div>

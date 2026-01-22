@@ -5,15 +5,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, LayersControl, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
-import { LocationHistory, Vehicle, VehicleCategory } from '../types';
+import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
-import { FaCar, FaMotorcycle, FaTruck, FaQuestion } from 'react-icons/fa';
+import { FaCar, FaMotorcycle, FaTruck, FaQuestion, FaBox } from 'react-icons/fa';
 
 const { BaseLayer } = LayersControl;
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 
 // Componente auxiliar para renderizar o ícone correto
-const VehicleIconComponent = ({ type, catName, size = 16, className = '' }: { type?: string, catName?: string, size?: number, className?: string }) => {
+const VehicleIconComponent = ({ type, catName, size = 16, className = '', isUnlinked = false }: { type?: string, catName?: string, size?: number, className?: string, isUnlinked?: boolean }) => {
+  if (isUnlinked) return <FaBox size={size} className={className} />;
+  
   const t = (type || '').toLowerCase();
   const n = (catName || '').toLowerCase();
   
@@ -25,21 +27,25 @@ const VehicleIconComponent = ({ type, catName, size = 16, className = '' }: { ty
   return <FaQuestion size={size} className={className} />;
 };
 
-const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryName?: string, color = '#f59e0b') => {
+const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryName?: string, color = '#f59e0b', isUnlinked = false) => {
   const size = isSelected ? 20 : 16;
   
   // Renderiza o componente React Icon para string HTML
   const iconHtml = renderToStaticMarkup(
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-        <VehicleIconComponent type={categoryType} catName={categoryName} size={size} />
+        <VehicleIconComponent type={categoryType} catName={categoryName} size={size} isUnlinked={isUnlinked} />
     </div>
   );
   
+  // Se for unlinked, muda a cor do pin
+  const bg = isUnlinked ? (isSelected ? '#eab308' : '#ca8a04') : (isSelected ? color : '#ffffff');
+  const textColor = isUnlinked ? '#ffffff' : (isSelected ? '#000000' : '#18181b');
+
   return L.divIcon({
     className: 'custom-div-icon',
     html: `
       <div style="
-          background: ${isSelected ? color : '#ffffff'};
+          background: ${bg};
           width: ${isSelected ? '48px' : '36px'};
           height: ${isSelected ? '48px' : '36px'};
           border: ${isSelected ? '4px' : '3px'} solid ${isSelected ? '#ffffff' : '#18181b'};
@@ -50,7 +56,7 @@ const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryN
           box-shadow: 0 10px 25px rgba(0,0,0,0.3);
           transform: translate(-50%, -50%);
           transition: all 0.3s ease;
-          color: ${isSelected ? '#000000' : '#18181b'};
+          color: ${textColor};
       ">
           ${iconHtml}
       </div>
@@ -81,6 +87,7 @@ interface MapProps {
   locations: LocationHistory[];
   isFleetMode?: boolean; 
   vehicles?: Vehicle[];
+  tags?: Tag[];
   categories?: VehicleCategory[];
   highlightedTagId?: string;
   onMarkerClick?: (tagId: string) => void;
@@ -90,6 +97,7 @@ export const MapComponent: React.FC<MapProps> = ({
   locations, 
   isFleetMode = false, 
   vehicles = [], 
+  tags = [],
   categories = [],
   highlightedTagId, 
   onMarkerClick 
@@ -107,31 +115,37 @@ export const MapComponent: React.FC<MapProps> = ({
     return locs.map((loc) => {
         const isSelected = highlightedTagId === loc.tagId;
         const vehicle = vehicles.find(v => v.tagId === loc.tagId);
-        const category = categories.find(c => c.id === vehicle?.type);
+        const tag = tags.find(t => t.id === loc.tagId);
+        
+        // Se não tem veículo, é uma tag solta (unlinked)
+        const isUnlinked = !vehicle;
+        const category = vehicle ? categories.find(c => c.id === vehicle.type) : undefined;
 
         return (
           <Marker 
               key={loc.id} 
               position={[loc.lat, loc.lon]} 
-              icon={createVehicleIcon(isSelected, category?.fipeType, category?.name)}
+              icon={createVehicleIcon(isSelected, category?.fipeType, category?.name, '#f59e0b', isUnlinked)}
               eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
           >
               <Popup closeButton={false} className="custom-popup" offset={[0, -20]}>
                   <div className="min-w-[180px] p-1 font-sans">
                       <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">{vehicle?.plate || 'SEM PLACA'}</h3>
-                          <span className={`text-[8px] font-black text-white px-1.5 py-0.5 rounded uppercase tracking-widest ${vehicle?.status === 'stolen' ? 'bg-red-600' : vehicle?.status === 'maintenance' ? 'bg-amber-500' : 'bg-emerald-500'}`}>
-                              {vehicle?.status === 'stolen' ? 'ROUBO' : vehicle?.status === 'maintenance' ? 'MANUT' : 'ATIVO'}
+                          <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">
+                              {vehicle ? vehicle.plate : (tag?.name || 'Tag S/ Vínculo')}
+                          </h3>
+                          <span className={`text-[8px] font-black text-white px-1.5 py-0.5 rounded uppercase tracking-widest ${isUnlinked ? 'bg-amber-500' : (vehicle?.status === 'stolen' ? 'bg-red-600' : vehicle?.status === 'maintenance' ? 'bg-amber-500' : 'bg-emerald-500')}`}>
+                              {isUnlinked ? 'ESTOQUE' : (vehicle?.status === 'stolen' ? 'ROUBO' : vehicle?.status === 'maintenance' ? 'MANUT' : 'ATIVO')}
                           </span>
                       </div>
                       
                       <div className="flex items-center gap-2 mb-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
                           <div className="text-zinc-500">
-                              <VehicleIconComponent type={category?.fipeType} catName={category?.name} size={16} />
+                              <VehicleIconComponent type={category?.fipeType} catName={category?.name} size={16} isUnlinked={isUnlinked} />
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-zinc-700 uppercase leading-none">{vehicle?.model || 'Desconhecido'}</span>
-                            <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">{category?.name || 'Geral'}</span>
+                            <span className="text-[10px] font-black text-zinc-700 uppercase leading-none">{vehicle ? vehicle.model : (tag?.accessoryId || 'N/A')}</span>
+                            <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">{isUnlinked ? 'Sem Vínculo' : (category?.name || 'Geral')}</span>
                           </div>
                       </div>
 
