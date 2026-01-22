@@ -5,22 +5,29 @@ import { storage } from '../services/storage';
 import { Vehicle, VehicleCategory } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, Filter, FileSpreadsheet, Download, PieChart as PieIcon, BarChart3, TrendingUp, Settings } from 'lucide-react';
-import { ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
+import { FileText, Filter, FileSpreadsheet, Download, TrendingUp } from 'lucide-react';
+import { ResponsiveContainer, XAxis, Tooltip, AreaChart, Area } from 'recharts';
 
 export const Reports = () => {
   const { t } = useLanguage();
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
-  const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0]; });
+  
+  // Inicializa com datas seguras
+  const [startDate, setStartDate] = useState(() => { 
+    const d = new Date(); 
+    d.setDate(d.getDate() - 7); 
+    return d.toISOString().split('T')[0]; 
+  });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  
   const [appliedStartDate, setAppliedStartDate] = useState(startDate);
   const [appliedEndDate, setAppliedEndDate] = useState(endDate);
+  
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
   const [trendData, setTrendData] = useState<any[]>([]);
   const [categoryData, setCategoryData] = useState<any[]>([]);
-  const [installData, setInstallData] = useState<any[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
@@ -32,32 +39,58 @@ export const Reports = () => {
   }, []);
 
   const filterData = useCallback(() => {
-      const start = new Date(appliedStartDate + 'T00:00:00').getTime();
-      const end = new Date(appliedEndDate + 'T23:59:59').getTime();
+      if (!appliedStartDate || !appliedEndDate) return;
+
+      // Criação segura de datas
+      const startObj = new Date(`${appliedStartDate}T00:00:00`);
+      const endObj = new Date(`${appliedEndDate}T23:59:59`);
+
+      // Validação para evitar erros de Range/Syntax
+      if (isNaN(startObj.getTime()) || isNaN(endObj.getTime())) {
+          console.warn("Datas inválidas para filtro");
+          return;
+      }
+
+      const start = startObj.getTime();
+      const end = endObj.getTime();
+      
       const filtered = vehicles.filter(v => v.createdAt && v.createdAt >= start && v.createdAt <= end);
       setFilteredVehicles(filtered);
       
+      // Processamento de Categorias
       const catMap: Record<string, number> = {};
-      const instMap: Record<string, number> = {};
       filtered.forEach(v => {
           const catName = categories.find(c => c.id === v.type)?.name || 'Outros';
           catMap[catName] = (catMap[catName] || 0) + 1;
-          const label = v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag';
-          instMap[label] = (instMap[label] || 0) + 1;
       });
       setCategoryData(Object.keys(catMap).map(k => ({ name: k, value: catMap[k] })));
-      setInstallData(Object.keys(instMap).map(k => ({ name: k, value: instMap[k] })));
 
+      // Processamento de Tendência (Loop Seguro)
       const trendMap: Record<string, number> = {};
-      for (let d = new Date(start); d <= new Date(end); d.setDate(d.getDate() + 1)) {
-          trendMap[d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })] = 0;
+      const loopDate = new Date(startObj);
+      
+      // Loop while é mais seguro e legível para manipulação de datas que for-loops complexos
+      while (loopDate <= endObj) {
+          try {
+            const key = loopDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            trendMap[key] = 0;
+            // Avança 1 dia
+            loopDate.setDate(loopDate.getDate() + 1);
+          } catch (e) {
+            break; // Previne loops infinitos em caso de erro de data
+          }
       }
+
       filtered.forEach(v => {
           if (v.createdAt) {
-              const dayKey = new Date(v.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-              if (trendMap[dayKey] !== undefined) trendMap[dayKey]++;
+              const d = new Date(v.createdAt);
+              if (!isNaN(d.getTime())) {
+                  const dayKey = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                  if (trendMap[dayKey] !== undefined) trendMap[dayKey]++;
+              }
           }
       });
+      
       setTrendData(Object.keys(trendMap).map(k => ({ name: k, count: trendMap[k] })));
   }, [vehicles, appliedStartDate, appliedEndDate, categories]);
 
@@ -66,15 +99,22 @@ export const Reports = () => {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-        const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-            import('jspdf'),
-            import('jspdf-autotable')
-        ]);
+        // Importação dinâmica segura
+        const jsPDFModule = await import('jspdf');
+        const jsPDF = jsPDFModule.jsPDF || (jsPDFModule as any).default;
         
+        const autoTableModule = await import('jspdf-autotable');
+        const autoTable = autoTableModule.default || (autoTableModule as any);
+
+        if (!jsPDF) throw new Error("Erro ao carregar biblioteca PDF");
+
         const doc = new jsPDF();
         const total = filteredVehicles.length;
         const soTag = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
         const tagTracker = total - soTag;
+        
+        const leased = filteredVehicles.filter(v => v.ownershipStatus !== 'purchased').length;
+        const purchased = filteredVehicles.filter(v => v.ownershipStatus === 'purchased').length;
 
         // --- HEADER ---
         doc.setFont("helvetica", "bold");
@@ -85,11 +125,15 @@ export const Reports = () => {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
         doc.setTextColor(113, 113, 122);
-        doc.text(`Período: ${new Date(appliedStartDate + 'T00:00:00').toLocaleDateString()} - ${new Date(appliedEndDate + 'T23:59:59').toLocaleDateString()}`, 14, 30);
-        doc.text(`Gerado por: ${user?.name || 'Admin'} (${user?.role || 'User'}) em ${new Date().toLocaleString()}`, 14, 36);
+        
+        const startStr = new Date(appliedStartDate).toLocaleDateString();
+        const endStr = new Date(appliedEndDate).toLocaleDateString();
+        doc.text(`Período: ${startStr} - ${endStr}`, 14, 30);
+        
+        doc.text(`Gerado por: ${user?.name || 'Admin'} em ${new Date().toLocaleString()}`, 14, 36);
 
         // --- DASHBOARD CARDS ---
-        // Total Ativações (Dark)
+        // Total
         doc.setFillColor(24, 24, 27);
         doc.roundedRect(14, 45, 58, 30, 4, 4, "F");
         doc.setTextColor(255, 255, 255);
@@ -98,7 +142,7 @@ export const Reports = () => {
         doc.setFontSize(18);
         doc.text(total.toString(), 19, 68);
 
-        // Só Tag (Orange)
+        // Só Tag
         doc.setFillColor(245, 158, 11);
         doc.roundedRect(76, 45, 58, 30, 4, 4, "F");
         doc.setTextColor(0, 0, 0);
@@ -108,7 +152,7 @@ export const Reports = () => {
         const soTagPerc = total > 0 ? ((soTag / total) * 100).toFixed(1) : "0";
         doc.text(`${soTag} (${soTagPerc}%)`, 81, 68);
 
-        // Tag + Rastreador (Grey)
+        // Tag + Tracker
         doc.setFillColor(244, 244, 245);
         doc.roundedRect(138, 45, 58, 30, 4, 4, "F");
         doc.setTextColor(24, 24, 27);
@@ -118,11 +162,22 @@ export const Reports = () => {
         const tagTrackerPerc = total > 0 ? ((tagTracker / total) * 100).toFixed(1) : "0";
         doc.text(`${tagTracker} (${tagTrackerPerc}%)`, 143, 68);
 
+        // --- SECTION: Propriedade ---
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(24, 24, 27);
+        doc.text("Modelo de Contrato", 14, 88);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Comodato: ${leased} (${total > 0 ? ((leased/total)*100).toFixed(1) : 0}%)`, 14, 95);
+        doc.text(`Adquirido: ${purchased} (${total > 0 ? ((purchased/total)*100).toFixed(1) : 0}%)`, 80, 95);
+
         // --- DISTRIBUIÇÃO POR CATEGORIA ---
         doc.setFont("helvetica", "bold");
         doc.setFontSize(14);
         doc.setTextColor(24, 24, 27);
-        doc.text("Distribuição por Categoria", 14, 88);
+        doc.text("Distribuição por Categoria", 14, 108);
 
         const categorySummary = categoryData.map(c => [
           c.name,
@@ -131,7 +186,7 @@ export const Reports = () => {
         ]);
 
         autoTable(doc, {
-          startY: 93,
+          startY: 113,
           head: [['Categoria', 'Quantidade', 'Representatividade (%)']],
           body: categorySummary,
           theme: 'striped',
@@ -144,16 +199,17 @@ export const Reports = () => {
         doc.text("Listagem Detalhada de Veículos", 14, (doc as any).lastAutoTable.finalY + 15);
 
         const detailedData = filteredVehicles.map(v => [
-          new Date(v.createdAt!).toLocaleDateString(),
+          v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-',
           v.plate,
           v.model,
           categories.find(c => c.id === v.type)?.name || '-',
-          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
+          v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
         ]);
 
         autoTable(doc, {
           startY: (doc as any).lastAutoTable.finalY + 20,
-          head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento']],
+          head: [['Data', 'Placa', 'Modelo', 'Categoria', 'Equipamento', 'Contrato']],
           body: detailedData,
           theme: 'striped',
           headStyles: { fillColor: [245, 158, 11], textColor: [0, 0, 0] },
@@ -162,6 +218,9 @@ export const Reports = () => {
 
         storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Relatório Insight: ${appliedStartDate} a ${appliedEndDate}`);
         doc.save(`insight_report_${appliedStartDate}.pdf`);
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar PDF. Verifique o console.');
     } finally {
         setIsExporting(false);
     }
@@ -172,11 +231,12 @@ export const Reports = () => {
     try {
         const XLSX = await import('xlsx');
         const dataToExport = filteredVehicles.map(v => ({
-            Data: new Date(v.createdAt!).toLocaleDateString(),
+            Data: v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-',
             Placa: v.plate,
             Modelo: v.model,
             Categoria: categories.find(c => c.id === v.type)?.name || '-',
-            Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'
+            Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
+            Contrato: v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
         }));
 
         const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -188,8 +248,6 @@ export const Reports = () => {
         setIsExporting(false);
     }
   };
-
-  const COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#71717a'];
 
   return (
     <div className="space-y-10 pb-20">
@@ -249,26 +307,28 @@ export const Reports = () => {
         </div>
 
         <div className="bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div className="p-10 flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800">
+            <div className="p-6 md:p-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-100 dark:border-zinc-800">
                 <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Análise Quantitativa</h3>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full md:w-auto">
                     <button 
                       onClick={handleExportPDF} 
                       disabled={isExporting || filteredVehicles.length === 0}
-                      className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
+                      className="flex-1 md:flex-none px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
                     >
-                      <Download size={14}/> {isExporting ? 'Processando...' : 'PDF'}
+                      <Download size={14}/> {isExporting ? 'Gerando...' : 'PDF'}
                     </button>
                     <button 
                       onClick={handleExportExcel}
                       disabled={isExporting || filteredVehicles.length === 0}
-                      className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
+                      className="flex-1 md:flex-none px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all disabled:opacity-50"
                     >
                       <FileSpreadsheet size={14}/> Excel
                     </button>
                 </div>
             </div>
-            <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+            
+            {/* VIEW DESKTOP: TABLE */}
+            <div className="hidden md:block overflow-x-auto max-h-[500px] custom-scrollbar">
                 <table className="w-full text-left">
                     <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/20 sticky top-0 z-10 border-b border-zinc-100 dark:border-zinc-800">
                         <tr>
@@ -276,15 +336,21 @@ export const Reports = () => {
                             <th className="px-10 py-5">Placa</th>
                             <th className="px-10 py-5">Modelo</th>
                             <th className="px-10 py-5 text-right">Instalação</th>
+                            <th className="px-10 py-5 text-right">Contrato</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
                         {filteredVehicles.map(v => (
                             <tr key={v.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
-                                <td className="px-10 py-5 text-zinc-500 font-mono text-xs">{new Date(v.createdAt!).toLocaleDateString()}</td>
+                                <td className="px-10 py-5 text-zinc-500 font-mono text-xs">{v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-'}</td>
                                 <td className="px-10 py-5 font-black text-zinc-900 dark:text-white uppercase">{v.plate}</td>
                                 <td className="px-10 py-5 font-bold text-zinc-600 dark:text-zinc-300">{v.model}</td>
                                 <td className="px-10 py-5 text-right"><span className="inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border border-primary-500/20 bg-primary-500/5 text-primary-500">{v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'}</span></td>
+                                <td className="px-10 py-5 text-right">
+                                    <span className={`inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border ${v.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
+                                        {v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'}
+                                    </span>
+                                </td>
                             </tr>
                         ))}
                     </tbody>

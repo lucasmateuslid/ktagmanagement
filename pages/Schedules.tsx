@@ -4,7 +4,7 @@ import { storage } from '../services/storage';
 import { Schedule, Technician, ScheduleStatus } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, User, MapPin, ChevronRight, History, Filter, AlertCircle, Wrench, Check, RotateCcw, Trash2 } from 'lucide-react';
+import { Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, User, MapPin, ChevronRight, History, Filter, AlertCircle, Wrench, Check, RotateCcw, Trash2, LayoutGrid, CheckSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Schedules = () => {
@@ -49,6 +49,24 @@ export const Schedules = () => {
   };
 
   useEffect(() => { loadData(); }, [user]);
+
+  // Estatísticas do Mês
+  const monthStats = useMemo(() => {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      const monthSchedules = schedules.filter(s => {
+          const d = new Date(s.confirmedDate ? `${s.confirmedDate}T00:00:00` : s.createdAt);
+          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+
+      return {
+          total: monthSchedules.length,
+          completed: monthSchedules.filter(s => s.status === 'Concluída').length,
+          canceled: monthSchedules.filter(s => s.status === 'Cancelada').length
+      };
+  }, [schedules]);
 
   // Filtros Admin
   const pendingSchedules = useMemo(() => schedules.filter(s => ['Solicitada', 'Em análise'].includes(s.status)), [schedules]);
@@ -131,7 +149,6 @@ export const Schedules = () => {
       'Retirada': 'text-red-500'
   };
 
-  // Componente de Stepper Visual para o Usuário
   const RequestStepper = ({ status }: { status: string }) => {
       const steps = [
           { id: 1, label: 'Solicitado', active: ['Solicitada', 'Em análise', 'Confirmada', 'Reagendada', 'Concluída'].includes(status) },
@@ -140,7 +157,6 @@ export const Schedules = () => {
           { id: 4, label: 'Concluído', active: ['Concluída'].includes(status) }
       ];
 
-      // Se cancelado, mostra um estado especial
       if (status === 'Cancelada') {
           return (
               <div className="w-full bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-100 dark:border-red-900/20 flex items-center justify-center gap-2 text-red-500 text-xs font-black uppercase tracking-widest mt-4">
@@ -150,22 +166,17 @@ export const Schedules = () => {
       }
 
       return (
-          <div className="flex items-center justify-between mt-6 relative">
-              {/* Linha de fundo */}
+          <div className="flex items-center justify-between mt-6 relative px-2">
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full z-0" />
-              
-              {/* Steps */}
               {steps.map((step, idx) => {
-                  // Barra de progresso colorida
                   const isCompleted = step.active;
-                  const isCurrent = steps[idx].active && (idx === steps.length - 1 || !steps[idx + 1].active);
-                  
                   return (
                       <div key={step.id} className="relative z-10 flex flex-col items-center gap-2">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-300'}`}>
                               {isCompleted ? <Check size={14} strokeWidth={4} /> : <span className="text-[10px] font-black">{step.id}</span>}
                           </div>
-                          <span className={`text-[8px] font-black uppercase tracking-widest absolute -bottom-6 whitespace-nowrap ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-300 dark:text-zinc-600'}`}>{step.label}</span>
+                          {/* Oculta label no mobile muito pequeno para evitar quebra */}
+                          <span className={`text-[8px] font-black uppercase tracking-widest absolute -bottom-6 whitespace-nowrap hidden sm:block ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-300 dark:text-zinc-600'}`}>{step.label}</span>
                       </div>
                   );
               })}
@@ -185,7 +196,6 @@ export const Schedules = () => {
                     <p className="text-zinc-500 mt-1 font-medium text-xs">Acompanhe o andamento dos serviços em sua frota.</p>
                 </div>
                 
-                {/* User Tabs */}
                 <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 w-full md:w-auto">
                     <button 
                         onClick={() => setActiveTab('active')}
@@ -212,13 +222,13 @@ export const Schedules = () => {
                     </div>
                 ) : (
                     displayList.map(sch => (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={sch.id} className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
+                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={sch.id} className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
                             
                             <div className="flex justify-between items-start mb-6">
                                 <div>
-                                    <div className="flex items-center gap-3 mb-2">
+                                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
                                         <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${statusColors[sch.status]}`}>{sch.status}</span>
-                                        <span className="text-[10px] text-zinc-400 font-bold flex items-center gap-1"><Calendar size={10}/> {new Date(sch.createdAt).toLocaleDateString()}</span>
+                                        <span className="text-[10px] text-zinc-400 font-bold flex items-center gap-1 whitespace-nowrap"><Calendar size={10}/> {new Date(sch.createdAt).toLocaleDateString()}</span>
                                     </div>
                                     <h3 className="text-xl font-black uppercase text-zinc-900 dark:text-white tracking-tight">{sch.vehiclePlate}</h3>
                                     <p className="text-xs font-bold text-zinc-500 uppercase">{sch.vehicleModel}</p>
@@ -230,10 +240,10 @@ export const Schedules = () => {
 
                             <div className="space-y-3 bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                                 <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <Wrench size={12} className="text-zinc-400"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Serviço:</span> <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
+                                    <Wrench size={12} className="text-zinc-400 shrink-0"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Serviço:</span> <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <MapPin size={12} className="text-zinc-400"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Local:</span> <span className="truncate flex-1 font-medium">{sch.locationAddress}</span>
+                                    <MapPin size={12} className="text-zinc-400 shrink-0"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Local:</span> <span className="truncate flex-1 font-medium">{sch.locationAddress}</span>
                                 </div>
                                 {sch.confirmedDate ? (
                                     <div className="flex items-center gap-2 text-xs text-zinc-900 dark:text-white bg-white dark:bg-zinc-900 p-2 rounded-lg shadow-sm border border-zinc-100 dark:border-zinc-800">
@@ -248,10 +258,9 @@ export const Schedules = () => {
                                 )}
                             </div>
 
-                            <RequestStepper status={sch.status} />
-                            
-                            {/* Espaçamento extra para os labels do stepper */}
-                            <div className="h-4"></div>
+                            <div className="mb-4">
+                                <RequestStepper status={sch.status} />
+                            </div>
 
                             {sch.technicianId && activeTab === 'active' && (
                                 <div className="mt-6 flex items-center gap-3 p-3 bg-primary-500/5 border border-primary-500/10 rounded-xl">
@@ -278,24 +287,49 @@ export const Schedules = () => {
 
   return (
     <div className="space-y-8 pb-20">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div className="flex flex-col gap-6">
             <div>
                 <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Central de Agendamentos</h1>
                 <p className="text-zinc-500 mt-1 font-medium text-xs">Gerencie solicitações e a agenda da equipe técnica.</p>
             </div>
+
+            {/* Stats Dashboard */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total no Mês</p>
+                        <p className="text-2xl font-black text-zinc-900 dark:text-white">{monthStats.total}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400"><LayoutGrid size={20}/></div>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Concluídos</p>
+                        <p className="text-2xl font-black text-emerald-500">{monthStats.completed}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500"><CheckCircle2 size={20}/></div>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cancelados</p>
+                        <p className="text-2xl font-black text-red-500">{monthStats.canceled}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500"><XCircle size={20}/></div>
+                </div>
+            </div>
             
             {/* Tabs */}
-            <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1">
+            <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 self-start overflow-x-auto max-w-full">
                 <button 
                     onClick={() => setActiveTab('pending')}
-                    className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'pending' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
+                    className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'pending' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
                 >
                     <AlertCircle size={14} className={activeTab === 'pending' ? 'text-primary-500' : ''}/> 
                     Pendentes ({pendingSchedules.length})
                 </button>
                 <button 
                     onClick={() => setActiveTab('confirmed')}
-                    className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'confirmed' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
+                    className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'confirmed' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
                 >
                     <CheckCircle2 size={14} className={activeTab === 'confirmed' ? 'text-emerald-500' : ''}/> 
                     Agendados ({confirmedSchedules.length})
@@ -323,13 +357,13 @@ export const Schedules = () => {
                             
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                                    <User size={14} className="text-zinc-400"/> Solicitante: <span className="font-bold">{sch.requesterName}</span>
+                                    <User size={14} className="text-zinc-400 shrink-0"/> <span className="truncate">Solicitante: <span className="font-bold">{sch.requesterName}</span></span>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                                    <Wrench size={14} className="text-zinc-400"/> Serviço: <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
+                                    <Wrench size={14} className="text-zinc-400 shrink-0"/> Serviço: <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                                    <MapPin size={14} className="text-zinc-400"/> <span className="truncate w-48">{sch.locationAddress}</span>
+                                    <MapPin size={14} className="text-zinc-400 shrink-0"/> <span className="truncate flex-1">{sch.locationAddress}</span>
                                 </div>
                             </div>
                         </div>
@@ -348,120 +382,126 @@ export const Schedules = () => {
             )}
         </div>
 
-        {/* Modal de Gestão (Admin/Mod) */}
+        {/* Modal de Gestão (Admin/Mod) - OTIMIZADO PARA MOBILE */}
         {selectedSchedule && (
-            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
-                <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-2xl p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center mb-8">
-                        <h2 className="text-2xl font-display font-black uppercase tracking-tight">Gerenciar Solicitação</h2>
-                        <button onClick={() => setSelectedSchedule(null)} className="p-2 text-zinc-400 hover:text-zinc-600"><XCircle size={24}/></button>
-                    </div>
+            <div className="fixed inset-0 z-[1000] overflow-y-auto bg-black/80 backdrop-blur-md">
+                <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                    <div className="fixed inset-0 transition-opacity" onClick={() => setSelectedSchedule(null)} />
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-6">
-                            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-5 rounded-2xl space-y-3">
-                                <div>
-                                    <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Solicitante</p>
-                                    <p className="font-bold text-zinc-900 dark:text-white">{selectedSchedule.requesterName}</p>
+                    <div className="relative transform overflow-hidden bg-white dark:bg-zinc-900 rounded-[32px] text-left shadow-xl transition-all sm:my-8 w-full max-w-2xl border border-zinc-200 dark:border-zinc-800">
+                        <div className="p-6 md:p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl md:text-2xl font-display font-black uppercase tracking-tight">Gerenciar Solicitação</h2>
+                                <button onClick={() => setSelectedSchedule(null)} className="p-2 text-zinc-400 hover:text-zinc-600"><XCircle size={24}/></button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-6">
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-5 rounded-2xl space-y-3">
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Solicitante</p>
+                                            <p className="font-bold text-zinc-900 dark:text-white">{selectedSchedule.requesterName}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Veículo</p>
+                                            <p className="font-bold text-zinc-900 dark:text-white uppercase">{selectedSchedule.vehiclePlate} - {selectedSchedule.vehicleModel}</p>
+                                            <p className="text-[10px] text-zinc-500 mt-0.5">{selectedSchedule.fipeValue}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Local</p>
+                                            <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-tight">{selectedSchedule.locationAddress}</p>
+                                            {selectedSchedule.locationLat !== 0 && (
+                                                <a href={`https://www.google.com/maps?q=${selectedSchedule.locationLat},${selectedSchedule.locationLng}`} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-primary-500 hover:underline flex items-center gap-1 mt-1"><MapPin size={10}/> Ver no Mapa</a>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Atribuir Técnico</label>
+                                            <select 
+                                                value={editForm.techId} 
+                                                onChange={e => setEditForm({...editForm, techId: e.target.value})} 
+                                                className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
+                                            >
+                                                <option value="">-- Selecione --</option>
+                                                {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Data</label>
+                                                <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Hora</label>
+                                                <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Veículo</p>
-                                    <p className="font-bold text-zinc-900 dark:text-white uppercase">{selectedSchedule.vehiclePlate} - {selectedSchedule.vehicleModel}</p>
-                                    <p className="text-[10px] text-zinc-500 mt-0.5">{selectedSchedule.fipeValue}</p>
+
+                                <div className="flex flex-col h-full">
+                                    <h3 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-4">Histórico de Eventos</h3>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4 max-h-[250px] md:max-h-[300px]">
+                                        {selectedSchedule.history.map((h, i) => (
+                                            <div key={i} className="flex gap-3 relative">
+                                                <div className="flex flex-col items-center">
+                                                    <div className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-600 mt-1.5"/>
+                                                    {i !== selectedSchedule.history.length - 1 && <div className="w-px h-full bg-zinc-200 dark:bg-zinc-800 my-1"/>}
+                                                </div>
+                                                <div className="pb-4">
+                                                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-200"><span className="text-primary-500">{h.actionBy}</span> {h.action}</p>
+                                                    <p className="text-[10px] text-zinc-400">{new Date(h.timestamp).toLocaleString()}</p>
+                                                    {h.details && <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 bg-zinc-50 dark:bg-zinc-800 p-2 rounded-lg inline-block">{h.details}</p>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Local</p>
-                                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-tight">{selectedSchedule.locationAddress}</p>
-                                    {selectedSchedule.locationLat !== 0 && (
-                                        <a href={`https://www.google.com/maps?q=${selectedSchedule.locationLat},${selectedSchedule.locationLng}`} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-primary-500 hover:underline flex items-center gap-1 mt-1"><MapPin size={10}/> Ver no Mapa</a>
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-3">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button 
+                                        onClick={() => handleUpdateStatus('Confirmada')} 
+                                        className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
+                                    >
+                                        <CheckCircle2 size={16} className="inline mr-2"/> Confirmar
+                                    </button>
+                                    
+                                    {selectedSchedule.status !== 'Solicitada' && (
+                                        <button 
+                                            onClick={() => handleUpdateStatus('Reagendada')} 
+                                            className="flex-1 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
+                                        >
+                                            <Clock size={16} className="inline mr-2"/> Reagendar
+                                        </button>
                                     )}
                                 </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Atribuir Técnico</label>
-                                    <select 
-                                        value={editForm.techId} 
-                                        onChange={e => setEditForm({...editForm, techId: e.target.value})} 
-                                        className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
+                                
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button 
+                                        onClick={() => handleUpdateStatus('Concluída')} 
+                                        className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
                                     >
-                                        <option value="">-- Selecione --</option>
-                                        {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
-                                </div>
-                                <div className="flex gap-4">
-                                    <div className="flex-1 space-y-2">
-                                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Data</label>
-                                        <input type="date" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
-                                    </div>
-                                    <div className="w-32 space-y-2">
-                                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Hora</label>
-                                        <input type="time" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
-                                    </div>
+                                        <Check size={16} className="inline mr-2"/> Finalizar
+                                    </button>
+                                    <button 
+                                        onClick={() => { if(confirm('Cancelar esta solicitação?')) handleUpdateStatus('Cancelada'); }} 
+                                        className="flex-1 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button 
+                                        onClick={handleDelete}
+                                        className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95 flex justify-center items-center"
+                                        title="Excluir Permanentemente"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="flex flex-col h-full">
-                            <h3 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-4">Histórico de Eventos</h3>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4 max-h-[300px]">
-                                {selectedSchedule.history.map((h, i) => (
-                                    <div key={i} className="flex gap-3 relative">
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-600 mt-1.5"/>
-                                            {i !== selectedSchedule.history.length - 1 && <div className="w-px h-full bg-zinc-200 dark:bg-zinc-800 my-1"/>}
-                                        </div>
-                                        <div className="pb-4">
-                                            <p className="text-xs font-bold text-zinc-700 dark:text-zinc-200"><span className="text-primary-500">{h.actionBy}</span> {h.action}</p>
-                                            <p className="text-[10px] text-zinc-400">{new Date(h.timestamp).toLocaleString()}</p>
-                                            {h.details && <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 bg-zinc-50 dark:bg-zinc-800 p-2 rounded-lg inline-block">{h.details}</p>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-3">
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => handleUpdateStatus('Confirmada')} 
-                                className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
-                            >
-                                <CheckCircle2 size={16} className="inline mr-2"/> Confirmar / Salvar
-                            </button>
-                            
-                            {selectedSchedule.status !== 'Solicitada' && (
-                                <button 
-                                    onClick={() => handleUpdateStatus('Reagendada')} 
-                                    className="flex-1 py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
-                                >
-                                    <Clock size={16} className="inline mr-2"/> Reagendar
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => handleUpdateStatus('Concluída')} 
-                                className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
-                            >
-                                <Check size={16} className="inline mr-2"/> Finalizar Serviço
-                            </button>
-                            <button 
-                                onClick={() => { if(confirm('Cancelar esta solicitação?')) handleUpdateStatus('Cancelada'); }} 
-                                className="flex-1 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
-                            >
-                                Cancelar
-                            </button>
-                            <button 
-                                onClick={handleDelete}
-                                className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg active:scale-95"
-                                title="Excluir Permanentemente"
-                            >
-                                <Trash2 size={16} />
-                            </button>
                         </div>
                     </div>
                 </div>

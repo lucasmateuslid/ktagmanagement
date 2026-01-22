@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { storage } from '../services/storage';
@@ -155,37 +156,39 @@ export const Settings = () => {
   if (loading || !settings) return <div className="flex items-center justify-center h-full"><Cpu className="animate-spin text-primary-500" size={48} /></div>;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 pb-32 font-sans">
+    <div className="max-w-7xl mx-auto space-y-8 md:space-y-12 pb-32 font-sans">
       {/* HEADER PRINCIPAL */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-zinc-200 dark:border-zinc-800 pb-10">
-        <div className="flex items-center gap-6">
-          <div className="w-20 h-20 rounded-[28px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-primary-500 border border-zinc-800 shadow-2xl shrink-0"><SettingsIcon size={32} /></div>
+        <div className="flex items-center gap-4 md:gap-6">
+          <div className="w-14 h-14 md:w-20 md:h-20 rounded-[20px] md:rounded-[28px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-primary-500 border border-zinc-800 shadow-2xl shrink-0">
+            <SettingsIcon size={24} className="md:w-8 md:h-8" />
+          </div>
           <div>
-            <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Configurações</h1>
-            <p className="text-zinc-500 mt-2 font-medium">Controle total do ecossistema de rastreamento.</p>
+            <h1 className="text-2xl md:text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Configurações</h1>
+            <p className="text-zinc-500 mt-1 md:mt-2 font-medium text-xs md:text-base">Controle total do ecossistema de rastreamento.</p>
           </div>
         </div>
         {isAdmin && (
-          <button onClick={handleSaveSettings} className="bg-primary-500 hover:bg-primary-400 text-black px-10 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl transition-all active:scale-95">
+          <button onClick={handleSaveSettings} className="w-full md:w-auto bg-primary-500 hover:bg-primary-400 text-black px-10 py-4 rounded-[20px] flex items-center justify-center gap-3 font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl transition-all active:scale-95">
             <Save size={18} /> Salvar Tudo
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
         
         {/* COLUNA ESQUERDA (PERFIL E SEGURANÇA) */}
-        <div className="lg:col-span-4 space-y-10">
+        <div className="lg:col-span-4 space-y-6 md:space-y-10">
           
           {/* MEU PERFIL */}
-          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
+          <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-8 flex items-center gap-2"><UserIcon size={14}/> Meu Perfil</h3>
             <div className="flex flex-col items-center">
                 <div className="w-24 h-24 rounded-[32px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-primary-500 font-black text-4xl mb-4 border border-zinc-800 shadow-xl">{profileForm.avatarInitial}</div>
                 <div className="text-center mb-8">
                     <h4 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase leading-tight">{currentUser?.name}</h4>
                     <span className="inline-flex mt-2 px-3 py-1 bg-primary-500/10 text-primary-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-primary-500/20">{currentUser?.role}</span>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-3 italic">{currentUser?.email}</p>
+                    <p className="text-[10px] text-zinc-400 font-medium mt-3 italic max-w-[200px] truncate">{currentUser?.email}</p>
                 </div>
                 <form onSubmit={handleSaveProfile} className="w-full space-y-4">
                     <div className="space-y-1">
@@ -193,7 +196,7 @@ export const Settings = () => {
                         <input type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Inicial do Avatar (1-2 Letras)</label>
+                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Inicial do Avatar</label>
                         <input type="text" maxLength={2} value={profileForm.avatarInitial} onChange={e => setProfileForm({...profileForm, avatarInitial: e.target.value.toUpperCase()})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                     </div>
                     <button type="submit" disabled={profileLoading} className="w-full py-4 bg-primary-500/10 text-primary-500 hover:bg-primary-500 hover:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2">
@@ -204,7 +207,7 @@ export const Settings = () => {
           </div>
 
           {/* SEGURANÇA */}
-          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
+          <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
             <div className="flex justify-between items-center mb-8">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2"><Lock size={14}/> Segurança</h3>
                 <button type="button" onClick={() => setShowPwds(!showPwds)} className="text-zinc-400">{showPwds ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
@@ -229,7 +232,7 @@ export const Settings = () => {
           </div>
 
           {/* IDIOMA */}
-          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
+          <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-6 flex items-center gap-2"><Languages size={14}/> Idioma</h3>
              <select 
                value={settings.language} 
@@ -243,15 +246,15 @@ export const Settings = () => {
         </div>
 
         {/* COLUNA DIREITA (APIs E SISTEMA) */}
-        <div className="lg:col-span-8 space-y-10">
+        <div className="lg:col-span-8 space-y-6 md:space-y-10">
           
           {isAdmin && (
             <>
               {/* GOOGLE MAPS API */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-red-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <MapPin size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Integração Google Maps</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Integração Google Maps</h2>
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -272,10 +275,10 @@ export const Settings = () => {
               </div>
 
               {/* CONFIGURAÇÃO API K-TAG */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <Key size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">Configuração API K-Tag</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Configuração API K-Tag</h2>
                 </div>
                 <div className="space-y-6">
                   <div className="space-y-2">
@@ -302,10 +305,10 @@ export const Settings = () => {
               </div>
 
               {/* SGA HINOVA */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-emerald-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <Database size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">INTEGRAÇÃO SGA (HINOVA)</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">INTEGRAÇÃO SGA (HINOVA)</h2>
                 </div>
                 <div className="space-y-6">
                   <div className="space-y-2">
@@ -336,10 +339,10 @@ export const Settings = () => {
               </div>
 
               {/* PROXY & RELAY */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-cyan-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <Cloud size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">PROXY & RELAY (FIREBASE)</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">PROXY & RELAY (FIREBASE)</h2>
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -354,25 +357,25 @@ export const Settings = () => {
               </div>
 
               {/* REGIONAIS E CATEGORIAS */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <LayoutGrid size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">REGIONAIS & CATEGORIAS</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">REGIONAIS & CATEGORIAS</h2>
                 </div>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12">
                    {/* Regionais */}
                    <div className="space-y-6">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14}/> Regionais</h4>
                       <div className="flex gap-2">
-                         <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                         <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
-                         <button onClick={handleAddCompany} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all"><Plus size={18} strokeWidth={3}/></button>
+                         <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                         <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
+                         <button onClick={handleAddCompany} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
                       </div>
                       <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                          {companies.map(c => (
                             <div key={c.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
-                               <span className="text-[10px] font-black uppercase tracking-tight">{c.prefix} - {c.name}</span>
-                               <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button>
+                               <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
+                               <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>
                             </div>
                          ))}
                       </div>
@@ -382,14 +385,14 @@ export const Settings = () => {
                    <div className="space-y-6">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Server size={14}/> Categorias</h4>
                       <div className="flex gap-2">
-                         <input type="text" placeholder="Veículo" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                         <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all"><Plus size={18} strokeWidth={3}/></button>
+                         <input type="text" placeholder="Veículo" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                         <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
                       </div>
                       <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                          {categories.map(cat => (
                             <div key={cat.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
-                               <span className="text-[10px] font-black uppercase tracking-tight">{cat.name}</span>
-                               <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button>
+                               <span className="text-[10px] font-black uppercase tracking-tight truncate">{cat.name}</span>
+                               <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>
                             </div>
                          ))}
                       </div>
@@ -398,10 +401,10 @@ export const Settings = () => {
               </div>
 
               {/* TRAQCARE API */}
-              <div className="bg-white dark:bg-zinc-900 p-10 rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <Cpu size={24} />
-                  <h2 className="text-xl font-display font-black uppercase tracking-tight">API Traqcare (XADTAG)</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">API Traqcare (XADTAG)</h2>
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">

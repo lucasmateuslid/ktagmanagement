@@ -160,8 +160,8 @@ export const AuditLogs = () => {
                 <p className="text-zinc-500 mt-2 text-xs font-medium uppercase tracking-widest opacity-70">Monitoramento de integridade e histórico operacional.</p>
              </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={exportPDF} className="px-5 py-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-red-500 transition-all font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-sm">
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <button onClick={exportPDF} className="flex-1 md:flex-none px-5 py-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-red-500 transition-all font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 shadow-sm">
               <FileText size={16}/> Exportar PDF
             </button>
             <button onClick={loadData} className="p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-primary-500 transition-all shadow-sm">
@@ -198,21 +198,49 @@ export const AuditLogs = () => {
                 </select>
              </div>
           </div>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
-             <div className="flex items-center gap-3 bg-zinc-50 dark:bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                <Calendar size={14} className="text-zinc-400" />
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black uppercase outline-none dark:text-white" />
-                <span className="text-zinc-300 text-[10px] font-black uppercase">até</span>
-                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black uppercase outline-none dark:text-white" />
-             </div>
-             <button onClick={() => { setSearchTerm(''); setFilterAction('ALL'); setFilterEntity('ALL'); setStartDate(''); setEndDate(''); }} className="text-[10px] font-black text-zinc-400 hover:text-red-500 uppercase tracking-widest flex items-center gap-2 px-4 py-2 transition-colors">
-               <X size={14} /> Limpar Filtros
-             </button>
-          </div>
        </div>
 
-       {/* TABELA DE AUDITORIA */}
-       <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 overflow-hidden shadow-sm">
+       {/* VIEW MOBILE: CARDS */}
+       <div className="flex flex-col gap-4 md:hidden">
+          {loading ? (
+             <div className="py-20 text-center text-zinc-400"><RefreshCw className="animate-spin inline-block mr-2" /> Carregando logs...</div>
+          ) : currentItems.length === 0 ? (
+             <div className="p-8 text-center text-zinc-400 font-bold uppercase text-xs border-2 border-dashed border-zinc-800 rounded-xl">Sem registros</div>
+          ) : (
+             currentItems.map(log => (
+                <div key={log.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden">
+                   <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black text-zinc-500">{log.userName.charAt(0)}</div>
+                         <div>
+                            <p className="text-xs font-black text-zinc-900 dark:text-white uppercase">{log.userName}</p>
+                            <p className="text-[9px] text-zinc-400">{new Date(log.timestamp).toLocaleDateString()} • {new Date(log.timestamp).toLocaleTimeString()}</p>
+                         </div>
+                      </div>
+                      <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border ${
+                          log.action === 'DELETE' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 
+                          log.action === 'CREATE' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 
+                          log.action === 'REPORT' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                          'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                      }`}>
+                          {log.action}
+                      </span>
+                   </div>
+                   
+                   <div className="mb-3 flex items-center gap-2 text-zinc-400 font-black uppercase text-[9px] tracking-widest">
+                        {getEntityIcon(log.entity)} {log.entity}
+                   </div>
+
+                   <p className="text-[11px] text-zinc-600 dark:text-zinc-300 font-medium leading-relaxed bg-zinc-50 dark:bg-zinc-950/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800/50">
+                      {log.details}
+                   </p>
+                </div>
+             ))
+          )}
+       </div>
+
+       {/* VIEW DESKTOP: TABELA */}
+       <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                   <thead className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
@@ -292,34 +320,32 @@ export const AuditLogs = () => {
                   </tbody>
               </table>
           </div>
+       </div>
 
-          {/* RODAPÉ E PAGINAÇÃO */}
-          <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/20 gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                    Mostrando <span className="text-zinc-900 dark:text-white">{currentItems.length}</span> de <span className="text-zinc-900 dark:text-white">{filteredLogs.length}</span> registros
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-4">
-                  <div className="flex gap-1.5">
-                      <button 
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage(p => Math.max(1, p-1))} 
-                        className="p-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-400 hover:text-primary-500 hover:border-primary-500/50 disabled:opacity-30 transition-all shadow-sm active:scale-90"
-                      >
-                        <ChevronLeft size={18}/>
-                      </button>
-                      <button 
-                        disabled={currentPage >= totalPages}
-                        onClick={() => setCurrentPage(p => p + 1)} 
-                        className="p-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-400 hover:text-primary-500 hover:border-primary-500/50 disabled:opacity-30 transition-all shadow-sm active:scale-90"
-                      >
-                        <ChevronRight size={18}/>
-                      </button>
-                  </div>
-                  <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Página {currentPage} de {totalPages}</span>
+       {/* PAGINAÇÃO */}
+       <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/20 gap-4 rounded-b-[32px]">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                <span className="text-zinc-900 dark:text-white">{currentPage}</span> / {totalPages}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-4">
+              <div className="flex gap-1.5">
+                  <button 
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p-1))} 
+                    className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-400 hover:text-primary-500 hover:border-primary-500/50 disabled:opacity-30 transition-all shadow-sm active:scale-90"
+                  >
+                    <ChevronLeft size={18}/>
+                  </button>
+                  <button 
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(p => p + 1)} 
+                    className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-400 hover:text-primary-500 hover:border-primary-500/50 disabled:opacity-30 transition-all shadow-sm active:scale-90"
+                  >
+                    <ChevronRight size={18}/>
+                  </button>
               </div>
           </div>
        </div>

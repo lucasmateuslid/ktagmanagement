@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
+import { hinovaService } from '../services/hinova'; // Importação do serviço
 import { Schedule, DeviceType, ServiceType, Vehicle } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, Settings, CheckCircle2, User, CreditCard, MapPin, Search, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Car, Settings, CheckCircle2, User, CreditCard, MapPin, Search, Loader2, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const ScheduleRequest = () => {
@@ -15,6 +16,7 @@ export const ScheduleRequest = () => {
   const [loading, setLoading] = useState(false);
   const [vehicleDb, setVehicleDb] = useState<Vehicle[]>([]);
   const [searchingPlate, setSearchingPlate] = useState(false);
+  const [hinovaStatus, setHinovaStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const [formData, setFormData] = useState<Partial<Schedule>>({
     deviceType: 'Rastreador',
@@ -40,11 +42,7 @@ export const ScheduleRequest = () => {
     // Formata visualmente se tiver 7 caracteres
     if (value.length > 7) value = value.substring(0, 7);
     
-    // Formatação Padrão Antigo (AAA-0000) - Opcional, aqui mantemos RAW no state e exibimos formatado se quiser
-    // Mas para simplificar e seguir padrão Mercosul (sem hifen), mantemos limpo no state.
-    // O backend/storage salva sem hifen geralmente.
-    
-    setFormData({ ...formData, vehiclePlate: value });
+    setFormData(prev => ({ ...prev, vehiclePlate: value }));
   };
 
   const handlePlateBlur = async () => {
@@ -65,6 +63,36 @@ export const ScheduleRequest = () => {
         }
         setSearchingPlate(false);
     }, 500);
+  };
+
+  const handleHinovaLookup = async () => {
+    if (!formData.vehiclePlate || formData.vehiclePlate.length < 7) {
+        addNotification('info', 'Hinova', 'Digite uma placa válida.');
+        return;
+    }
+    
+    setHinovaStatus('loading');
+    try {
+        const result = await hinovaService.searchVehicle(formData.vehiclePlate);
+        if (result && result.vehicle) {
+            setFormData(prev => ({
+                ...prev,
+                vehicleModel: result.vehicle.model || prev.vehicleModel,
+                // Prioriza o valor FIPE vindo da API, senão usa o código
+                fipeValue: result.price || (result.vehicle.fipeCode ? `Código FIPE: ${result.vehicle.fipeCode}` : prev.fipeValue)
+            }));
+            setHinovaStatus('success');
+            addNotification('success', 'Hinova', 'Dados do veículo importados do SGA.');
+        } else {
+            setHinovaStatus('error');
+            addNotification('error', 'Hinova', 'Veículo não encontrado na base externa.');
+        }
+    } catch (e: any) {
+        setHinovaStatus('error');
+        addNotification('error', 'API SGA', e.message);
+    } finally {
+        setTimeout(() => setHinovaStatus('idle'), 3000);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,20 +141,21 @@ export const ScheduleRequest = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-24">
-        <div className="bg-zinc-900 text-white p-8 rounded-[40px] shadow-2xl relative overflow-hidden border border-zinc-800">
+    <div className="max-w-4xl mx-auto space-y-6 md:space-y-8 pb-24">
+        {/* Header Compacto Mobile */}
+        <div className="bg-zinc-900 text-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] shadow-2xl relative overflow-hidden border border-zinc-800">
             <div className="relative z-10">
-                <h1 className="text-3xl font-display font-black uppercase tracking-tight">Nova Solicitação</h1>
-                <p className="text-zinc-400 mt-2 font-medium text-sm">Preencha os dados abaixo para agendar um serviço técnico.</p>
+                <h1 className="text-2xl md:text-3xl font-display font-black uppercase tracking-tight">Nova Solicitação</h1>
+                <p className="text-zinc-400 mt-2 font-medium text-xs md:text-sm pr-10">Preencha os dados abaixo para agendar um serviço técnico.</p>
             </div>
-            <div className="absolute top-0 right-0 p-10 opacity-10">
-                <Calendar size={120} />
+            <div className="absolute top-0 right-0 p-6 md:p-10 opacity-10 pointer-events-none">
+                <Calendar size={100} />
             </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
             {/* DADOS DO SOLICITANTE */}
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
+            <div className="bg-white dark:bg-zinc-900 p-5 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
                 <div className="flex items-center gap-3 text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                     <User size={20} />
                     <h3 className="font-black uppercase tracking-widest text-xs">Dados do Solicitante</h3>
@@ -137,52 +166,62 @@ export const ScheduleRequest = () => {
                         type="text" 
                         required
                         value={formData.requesterName || ''} 
-                        onChange={e => setFormData({...formData, requesterName: e.target.value})} 
-                        className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all" 
+                        onChange={e => setFormData(prev => ({...prev, requesterName: e.target.value}))} 
+                        className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all" 
                     />
-                    <p className="text-[9px] text-zinc-400 mt-1 ml-1">Este nome aparecerá para a equipe técnica e pode ser alterado se necessário.</p>
+                    <p className="text-[9px] text-zinc-400 mt-1 ml-1">Este nome aparecerá para a equipe técnica.</p>
                 </div>
             </div>
 
             {/* DADOS DO VEÍCULO */}
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
+            <div className="bg-white dark:bg-zinc-900 p-5 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
                 <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                     <Car size={20} />
                     <h3 className="font-black uppercase tracking-widest text-xs">Dados do Veículo</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Placa</label>
-                        <div className="relative mt-1">
-                            <input 
-                                type="text" 
-                                maxLength={7} 
-                                required 
-                                value={formData.vehiclePlate || ''} 
-                                onChange={handlePlateChange} 
-                                onBlur={handlePlateBlur}
-                                className="w-full pl-4 pr-10 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-black text-sm outline-none uppercase placeholder:text-zinc-300" 
-                                placeholder="AAA0000" 
-                            />
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
-                                {searchingPlate ? <Loader2 size={16} className="animate-spin text-primary-500"/> : <Search size={16}/>}
+                        <div className="flex gap-2 mt-1">
+                            <div className="relative flex-1">
+                                <input 
+                                    type="text" 
+                                    maxLength={7} 
+                                    required 
+                                    value={formData.vehiclePlate || ''} 
+                                    onChange={handlePlateChange} 
+                                    onBlur={handlePlateBlur}
+                                    className="w-full pl-4 pr-10 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-black text-sm outline-none uppercase placeholder:text-zinc-300" 
+                                    placeholder="AAA0000" 
+                                />
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                                    {searchingPlate ? <Loader2 size={16} className="animate-spin text-primary-500"/> : <Search size={16}/>}
+                                </div>
                             </div>
+                            <button 
+                                type="button" 
+                                onClick={handleHinovaLookup} 
+                                disabled={hinovaStatus === 'loading'} 
+                                className="px-4 rounded-xl bg-[#006e82] hover:bg-[#008ba3] text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[70px]"
+                            >
+                                {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 'SGA'}
+                            </button>
                         </div>
                     </div>
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Modelo do Veículo</label>
-                        <input type="text" required value={formData.vehicleModel || ''} onChange={e => setFormData({...formData, vehicleModel: e.target.value})} className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none placeholder:text-zinc-300" placeholder="Ex: Fiat Uno Way" />
+                        <input type="text" required value={formData.vehicleModel || ''} onChange={e => setFormData(prev => ({...prev, vehicleModel: e.target.value}))} className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none placeholder:text-zinc-300" placeholder="Ex: Fiat Uno Way" />
                     </div>
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Valor FIPE (R$)</label>
                         <div className="relative mt-1">
                             <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                            <input type="text" value={formData.fipeValue || ''} onChange={e => setFormData({...formData, fipeValue: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="R$ 0,00" />
+                            <input type="text" value={formData.fipeValue || ''} onChange={e => setFormData(prev => ({...prev, fipeValue: e.target.value}))} className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="R$ 0,00" />
                         </div>
                     </div>
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Dispositivo</label>
-                        <select value={formData.deviceType} onChange={e => setFormData({...formData, deviceType: e.target.value as DeviceType})} className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
+                        <select value={formData.deviceType} onChange={e => setFormData(prev => ({...prev, deviceType: e.target.value as DeviceType}))} className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
                             <option value="Rastreador">Rastreador</option>
                             <option value="Rastreador + Tag">Rastreador + Tag</option>
                             <option value="Tag">Tag</option>
@@ -192,40 +231,56 @@ export const ScheduleRequest = () => {
             </div>
 
             {/* PREFERÊNCIA E LOCAL */}
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
+            <div className="bg-white dark:bg-zinc-900 p-5 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
                 <div className="flex items-center gap-3 text-emerald-500 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                     <Clock size={20} />
                     <h3 className="font-black uppercase tracking-widest text-xs">Agendamento & Local</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Serviço</label>
-                        <select value={formData.serviceType} onChange={e => setFormData({...formData, serviceType: e.target.value as ServiceType})} className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
+                        <select value={formData.serviceType} onChange={e => setFormData(prev => ({...prev, serviceType: e.target.value as ServiceType}))} className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
                             <option value="Instalação">Instalação</option>
                             <option value="Manutenção">Manutenção</option>
                             <option value="Retirada">Retirada</option>
                         </select>
                     </div>
-                    <div className="flex gap-4">
-                        <div className="flex-1 relative">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-1">
-                                <Calendar size={12} className="text-primary-500" /> Data Preferencial
-                            </label>
-                            <input type="date" required value={formData.preferredDate || ''} onChange={e => setFormData({...formData, preferredDate: e.target.value})} className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
+                    {/* Grid de Data e Hora - Lado a Lado no Mobile (50%), mas com gap menor para não quebrar */}
+                    <div className="grid grid-cols-2 gap-3 md:gap-4">
+                        <div className="relative">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider mb-1 block">Data</label>
+                            <div className="relative">
+                                <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-500 pointer-events-none" />
+                                <input 
+                                    type="date" 
+                                    required 
+                                    value={formData.preferredDate || ''} 
+                                    onChange={e => setFormData(prev => ({...prev, preferredDate: e.target.value}))} 
+                                    className="w-full pl-9 pr-2 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" 
+                                />
+                            </div>
                         </div>
-                        <div className="w-32 relative">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-1">
-                                <Clock size={12} className="text-primary-500" /> Hora
-                            </label>
-                            <input type="time" required value={formData.preferredTime || ''} onChange={e => setFormData({...formData, preferredTime: e.target.value})} className="w-full px-4 py-3 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" />
+                        <div className="relative">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider mb-1 block">Hora</label>
+                            <div className="relative">
+                                <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-500 pointer-events-none" />
+                                <input 
+                                    type="time" 
+                                    required 
+                                    value={formData.preferredTime || ''} 
+                                    onChange={e => setFormData(prev => ({...prev, preferredTime: e.target.value}))} 
+                                    className="w-full pl-9 pr-2 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" 
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
                 
                 {/* Força o uso do Google Maps na sessão de solicitação */}
+                {/* FIX: Usando functional update para previnir que o estado formData seja resetado se a closure estiver obsoleta */}
                 <LocationPicker 
                     tileProvider="google" 
-                    onLocationSelect={(addr, lat, lng) => setFormData({...formData, locationAddress: addr, locationLat: lat, locationLng: lng})} 
+                    onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))} 
                 />
             </div>
 

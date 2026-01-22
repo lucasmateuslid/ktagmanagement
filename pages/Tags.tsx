@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -7,7 +8,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks, HandCoins } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const { useSearchParams } = ReactRouterDOM as any;
@@ -254,9 +255,14 @@ export const Tags = () => {
                     <ShieldCheck size={18} className="text-emerald-500" />
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' : 'bg-primary-500/10 text-primary-600 border-primary-500/20'}`}>{tag.type}</span>
                     <span className="text-[10px] font-mono text-zinc-400 font-bold">{tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}</span>
+                    {vehicle && vehicle.ownershipStatus && (
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-blue-500/10 text-blue-600 border-blue-500/20'}`}>
+                            {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
+                        </span>
+                    )}
                 </div>
               </div>
 

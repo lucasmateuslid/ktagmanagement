@@ -14,7 +14,7 @@ import {
   Car, Truck, Bike, Edit2, Trash2, Link as LinkIcon, 
   Loader2, X, CheckCircle2, XCircle, Save, Hash, 
   Tag as TagIcon, Building2, User, Phone, Book, ChevronRight, Mail, Calendar,
-  Download, FileText, FileSpreadsheet, FileCode, AlertCircle
+  Download, FileText, FileSpreadsheet, FileCode, AlertCircle, HandCoins
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -34,50 +34,72 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
   };
 
   return (
-    <div className="flex items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group">
-      {/* PLACA */}
-      <div className="w-24 md:w-[15%] shrink-0 flex items-center gap-2 md:gap-4">
-        <div className="flex flex-col gap-1 min-w-0">
-          <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[10px] md:text-xs">
-            {vehicle.plate}
-          </div>
-          <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
-            vehicle.status === 'active' ? 'bg-emerald-500' : vehicle.status === 'stolen' ? 'bg-red-500' : 'bg-amber-500'
-          }`}>
-            {vehicle.status === 'active' ? 'ATIVO' : vehicle.status === 'stolen' ? 'ROUBADO' : 'MANUT.'}
-          </span>
+    <div className="flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group gap-3 md:gap-0">
+      {/* PLACA & STATUS */}
+      <div className="w-full md:w-[15%] shrink-0 flex items-center justify-between md:justify-start gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex flex-col gap-1 min-w-0">
+                <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
+                    {vehicle.plate}
+                </div>
+                <div className="flex gap-1">
+                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
+                        vehicle.status === 'active' ? 'bg-emerald-500' : vehicle.status === 'stolen' ? 'bg-red-500' : 'bg-amber-500'
+                    }`}>
+                        {vehicle.status === 'active' ? 'ATIVO' : vehicle.status === 'stolen' ? 'ROUBO' : 'MANUT.'}
+                    </span>
+                </div>
+            </div>
+            <div className="hidden sm:block p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
+                {getIcon(14)}
+            </div>
         </div>
-        <div className="hidden sm:block p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
-          {getIcon(14)}
+        {/* Mobile Actions */}
+        <div className="flex md:hidden gap-1">
+            <button onClick={() => onEdit(vehicle)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
+            <button onClick={() => onDelete(vehicle.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
         </div>
       </div>
 
       {/* VEÍCULO */}
-      <div className="flex-1 md:w-[35%] px-3 overflow-hidden">
-        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-[11px] md:text-xs truncate leading-tight">{vehicle.model}</h3>
-        <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
+      <div className="w-full md:flex-1 md:w-[35%] px-0 md:px-3 overflow-hidden">
+        <div className="flex items-center gap-2 md:hidden mb-1">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Veículo:</span>
+        </div>
+        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm md:text-xs truncate leading-tight">{vehicle.model}</h3>
+        <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
+            {vehicle.ownershipStatus && (
+                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+                    {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
+                </span>
+            )}
+        </div>
       </div>
 
       {/* CLIENTE */}
-      <div className="w-24 md:w-[25%] px-2 overflow-hidden">
-        <p className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
-        {client && <p className="text-[8px] text-zinc-400 font-mono tracking-tighter truncate hidden sm:block">{client.cpf}</p>}
+      <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
+        <div className="flex items-center gap-2 md:hidden mb-1">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cliente:</span>
+        </div>
+        <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
+        {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
       </div>
 
       {/* RESPONSÁVEL E DATA */}
-      <div className="hidden md:flex w-[15%] flex-col justify-center">
+      <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
          <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
            {vehicle.updatedBy || 'SISTEMA'}
          </span>
-         <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-           <Calendar size={8} /> {new Date(vehicle.createdAt).toLocaleDateString()}
+         <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
+           <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
          </span>
       </div>
 
-      {/* AÇÕES */}
-      <div className="w-8 md:w-[10%] flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+      {/* AÇÕES DESKTOP */}
+      <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button onClick={() => onEdit(vehicle)} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-        <button onClick={() => onDelete(vehicle.id)} className="hidden sm:block p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+        <button onClick={() => onDelete(vehicle.id)} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
       </div>
     </div>
   );
@@ -97,7 +119,7 @@ export const Vehicles = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
-  const [formData, setFormData] = useState<Partial<Vehicle>>({ status: 'active', installationType: 'tag_only' });
+  const [formData, setFormData] = useState<Partial<Vehicle>>({ status: 'active', installationType: 'tag_only', ownershipStatus: 'leased' });
   const [clientData, setClientData] = useState<Partial<Client>>({ hasAccess: false });
   const [tagSearch, setTagSearch] = useState('');
   const [isTagListOpen, setIsTagListOpen] = useState(false);
@@ -133,7 +155,7 @@ export const Vehicles = () => {
   useEffect(() => { 
     loadData();
     if (searchParams.get('action') === 'new') {
-        setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car' }); 
+        setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
         setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
     }
   }, [loadData, searchParams]);
@@ -163,6 +185,7 @@ export const Vehicles = () => {
         'Cliente': client?.name || 'Sem Vínculo',
         'CPF Cliente': client?.cpf || '-',
         'Equipamento': v.installationType === 'tag_tracker' ? 'Tag + Rastreador' : 'Só Tag',
+        'Propriedade': v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato',
         'ID Tag': tag?.accessoryId || '-',
         'Cadastrado por': v.updatedBy || 'SISTEMA',
         'Data Cadastro': new Date(v.createdAt).toLocaleDateString()
@@ -186,9 +209,9 @@ export const Vehicles = () => {
 
       autoTable(doc, {
         startY: 35,
-        head: [['Placa', 'Status', 'Modelo', 'Ano', 'Categoria', 'Cliente', 'Equipamento', 'Cadastro']],
+        head: [['Placa', 'Status', 'Modelo', 'Categoria', 'Cliente', 'Equipamento', 'Propriedade', 'Cadastro']],
         body: data.map(v => [
-          v.Placa, v.Status, v.Modelo, v.Ano, v.Categoria, v.Cliente, v.Equipamento, v['Data Cadastro']
+          v.Placa, v.Status, v.Modelo, v.Categoria, v.Cliente, v.Equipamento, v['Propriedade'], v['Data Cadastro']
         ]),
         theme: 'striped',
         headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
@@ -303,7 +326,8 @@ export const Vehicles = () => {
         clientId: finalClientId,
         plate: formData.plate.toUpperCase(), 
         createdAt: formData.createdAt || Date.now(),
-        updatedBy: currentUser?.name || 'SISTEMA'
+        updatedBy: currentUser?.name || 'SISTEMA',
+        ownershipStatus: formData.ownershipStatus || 'leased'
     };
     await storage.saveVehicle(vehicleToSave);
     addNotification('success', 'Sucesso', 'Veículo gravado no sistema.');
@@ -333,7 +357,7 @@ export const Vehicles = () => {
           </div>
           <button
             onClick={() => { 
-              setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car' }); 
+              setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
               setClientData({ hasAccess: false }); setTagSearch(''); setIsModalOpen(true);
             }}
             className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
@@ -349,12 +373,13 @@ export const Vehicles = () => {
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
-         <div className="flex px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
-            <div className="w-24 md:w-[15%] shrink-0">Placa & Status</div>
-            <div className="flex-1 md:w-[35%] px-3">Veículo</div>
-            <div className="w-24 md:w-[25%] px-2">Cliente</div>
-            <div className="hidden md:block w-[15%]">Responsável & Data</div>
-            <div className="w-8 md:w-[10%] text-right">Ações</div>
+         {/* CABEÇALHO TABELA - VISÍVEL APENAS EM DESKTOP */}
+         <div className="hidden md:flex px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
+            <div className="w-[15%] shrink-0">Placa & Status</div>
+            <div className="w-[35%] px-3">Veículo</div>
+            <div className="w-[25%] px-2">Cliente</div>
+            <div className="w-[15%]">Responsável & Data</div>
+            <div className="w-[10%] text-right">Ações</div>
          </div>
          <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
             {filteredVehicles.length === 0 ? (
@@ -400,6 +425,14 @@ export const Vehicles = () => {
                              <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800">
                                 <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_only'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_only' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>SÓ TAG</button>
                                 <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_tracker'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_tracker' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>TAG C/ RASTREADOR</button>
+                             </div>
+                        </div>
+
+                        <div className="space-y-2">
+                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO DE CONTRATO (TAG)</label>
+                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800">
+                                <button type="button" onClick={() => setFormData({...formData, ownershipStatus: 'leased'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.ownershipStatus === 'leased' ? 'bg-blue-500 text-white' : 'text-zinc-500'}`}>COMODATO</button>
+                                <button type="button" onClick={() => setFormData({...formData, ownershipStatus: 'purchased'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.ownershipStatus === 'purchased' ? 'bg-emerald-500 text-white' : 'text-zinc-500'}`}>ADQUIRIDO</button>
                              </div>
                         </div>
 

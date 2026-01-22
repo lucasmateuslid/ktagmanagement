@@ -6,12 +6,12 @@ import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useAuth } from '../contexts/AuthContext';
-import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { 
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
   Car, Clock, Building2, AlertTriangle, Lock, 
   ShoppingCart, ShoppingBag, Map as MapIcon, FileText,
-  Zap, ChevronRight, ShieldAlert, TrendingUp
+  Zap, ChevronRight, ShieldAlert, TrendingUp, HandCoins, Calendar
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -126,6 +126,13 @@ export const Dashboard = () => {
   const isWarningStock = unlinkedCount <= 80;
   const isCriticalStock = unlinkedCount <= 40;
 
+  // Ownership Stats
+  const leasedCount = vehicles.filter(v => v.ownershipStatus !== 'purchased').length; // Default to leased if undefined
+  const purchasedCount = vehicles.filter(v => v.ownershipStatus === 'purchased').length;
+  const totalVehicles = vehicles.length;
+  const leasedPercent = totalVehicles > 0 ? Math.round((leasedCount / totalVehicles) * 100) : 0;
+  const purchasedPercent = totalVehicles > 0 ? Math.round((purchasedCount / totalVehicles) * 100) : 0;
+
   const categoryStats = useMemo(() => {
     const counts: Record<string, number> = {};
     const othersCount: Record<string, number> = {};
@@ -168,6 +175,11 @@ export const Dashboard = () => {
     return <Car size={18} strokeWidth={2.5} />;
   };
 
+  const OWNERSHIP_DATA = [
+      { name: 'Comodato', value: leasedCount, color: '#3b82f6' },
+      { name: 'Adquirido', value: purchasedCount, color: '#10b981' }
+  ];
+
   if (user?.role === 'client') return null;
 
   return (
@@ -192,7 +204,7 @@ export const Dashboard = () => {
             <div className="w-1 h-4 bg-primary-500 rounded-full" />
             <span className="text-[11px] font-black uppercase tracking-[0.4em] text-zinc-400">{t('quickActions')}</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
             <Link to="/tags?action=new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
               <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
                 <Plus size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
@@ -209,6 +221,16 @@ export const Dashboard = () => {
               <div className="flex flex-col text-left">
                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Módulo Veículos</span>
                   <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Cadastro</span>
+              </div>
+            </Link>
+            {/* NEW SHORTCUT: AGENDAMENTO */}
+            <Link to="/schedule/new" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
+              <div className="w-16 h-16 bg-white dark:bg-zinc-900 rounded-xl flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 group-hover:scale-105 transition-transform shrink-0">
+                <Calendar size={24} className="text-zinc-400 group-hover:text-primary-500" strokeWidth={2} />
+              </div>
+              <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Central de Agenda</span>
+                  <span className="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">Novo Agendamento</span>
               </div>
             </Link>
             <Link to="/map" className="group flex items-center gap-6 p-6 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all duration-300">
@@ -284,43 +306,81 @@ export const Dashboard = () => {
         </MotionDiv>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className={`p-8 rounded-[32px] border transition-all duration-500 shadow-sm flex flex-col justify-between min-h-[220px] ${stolenCount > 0 ? 'bg-red-500/5 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
-          <div className="flex justify-between items-start">
-            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Incidência Criminal</p>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stolenCount > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
-                <ShieldAlert size={24} strokeWidth={2} />
+      {/* NEW: BUSINESS MODEL (COMODATO/ADQUIRIDO) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm col-span-1 md:col-span-2 flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-6">
+                  <div>
+                      <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Modelo de Contrato</p>
+                      <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white mt-1">Ativos da Frota</h3>
+                  </div>
+                  <div className="w-12 h-12 bg-zinc-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-400 border border-zinc-100 dark:border-zinc-700"><HandCoins size={22}/></div>
+              </div>
+              <div className="flex items-center gap-8">
+                  <div className="w-32 h-32 relative shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                              <Pie data={OWNERSHIP_DATA} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value" stroke="none">
+                                  {OWNERSHIP_DATA.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                              </Pie>
+                          </PieChart>
+                      </ResponsiveContainer>
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-[10px] font-black text-zinc-400">Type</span>
+                      </div>
+                  </div>
+                  <div className="flex-1 space-y-4">
+                      <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                          <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                              <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Comodato</span>
+                          </div>
+                          <div className="text-right">
+                              <span className="text-sm font-black text-zinc-900 dark:text-white block">{leasedCount}</span>
+                              <span className="text-[9px] font-bold text-zinc-400">{leasedPercent}%</span>
+                          </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                              <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">Adquirido</span>
+                          </div>
+                          <div className="text-right">
+                              <span className="text-sm font-black text-zinc-900 dark:text-white block">{purchasedCount}</span>
+                              <span className="text-[9px] font-bold text-zinc-400">{purchasedPercent}%</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+                <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Manutenção</p>
+                <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                    <Lock size={24} strokeWidth={2} />
+                </div>
+            </div>
+            <div>
+                <h2 className="text-6xl font-display font-black text-zinc-900 dark:text-white">{maintenanceCount}</h2>
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-2">Veículos Offline</p>
             </div>
           </div>
-          <div>
-            <h2 className={`text-6xl font-display font-black ${stolenCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-white'}`}>{stolenCount}</h2>
-            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-2">Alertas de Roubo/Furto</p>
-          </div>
-        </div>
-        <div className="p-8 bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between shadow-sm min-h-[220px]">
-          <div className="flex justify-between items-start">
-            <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Atendimento Ativo</p>
-            <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
-                <Lock size={24} strokeWidth={2} />
+
+          <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm ${isCriticalStock ? 'bg-red-600 text-white border-red-700' : isWarningStock ? 'bg-amber-500 text-black border-amber-600' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
+            <div className="flex justify-between items-start">
+                <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Estoque</p>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                    <ShoppingCart size={24} strokeWidth={2} />
+                </div>
+            </div>
+            <div>
+                <h2 className="text-6xl font-display font-black tracking-tighter">{unlinkedCount}</h2>
+                <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Equipamento Disponível</p>
             </div>
           </div>
-          <div>
-            <h2 className="text-6xl font-display font-black text-zinc-900 dark:text-white">{maintenanceCount}</h2>
-            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-2">Veículos Offline</p>
-          </div>
-        </div>
-        <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm min-h-[220px] ${isCriticalStock ? 'bg-red-600 text-white border-red-700' : isWarningStock ? 'bg-amber-500 text-black border-amber-600' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
-          <div className="flex justify-between items-start">
-            <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Estoque</p>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
-                <ShoppingCart size={24} strokeWidth={2} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-6xl font-display font-black tracking-tighter">{unlinkedCount}</h2>
-            <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Equipamento Disponível</p>
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">

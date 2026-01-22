@@ -181,7 +181,31 @@ export const Security = () => {
                 </div>
                 <button onClick={loadData} className="p-2 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-400"><RefreshCw size={16} className={isLoading ? 'animate-spin' : ''}/></button>
             </div>
-            <div className="overflow-x-auto">
+            
+            {/* VIEW MOBILE: CARDS */}
+            <div className="flex flex-col gap-4 p-4 md:hidden">
+                {historyRecords.length === 0 ? <div className="text-center py-8 text-zinc-400 font-bold uppercase text-xs">Sem histórico</div> : (
+                    historyRecords.map(record => (
+                        <div key={record.id} className="bg-zinc-50 dark:bg-zinc-950 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <h4 className="font-black text-zinc-900 dark:text-white uppercase">{record.vehiclePlate}</h4>
+                                    <p className="text-[10px] text-zinc-500 uppercase">{record.vehicleModel}</p>
+                                </div>
+                                <span className="inline-flex items-center gap-1 text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg text-[9px] font-black uppercase"><CheckCircle size={10} /> Recuperado</span>
+                            </div>
+                            <div className="mt-3 flex gap-2">
+                                <span className="text-[9px] font-bold bg-zinc-200 dark:bg-zinc-800 px-2 py-1 rounded text-zinc-600 dark:text-zinc-400 uppercase">{record.type === 'robbery' ? 'Assalto' : 'Furto'}</span>
+                                {record.policeReport && <span className="text-[9px] font-bold bg-blue-500/10 text-blue-500 px-2 py-1 rounded uppercase">B.O: {record.policeReport}</span>}
+                            </div>
+                            <p className="text-[9px] text-zinc-400 mt-3 border-t border-zinc-200 dark:border-zinc-800 pt-2">Data: {new Date(record.timestamp).toLocaleDateString()}</p>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* VIEW DESKTOP: TABLE */}
+            <div className="hidden md:block overflow-x-auto">
                  <table className="w-full text-sm text-left">
                     <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
                         <tr>

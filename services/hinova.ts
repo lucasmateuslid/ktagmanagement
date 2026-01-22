@@ -7,6 +7,7 @@ interface HinovaResponseItem {
   placa: string;
   chassi: string;
   codigo_fipe: string;
+  valor_fipe?: string;
   ano_fabricacao: string;
   ano_modelo: string;
   renavam: string;
@@ -97,7 +98,7 @@ const getToken = async (settings: AppSettings): Promise<string> => {
 };
 
 export const hinovaService = {
-  searchVehicle: async (plateOrChassis: string): Promise<{ vehicle: Partial<Vehicle>, client: Partial<Client> } | null> => {
+  searchVehicle: async (plateOrChassis: string): Promise<{ vehicle: Partial<Vehicle>, client: Partial<Client>, price?: string } | null> => {
     const settings = await storage.getSettings();
     if (!settings.customProxyUrl) throw new Error("PROXY_OFFLINE: URL do Proxy não configurada.");
 
@@ -160,7 +161,8 @@ export const hinovaService = {
                 plate: item.placa, chassis: item.chassi, model: `${item.marca} ${item.modelo}`,
                 year: item.ano_modelo, fipeCode: item.codigo_fipe, hinovaId: item.codigo_veiculo,
                 type: matchedCategory.id, status: 'active'
-            }
+            },
+            price: item.valor_fipe // Retorna o valor FIPE vindo da API
         };
     } catch (e: any) {
         throw e;

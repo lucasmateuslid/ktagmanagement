@@ -1,21 +1,27 @@
 
 import React, { useState, useEffect } from 'react';
 import { storage } from '../services/storage';
-import { Technician } from '../types';
+import { Technician, Schedule } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette } from 'lucide-react';
+import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar } from 'lucide-react';
 
 export const Technicians = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Technician>>({ active: true, color: '#3b82f6' });
 
   const loadData = async () => {
-    const data = await storage.getTechnicians();
-    setTechnicians(data);
+    // Busca técnicos e agendamentos para contagem
+    const [techs, schs] = await Promise.all([
+        storage.getTechnicians(),
+        storage.getSchedules('admin', user?.id || '')
+    ]);
+    setTechnicians(techs);
+    setSchedules(schs);
   };
 
   useEffect(() => { loadData(); }, []);
@@ -43,6 +49,13 @@ export const Technicians = () => {
       loadData();
   };
 
+  const getActiveCount = (techId: string) => {
+      return schedules.filter(s => 
+          s.technicianId === techId && 
+          ['Confirmada', 'Reagendada', 'Em análise'].includes(s.status)
+      ).length;
+  };
+
   if (user?.role !== 'admin') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
 
   return (
@@ -58,24 +71,41 @@ export const Technicians = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {technicians.map(tech => (
-            <div key={tech.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-lg" style={{ backgroundColor: tech.color }}>
-                        {tech.name.charAt(0)}
-                    </div>
-                    <div>
-                        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm">{tech.name}</h3>
-                        <div className="flex items-center gap-1.5 text-zinc-500 text-[10px] font-bold mt-0.5">
-                            <Phone size={10} /> {tech.phone}
+        {technicians.map(tech => {
+            const count = getActiveCount(tech.id);
+            
+            return (
+                <div key={tech.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-6 relative overflow-hidden">
+                    <div className="flex justify-between items-start relative z-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-black text-white shadow-lg text-lg" style={{ backgroundColor: tech.color }}>
+                                {tech.name.charAt(0)}
+                            </div>
+                            <div>
+                                <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm">{tech.name}</h3>
+                                <div className="flex items-center gap-1.5 text-zinc-500 text-[10px] font-bold mt-1">
+                                    <Phone size={10} /> {tech.phone}
+                                </div>
+                            </div>
                         </div>
+                        <button onClick={() => toggleStatus(tech)} className={`p-2 rounded-xl transition-all ${tech.active ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200'}`}>
+                            {tech.active ? <CheckCircle size={20} /> : <XCircle size={20} />}
+                        </button>
                     </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between relative z-10">
+                        <div className="flex items-center gap-2 text-zinc-500">
+                            <Calendar size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Agendamentos</span>
+                        </div>
+                        <span className="text-xl font-black text-zinc-900 dark:text-white">{count}</span>
+                    </div>
+                    
+                    {/* Decorative Blob */}
+                    <div className="absolute -bottom-10 -right-10 w-32 h-32 rounded-full opacity-10 blur-2xl" style={{ backgroundColor: tech.color }} />
                 </div>
-                <button onClick={() => toggleStatus(tech)} className={`p-2 rounded-xl transition-all ${tech.active ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200'}`}>
-                    {tech.active ? <CheckCircle size={20} /> : <XCircle size={20} />}
-                </button>
-            </div>
-        ))}
+            );
+        })}
       </div>
 
       {isModalOpen && (

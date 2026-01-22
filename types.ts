@@ -69,6 +69,7 @@ export interface Vehicle {
   clientId?: string;
   status?: 'active' | 'stolen' | 'maintenance';
   installationType?: 'tag_only' | 'tag_tracker';
+  ownershipStatus?: 'leased' | 'purchased'; // leased = Comodato, purchased = Adquirido
   createdAt: number;
   updatedBy?: string;
   chassis?: string;

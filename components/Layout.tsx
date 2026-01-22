@@ -75,13 +75,13 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[40] lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2999] lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-[50] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col
+        fixed lg:static inset-y-0 left-0 z-[3000] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         ${isCollapsed ? 'w-24' : 'w-72'}
       `}>

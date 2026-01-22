@@ -324,7 +324,16 @@ export const AiAssistant: React.FC = () => {
     const userMsg = (textOverride ?? input).trim();
     if (!userMsg || loading) return;
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    // DATA CORRETA: Força a data do cliente/browser para a IA
+    const now = new Date();
+    const todayFull = now.toLocaleDateString('pt-BR', { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long', 
+        year: 'numeric' 
+    });
+    const timeFull = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const isoDate = now.toISOString().split('T')[0];
 
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
@@ -339,11 +348,15 @@ export const AiAssistant: React.FC = () => {
             tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, prepareRegistrationDraftTool, generateReportTool, commitRegistrationTool] }],
             systemInstruction: `Você é o **Operador K-TAG Intelligence**, focado em automação e segurança.
             
-            DATA ATUAL: Hoje é ${todayDate}. Use esta data como referência absoluta para calcular "ontem", "esta semana" ou "mês passado".
+            CONTEXTO TEMPORAL OBRIGATÓRIO (NÃO ALUCINE DATAS ANTIGAS):
+            - Hoje é EXATAMENTE: ${todayFull}.
+            - A hora atual é: ${timeFull}.
+            - Data ISO para cálculos: ${isoDate}.
+            - Ao calcular "últimos 7 dias", "ontem" ou "mês passado", use ${isoDate} como base absoluta. NUNCA use a data de treinamento do modelo.
             
             DIRETRIZES DE RELATÓRIO:
             - Ao pedirem um relatório/PDF, use 'generate_pdf_report'. 
-            - Se o usuário não disser o período, NÃO peça a ele; assuma automaticamente os últimos 7 dias a partir de hoje (${todayDate}).
+            - Se o usuário não disser o período, assuma os últimos 7 dias até HOJE (${isoDate}).
             - Confirme para o usuário: "Estou preparando seu Insight Report referente ao período de [X] a [Y]..."
             
             DIRETRIZES DE SEGURANÇA:
@@ -501,5 +514,3 @@ export const AiAssistant: React.FC = () => {
     </div>
   );
 };
-
-export default AiAssistant;
