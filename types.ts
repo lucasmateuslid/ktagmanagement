@@ -152,6 +152,9 @@ export interface AppSettings {
   // Added properties for Plate API configuration
   plateApiUrl?: string;
   plateApiToken?: string;
+  // Inventory Levels
+  minStockLevel?: number;
+  criticalStockLevel?: number;
 }
 
 // --- NEW TYPES FOR SCHEDULING SYSTEM ---
@@ -173,13 +176,18 @@ export interface ScheduleHistory {
   action: string; // "Confirmou", "Reagendou", "Solicitou"
   timestamp: number;
   details?: string;
+  statusSnapshot?: string;
 }
 
 export interface Schedule {
   id: string;
   requesterId: string;
-  requesterName: string;
+  requesterName: string; // Operador/Usuário do sistema
   
+  // Client Data (Optional - from SGA)
+  clientName?: string; // Nome do Cliente Final (Dono do veículo)
+  clientPhone?: string;
+
   // Vehicle Data
   vehiclePlate: string;
   vehicleModel: string;
@@ -204,4 +212,5 @@ export interface Schedule {
   
   history: ScheduleHistory[];
   createdAt: number;
+  analysisStartedAt?: number; // Para resetar o timer quando entrar em análise
 }

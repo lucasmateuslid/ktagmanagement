@@ -69,10 +69,56 @@ export const AiAssistant: React.FC = () => {
   ]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  
+  // Ref para controlar se já alertou sobre atrasos na sessão atual para não spammar
+  const hasAlertedRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen]);
+
+  // MONITORAMENTO DE AGENDAMENTOS CRÍTICOS (> 30 MIN)
+  useEffect(() => {
+    if (!currentUser || hasAlertedRef.current) return;
+
+    const checkCriticalSchedules = async () => {
+        try {
+            // Define role para busca (Admin/Mod vê tudo, User vê seus)
+            const roleForQuery = (currentUser.role === 'admin' || currentUser.role === 'moderator') ? 'admin' : 'user';
+            const schedules = await storage.getSchedules(roleForQuery, currentUser.id);
+            const now = Date.now();
+            
+            const criticalLimit = 30 * 60 * 1000; // 30 minutos
+
+            const delayedSchedules = schedules.filter(s => {
+                // Filtra apenas pendentes
+                if (!['Solicitada', 'Em análise'].includes(s.status)) return false;
+                
+                // Se estiver em análise, conta a partir do início da análise, senão da criação
+                const startTime = s.status === 'Em análise' && s.analysisStartedAt ? s.analysisStartedAt : s.createdAt;
+                
+                return (now - startTime) > criticalLimit;
+            });
+
+            if (delayedSchedules.length > 0) {
+                const plates = delayedSchedules.map(s => s.vehiclePlate).join(', ');
+                const count = delayedSchedules.length;
+                
+                const alertMsg = `🚨 **ALERTA OPERACIONAL**\n\nIdentifiquei **${count} serviço(s)** aguardando atenção há mais de 30 minutos.\n\nVeículos afetados: **${plates}**.\n\nPor favor, verifique a [Central de Agendamentos](/#/schedules) para evitar SLA violado.`;
+
+                setMessages(prev => [...prev, { role: 'model', text: alertMsg }]);
+                setIsOpen(true); // Abre a janela automaticamente
+                hasAlertedRef.current = true; // Marca como alertado nesta sessão
+            }
+        } catch (e) {
+            console.error("AI Auto-Check Error:", e);
+        }
+    };
+
+    // Executa verificação 3 segundos após montar o componente (para não competir com carregamento inicial)
+    const timer = setTimeout(checkCriticalSchedules, 3000);
+    return () => clearTimeout(timer);
+  }, [currentUser]);
 
   /* ----------------------------- Tool Declarations ----------------------------- */
   

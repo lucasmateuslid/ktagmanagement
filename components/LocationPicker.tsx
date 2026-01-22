@@ -44,7 +44,8 @@ const LocationMarker = ({ position, setPosition, onSelect }: any) => {
   );
 };
 
-export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect, initialLat = -23.55052, initialLng = -46.633309, tileProvider = 'osm' }) => {
+// Coordenadas padrão atualizadas para Natal/RN
+export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect, initialLat = -5.79448, initialLng = -35.211, tileProvider = 'osm' }) => {
   const [address, setAddress] = useState('');
   const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: initialLat, lng: initialLng });
   const [googleReady, setGoogleReady] = useState(false);

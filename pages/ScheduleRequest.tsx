@@ -6,7 +6,7 @@ import { Schedule, DeviceType, ServiceType, Vehicle } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, Settings, CheckCircle2, User, CreditCard, MapPin, Search, Loader2, Database } from 'lucide-react';
+import { Calendar, Clock, Car, Settings, CheckCircle2, User, CreditCard, MapPin, Search, Loader2, Database, Phone, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const ScheduleRequest = () => {
@@ -78,11 +78,13 @@ export const ScheduleRequest = () => {
             setFormData(prev => ({
                 ...prev,
                 vehicleModel: result.vehicle.model || prev.vehicleModel,
-                // Prioriza o valor FIPE vindo da API, senão usa o código
-                fipeValue: result.price || (result.vehicle.fipeCode ? `Código FIPE: ${result.vehicle.fipeCode}` : prev.fipeValue)
+                fipeValue: result.price || (result.vehicle.fipeCode ? `Código FIPE: ${result.vehicle.fipeCode}` : prev.fipeValue),
+                // Preenche dados do cliente se disponíveis, mas NÃO sobrescreve o requesterName (usuário logado)
+                clientName: result.client.name, 
+                clientPhone: result.client.phone || undefined
             }));
             setHinovaStatus('success');
-            addNotification('success', 'Hinova', 'Dados do veículo importados do SGA.');
+            addNotification('success', 'Hinova', 'Dados do veículo e cliente importados do SGA.');
         } else {
             setHinovaStatus('error');
             addNotification('error', 'Hinova', 'Veículo não encontrado na base externa.');
@@ -108,7 +110,9 @@ export const ScheduleRequest = () => {
         const schedule: Schedule = {
             id: crypto.randomUUID(),
             requesterId: user.id,
-            requesterName: formData.requesterName || user.name, 
+            requesterName: user.name, // Garante que é o nome do usuário logado
+            clientName: formData.clientName, // Nome do Cliente (Dono)
+            clientPhone: formData.clientPhone, // Telefone do Cliente
             vehiclePlate: formData.vehiclePlate.toUpperCase(),
             vehicleModel: formData.vehicleModel,
             fipeValue: formData.fipeValue || 'Não informado',
@@ -154,30 +158,33 @@ export const ScheduleRequest = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
-            {/* DADOS DO SOLICITANTE */}
+            {/* DADOS DO SOLICITANTE (OPERADOR) */}
             <div className="bg-white dark:bg-zinc-900 p-5 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
                 <div className="flex items-center gap-3 text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                     <User size={20} />
-                    <h3 className="font-black uppercase tracking-widest text-xs">Dados do Solicitante</h3>
+                    <h3 className="font-black uppercase tracking-widest text-xs">Dados do Solicitante (Operador)</h3>
                 </div>
                 <div>
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Solicitante</label>
-                    <input 
-                        type="text" 
-                        required
-                        value={formData.requesterName || ''} 
-                        onChange={e => setFormData(prev => ({...prev, requesterName: e.target.value}))} 
-                        className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all" 
-                    />
-                    <p className="text-[9px] text-zinc-400 mt-1 ml-1">Este nome aparecerá para a equipe técnica.</p>
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Operador</label>
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            readOnly
+                            disabled
+                            value={formData.requesterName || ''} 
+                            className="w-full px-4 py-3.5 mt-1 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none text-zinc-500 cursor-not-allowed" 
+                        />
+                        <Lock size={14} className="absolute right-4 top-1/2 mt-0.5 -translate-y-1/2 text-zinc-400"/>
+                    </div>
+                    <p className="text-[9px] text-zinc-400 mt-1 ml-1">Usuário responsável pelo cadastro.</p>
                 </div>
             </div>
 
-            {/* DADOS DO VEÍCULO */}
+            {/* DADOS DO VEÍCULO E CLIENTE */}
             <div className="bg-white dark:bg-zinc-900 p-5 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
                 <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-4">
                     <Car size={20} />
-                    <h3 className="font-black uppercase tracking-widest text-xs">Dados do Veículo</h3>
+                    <h3 className="font-black uppercase tracking-widest text-xs">Dados do Veículo & Cliente</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                     <div>
@@ -223,11 +230,29 @@ export const ScheduleRequest = () => {
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Dispositivo</label>
                         <select value={formData.deviceType} onChange={e => setFormData(prev => ({...prev, deviceType: e.target.value as DeviceType}))} className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
                             <option value="Rastreador">Rastreador</option>
-                            <option value="Rastreador + Tag">Rastreador + Tag</option>
                             <option value="Tag">Tag</option>
+                            <option value="Rastreador + Tag">Rastreador + Tag</option>
                         </select>
                     </div>
                 </div>
+
+                {/* Card de Dados do Cliente (Importado do SGA/Hinova) - AGORA DENTRO DA ABA DE VEÍCULO */}
+                {(formData.clientName || formData.clientPhone) && (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-2 mt-4">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg">
+                            <User size={20}/>
+                        </div>
+                        <div className="overflow-hidden">
+                            <p className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest">Cliente Identificado (SGA)</p>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-0.5">
+                                <span className="text-sm font-bold text-zinc-900 dark:text-white truncate">{formData.clientName || 'Nome não informado'}</span>
+                                {formData.clientPhone && (
+                                    <span className="text-xs text-zinc-500 font-mono flex items-center gap-1"><Phone size={10}/> {formData.clientPhone}</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* PREFERÊNCIA E LOCAL */}
@@ -245,7 +270,7 @@ export const ScheduleRequest = () => {
                             <option value="Retirada">Retirada</option>
                         </select>
                     </div>
-                    {/* Grid de Data e Hora - Lado a Lado no Mobile (50%), mas com gap menor para não quebrar */}
+                    {/* Grid de Data e Hora */}
                     <div className="grid grid-cols-2 gap-3 md:gap-4">
                         <div className="relative">
                             <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider mb-1 block">Data</label>
@@ -276,8 +301,6 @@ export const ScheduleRequest = () => {
                     </div>
                 </div>
                 
-                {/* Força o uso do Google Maps na sessão de solicitação */}
-                {/* FIX: Usando functional update para previnir que o estado formData seja resetado se a closure estiver obsoleta */}
                 <LocationPicker 
                     tileProvider="google" 
                     onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))} 

@@ -13,7 +13,7 @@ import {
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
-  MapPin
+  MapPin, ShoppingBag, AlertTriangle
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -250,6 +250,42 @@ export const Settings = () => {
           
           {isAdmin && (
             <>
+              {/* CONFIGURAÇÃO DE ESTOQUE (NOVO) */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <ShoppingBag size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Gestão de Estoque</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Mínimo (Alerta Baixo)</label>
+                        <div className="relative">
+                            <AlertTriangle className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={16} />
+                            <input 
+                                type="number" 
+                                value={settings.minStockLevel || 80} 
+                                onChange={e => setSettings({...settings, minStockLevel: parseInt(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível para aviso de necessidade de compra.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Crítico (Previsão)</label>
+                        <div className="relative">
+                            <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
+                            <input 
+                                type="number" 
+                                value={settings.criticalStockLevel || 40} 
+                                onChange={e => setSettings({...settings, criticalStockLevel: parseInt(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível para cálculo de dias restantes.</p>
+                    </div>
+                </div>
+              </div>
+
               {/* GOOGLE MAPS API */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-red-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">

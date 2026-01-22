@@ -4,11 +4,16 @@ import { storage } from '../services/storage';
 import { Schedule, Technician, ScheduleStatus } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, User, MapPin, ChevronRight, History, Filter, AlertCircle, Wrench, Check, RotateCcw, Trash2, LayoutGrid, CheckSquare, X, Hourglass } from 'lucide-react';
+import { 
+  Clock, Calendar, CheckCircle2, XCircle, AlertCircle, Wrench, Send, 
+  Maximize2, LayoutGrid, RotateCcw, Activity, Trash2, Eye, Hourglass,
+  History, User, MapPin, Check
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { TrackingModal } from '../components/TrackingModal';
 
 // Componente de Cronômetro
-const PendingTimer = ({ startTime }: { startTime: number }) => {
+const PendingTimer = ({ startTime, isAnalyzing }: { startTime: number, isAnalyzing: boolean }) => {
     const [elapsed, setElapsed] = useState('');
     const [isCritical, setIsCritical] = useState(false);
 
@@ -39,9 +44,9 @@ const PendingTimer = ({ startTime }: { startTime: number }) => {
     }, [startTime]);
 
     return (
-        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${isCritical ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse' : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700'}`}>
-            <Hourglass size={10} className={isCritical ? 'text-red-500' : 'text-zinc-400'} />
-            <span>Aguardando: {elapsed}</span>
+        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${isCritical ? 'bg-red-500/10 text-red-500 border-red-500/20 animate-pulse' : isAnalyzing ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700'}`}>
+            <Hourglass size={10} className={isCritical ? 'text-red-500' : isAnalyzing ? 'text-blue-500' : 'text-zinc-400'} />
+            <span>{isAnalyzing ? 'Análise: ' : 'Aguardando: '}{elapsed}</span>
         </div>
     );
 };
@@ -57,8 +62,9 @@ export const Schedules = () => {
   // States de UI
   const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'active' | 'history'>('active');
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [trackingSchedule, setTrackingSchedule] = useState<Schedule | null>(null); // State para o modal de tracking
   
-  // States do Modal de Edição
+  // States do Modal de Edição (Admin)
   const [editForm, setEditForm] = useState<{
     techId: string;
     date: string;
@@ -89,25 +95,34 @@ export const Schedules = () => {
 
   useEffect(() => { loadData(); }, [user]);
 
-  // Estatísticas do Mês
+  // Estatísticas do Mês (Expandidas)
   const monthStats = useMemo(() => {
       const now = new Date();
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
 
       const monthSchedules = schedules.filter(s => {
-          const d = new Date(s.confirmedDate ? `${s.confirmedDate}T00:00:00` : s.createdAt);
-          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+          // Usa data confirmada se existir, senão createdAt para pendentes
+          const checkDate = s.confirmedDate ? new Date(s.confirmedDate + 'T00:00:00') : new Date(s.createdAt);
+          return checkDate.getMonth() === currentMonth && checkDate.getFullYear() === currentYear;
       });
 
       return {
           total: monthSchedules.length,
+          scheduled: monthSchedules.filter(s => ['Confirmada', 'Reagendada'].includes(s.status)).length,
           completed: monthSchedules.filter(s => s.status === 'Concluída').length,
-          canceled: monthSchedules.filter(s => s.status === 'Cancelada').length
+          canceled: monthSchedules.filter(s => s.status === 'Cancelada').length,
+          // Breakdown por serviço
+          instalacao: monthSchedules.filter(s => s.serviceType === 'Instalação').length,
+          manutencao: monthSchedules.filter(s => s.serviceType === 'Manutenção').length,
+          retirada: monthSchedules.filter(s => s.serviceType === 'Retirada').length
       };
   }, [schedules]);
 
   // Filtros Admin
+  // "Solicitada" and "Em análise" are pending. "Reagendada" goes back to pending flow for re-confirmation? Or is it confirmed?
+  // User asked: "Reagendar o serviço deve retornar ele para pendente". 
+  // So 'Solicitada' is 'Pending'. If we change status to 'Solicitada' when rescheduling, it works.
   const pendingSchedules = useMemo(() => schedules.filter(s => ['Solicitada', 'Em análise'].includes(s.status)), [schedules]);
   const confirmedSchedules = useMemo(() => schedules.filter(s => !['Solicitada', 'Em análise'].includes(s.status)), [schedules]);
   
@@ -124,6 +139,44 @@ export const Schedules = () => {
     });
   };
 
+  const handleSendWhatsapp = (sch: Schedule, phone?: string) => {
+      const msg = `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
+          `🚘 *Veículo:* ${sch.vehicleModel}\n` +
+          `🔢 *Placa:* ${sch.vehiclePlate}\n` +
+          `📦 *Equipamento:* ${sch.deviceType}\n` +
+          `🛠 *Serviço:* ${sch.serviceType}\n` +
+          `📅 *Data Pref:* ${new Date(sch.preferredDate).toLocaleDateString()} às ${sch.preferredTime}\n` +
+          `📍 *Local:* ${sch.locationAddress}\n` +
+          `🔗 *Google Maps:* https://www.google.com/maps?q=${sch.locationLat},${sch.locationLng}`;
+      const text = encodeURIComponent(msg);
+      const url = phone 
+        ? `https://wa.me/${phone.replace(/\D/g, '')}?text=${text}`
+        : `https://wa.me/?text=${text}`; 
+      window.open(url, '_blank');
+  };
+
+  const handleVerify = async (sch: Schedule) => {
+      if (!user) return;
+      const updated: Schedule = {
+          ...sch,
+          status: 'Em análise',
+          analysisStartedAt: Date.now(),
+          history: [
+              ...sch.history,
+              {
+                  action: 'Verificando',
+                  actionBy: user.name, // Nome do operador que iniciou
+                  timestamp: Date.now(),
+                  details: 'Iniciou verificação do agendamento'
+              }
+          ]
+      };
+      await storage.saveSchedule(updated);
+      addNotification('info', 'Verificação Iniciada', 'O cliente será notificado que você está analisando.');
+      if (selectedSchedule?.id === sch.id) setSelectedSchedule(updated);
+      loadData();
+  };
+
   const handleUpdateStatus = async (newStatus: ScheduleStatus) => {
     if (!selectedSchedule || !user) return;
 
@@ -132,31 +185,46 @@ export const Schedules = () => {
         return;
     }
 
+    // Logic for Rescheduling: Returns to 'Solicitada' (Pending)
+    const effectiveStatus = newStatus === 'Reagendada' ? 'Solicitada' : newStatus;
+    const actionText = newStatus === 'Reagendada' ? 'Solicitou Reagendamento' : (newStatus === 'Confirmada' ? 'Confirmou' : newStatus === 'Cancelada' ? 'Cancelou' : newStatus === 'Concluída' ? 'Finalizou' : 'Alterou');
+
     const updated: Schedule = {
         ...selectedSchedule,
-        status: newStatus,
+        status: effectiveStatus,
         technicianId: editForm.techId || selectedSchedule.technicianId,
         confirmedDate: editForm.date,
         confirmedTime: editForm.time,
         history: [
             ...selectedSchedule.history,
             {
-                action: newStatus === 'Confirmada' ? 'Confirmou' : newStatus === 'Reagendada' ? 'Reagendou' : newStatus === 'Cancelada' ? 'Cancelou' : newStatus === 'Concluída' ? 'Finalizou' : 'Alterou',
+                action: actionText,
                 actionBy: user.name,
                 timestamp: Date.now(),
-                details: `Status para ${newStatus} ${editForm.techId ? `| Tec: ${technicians.find(t => t.id === editForm.techId)?.name}` : ''}`
+                details: `Status para ${effectiveStatus} ${editForm.techId ? `| Tec: ${technicians.find(t => t.id === editForm.techId)?.name}` : ''}`
             }
         ]
     };
 
     try {
         await storage.saveSchedule(updated);
-        addNotification('success', 'Atualizado', `Agendamento ${newStatus} com sucesso.`);
+        addNotification('success', 'Atualizado', `Status atualizado para ${effectiveStatus}.`);
         setSelectedSchedule(null);
         loadData();
     } catch (e) {
         addNotification('error', 'Erro', 'Falha ao atualizar agendamento.');
     }
+  };
+
+  const handleUserUpdate = async (updated: Schedule) => {
+      try {
+          await storage.saveSchedule(updated);
+          addNotification('success', 'Atualizado', 'Informações da solicitação atualizadas.');
+          loadData();
+          setTrackingSchedule(updated);
+      } catch (e) {
+          addNotification('error', 'Erro', 'Falha ao atualizar solicitação.');
+      }
   };
 
   const handleDelete = async () => {
@@ -188,46 +256,22 @@ export const Schedules = () => {
       'Retirada': 'text-red-500'
   };
 
-  const RequestStepper = ({ status }: { status: string }) => {
-      const steps = [
-          { id: 1, label: 'Solicitado', active: ['Solicitada', 'Em análise', 'Confirmada', 'Reagendada', 'Concluída'].includes(status) },
-          { id: 2, label: 'Em Análise', active: ['Em análise', 'Confirmada', 'Reagendada', 'Concluída'].includes(status) },
-          { id: 3, label: 'Agendado', active: ['Confirmada', 'Reagendada', 'Concluída'].includes(status) },
-          { id: 4, label: 'Concluído', active: ['Concluída'].includes(status) }
-      ];
-
-      if (status === 'Cancelada') {
-          return (
-              <div className="w-full bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-100 dark:border-red-900/20 flex items-center justify-center gap-2 text-red-500 text-xs font-black uppercase tracking-widest mt-4">
-                  <XCircle size={16} /> Solicitação Cancelada
-              </div>
-          );
-      }
-
-      return (
-          <div className="flex items-center justify-between mt-6 relative px-2">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full z-0" />
-              {steps.map((step, idx) => {
-                  const isCompleted = step.active;
-                  return (
-                      <div key={step.id} className="relative z-10 flex flex-col items-center gap-2">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-300'}`}>
-                              {isCompleted ? <Check size={14} strokeWidth={4} /> : <span className="text-[10px] font-black">{step.id}</span>}
-                          </div>
-                          <span className={`text-[8px] font-black uppercase tracking-widest absolute -bottom-6 whitespace-nowrap hidden sm:block ${isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-300 dark:text-zinc-600'}`}>{step.label}</span>
-                      </div>
-                  );
-              })}
-          </div>
-      );
-  };
-
   // --- RENDERIZAÇÃO PARA USUÁRIO COMUM ---
   if (user?.role === 'user') {
       const displayList = activeTab === 'active' ? myActiveSchedules : myHistorySchedules;
 
       return (
         <div className="space-y-8 pb-20">
+            {trackingSchedule && (
+                <TrackingModal 
+                    schedule={trackingSchedule} 
+                    technicians={technicians} 
+                    onClose={() => setTrackingSchedule(null)} 
+                    onUpdate={handleUserUpdate} 
+                    currentUser={user}
+                />
+            )}
+
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                 <div>
                     <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Minhas Solicitações</h1>
@@ -259,60 +303,48 @@ export const Schedules = () => {
                         <span className="text-xs font-black uppercase tracking-widest">Nenhuma solicitação encontrada nesta aba</span>
                     </div>
                 ) : (
-                    displayList.map(sch => (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={sch.id} className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
-                            
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
-                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${statusColors[sch.status]}`}>{sch.status}</span>
-                                        <span className="text-[10px] text-zinc-400 font-bold flex items-center gap-1 whitespace-nowrap"><Calendar size={10}/> {new Date(sch.createdAt).toLocaleDateString()}</span>
-                                    </div>
-                                    <h3 className="text-xl font-black uppercase text-zinc-900 dark:text-white tracking-tight">{sch.vehiclePlate}</h3>
-                                    <p className="text-xs font-bold text-zinc-500 uppercase">{sch.vehicleModel}</p>
-                                </div>
-                                <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400">
-                                    <Wrench size={18} />
-                                </div>
-                            </div>
-
-                            <div className="space-y-3 bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <Wrench size={12} className="text-zinc-400 shrink-0"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Serviço:</span> <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <MapPin size={12} className="text-zinc-400 shrink-0"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Local:</span> <span className="truncate flex-1 font-medium">{sch.locationAddress}</span>
-                                </div>
-                                {sch.confirmedDate ? (
-                                    <div className="flex items-center gap-2 text-xs text-zinc-900 dark:text-white bg-white dark:bg-zinc-900 p-2 rounded-lg shadow-sm border border-zinc-100 dark:border-zinc-800">
-                                        <Calendar size={12} className="text-emerald-500"/> 
-                                        <span className="font-black uppercase text-[10px]">Agendado:</span> 
-                                        <span className="font-bold">{new Date(sch.confirmedDate + 'T00:00:00').toLocaleDateString()} às {sch.confirmedTime}</span>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-2 text-xs text-zinc-500 opacity-70">
-                                        <Calendar size={12}/> <span className="uppercase font-bold text-[10px] tracking-wider">Preferência:</span> {new Date(sch.preferredDate + 'T00:00:00').toLocaleDateString()}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="mb-4">
-                                <RequestStepper status={sch.status} />
-                            </div>
-
-                            {sch.technicianId && activeTab === 'active' && (
-                                <div className="mt-6 flex items-center gap-3 p-3 bg-primary-500/5 border border-primary-500/10 rounded-xl">
-                                    <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center font-black text-xs">
-                                        {technicians.find(t => t.id === sch.technicianId)?.name.charAt(0)}
-                                    </div>
+                    displayList.map(sch => {
+                        return (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={sch.id} className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden group">
+                                
+                                <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        <p className="text-[9px] font-black uppercase text-primary-600 dark:text-primary-400 tracking-widest">Técnico Responsável</p>
-                                        <p className="text-xs font-bold text-zinc-900 dark:text-white">{technicians.find(t => t.id === sch.technicianId)?.name}</p>
+                                        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-2">
+                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${statusColors[sch.status]}`}>{sch.status}</span>
+                                            {/* Timer no Card para User */}
+                                            {['Solicitada', 'Em análise'].includes(sch.status) && (
+                                                <PendingTimer startTime={sch.status === 'Em análise' && sch.analysisStartedAt ? sch.analysisStartedAt : sch.createdAt} isAnalyzing={sch.status === 'Em análise'} />
+                                            )}
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase text-zinc-900 dark:text-white tracking-tight">{sch.vehiclePlate}</h3>
+                                        <p className="text-xs font-bold text-zinc-500 uppercase">{sch.vehicleModel}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setTrackingSchedule(sch)} className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-primary-500 transition-colors border border-zinc-100 dark:border-zinc-700 shadow-sm" title="Acompanhar Ampliado">
+                                            <Maximize2 size={18} />
+                                        </button>
                                     </div>
                                 </div>
-                            )}
-                        </motion.div>
-                    ))
+
+                                <div className="space-y-3 bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                                        <Wrench size={12} className="text-zinc-400 shrink-0"/> <span className="uppercase font-bold text-[10px] tracking-wider text-zinc-400">Serviço:</span> <span className={`font-bold ${serviceColors[sch.serviceType]}`}>{sch.serviceType}</span>
+                                    </div>
+                                    {sch.confirmedDate ? (
+                                        <div className="flex items-center gap-2 text-xs text-zinc-900 dark:text-white bg-white dark:bg-zinc-900 p-2 rounded-lg shadow-sm border border-zinc-100 dark:border-zinc-800">
+                                            <Calendar size={12} className="text-emerald-500"/> 
+                                            <span className="font-black uppercase text-[10px]">Agendado:</span> 
+                                            <span className="font-bold">{new Date(sch.confirmedDate + 'T00:00:00').toLocaleDateString()} às {sch.confirmedTime}</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 text-xs text-zinc-500 opacity-70">
+                                            <Calendar size={12}/> <span className="uppercase font-bold text-[10px] tracking-wider">Preferência:</span> {new Date(sch.preferredDate + 'T00:00:00').toLocaleDateString()}
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        );
+                    })
                 )}
             </div>
         </div>
@@ -325,34 +357,75 @@ export const Schedules = () => {
 
   return (
     <div className="space-y-8 pb-20">
+        {trackingSchedule && (
+            <TrackingModal 
+                schedule={trackingSchedule} 
+                technicians={technicians} 
+                onClose={() => setTrackingSchedule(null)} 
+                onUpdate={handleUserUpdate} 
+                currentUser={user}
+            />
+        )}
+
         <div className="flex flex-col gap-6">
             <div>
                 <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Central de Agendamentos</h1>
                 <p className="text-zinc-500 mt-1 font-medium text-xs">Gerencie solicitações e a agenda da equipe técnica.</p>
             </div>
 
-            {/* Stats Dashboard */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-                    <div>
-                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total no Mês</p>
+            {/* Stats Dashboard Expandido */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                {/* Linha Principal de Status */}
+                <div className="col-span-2 md:col-span-1 bg-white dark:bg-zinc-900 p-4 rounded-[20px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Total no Mês</p>
+                    <div className="flex items-end justify-between">
                         <p className="text-2xl font-black text-zinc-900 dark:text-white">{monthStats.total}</p>
+                        <LayoutGrid size={18} className="text-zinc-300"/>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400"><LayoutGrid size={20}/></div>
                 </div>
-                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-                    <div>
-                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Concluídos</p>
+                <div className="col-span-2 md:col-span-1 bg-white dark:bg-zinc-900 p-4 rounded-[20px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Agendadas</p>
+                    <div className="flex items-end justify-between">
+                        <p className="text-2xl font-black text-blue-500">{monthStats.scheduled}</p>
+                        <Calendar size={18} className="text-blue-500/50"/>
+                    </div>
+                </div>
+                <div className="col-span-2 md:col-span-1 bg-white dark:bg-zinc-900 p-4 rounded-[20px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Concluídas</p>
+                    <div className="flex items-end justify-between">
                         <p className="text-2xl font-black text-emerald-500">{monthStats.completed}</p>
+                        <CheckCircle2 size={18} className="text-emerald-500/50"/>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500"><CheckCircle2 size={20}/></div>
                 </div>
-                <div className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
-                    <div>
-                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cancelados</p>
+                <div className="col-span-2 md:col-span-1 bg-white dark:bg-zinc-900 p-4 rounded-[20px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">Canceladas</p>
+                    <div className="flex items-end justify-between">
                         <p className="text-2xl font-black text-red-500">{monthStats.canceled}</p>
+                        <XCircle size={18} className="text-red-500/50"/>
                     </div>
-                    <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500"><XCircle size={20}/></div>
+                </div>
+
+                {/* Linha de Tipos de Serviço */}
+                <div className="col-span-2 md:col-span-1 bg-blue-500/5 dark:bg-blue-500/10 p-4 rounded-[20px] border border-blue-500/10 flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">Instalação</p>
+                    <div className="flex items-end justify-between">
+                        <p className="text-xl font-black text-blue-500">{monthStats.instalacao}</p>
+                        <Wrench size={16} className="text-blue-500/50"/>
+                    </div>
+                </div>
+                <div className="col-span-2 md:col-span-1 bg-orange-500/5 dark:bg-orange-500/10 p-4 rounded-[20px] border border-orange-500/10 flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest mb-2">Manutenção</p>
+                    <div className="flex items-end justify-between">
+                        <p className="text-xl font-black text-orange-500">{monthStats.manutencao}</p>
+                        <Activity size={16} className="text-orange-500/50"/>
+                    </div>
+                </div>
+                <div className="col-span-2 md:col-span-1 bg-red-500/5 dark:bg-red-500/10 p-4 rounded-[20px] border border-red-500/10 flex flex-col justify-between">
+                    <p className="text-[9px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-2">Retirada</p>
+                    <div className="flex items-end justify-between">
+                        <p className="text-xl font-black text-red-500">{monthStats.retirada}</p>
+                        <RotateCcw size={16} className="text-red-500/50"/>
+                    </div>
                 </div>
             </div>
             
@@ -387,9 +460,9 @@ export const Schedules = () => {
                         <div>
                             <div className="flex justify-between items-start mb-4">
                                 <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${statusColors[sch.status]}`}>{sch.status}</span>
-                                {sch.status === 'Solicitada' ? (
-                                    // CRONÔMETRO PARA SOLICITAÇÕES PENDENTES
-                                    <PendingTimer startTime={sch.createdAt} />
+                                {['Solicitada', 'Em análise'].includes(sch.status) ? (
+                                    // CRONÔMETRO PARA SOLICITAÇÕES PENDENTES - RESET NO 'EM ANÁLISE'
+                                    <PendingTimer startTime={sch.status === 'Em análise' && sch.analysisStartedAt ? sch.analysisStartedAt : sch.createdAt} isAnalyzing={sch.status === 'Em análise'} />
                                 ) : (
                                     <span className="text-[10px] font-bold text-zinc-400">{new Date(sch.preferredDate).toLocaleDateString()}</span>
                                 )}
@@ -420,6 +493,18 @@ export const Schedules = () => {
                                 </div>
                             </div>
                         )}
+                        
+                        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex gap-2">
+                            {/* Botão Rápido de WhatsApp no Card para 'Em análise' */}
+                            {sch.status === 'Em análise' && (
+                                <button onClick={(e) => { e.stopPropagation(); handleSendWhatsapp(sch, sch.clientPhone); }} className="flex-1 py-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2">
+                                    <Send size={12} /> WhatsApp
+                                </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); setTrackingSchedule(sch); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500" title="Ver Detalhes">
+                                <Maximize2 size={16} />
+                            </button>
+                        </div>
                     </div>
                 ))
             )}
@@ -444,14 +529,22 @@ export const Schedules = () => {
                                         <div>
                                             <div className="flex justify-between items-start">
                                                 <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Solicitante</p>
-                                                {selectedSchedule.status === 'Solicitada' && <PendingTimer startTime={selectedSchedule.createdAt} />}
+                                                {['Solicitada', 'Em análise'].includes(selectedSchedule.status) && (
+                                                    <PendingTimer startTime={selectedSchedule.status === 'Em análise' && selectedSchedule.analysisStartedAt ? selectedSchedule.analysisStartedAt : selectedSchedule.createdAt} isAnalyzing={selectedSchedule.status === 'Em análise'} />
+                                                )}
                                             </div>
                                             <p className="font-bold text-zinc-900 dark:text-white">{selectedSchedule.requesterName}</p>
                                         </div>
                                         <div>
                                             <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Veículo</p>
                                             <p className="font-bold text-zinc-900 dark:text-white uppercase">{selectedSchedule.vehiclePlate} - {selectedSchedule.vehicleModel}</p>
-                                            <p className="text-[10px] text-zinc-500 mt-0.5">{selectedSchedule.fipeValue}</p>
+                                            {/* Exibição do Device Type no Modal */}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="px-2 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-[10px] font-black uppercase">
+                                                    {selectedSchedule.deviceType}
+                                                </span>
+                                                <span className="text-[10px] text-zinc-500">{selectedSchedule.fipeValue}</span>
+                                            </div>
                                         </div>
                                         <div>
                                             <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Local</p>
@@ -465,14 +558,27 @@ export const Schedules = () => {
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Atribuir Técnico</label>
-                                            <select 
-                                                value={editForm.techId} 
-                                                onChange={e => setEditForm({...editForm, techId: e.target.value})} 
-                                                className="w-full px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
-                                            >
-                                                <option value="">-- Selecione --</option>
-                                                {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                            </select>
+                                            <div className="flex gap-2">
+                                                <select 
+                                                    value={editForm.techId} 
+                                                    onChange={e => setEditForm({...editForm, techId: e.target.value})} 
+                                                    className="flex-1 px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-all"
+                                                >
+                                                    <option value="">-- Selecione --</option>
+                                                    {technicians.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                </select>
+                                                {/* Botão de WhatsApp Técnico no Modal */}
+                                                <button 
+                                                    onClick={() => {
+                                                        const techPhone = technicians.find(t => t.id === editForm.techId)?.phone;
+                                                        handleSendWhatsapp(selectedSchedule, techPhone);
+                                                    }}
+                                                    className="p-3 bg-[#25D366] text-white rounded-xl hover:bg-[#20bd5a]"
+                                                    title="Enviar dados via WhatsApp"
+                                                >
+                                                    <Send size={18} />
+                                                </button>
+                                            </div>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div className="space-y-2">
@@ -508,6 +614,16 @@ export const Schedules = () => {
                             </div>
 
                             <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-3">
+                                {/* Botão VERIFICAR para iniciar análise */}
+                                {selectedSchedule.status === 'Solicitada' && (
+                                    <button 
+                                        onClick={() => handleVerify(selectedSchedule)}
+                                        className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 mb-2"
+                                    >
+                                        <Eye size={16} /> Verificar Agendamento
+                                    </button>
+                                )}
+
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <button 
                                         onClick={() => handleUpdateStatus('Confirmada')} 

@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useEffect, useState, useMemo } from 'react';
-import { Tag, Vehicle, Company, VehicleCategory } from '../types';
+import { Tag, Vehicle, Company, VehicleCategory, AppSettings } from '../types';
 import { storage } from '../services/storage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
@@ -11,7 +11,7 @@ import {
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
   Car, Clock, Building2, AlertTriangle, Lock, 
   ShoppingCart, ShoppingBag, Map as MapIcon, FileText,
-  Zap, ChevronRight, ShieldAlert, TrendingUp, HandCoins, Calendar
+  Zap, ChevronRight, ShieldAlert, TrendingUp, HandCoins, Calendar, Hourglass
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -26,6 +26,7 @@ export const Dashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
   const [companyChartData, setCompanyChartData] = useState<any[]>([]);
   const [trendChartData, setTrendChartData] = useState<any[]>([]);
@@ -41,17 +42,19 @@ export const Dashboard = () => {
   }, [user, navigate]);
 
   const loadData = async () => {
-    const [loadedTags, loadedVehicles, loadedCompanies, loadedCategories] = await Promise.all([
+    const [loadedTags, loadedVehicles, loadedCompanies, loadedCategories, loadedSettings] = await Promise.all([
       storage.getTags(),
       storage.getVehicles(),
       storage.getCompanies(),
-      storage.getCategories()
+      storage.getCategories(),
+      storage.getSettings()
     ]);
 
     setTags(loadedTags);
     setVehicles(loadedVehicles);
     setCompanies(loadedCompanies);
     setCategories(loadedCategories);
+    setSettings(loadedSettings);
 
     processHistoryData(loadedTags);
     processCompanyData(loadedVehicles, loadedCompanies);
@@ -120,11 +123,29 @@ export const Dashboard = () => {
 
   const linkedCount = vehicles.filter(v => v.tagId).length;
   const unlinkedCount = tags.length - linkedCount;
-  const stolenCount = vehicles.filter(v => v.status === 'stolen').length;
   const maintenanceCount = vehicles.filter(v => v.status === 'maintenance').length;
   
-  const isWarningStock = unlinkedCount <= 80;
-  const isCriticalStock = unlinkedCount <= 40;
+  // Lógica de Estoque com Preferências
+  const minStock = settings?.minStockLevel || 80;
+  const criticalStock = settings?.criticalStockLevel || 40;
+  
+  const isWarningStock = unlinkedCount <= minStock;
+  const isCriticalStock = unlinkedCount <= criticalStock;
+
+  // Cálculo de Previsão de Término (Base 14 dias)
+  const daysRemainingPrediction = useMemo(() => {
+      if (!isCriticalStock) return null;
+      
+      const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+      const recentActivations = vehicles.filter(v => v.createdAt && v.createdAt >= twoWeeksAgo).length;
+      
+      if (recentActivations === 0) return null; // Sem consumo para prever
+      
+      const dailyAverage = recentActivations / 14;
+      const daysLeft = Math.floor(unlinkedCount / dailyAverage);
+      
+      return daysLeft > 0 ? daysLeft : 0;
+  }, [vehicles, unlinkedCount, isCriticalStock]);
 
   // Ownership Stats
   const leasedCount = vehicles.filter(v => v.ownershipStatus !== 'purchased').length; // Default to leased if undefined
@@ -369,16 +390,34 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm ${isCriticalStock ? 'bg-red-600 text-white border-red-700' : isWarningStock ? 'bg-amber-500 text-black border-amber-600' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
+          <div className={`p-8 rounded-[32px] border flex flex-col justify-between transition-all duration-700 shadow-sm ${
+              isCriticalStock 
+              ? 'bg-red-600 text-white border-red-700' 
+              : isWarningStock 
+              ? 'bg-amber-500 text-black border-amber-600' 
+              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
+          }`}>
             <div className="flex justify-between items-start">
-                <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Estoque</p>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                <p className={`text-[11px] uppercase font-black tracking-[0.3em] ${isWarningStock || isCriticalStock ? 'opacity-80' : 'text-zinc-400'}`}>Estoque</p>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isWarningStock || isCriticalStock ? 'bg-black/10' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
                     <ShoppingCart size={24} strokeWidth={2} />
                 </div>
             </div>
             <div>
                 <h2 className="text-6xl font-display font-black tracking-tighter">{unlinkedCount}</h2>
-                <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock ? 'opacity-80' : 'text-zinc-400'}`}>Equipamento Disponível</p>
+                
+                {daysRemainingPrediction !== null && isCriticalStock ? (
+                    <div className="mt-2 flex items-center gap-2 animate-pulse">
+                        <Hourglass size={14} className="text-white/80"/>
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-90">
+                            Previsão de Término: {daysRemainingPrediction} dias
+                        </p>
+                    </div>
+                ) : (
+                    <p className={`text-[10px] font-black uppercase tracking-widest mt-2 ${isWarningStock || isCriticalStock ? 'opacity-80' : 'text-zinc-400'}`}>
+                        {isCriticalStock ? 'NÍVEL CRÍTICO' : isWarningStock ? 'BAIXO - REPOR ESTOQUE' : 'Equipamento Disponível'}
+                    </p>
+                )}
             </div>
           </div>
       </div>

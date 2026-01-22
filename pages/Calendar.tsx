@@ -1,32 +1,67 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { Schedule, Technician } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { ChevronLeft, ChevronRight, User, MapPin, CalendarDays, CalendarRange, Calendar as CalendarIcon } from 'lucide-react';
+import { TrackingModal } from '../components/TrackingModal';
+import { useNotification } from '../contexts/NotificationContext';
 
 type ViewMode = 'month' | 'week' | 'day';
 
 export const Calendar = () => {
   const { user } = useAuth();
+  const { addNotification } = useNotification();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
+  
+  // State do Modal
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  
+  // Refs para autoscroll
+  const todayRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const load = async () => {
-        if (!user) return;
-        const [sch, techs] = await Promise.all([
-            storage.getSchedules('admin', user.id), 
-            storage.getTechnicians()
-        ]);
-        // Apenas confirmados/reagendados aparecem no calendário
-        setSchedules(sch.filter(s => ['Confirmada', 'Reagendada'].includes(s.status)));
-        setTechnicians(techs);
-    };
-    load();
+    loadData();
   }, [user]);
+
+  const loadData = async () => {
+    if (!user) return;
+    const [sch, techs] = await Promise.all([
+        storage.getSchedules('admin', user.id), 
+        storage.getTechnicians()
+    ]);
+    // Apenas confirmados/reagendados aparecem no calendário
+    setSchedules(sch.filter(s => ['Confirmada', 'Reagendada'].includes(s.status)));
+    setTechnicians(techs);
+  };
+
+  const handleUpdateSchedule = async (updated: Schedule) => {
+      try {
+          await storage.saveSchedule(updated);
+          addNotification('success', 'Atualizado', 'Agendamento atualizado com sucesso.');
+          loadData();
+          setSelectedSchedule(updated);
+      } catch (e) {
+          addNotification('error', 'Erro', 'Falha ao salvar agendamento.');
+      }
+  };
+
+  // Efeito para rolar até o dia de hoje
+  useEffect(() => {
+    if (viewMode === 'month' && todayRef.current && containerRef.current) {
+        setTimeout(() => {
+            todayRef.current?.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center', 
+                inline: 'center' 
+            });
+        }, 300);
+    }
+  }, [viewMode, currentDate]);
 
   const serviceColors: Record<string, string> = {
       'Instalação': 'bg-blue-500 border-blue-600 text-white',
@@ -53,6 +88,7 @@ export const Calendar = () => {
   const renderMonthView = () => {
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
     const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+    const todayStr = new Date().toISOString().split('T')[0];
     
     const cells = [];
     // Empty cells
@@ -63,17 +99,28 @@ export const Calendar = () => {
     for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayEvents = getEventsForDate(dateStr);
+        const isToday = dateStr === todayStr;
 
         cells.push(
-            <div key={d} className="min-h-[100px] md:min-h-[120px] bg-white dark:bg-zinc-900 border-b border-r border-zinc-100 dark:border-zinc-800 p-1.5 md:p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                <span className={`text-[10px] md:text-xs font-black ${dayEvents.length > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-300'}`}>{d}</span>
+            <div 
+                key={d} 
+                ref={isToday ? todayRef : null}
+                className={`min-h-[100px] md:min-h-[120px] border-b border-r border-zinc-100 dark:border-zinc-800 p-1.5 md:p-2 transition-colors group ${isToday ? 'bg-primary-50/30 dark:bg-primary-900/10 ring-2 ring-primary-500/20 inset-0 z-10' : 'bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}
+            >
+                <div className="flex justify-between items-start">
+                    <span className={`text-[10px] md:text-xs font-black ${isToday ? 'text-primary-600 dark:text-primary-400 bg-primary-100 dark:bg-primary-900/50 px-2 py-0.5 rounded-full' : (dayEvents.length > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-300')}`}>
+                        {d}
+                    </span>
+                    {isToday && <span className="text-[8px] font-black uppercase text-primary-500 tracking-widest hidden md:block">Hoje</span>}
+                </div>
+                
                 <div className="mt-1 md:mt-2 space-y-1">
                     {dayEvents.map(ev => {
                         const tech = technicians.find(t => t.id === ev.technicianId);
                         const colorClass = serviceColors[ev.serviceType] || 'bg-zinc-500 text-white';
                         
                         return (
-                            <div key={ev.id} className={`p-1 md:p-1.5 rounded-lg border-l-2 md:border-l-4 shadow-sm text-[8px] md:text-[9px] cursor-pointer hover:scale-[1.02] transition-transform ${colorClass}`}>
+                            <div onClick={() => setSelectedSchedule(ev)} key={ev.id} className={`p-1 md:p-1.5 rounded-lg border-l-2 md:border-l-4 shadow-sm text-[8px] md:text-[9px] cursor-pointer hover:scale-[1.02] transition-transform ${colorClass}`}>
                                 <div className="font-black uppercase truncate">{ev.confirmedTime} - {ev.vehiclePlate}</div>
                                 <div className="font-medium truncate opacity-90 hidden md:block">{tech?.name || 'Sem Técnico'}</div>
                             </div>
@@ -84,7 +131,7 @@ export const Calendar = () => {
         );
     }
     return (
-        <div className="flex-1 overflow-auto custom-scrollbar">
+        <div ref={containerRef} className="flex-1 overflow-auto custom-scrollbar scroll-smooth">
             <div className="grid grid-cols-7 min-w-[700px] lg:min-w-0 h-full">
                 {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'].map(day => (
                     <div key={day} className="py-3 text-center text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 sticky top-0 z-10">{day}</div>
@@ -124,7 +171,7 @@ export const Calendar = () => {
                                       const tech = technicians.find(t => t.id === ev.technicianId);
                                       const colorClass = serviceColors[ev.serviceType] || 'bg-zinc-500 text-white';
                                       return (
-                                          <div key={ev.id} className={`p-2 rounded-xl shadow-sm text-[9px] cursor-pointer hover:scale-[1.02] transition-transform ${colorClass}`}>
+                                          <div onClick={() => setSelectedSchedule(ev)} key={ev.id} className={`p-2 rounded-xl shadow-sm text-[9px] cursor-pointer hover:scale-[1.02] transition-transform ${colorClass}`}>
                                               <div className="font-black uppercase">{ev.confirmedTime}</div>
                                               <div className="font-bold truncate mt-1">{ev.vehiclePlate}</div>
                                               <div className="font-medium truncate opacity-90">{tech?.name || 'Sem Técnico'}</div>
@@ -159,7 +206,7 @@ export const Calendar = () => {
                               const tech = technicians.find(t => t.id === ev.technicianId);
                               const colorClass = serviceColors[ev.serviceType] || 'bg-zinc-500 text-white';
                               return (
-                                  <div key={ev.id} className={`absolute left-1 right-1 md:left-2 md:right-2 p-2 rounded-xl shadow-sm text-[10px] flex justify-between items-center ${colorClass}`} style={{ top: '4px', zIndex: 10 }}>
+                                  <div onClick={() => setSelectedSchedule(ev)} key={ev.id} className={`absolute left-1 right-1 md:left-2 md:right-2 p-2 rounded-xl shadow-sm text-[10px] flex justify-between items-center cursor-pointer hover:scale-[1.01] transition-all ${colorClass}`} style={{ top: '4px', zIndex: 10 }}>
                                       <div className="min-w-0">
                                           <div className="flex items-center gap-2">
                                             <span className="font-black uppercase">{ev.confirmedTime}</span>
@@ -186,6 +233,16 @@ export const Calendar = () => {
 
   return (
     <div className="h-full pb-20 flex flex-col">
+        {selectedSchedule && (
+            <TrackingModal 
+                schedule={selectedSchedule} 
+                technicians={technicians} 
+                onClose={() => setSelectedSchedule(null)} 
+                onUpdate={handleUpdateSchedule}
+                currentUser={user}
+            />
+        )}
+
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-6">
             <div className="w-full xl:w-auto">
                 <h1 className="text-2xl md:text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Agenda Operacional</h1>
