@@ -14,7 +14,7 @@ import {
   Car, Truck, Bike, Edit2, Trash2, Link as LinkIcon, 
   Loader2, X, CheckCircle2, XCircle, Save, Hash, 
   Tag as TagIcon, Building2, User, Phone, Book, ChevronRight, Mail, Calendar,
-  Download, FileText, FileSpreadsheet, FileCode, AlertCircle, HandCoins
+  Download, FileText, FileSpreadsheet, FileCode, AlertCircle, HandCoins, ArrowLeft
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -50,7 +50,7 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
                     </span>
                 </div>
             </div>
-            <div className="hidden sm:block p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
+            <div className="hidden sm:block p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
                 {getIcon(14)}
             </div>
         </div>
@@ -131,10 +131,15 @@ export const Vehicles = () => {
   const [isTagListOpen, setIsTagListOpen] = useState(false);
   const [hinovaStatus, setHinovaStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
+  // FIPE STATES
   const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
-  const [fipeStep, setFipeStep] = useState(1);
+  const [fipeStep, setFipeStep] = useState(1); // 1: Marca, 2: Modelo, 3: Ano
   const [fipeList, setFipeList] = useState<FipeReference[]>([]);
   const [fipeLoading, setFipeLoading] = useState(false);
+  const [fipeSearchTerm, setFipeSearchTerm] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState<FipeReference | null>(null);
+  const [selectedModel, setSelectedModel] = useState<FipeReference | null>(null);
+  const [currentFipeType, setCurrentFipeType] = useState<'carros' | 'motos' | 'caminhoes'>('carros');
 
   // Determina se é visualização de cliente (apenas leitura de seus próprios veículos)
   const isClientView = currentUser?.role === 'client';
@@ -297,7 +302,7 @@ export const Vehicles = () => {
 
   const handleHinovaLookup = async () => {
     if (!formData.plate || formData.plate.length < 7) {
-        addNotification('info', 'Hinova', 'Digite uma placa válida.');
+        addNotification('info', 'SGA/Hinova', 'Digite uma placa válida.');
         return;
     }
     
@@ -313,14 +318,14 @@ export const Vehicles = () => {
             
             if (existingClient) {
                 setClientData(existingClient);
-                addNotification('success', 'Hinova', 'Veículo localizado e vinculado ao cliente existente.');
+                addNotification('success', 'SGA/Hinova', 'Veículo localizado e vinculado ao cliente existente.');
             } else {
                 setClientData(result.client);
-                addNotification('success', 'Hinova', 'Veículo e novo cliente importados.');
+                addNotification('success', 'SGA/Hinova', 'Veículo e novo cliente importados.');
             }
         } else {
             setHinovaStatus('error');
-            addNotification('error', 'Hinova', 'Não encontrado.');
+            addNotification('error', 'SGA/Hinova', 'Não encontrado.');
         }
     } catch (e: any) {
         setHinovaStatus('error');
@@ -365,11 +370,85 @@ export const Vehicles = () => {
     loadData();
   };
 
+  // --- FIPE LOGIC ---
   const startFipeSearch = async () => {
-    setFipeStep(1); setFipeLoading(true); setIsFipeModalOpen(true);
-    const brands = await fipeService.getBrands('carros');
-    setFipeList(brands); setFipeLoading(false);
+    // Determine FIPE Type based on selected category
+    let type: 'carros' | 'motos' | 'caminhoes' = 'carros';
+    if (formData.type) {
+        const cat = categories.find(c => c.id === formData.type);
+        if (cat && cat.fipeType !== 'none') {
+            type = cat.fipeType;
+        }
+    }
+    setCurrentFipeType(type);
+    setFipeStep(1); 
+    setFipeSearchTerm('');
+    setSelectedBrand(null);
+    setSelectedModel(null);
+    setFipeLoading(true); 
+    setIsFipeModalOpen(true);
+    
+    const brands = await fipeService.getBrands(type);
+    setFipeList(brands); 
+    setFipeLoading(false);
   };
+
+  const handleFipeSelection = async (item: FipeReference) => {
+      setFipeSearchTerm('');
+      
+      if (fipeStep === 1) {
+          // Selected Brand -> Fetch Models
+          setSelectedBrand(item);
+          setFipeLoading(true);
+          const models = await fipeService.getModels(currentFipeType, item.codigo);
+          setFipeList(models);
+          setFipeStep(2);
+          setFipeLoading(false);
+      } else if (fipeStep === 2) {
+          // Selected Model -> Fetch Years
+          setSelectedModel(item);
+          setFipeLoading(true);
+          const years = await fipeService.getYears(currentFipeType, selectedBrand!.codigo, item.codigo);
+          setFipeList(years);
+          setFipeStep(3);
+          setFipeLoading(false);
+      } else if (fipeStep === 3) {
+          // Selected Year -> Done
+          const yearStr = item.nome.replace(/\D/g, ''); // Extract numeric year from "2023 Gasolina"
+          setFormData(prev => ({
+              ...prev, 
+              model: `${selectedBrand?.nome} ${selectedModel?.nome}`,
+              year: yearStr
+          }));
+          setIsFipeModalOpen(false);
+      }
+  };
+
+  const handleFipeBack = async () => {
+      setFipeSearchTerm('');
+      if (fipeStep === 2) {
+          // Back to Brands
+          setFipeLoading(true);
+          const brands = await fipeService.getBrands(currentFipeType);
+          setFipeList(brands);
+          setFipeStep(1);
+          setSelectedBrand(null);
+          setFipeLoading(false);
+      } else if (fipeStep === 3) {
+          // Back to Models
+          setFipeLoading(true);
+          const models = await fipeService.getModels(currentFipeType, selectedBrand!.codigo);
+          setFipeList(models);
+          setFipeStep(2);
+          setSelectedModel(null);
+          setFipeLoading(false);
+      }
+  };
+
+  const filteredFipeList = useMemo(() => {
+      const term = fipeSearchTerm.toLowerCase();
+      return fipeList.filter(item => item.nome.toLowerCase().includes(term));
+  }, [fipeList, fipeSearchTerm]);
 
   return (
     <div className="space-y-6 pb-24">
@@ -380,7 +459,7 @@ export const Vehicles = () => {
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {/* Export Group */}
-          <div className="flex bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-sm mr-2">
+          <div className="flex bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm mr-2">
              <button onClick={handleExportPDF} title="Exportar PDF" className="p-2.5 text-zinc-400 hover:text-red-500 transition-colors"><FileText size={18}/></button>
              <button onClick={handleExportExcel} title="Exportar Excel" className="p-2.5 text-zinc-400 hover:text-emerald-500 transition-colors"><FileSpreadsheet size={18}/></button>
              <button onClick={handleExportCSV} title="Exportar CSV" className="p-2.5 text-zinc-400 hover:text-blue-500 transition-colors"><FileCode size={18}/></button>
@@ -401,19 +480,19 @@ export const Vehicles = () => {
 
       <div className="relative">
         <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" />
-        <input type="text" placeholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."} value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl shadow-sm text-sm font-bold outline-none focus:border-primary-500" />
+        <input type="text" placeholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."} value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm text-sm font-bold outline-none focus:border-primary-500" />
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-800 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
          {/* CABEÇALHO TABELA - VISÍVEL APENAS EM DESKTOP */}
-         <div className="hidden md:flex px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
+         <div className="hidden md:flex px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
             <div className="w-[15%] shrink-0">Placa & Status</div>
             <div className="w-[35%] px-3">Veículo</div>
             <div className="w-[25%] px-2">Cliente</div>
             {!isClientView && <div className="w-[15%]">Responsável & Data</div>}
             {!isClientView && <div className="w-[10%] text-right">Ações</div>}
          </div>
-         <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
+         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {filteredVehicles.length === 0 ? (
                <div className="py-20 text-center flex flex-col items-center gap-4 opacity-30">
                   <Car size={48} />
@@ -436,7 +515,7 @@ export const Vehicles = () => {
          </div>
       </div>
 
-      {/* MODAL PRINCIPAL (Apenas renderiza se não for cliente ou se cliente tentar editar algo permitido, mas bloqueamos a abertura no useEffect) */}
+      {/* MODAL PRINCIPAL */}
       {!isClientView && isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-950 rounded-[32px] w-full max-w-4xl shadow-2xl relative my-auto animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
@@ -451,7 +530,7 @@ export const Vehicles = () => {
                     <div className="space-y-5">
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">DADOS DO VEÍCULO</h3>
                         
-                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800">
+                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                             {[
                                 { id: 'active', label: 'ATIVO', activeColor: 'bg-[#10b981]' },
                                 { id: 'maintenance', label: 'MANUTENÇÃO', activeColor: 'bg-zinc-600' },
@@ -463,7 +542,7 @@ export const Vehicles = () => {
 
                         <div className="space-y-2">
                              <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">INSTALAÇÃO DO EQUIPAMENTO</label>
-                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800">
+                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                                 <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_only'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_only' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>SÓ TAG</button>
                                 <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_tracker'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_tracker' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>TAG C/ RASTREADOR</button>
                              </div>
@@ -471,7 +550,7 @@ export const Vehicles = () => {
 
                         <div className="space-y-2">
                              <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO DE CONTRATO (TAG)</label>
-                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800">
+                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                                 <button type="button" onClick={() => setFormData({...formData, ownershipStatus: 'leased'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.ownershipStatus === 'leased' ? 'bg-blue-500 text-white' : 'text-zinc-500'}`}>COMODATO</button>
                                 <button type="button" onClick={() => setFormData({...formData, ownershipStatus: 'purchased'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.ownershipStatus === 'purchased' ? 'bg-emerald-500 text-white' : 'text-zinc-500'}`}>ADQUIRIDO</button>
                              </div>
@@ -487,7 +566,7 @@ export const Vehicles = () => {
                                       maxLength={7} 
                                       value={formData.plate || ''} 
                                       onChange={e => setFormData({...formData, plate: e.target.value.toUpperCase()})} 
-                                      className={`w-full px-4 h-12 bg-white dark:bg-zinc-950 border rounded-xl text-base font-mono font-black shadow-inner outline-none transition-all ${
+                                      className={`w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border rounded-xl text-base font-mono font-black shadow-inner outline-none transition-all ${
                                         plateStatus === 'invalid' 
                                           ? 'border-red-500 dark:border-red-500 ring-4 ring-red-500/5' 
                                           : plateStatus === 'valid' 
@@ -506,14 +585,14 @@ export const Vehicles = () => {
                                     )}
                                 </div>
                                 <button type="button" onClick={handleHinovaLookup} disabled={hinovaStatus === 'loading'} className="px-6 h-12 rounded-xl bg-[#006e82] hover:bg-[#008ba3] text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[100px]">
-                                    {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 'HINOVA'}
+                                    {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 'SGA'}
                                 </button>
                             </div>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CATEGORIA</label>
-                            <select value={formData.type || ''} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
+                            <select value={formData.type || ''} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
                                 <option value="">Selecione...</option>
                                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
@@ -523,7 +602,7 @@ export const Vehicles = () => {
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">EMPRESA</label>
                             <div className="relative">
                                 <Building2 size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300" />
-                                <select value={formData.companyId || ''} onChange={e => setFormData({...formData, companyId: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
+                                <select value={formData.companyId || ''} onChange={e => setFormData({...formData, companyId: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
                                     <option value="">Selecione...</option>
                                     {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
@@ -533,15 +612,15 @@ export const Vehicles = () => {
                         <div className="space-y-2">
                             <div className="flex justify-between items-center">
                                 <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO</label>
-                                <button type="button" onClick={startFipeSearch} className="flex items-center gap-1 text-[8px] font-black text-[#f59e0b] border border-[#f59e0b]/30 bg-[#f59e0b]/5 px-2 py-0.5 rounded uppercase tracking-widest"><Book size={10}/> FIPE</button>
+                                <button type="button" onClick={startFipeSearch} className="flex items-center gap-1 text-[8px] font-black text-[#f59e0b] border border-[#f59e0b]/30 bg-[#f59e0b]/5 px-2 py-0.5 rounded uppercase tracking-widest hover:bg-[#f59e0b]/20 transition-colors"><Book size={10}/> BUSCA FIPE</button>
                             </div>
-                            <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                            <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">ANO</label>
-                                <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                                <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                             </div>
                             
                             <div className="space-y-2 relative">
@@ -553,7 +632,7 @@ export const Vehicles = () => {
                                         value={tagSearch} 
                                         onFocus={() => setIsTagListOpen(true)} 
                                         onChange={e => { setTagSearch(e.target.value); setIsTagListOpen(true); }} 
-                                        className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none focus:border-primary-500" 
+                                        className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none focus:border-primary-500" 
                                     />
                                     {isTagListOpen && (
                                         <div className="absolute top-full mt-1 left-0 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[1100] max-h-40 overflow-y-auto p-1 ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -628,23 +707,70 @@ export const Vehicles = () => {
         </div>
       )}
 
+      {/* FIPE MODAL - REFORMULADO E RESPONSIVO */}
       {isFipeModalOpen && !isClientView && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-[28px] w-full max-sm p-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Tabela FIPE</h3>
-                <button onClick={() => setIsFipeModalOpen(false)} className="text-zinc-400"><X size={20}/></button>
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-zinc-950 w-full max-w-md rounded-[32px] shadow-2xl relative border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-3">
+                    {fipeStep > 1 && (
+                        <button onClick={handleFipeBack} className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-colors">
+                            <ArrowLeft size={18} />
+                        </button>
+                    )}
+                    <div>
+                        <h3 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
+                            {fipeStep === 1 ? 'Selecione a Marca' : fipeStep === 2 ? 'Selecione o Modelo' : 'Selecione o Ano'}
+                        </h3>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                            {fipeStep === 1 ? `Tipo: ${currentFipeType}` : fipeStep === 2 ? selectedBrand?.nome : selectedModel?.nome}
+                        </p>
+                    </div>
+                </div>
+                <button onClick={() => setIsFipeModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 transition-colors bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700">
+                    <X size={20}/>
+                </button>
             </div>
-            <div className="space-y-3 max-h-64 overflow-y-auto p-1 custom-scrollbar">
-              {fipeLoading ? <div className="py-10 flex flex-col items-center gap-3 text-zinc-400"><Loader2 className="animate-spin" size={24} /><span className="text-[9px] font-black uppercase">API FIPE...</span></div> : fipeList.slice(0, 50).map((item) => (
-                  <button key={item.codigo} onClick={async () => { 
-                      const models = await fipeService.getModels('carros', item.codigo); 
-                      if (models[0]) {
-                        setFormData(prev => ({...prev, model: `${item.nome} ${models[0].nome}`}));
-                        setIsFipeModalOpen(false);
-                      }
-                  }} className="w-full flex items-center justify-between p-3.5 bg-zinc-50 dark:bg-zinc-800 hover:bg-primary-500 hover:text-black rounded-xl text-left transition-all group font-bold uppercase text-[10px]">{item.nome} <ChevronRight size={14}/></button>
-              ))}
+
+            {/* Search Bar */}
+            <div className="px-6 py-4 bg-zinc-50/50 dark:bg-zinc-900/50 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
+                <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input 
+                        type="text" 
+                        placeholder={fipeStep === 1 ? "Buscar marca..." : fipeStep === 2 ? "Buscar modelo..." : "Buscar ano..."} 
+                        value={fipeSearchTerm} 
+                        onChange={(e) => setFipeSearchTerm(e.target.value)} 
+                        className="w-full pl-10 pr-4 py-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-bold outline-none focus:border-primary-500 transition-all" 
+                        autoFocus
+                    />
+                </div>
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              {fipeLoading ? (
+                  <div className="py-20 flex flex-col items-center gap-4 text-zinc-400">
+                      <Loader2 className="animate-spin text-primary-500" size={32} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Carregando Tabela FIPE...</span>
+                  </div>
+              ) : filteredFipeList.length === 0 ? (
+                  <div className="py-20 text-center text-zinc-400 font-bold uppercase text-xs opacity-50">Nenhum resultado encontrado</div>
+              ) : (
+                  <div className="space-y-2">
+                      {filteredFipeList.map((item) => (
+                          <button 
+                            key={item.codigo} 
+                            onClick={() => handleFipeSelection(item)} 
+                            className="w-full flex items-center justify-between p-4 bg-white dark:bg-zinc-900 hover:bg-primary-500 hover:text-black border border-zinc-100 dark:border-zinc-800 hover:border-primary-500 rounded-2xl text-left transition-all group shadow-sm active:scale-[0.98]"
+                          >
+                              <span className="font-bold text-xs uppercase tracking-tight">{item.nome}</span>
+                              <ChevronRight size={16} className="opacity-30 group-hover:opacity-100 transition-opacity"/>
+                          </button>
+                      ))}
+                  </div>
+              )}
             </div>
           </div>
         </div>

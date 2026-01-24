@@ -156,7 +156,7 @@ export const Dashboard = () => {
           border: 'border-zinc-200 dark:border-zinc-800',
           text: 'text-black dark:text-white',
           subText: 'text-zinc-400',
-          iconBg: 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700',
+          iconBg: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700',
           label: 'ESTOQUE CONFORTÁVEL'
       },
       low: {
@@ -311,7 +311,7 @@ export const Dashboard = () => {
                   <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">Equipamento Ativo</div>
               </div>
             </div>
-            <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl text-primary-500 border border-zinc-100 dark:border-zinc-700/50 shadow-inner flex items-center justify-center">
+            <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800/50 rounded-2xl text-primary-500 border border-zinc-200 dark:border-zinc-700/50 shadow-inner flex items-center justify-center">
               <TagIcon size={32} strokeWidth={1.5} />
             </div>
           </div>
@@ -367,7 +367,7 @@ export const Dashboard = () => {
                       <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Modelo de Contrato</p>
                       <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white mt-1">Ativos da Frota</h3>
                   </div>
-                  <div className="w-12 h-12 bg-zinc-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-400 border border-zinc-100 dark:border-zinc-700"><HandCoins size={22}/></div>
+                  <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-400 border border-zinc-200 dark:border-zinc-700"><HandCoins size={22}/></div>
               </div>
               <div className="flex items-center gap-8">
                   <div className="w-32 h-32 relative shrink-0">
@@ -412,7 +412,7 @@ export const Dashboard = () => {
           <div className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
             <div className="flex justify-between items-start">
                 <p className="text-[11px] uppercase font-black tracking-[0.3em] text-zinc-400">Manutenção</p>
-                <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
                     <Lock size={24} strokeWidth={2} />
                 </div>
             </div>

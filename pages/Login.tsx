@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,6 +9,7 @@ import { ShieldCheck, ArrowRight, Loader2, AlertCircle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const { useNavigate } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
 export const Login = () => {
   const { login, isAuthenticated } = useAuth();
@@ -52,11 +54,11 @@ export const Login = () => {
     <div className="min-h-screen bg-black text-white flex font-sans overflow-hidden">
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-16 lg:px-32 relative z-10 bg-black min-h-screen">
          <div className="flex-1 flex flex-col justify-center py-12">
-            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-12">
+            <MotionDiv initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-12">
                 <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-black font-display font-black text-xl mb-6 shadow-2xl">K</div>
                 <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight mb-3">Portal de Acesso</h1>
                 <p className="text-zinc-500 font-medium">Empresas e Clientes: Gerencie sua segurança aqui.</p>
-            </motion.div>
+            </MotionDiv>
 
             {error && (
                 <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-sm">

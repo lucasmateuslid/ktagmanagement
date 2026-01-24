@@ -178,7 +178,7 @@ export const Tags = () => {
         <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2">
             <AnimatePresence mode="popLayout">
                 {selectedTags.size > 0 && (
-                    <motion.div 
+                    <MotionDiv 
                         initial={{ opacity: 0, x: 20 }} 
                         animate={{ opacity: 1, x: 0 }} 
                         exit={{ opacity: 0, x: 20 }}
@@ -195,7 +195,7 @@ export const Tags = () => {
                             <Trash2 size={14} /> Remover em Massa
                         </button>
                         <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
-                    </motion.div>
+                    </MotionDiv>
                 )}
             </AnimatePresence>
 
@@ -219,7 +219,7 @@ export const Tags = () => {
           const vehicle = vehicles.find(v => v.tagId === tag.id);
 
           return (
-            <motion.div 
+            <MotionDiv 
                 layout
                 key={tag.id} 
                 onClick={() => toggleSelect(tag.id)} 
@@ -277,7 +277,7 @@ export const Tags = () => {
                     </div>
                  )}
               </div>
-            </motion.div>
+            </MotionDiv>
           );
         })}
       </div>

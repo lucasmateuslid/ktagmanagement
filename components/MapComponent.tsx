@@ -121,6 +121,7 @@ export const MapComponent: React.FC<MapProps> = ({
         const isUnlinked = !vehicle;
         const category = vehicle ? categories.find(c => c.id === vehicle.type) : undefined;
 
+        // Use stable loc.id here (which is now tag.id for live mode)
         return (
           <Marker 
               key={loc.id} 
@@ -183,15 +184,12 @@ export const MapComponent: React.FC<MapProps> = ({
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
 
           {isFleetMode ? (
-              // FIX: Only use MarkerClusterGroup when NOT highlighting a specific tag
-              // This prevents 'Uncaught TypeError: Cannot read properties of undefined (reading '_leaflet_pos')'
-              // which occurs when the cluster group tries to manage a rapidly changing/removing single marker
+              // Use standard MarkerClusterGroup. Stability is handled by stable keys in LiveMap.tsx
+              // If a specific tag is highlighted, render only that marker to avoid cluster UI interference
               highlightedTagId ? (
                   renderMarkers(displayLocations)
               ) : (
                   <MarkerClusterGroup
-                    key={`cluster-${locations.length}`} // Force remount on count change to update positions cleanly
-                    chunkedLoading={false} // Disable chunkedLoading to fix _leaflet_pos error
                     iconCreateFunction={createClusterCustomIcon}
                     spiderfyOnMaxZoom={true}
                     showCoverageOnHover={false}

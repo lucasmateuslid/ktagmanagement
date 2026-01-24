@@ -42,8 +42,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
       // Client: Retorna null para não renderizar
       case 'client': return null;
-      // Default (Operador): Cinza, Label "Usuário"
-      default: return { color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-200 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
+      // Default (Operador): Cinza mais escuro no light mode, Label "Usuário"
+      default: return { color: 'text-zinc-600 dark:text-zinc-400', bg: 'bg-zinc-200 dark:bg-zinc-800', border: 'border-zinc-300 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
     }
   };
 
@@ -94,7 +94,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const menuSections = getMenuSections();
 
   return (
-    <div className="flex h-screen bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col">
+    <div className="flex h-screen bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col">
       
       {/* CRITICAL ALERT BANNER (30 MINUTOS+) */}
       <AnimatePresence>
@@ -183,7 +183,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         className={`flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all group relative ${
                           isActive 
                             ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500' 
-                            : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
+                            : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
                         } ${isCollapsed ? 'justify-center' : ''}`}
                         title={isCollapsed ? item.label : ''}
                       >
@@ -203,7 +203,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           </nav>
 
           <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-            <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
+            <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
                 <Settings size={20} />
                 {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Preferências</span>}
             </Link>
@@ -222,8 +222,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-50 dark:bg-black">
-          <header className="h-24 shrink-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-30 sticky top-0">
+        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-100 dark:bg-black">
+          <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-30 sticky top-0">
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => setIsSidebarOpen(true)}
@@ -273,7 +273,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         </div>
                       )}
                   </div>
-                  <div className={`w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}>
+                  <div className={`w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}>
                       <span className="font-black text-lg text-zinc-700 dark:text-zinc-300">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
                 </div>
@@ -294,7 +294,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                               </div>
                             ) : (
                               notifications.map(n => (
-                                <div key={n.id} className={`p-4 border-b border-zinc-50 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-950/50 transition-colors flex gap-3 ${!n.read ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}>
+                                <div key={n.id} className={`p-4 border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-950/50 transition-colors flex gap-3 ${!n.read ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}>
                                   <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.type === 'error' ? 'bg-red-500' : n.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
                                   <div className="flex-1">
                                       <p className="text-[11px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{n.title}</p>
@@ -315,7 +315,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           </header>
 
           {/* CONTENT - Padronização Global de Padding */}
-          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-50 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-8'}`}>
+          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-8'}`}>
               {children || <Outlet />}
           </div>
           

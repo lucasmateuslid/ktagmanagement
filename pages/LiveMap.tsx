@@ -24,6 +24,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 const { useSearchParams } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
 type FleetFilter = 'all' | 'online' | 'offline';
 
@@ -102,7 +103,10 @@ export const LiveMap = () => {
       const results = await Promise.all(tagsToTrack.map(async (tag) => {
          try {
            const res = await fetchTagLocation(tag);
-           return res.length > 0 ? { ...res[0], tagId: tag.id, id: `${tag.id}-${res[0].timestamp}` } as LocationHistory : null;
+           // FIX: Use tag.id as the stable key for the map marker instead of generating a new ID based on timestamp.
+           // This allows React to update the existing Marker component (and Leaflet marker) instead of destroying/recreating it,
+           // which prevents the "Cannot read properties of undefined (reading '_leaflet_pos')" error in MarkerClusterGroup.
+           return res.length > 0 ? { ...res[0], tagId: tag.id, id: tag.id } as LocationHistory : null;
          } catch(e) { return null; }
       }));
       
@@ -156,7 +160,12 @@ export const LiveMap = () => {
         
         let results: LocationHistory[] = [];
         if (tag.type === 'XADTAG') {
-            results = await xadtagService.fetchHistory(tag, startTime, endTime) as LocationHistory[];
+            const rawResults = await xadtagService.fetchHistory(tag, startTime, endTime);
+            results = rawResults.map((p, idx) => ({ 
+              ...p, 
+              id: `${tag.id}-hist-${idx}`, 
+              tagId: tag.id 
+            })) as LocationHistory[];
         } else {
             // Mock para K-TAG se não houver backend real de histórico
             const last = fleetLocations.find(l => l.tagId === selectedTagId);
@@ -390,7 +399,7 @@ export const LiveMap = () => {
 
           <AnimatePresence>
             {isSearchFocused && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+              <MotionDiv initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full mt-3 left-0 right-0 bg-white dark:bg-zinc-900 rounded-[28px] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden max-h-[40vh] overflow-y-auto p-2"
               >
                  {filteredList.length === 0 ? <div className="py-10 text-center text-zinc-400 text-[10px] font-black uppercase tracking-widest opacity-40 italic">Nenhum resultado encontrado</div> : 
@@ -437,7 +446,7 @@ export const LiveMap = () => {
                      }
                    })
                  }
-              </motion.div>
+              </MotionDiv>
             )}
           </AnimatePresence>
         </div>
@@ -477,7 +486,7 @@ export const LiveMap = () => {
       {/* BOTTOM SHEET DETALHES */}
       <AnimatePresence>
         {selectedTagId && (
-          <motion.div initial={{ y: '100%' }} animate={{ y: isSheetExpanded ? 0 : 'calc(100% - 100px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
+          <MotionDiv initial={{ y: '100%' }} animate={{ y: isSheetExpanded ? 0 : 'calc(100% - 100px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
             className="absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden"
           >
             <div className="h-[100px] px-8 flex items-center justify-between cursor-pointer group" onClick={() => setIsSheetExpanded(!isSheetExpanded)}>
@@ -551,21 +560,21 @@ export const LiveMap = () => {
                     <X size={16} /> Fechar Detalhes
                 </button>
             </div>
-          </motion.div>
+          </MotionDiv>
         )}
       </AnimatePresence>
 
       {/* OVERLAY DE HISTÓRICO */}
       <AnimatePresence>
         {showHistoryList && (
-           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-md flex items-center justify-end">
-              <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 200 }}
+           <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-md flex items-center justify-end">
+              <MotionDiv initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 200 }}
                 className="w-full md:w-[480px] h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col overflow-hidden relative"
               >
                 {/* OVERLAY DE EXPORTAÇÃO */}
                 <AnimatePresence>
                     {exporting && (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2010] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center text-white">
+                        <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2010] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center text-white">
                             <Loader2 size={48} className="animate-spin text-primary-500 mb-6" />
                             <h3 className="text-xl font-display font-black uppercase tracking-tight mb-2">Processando Trajeto</h3>
                             <p className="text-xs font-medium text-zinc-400 uppercase tracking-widest mb-8">Resolvendo endereços completos...</p>
@@ -574,7 +583,7 @@ export const LiveMap = () => {
                                 <div className="h-full bg-primary-500 transition-all duration-300" style={{ width: `${exportProgress}%` }} />
                             </div>
                             <span className="mt-4 text-sm font-mono font-bold text-primary-500">{exportProgress}%</span>
-                        </motion.div>
+                        </MotionDiv>
                     )}
                 </AnimatePresence>
 
@@ -637,10 +646,10 @@ export const LiveMap = () => {
                         Sistema K-TAG Intelligence • Relatório de Fluxo Operacional
                     </p>
                 </div>
-              </motion.div>
+              </MotionDiv>
               {/* Fechar ao clicar fora */}
               <div className="absolute inset-0 z-[-1]" onClick={() => setShowHistoryList(false)} />
-           </motion.div>
+           </MotionDiv>
         )}
       </AnimatePresence>
     </div>

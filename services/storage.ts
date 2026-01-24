@@ -378,7 +378,7 @@ export const storage = {
     if (db) await setDoc(doc(db, KEYS.TECHNICIANS, tech.id), cleanData(tech));
   },
 
-  // Agendamentos
+  // Agendamentos (Legacy One-Time Fetch)
   getSchedules: async (role: string, userId: string): Promise<Schedule[]> => {
     if (!db) return [];
     let q;
@@ -399,11 +399,20 @@ export const storage = {
     if (db) await deleteDoc(doc(db, KEYS.SCHEDULES, id));
   },
 
-  // Realtime Listener para Notificações de Agendamento
-  subscribeToSchedules: (userId: string, onUpdate: (schedules: Schedule[]) => void) => {
+  // Realtime Listener para Agendamentos (Principal)
+  // Agora suporta Role para filtrar corretamente
+  subscribeToSchedules: (role: string, userId: string, onUpdate: (schedules: Schedule[]) => void) => {
     if (!db) return () => {};
-    // Escuta agendamentos onde o usuário é o solicitante para notificar mudanças
-    const q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    
+    let q;
+    if (role === 'user') {
+      // Usuário vê apenas os dele
+      q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    } else {
+      // Admin/Moderator vê tudo
+      q = query(collection(db, KEYS.SCHEDULES));
+    }
+
     return onSnapshot(q, (snap) => {
         const schedules = snap.docs.map(d => d.data() as Schedule);
         onUpdate(schedules);
@@ -413,6 +422,7 @@ export const storage = {
   deleteTag: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.TAGS, id)); },
   deleteVehicle: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.VEHICLES, id)); },
   deleteClient: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.CLIENTS, id)); },
+  deleteUser: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.USERS_DB, id)); },
   
   getTheme: () => localStorage.getItem('ktag_theme') || 'light',
   setTheme: (t: string) => localStorage.setItem('ktag_theme', t),

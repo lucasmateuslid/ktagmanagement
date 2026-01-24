@@ -11,7 +11,8 @@ import {
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
   Shield, User as UserIcon, Lock, Save, MoreVertical, ShieldQuestion, 
-  Activity, RefreshCcw, Database, Eye, EyeOff, Smartphone, Key, Copy, Share2
+  Activity, RefreshCcw, Database, Eye, EyeOff, Smartphone, Key, Copy, Share2,
+  UserPlus, CheckCircle2, XCircle, AlertCircle, Briefcase, UserCheck
 } from 'lucide-react';
 
 export const Users = () => {
@@ -59,10 +60,25 @@ export const Users = () => {
     }
   };
 
-  const filteredUsers = useMemo(() => {
+  // Separa usuários pendentes dos ativos/inativos
+  const pendingUsers = useMemo(() => users.filter(u => u.status === 'pending'), [users]);
+  
+  // Filtra todos os ativos/aprovados/bloqueados baseados na busca
+  const filteredAllActiveUsers = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    return users.filter(u => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term));
+    return users
+      .filter(u => u.status !== 'pending')
+      .filter(u => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term));
   }, [users, searchTerm]);
+
+  // SEPARAÇÃO: EQUIPE vs CLIENTES
+  const staffUsers = useMemo(() => {
+      return filteredAllActiveUsers.filter(u => u.role !== 'client');
+  }, [filteredAllActiveUsers]);
+
+  const clientUsers = useMemo(() => {
+      return filteredAllActiveUsers.filter(u => u.role === 'client');
+  }, [filteredAllActiveUsers]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +130,37 @@ export const Users = () => {
     }
   };
 
+  const handleDeleteUser = async (userToDelete: User) => {
+      if (userToDelete.id === currentUser?.id) {
+          addNotification('error', 'Ação Bloqueada', 'Você não pode excluir sua própria conta administrativa.');
+          return;
+      }
+
+      if (!confirm(`ATENÇÃO: Você está prestes a remover o acesso de ${userToDelete.name}.\n\nEsta ação excluirá o usuário permanentemente do banco de dados.\nDeseja continuar?`)) {
+          return;
+      }
+
+      try {
+          await storage.deleteUser(userToDelete.id);
+          storage.logAction(currentUser, 'DELETE', 'User', `Excluiu o usuário ${userToDelete.name}`, userToDelete.id);
+          addNotification('success', 'Usuário Excluído', 'O registro foi removido com sucesso.');
+          loadData(true);
+      } catch (err) {
+          addNotification('error', 'Erro', 'Falha ao excluir usuário.');
+      }
+  };
+
+  const handleApproveUser = async (userToApprove: User) => {
+      try {
+          await storage.updateUserStatus(userToApprove.id, 'approved');
+          storage.logAction(currentUser, 'UPDATE', 'User', `Aprovou o cadastro de ${userToApprove.name}`, userToApprove.id);
+          addNotification('success', 'Acesso Liberado', `${userToApprove.name} agora pode acessar o sistema.`);
+          loadData(true);
+      } catch (err) {
+          addNotification('error', 'Erro', 'Falha ao aprovar usuário.');
+      }
+  };
+
   const handleResetPassword = async (userId: string, userName: string, userEmail: string) => {
     if (!confirm(`Deseja gerar uma nova senha aleatória para ${userName}? A senha atual será invalidada.`)) return;
     
@@ -153,7 +200,9 @@ export const Users = () => {
             label = 'Moderador';
             break;
         case 'client':
-            return null; // Ocultar cliente
+            style = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
+            label = 'Cliente';
+            break;
         default: // 'user'
             style = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700';
             label = 'Usuário';
@@ -161,6 +210,91 @@ export const Users = () => {
 
     return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${style}`}>{label}</span>;
   };
+
+  const renderUserTable = (usersList: User[], title: string, icon: React.ReactNode) => (
+    <div className="space-y-4">
+        <div className="flex items-center gap-2 px-2">
+            {icon}
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">{title}</h3>
+            <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[10px] font-bold px-2 py-0.5 rounded-full">{usersList.length}</span>
+        </div>
+
+        {/* VIEW MOBILE: Cards */}
+        <div className="grid grid-cols-1 gap-4 md:hidden">
+            {usersList.map(user => (
+            <div key={user.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center font-black text-lg border border-primary-500/20">
+                        {user.name?.charAt(0)}
+                    </div>
+                    <div>
+                        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</h3>
+                        <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
+                    </div>
+                    </div>
+                    {getRoleBadge(user.role)}
+                </div>
+
+                <div className="flex items-center justify-between py-3 border-y border-zinc-50 dark:border-zinc-800/50">
+                    <span className="text-[10px] font-black uppercase text-zinc-400">Status do Acesso</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
+                </div>
+
+                <div className="flex gap-2">
+                    <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest"><Edit2 size={14}/> Editar</button>
+                    <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-2xl flex items-center justify-center"><Key size={18}/></button>
+                    {user.id !== currentUser?.id && (
+                        <button onClick={() => handleDeleteUser(user)} className="w-14 h-14 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center"><Trash2 size={18}/></button>
+                    )}
+                </div>
+            </div>
+            ))}
+        </div>
+
+        {/* VIEW DESKTOP: Table */}
+        <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-[32px] shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <table className="w-full text-left">
+            <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
+                <tr>
+                <th className="px-8 py-5">Perfil</th>
+                <th className="px-8 py-5">Cargo / Role</th>
+                <th className="px-8 py-5">Status</th>
+                <th className="px-8 py-5 text-right">Gestão</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                {usersList.map(user => (
+                <tr key={user.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
+                    <td className="px-8 py-5">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black">{user.name?.charAt(0) || '?'}</div>
+                        <div>
+                        <div className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</div>
+                        <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
+                        </div>
+                    </div>
+                    </td>
+                    <td className="px-8 py-5">{getRoleBadge(user.role)}</td>
+                    <td className="px-8 py-5">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
+                        <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
+                        {user.id !== currentUser?.id && (
+                            <button onClick={() => handleDeleteUser(user)} className="p-2.5 bg-red-50 dark:bg-red-900/10 text-red-400 hover:text-red-600 rounded-xl transition-all" title="Excluir Usuário"><Trash2 size={16}/></button>
+                        )}
+                    </div>
+                    </td>
+                </tr>
+                ))}
+            </tbody>
+            </table>
+        </div>
+    </div>
+  );
 
   if (!isAdmin) return <div className="py-20 text-center text-zinc-500 uppercase font-black">Acesso Negado</div>;
 
@@ -190,6 +324,55 @@ export const Users = () => {
         </div>
       </div>
 
+      {/* ÁREA DE SOLICITAÇÕES PENDENTES */}
+      {pendingUsers.length > 0 && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-[32px] p-6 md:p-8 animate-in slide-in-from-top-4">
+              <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-amber-500 rounded-xl text-black shadow-lg shadow-amber-500/20">
+                      <UserPlus size={20} strokeWidth={2.5}/>
+                  </div>
+                  <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight text-zinc-900 dark:text-white">Solicitações Pendentes</h3>
+                      <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest">{pendingUsers.length} novo(s) cadastro(s) aguardando</p>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {pendingUsers.map(user => (
+                      <div key={user.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-4">
+                          <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-black text-zinc-400">
+                                      {user.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                      <p className="text-xs font-black text-zinc-900 dark:text-white uppercase">{user.name}</p>
+                                      <p className="text-[10px] text-zinc-500">{user.email}</p>
+                                  </div>
+                              </div>
+                              <span className="text-[9px] font-black bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded text-zinc-500 uppercase">Novo</span>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                              <button 
+                                  onClick={() => handleApproveUser(user)}
+                                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                              >
+                                  <CheckCircle2 size={14} /> Aprovar
+                              </button>
+                              <button 
+                                  onClick={() => handleDeleteUser(user)}
+                                  className="flex-1 py-3 bg-red-100 dark:bg-red-900/20 hover:bg-red-200 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                              >
+                                  <XCircle size={14} /> Recusar
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
       {/* Barra de Busca */}
       <div className="bg-white dark:bg-zinc-900 p-3 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
@@ -198,74 +381,14 @@ export const Users = () => {
         </div>
       </div>
 
-      {/* VIEW MOBILE: Cards */}
-      <div className="grid grid-cols-1 gap-4 md:hidden">
-        {filteredUsers.map(user => (
-          <div key={user.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-             <div className="flex justify-between items-start">
-                <div className="flex items-center gap-4">
-                   <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center font-black text-lg border border-primary-500/20">
-                     {user.name?.charAt(0)}
-                   </div>
-                   <div>
-                      <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</h3>
-                      <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
-                   </div>
-                </div>
-                {getRoleBadge(user.role)}
-             </div>
+      {/* TABELA EQUIPE INTERNA */}
+      {renderUserTable(staffUsers, "Equipe Administrativa", <UserCheck size={16} className="text-zinc-400"/>)}
 
-             <div className="flex items-center justify-between py-3 border-y border-zinc-50 dark:border-zinc-800/50">
-                <span className="text-[10px] font-black uppercase text-zinc-400">Status do Acesso</span>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
-             </div>
+      {/* SEPARADOR */}
+      {clientUsers.length > 0 && <div className="h-px bg-zinc-200 dark:bg-zinc-800 my-4" />}
 
-             <div className="flex gap-2">
-                <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest"><Edit2 size={14}/> Editar</button>
-                <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-2xl flex items-center justify-center"><Key size={18}/></button>
-             </div>
-          </div>
-        ))}
-      </div>
-
-      {/* VIEW DESKTOP: Table */}
-      <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-[32px] shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
-            <tr>
-              <th className="px-8 py-5">Perfil</th>
-              <th className="px-8 py-5">Cargo / Role</th>
-              <th className="px-8 py-5">Status</th>
-              <th className="px-8 py-5 text-right">Gestão</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-            {filteredUsers.map(user => (
-              <tr key={user.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
-                <td className="px-8 py-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black">{user.name?.charAt(0) || '?'}</div>
-                    <div>
-                      <div className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</div>
-                      <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-8 py-5">{getRoleBadge(user.role)}</td>
-                <td className="px-8 py-5">
-                   <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
-                </td>
-                <td className="px-8 py-5 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
-                    <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* TABELA CLIENTES */}
+      {clientUsers.length > 0 && renderUserTable(clientUsers, "Acesso de Clientes", <Briefcase size={16} className="text-zinc-400"/>)}
 
       {/* Modal de Usuário */}
       {isModalOpen && (
@@ -304,6 +427,7 @@ export const Users = () => {
                             <option value="user">Usuário</option>
                             <option value="moderator">Moderador</option>
                             <option value="admin">Admin</option>
+                            <option value="client">Cliente</option>
                         </select>
                     </div>
                     <div className="space-y-1">

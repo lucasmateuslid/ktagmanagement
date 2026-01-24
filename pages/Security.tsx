@@ -14,6 +14,7 @@ import {
 import { useNotification } from '../contexts/NotificationContext';
 
 const { Link } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
 export const Security = () => {
   const [activeRecords, setActiveRecords] = useState<StolenRecord[]>([]);
@@ -206,7 +207,7 @@ export const Security = () => {
 
             {/* VIEW DESKTOP: TABLE */}
             <div className="hidden md:block overflow-x-auto">
-                 <table className="w-full text-sm text-left">
+                 <table className="w-full text-left">
                     <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
                         <tr>
                             <th className="px-8 py-5">Veículo</th>
@@ -320,7 +321,7 @@ export const Security = () => {
                         {/* AUTO-PREENCHIMENTO DADOS DO CLIENTE */}
                         <AnimatePresence>
                             {selectedVehicle && (
-                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="bg-zinc-50 dark:bg-zinc-950/50 p-6 rounded-[32px] border border-zinc-100 dark:border-zinc-800/50 space-y-4">
+                                <MotionDiv initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="bg-zinc-50 dark:bg-zinc-950/50 p-6 rounded-[32px] border border-zinc-100 dark:border-zinc-800/50 space-y-4">
                                     <div className="flex items-center gap-2 text-primary-500 mb-2">
                                         <User size={14}/>
                                         <span className="text-[10px] font-black uppercase tracking-widest">Informações do Associado</span>
@@ -353,7 +354,7 @@ export const Security = () => {
                                             <span className="text-[10px] font-bold uppercase">Aviso: Este veículo não possui cliente vinculado.</span>
                                         </div>
                                     )}
-                                </motion.div>
+                                </MotionDiv>
                             )}
                         </AnimatePresence>
 

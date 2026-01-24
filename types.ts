@@ -194,10 +194,13 @@ export interface Schedule {
   fipeValue: string; // Formatted R$ string
   deviceType: DeviceType;
   serviceType: ServiceType;
+  companyId?: string; // ID da Regional/Empresa
 
   // Preferences
   preferredDate: string; // YYYY-MM-DD
   preferredTime: string; // HH:mm
+  notes?: string; // Observações adicionais
+  cancellationReason?: string; // Motivo do cancelamento
   
   // Location
   locationAddress: string;

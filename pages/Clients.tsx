@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const MotionDiv = motion.div as any;
+
 export const Clients = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
@@ -303,7 +305,7 @@ export const Clients = () => {
       {/* MODAL RESET SENHA */}
       {isResetModalOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+          <MotionDiv initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
              <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-3 text-primary-500">
                    <KeyRound size={32} />
@@ -337,7 +339,7 @@ export const Clients = () => {
              <p className="mt-8 text-center text-[9px] font-bold text-zinc-400 uppercase leading-relaxed px-4">
                 * A alteração é imediata. O cliente deverá usar a nova credencial no próximo acesso.
              </p>
-          </motion.div>
+          </MotionDiv>
         </div>
       )}
 
