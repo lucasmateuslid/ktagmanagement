@@ -268,7 +268,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                         </div>
 
                         {/* Conteúdo Scrollável */}
-                        <div className="flex-1 overflow-visible md:overflow-y-auto custom-scrollbar p-6 space-y-6">
+                        <div className="flex-1 overflow-visible md:overflow-y-auto custom-scrollbar p-6 space-y-6 min-h-0">
                             
                             {/* Bloco de Informações Principais */}
                             <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-3xl p-5 border border-zinc-200 dark:border-zinc-800">
@@ -454,7 +454,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-black shrink-0">
                             <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-500">Histórico de Eventos</h3>
                         </div>
-                        <div className="flex-1 overflow-visible md:overflow-y-auto custom-scrollbar p-6 bg-zinc-50 dark:bg-black relative">
+                        <div className="flex-1 overflow-visible md:overflow-y-auto custom-scrollbar p-6 bg-zinc-50 dark:bg-black relative min-h-0">
                             <div className="absolute left-[29px] top-6 bottom-6 w-0.5 bg-zinc-200 dark:bg-zinc-800 z-0"></div>
                             <div className="space-y-8 relative z-10">
                                 {[...schedule.history].reverse().map((event, idx) => (
