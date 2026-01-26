@@ -1,47 +1,35 @@
-
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, Firestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
-// Configuração do Firebase do seu Web App
+// As chaves públicas do Firebase devem vir de variáveis de ambiente (Vite)
+// Crie um arquivo .env na raiz com: FIREBASE_API_KEY=..., etc.
 const firebaseConfig = {
-  apiKey: "AIzaSyC3KcC5ySMCU58Af1Lqv5jtcpZPdC__WlQ",
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyC3KcC5ySMCU58Af1Lqv5jtcpZPdC__WlQ", // Fallback apenas para dev, ideal remover
   authDomain: "ktag-d15b6.firebaseapp.com",
-  projectId: "ktag-d15b6",
+  projectId: process.env.FIREBASE_PROJECT_ID || "ktag-d15b6",
   storageBucket: "ktag-d15b6.firebasestorage.app",
   messagingSenderId: "843254608500",
-  appId: "1:843254608500:web:8daab97451b1cecace5721"
+  appId: process.env.FIREBASE_APP_ID || "1:843254608500:web:8daab97451b1cecace5721"
 };
 
-let app;
-let db: Firestore | null = null;
+const app = initializeApp(firebaseConfig);
 
-try {
-  app = initializeApp(firebaseConfig);
-  
-  // Inicializa o Firestore com Long Polling forçado para evitar bloqueios de gRPC/WebSocket
-  db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-    // Garante que propriedades undefined não quebrem a gravação no banco
-    ignoreUndefinedProperties: true,
-  });
+// Inicializa Firestore
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true,
+});
 
-  // Habilita persistência offline para que o app funcione mesmo sem conexão
-  // Isso resolve o erro "Failed to get document because the client is offline"
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Múltiplas abas abertas, persistência habilitada apenas na primeira.
-      console.warn("Firestore Persistence: Múltiplas abas detectadas. Cache ativo apenas na aba principal.");
-    } else if (err.code === 'unimplemented') {
-      // Browser não suporta IndexedDB
-      console.warn("Firestore Persistence: Este navegador não suporta armazenamento offline.");
-    }
-  });
+// Habilita persistência offline
+enableMultiTabIndexedDbPersistence(db).catch((err) => {
+  console.warn("Persistence Error:", err.code);
+});
 
-  console.log("Firebase initialized: Long Polling & Offline Persistence enabled.");
-} catch (e: any) {
-  console.error("Firebase App initialization error:", e);
-  console.warn("Falling back to LocalStorage (Offline Mode Only)");
-  db = null;
-}
+// Inicializa Cloud Functions (Onde a mágica de segurança acontece)
+const functions = getFunctions(app, 'us-central1');
 
-export { db };
+// Se estiver rodando emulador local (opcional)
+// connectFunctionsEmulator(functions, "localhost", 5001);
+
+export { db, functions };
