@@ -205,6 +205,7 @@ export interface Schedule {
   // Operational Checks
   needsInspection?: boolean; // Vistoria
   paymentOnSite?: boolean; // Pagamento no local
+  installedImei?: string; // IMEI do equipamento instalado (Opcional ao finalizar)
 
   // Location
   locationAddress: string;

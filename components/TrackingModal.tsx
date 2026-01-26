@@ -4,7 +4,7 @@ import { Schedule, Technician, ScheduleStatus, User as AppUser, Company } from '
 import { 
     Calendar, X, Save, Copy, Wrench, MapPin, User, Check, Send, 
     Eye, Trash2, CheckCircle2, History, ExternalLink, CalendarDays,
-    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle
+    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle, ScanBarcode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from '../contexts/NotificationContext';
@@ -87,6 +87,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
 
+    // States para finalização (IMEI)
+    const [isFinishing, setIsFinishing] = useState(false);
+    const [installImei, setInstallImei] = useState('');
+
     const formatSafeDate = (dateString: string) => {
         if (!dateString) return '';
         const [y, m, d] = dateString.split('-');
@@ -128,6 +132,30 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
         if (status === 'Confirmada') addNotification('success', 'Confirmado', 'Agendamento e técnico atribuídos!');
         else if (status === 'Reagendada') addNotification('success', 'Reagendado', 'Data e hora atualizadas.');
         else if (status === 'Concluída') addNotification('success', 'Finalizado', 'Ordem de serviço concluída.');
+    };
+
+    const handleConfirmFinish = () => {
+        if (!currentUser) return;
+
+        const updatedSchedule: Schedule = {
+            ...schedule,
+            status: 'Concluída',
+            installedImei: installImei || undefined,
+            history: [
+                ...schedule.history,
+                {
+                    action: 'Concluída',
+                    actionBy: currentUser.name,
+                    timestamp: Date.now(),
+                    statusSnapshot: 'Concluída',
+                    details: installImei ? `Finalizado com IMEI: ${installImei}` : 'Serviço finalizado sem IMEI informado'
+                }
+            ]
+        };
+
+        onUpdate(updatedSchedule);
+        addNotification('success', 'Finalizado', 'Ordem de serviço concluída.');
+        setIsFinishing(false);
     };
 
     const handleConfirmCancel = () => {
@@ -193,6 +221,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             `🔧 *Serviço:* ${schedule.serviceType}\n` +
             `📋 *Necessita de vistoria?* ${vistoriaTxt}\n` +
             `💰 *Pagamento no local?* ${pagtoTxt}\n` +
+            `📝 *Observações:* ${schedule.notes || 'Nenhuma'}\n` +
             `📅 *Data Pref:* ${dateDisplay} às ${timeDisplay}\n` +
             `📍 *Local:* ${formData.locationAddress}\n` +
             `🗺 *Google Maps:* ${mapLink}`;
@@ -311,12 +340,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                 <div className="flex gap-2 mt-4 flex-wrap">
                                     {schedule.needsInspection && (
                                         <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">
-                                            ⚠️ Necessita Vistoria
+                                            Necessita Vistoria
                                         </span>
                                     )}
                                     {schedule.paymentOnSite && (
                                         <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">
-                                            💰 Pagamento no Local
+                                            Pagamento no Local
                                         </span>
                                     )}
                                 </div>
@@ -411,6 +440,39 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                         <button onClick={handleConfirmCancel} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700">Confirmar</button>
                                     </div>
                                 </div>
+                            ) : isFinishing ? (
+                                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/20">
+                                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
+                                        <ScanBarcode size={16} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">IMEI do Equipamento (Opcional)</span>
+                                    </div>
+                                    <input 
+                                        type="text"
+                                        value={installImei} 
+                                        onChange={e => setInstallImei(e.target.value)}
+                                        className="w-full bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/30 rounded-xl p-3 text-xs font-bold outline-none focus:border-emerald-500 mb-3 text-zinc-900 dark:text-white"
+                                        placeholder="Digite o IMEI..."
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setIsFinishing(false)} className="flex-1 py-2 bg-white dark:bg-zinc-950 text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase hover:bg-zinc-50 dark:hover:bg-zinc-900">Voltar</button>
+                                        <button onClick={handleConfirmFinish} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600">Confirmar Finalização</button>
+                                    </div>
+                                </div>
+                            ) : schedule.status === 'Concluída' ? (
+                                <div className="flex gap-3">
+                                    <div className="flex-1 py-4 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 cursor-default">
+                                        <CheckCircle2 size={18}/> Serviço Concluído
+                                    </div>
+                                    <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 hover:text-red-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2">
+                                        Cancelar
+                                    </button>
+                                    {onDelete && (
+                                        <button onClick={() => onDelete(schedule.id)} className="w-14 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl flex items-center justify-center transition-all hover:border-red-300 dark:hover:border-red-900/30">
+                                            <Trash2 size={18}/>
+                                        </button>
+                                    )}
+                                </div>
                             ) : (
                                 <>
                                     <div className="grid grid-cols-2 gap-3 mb-3">
@@ -432,7 +494,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                         )}
                                     </div>
                                     <div className="flex gap-3">
-                                        <button onClick={() => handleUpdateStatus('Concluída')} className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg hover:bg-zinc-800 dark:hover:bg-zinc-200">
+                                        <button onClick={() => setIsFinishing(true)} className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg hover:bg-zinc-800 dark:hover:bg-zinc-200">
                                             <Check size={16} /> Finalizar Serviço
                                         </button>
                                         <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-red-500 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/10">

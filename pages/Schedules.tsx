@@ -8,7 +8,7 @@ import { TrackingModal } from '../components/TrackingModal';
 import {
     LayoutGrid, Calendar, CheckCircle2, XCircle, Wrench, Activity, RotateCcw,
     User, MapPin, Clock, Timer, Search, Filter, AlertCircle, Hash, ChevronRight,
-    Maximize2, Check, History, Hourglass, Copy, Radio, Car, Phone
+    Maximize2, Check, History, Hourglass, Copy, Radio, Car, Phone, ScanBarcode
 } from 'lucide-react';
 
 // --- COMPONENTES AUXILIARES ---
@@ -251,6 +251,19 @@ export const Schedules = () => {
                                             <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"/>
                                             <span className="text-primary-500">{item.deviceType}</span>
                                         </p>
+
+                                        {/* IMEI Destacado */}
+                                        {item.installedImei && (
+                                            <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/30 rounded-2xl flex items-center gap-3 w-fit animate-in slide-in-from-left-2 duration-300">
+                                                <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/30">
+                                                    <ScanBarcode size={20} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">Equipamento Vinculado</p>
+                                                    <p className="text-sm font-mono font-bold text-zinc-900 dark:text-white tracking-wider">{item.installedImei}</p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Grid de Detalhes Completo */}
@@ -584,6 +597,13 @@ export const Schedules = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {item.installedImei && (
+                                    <div className="mb-4 bg-emerald-50 dark:bg-emerald-900/10 px-3 py-2 rounded-xl flex items-center gap-2 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/20">
+                                        <ScanBarcode size={14} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">IMEI: {item.installedImei}</span>
+                                    </div>
+                                )}
 
                                 <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
                                     <div className="flex flex-col">
