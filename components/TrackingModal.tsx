@@ -4,7 +4,7 @@ import { Schedule, Technician, ScheduleStatus, User as AppUser, Company } from '
 import { 
     Calendar, X, Save, Copy, Wrench, MapPin, User, Check, Send, 
     Eye, Trash2, CheckCircle2, History, ExternalLink, CalendarDays,
-    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle, ScanBarcode
+    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle, ScanBarcode, UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from '../contexts/NotificationContext';
@@ -132,6 +132,27 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
         if (status === 'Confirmada') addNotification('success', 'Confirmado', 'Agendamento e técnico atribuídos!');
         else if (status === 'Reagendada') addNotification('success', 'Reagendado', 'Data e hora atualizadas.');
         else if (status === 'Concluída') addNotification('success', 'Finalizado', 'Ordem de serviço concluída.');
+    };
+
+    const handleAssume = () => {
+        if (!currentUser) return;
+        const updatedSchedule: Schedule = {
+            ...schedule,
+            status: 'Em análise',
+            analysisStartedAt: Date.now(),
+            history: [
+                ...schedule.history,
+                {
+                    action: 'Assumiu',
+                    actionBy: currentUser.name,
+                    timestamp: Date.now(),
+                    statusSnapshot: 'Em análise',
+                    details: 'Admin assumiu a responsabilidade pelo agendamento'
+                }
+            ]
+        };
+        onUpdate(updatedSchedule);
+        addNotification('info', 'Assumido', 'Você assumiu este agendamento.');
     };
 
     const handleConfirmFinish = () => {
@@ -286,228 +307,257 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                 <MotionDiv 
                     initial={{ opacity: 0, scale: 0.95 }} 
                     animate={{ opacity: 1, scale: 1 }} 
-                    className="bg-white dark:bg-zinc-900 w-full max-w-5xl rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col md:flex-row max-h-[95vh] md:max-h-[85vh] overflow-y-auto md:overflow-hidden"
+                    /* 
+                       CORREÇÃO SCROLL: 
+                       Usamos h-[90vh] para forçar uma altura fixa baseada na viewport.
+                       Isso garante que o flex-1 overflow-y-auto interno tenha um limite para rolar.
+                    */
+                    className="bg-white dark:bg-zinc-900 w-full max-w-5xl rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col md:flex-row h-[90vh] md:h-[85vh] overflow-hidden"
                 >
                     {/* COLUNA ESQUERDA: CONTROLES */}
-                    <div className="w-full md:w-[60%] flex flex-col h-auto md:h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white relative border-r border-zinc-200 dark:border-zinc-800">
+                    <div className="w-full md:w-[60%] flex flex-col h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white relative border-r border-zinc-200 dark:border-zinc-800">
                         {/* Header Fixo */}
-                        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center shrink-0 sticky top-0 bg-white dark:bg-zinc-900 z-10 md:relative">
+                        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center shrink-0 bg-white dark:bg-zinc-900 z-10">
                             <h2 className="text-xl font-display font-black uppercase tracking-tight text-zinc-900 dark:text-white">Gerenciar Solicitação</h2>
                             <button onClick={onClose} className="p-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-xl transition-all"><X size={20}/></button>
                         </div>
 
-                        {/* Conteúdo Scrollável */}
-                        <div className="flex-1 overflow-visible md:overflow-y-auto custom-scrollbar p-6 space-y-6 min-h-0">
-                            
-                            {/* Bloco de Informações Principais */}
-                            <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-3xl p-5 border border-zinc-200 dark:border-zinc-800">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div>
-                                        <p className="text-[10px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1">Solicitante</p>
-                                        <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">{schedule.requesterName}</p>
-                                        {schedule.clientName && (
-                                            <div className="mt-1">
-                                                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold">Cliente: {schedule.clientName}</p>
-                                                {schedule.clientPhone && (
-                                                    <p className="text-[10px] text-zinc-400 flex items-center gap-1 font-mono"><Phone size={10}/> {schedule.clientPhone}</p>
-                                                )}
-                                            </div>
-                                        )}
-                                        {responsibleCompany && (
-                                            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 w-fit">
-                                                <Building2 size={10}/> {responsibleCompany.name}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-700">
-                                        <Clock size={12} className="text-zinc-400"/>
-                                        <span className="text-[10px] font-mono font-bold text-zinc-600 dark:text-zinc-300">{new Date(schedule.createdAt).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
-
-                                <div className="h-px bg-zinc-200 dark:bg-zinc-800 w-full mb-4" />
-
-                                <div className="mb-2 flex justify-between items-center">
-                                    <span className="text-[10px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest">Veículo</span>
-                                    <span className="bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[9px] px-2 py-0.5 rounded font-black uppercase">{schedule.serviceType}</span>
-                                </div>
-                                <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1">{schedule.vehiclePlate}</h1>
-                                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-2">
-                                    {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"/> {schedule.deviceType}
-                                </p>
-
-                                {/* Informações Adicionais (Vistoria/Pagamento) */}
-                                <div className="flex gap-2 mt-4 flex-wrap">
-                                    {schedule.needsInspection && (
-                                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">
-                                            Necessita Vistoria
-                                        </span>
-                                    )}
-                                    {schedule.paymentOnSite && (
-                                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">
-                                            Pagamento no Local
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="mt-4 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
-                                    <MapPin size={16} className="text-red-500 shrink-0 mt-0.5"/>
-                                    <div className="w-full">
-                                        {/* Admin pode editar endereço aqui se quiser, basta mudar o input */}
-                                        <input 
-                                            type="text" 
-                                            value={formData.locationAddress} 
-                                            onChange={e => setFormData({...formData, locationAddress: e.target.value})}
-                                            className="w-full bg-transparent border-none p-0 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-0 focus:outline-none"
-                                        />
-                                        <a 
-                                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(schedule.locationAddress)}`} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            className="text-[9px] font-black text-[#f59e0b] uppercase tracking-widest inline-flex items-center gap-1 hover:underline mt-1"
-                                        >
-                                            Ver no Mapa <ExternalLink size={10}/>
-                                        </a>
-                                    </div>
-                                </div>
-                                {schedule.notes && (
-                                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-xl">
-                                        <p className="text-[9px] font-black uppercase text-blue-500 tracking-widest mb-1">Observações do Solicitante</p>
-                                        <p className="text-xs text-blue-900 dark:text-blue-100 font-medium">{schedule.notes}</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Inputs de Controle */}
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Atribuir Técnico</label>
-                                    <div className="flex gap-2">
-                                        <select 
-                                            value={formData.technicianId} 
-                                            onChange={e => setFormData({...formData, technicianId: e.target.value})} 
-                                            className="flex-1 px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500"
-                                        >
-                                            <option value="">-- Selecione --</option>
-                                            {technicians.filter(t => t.active).map(t => (
-                                                <option key={t.id} value={t.id}>{t.name}</option>
-                                            ))}
-                                        </select>
-                                        <button 
-                                            onClick={handleSendToTechnician}
-                                            className="px-4 bg-[#25D366] hover:bg-[#1fb550] text-white rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95"
-                                            title="Enviar WhatsApp"
-                                        >
-                                            <Send size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Data</label>
-                                        <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
-                                    </div>
-                                    <div>
-                                        <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Hora</label>
-                                        <input type="time" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} className="w-full px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
-                                    </div>
-                                </div>
+                        {/* Wrapper de Conteúdo e Footer Scrollável */}
+                        {/* A altura é controlada pelo pai (h-full) e este div expande (flex-1) e rola (overflow-y-auto) */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col relative">
+                            {/* Conteúdo Principal */}
+                            <div className="p-6 space-y-6">
                                 
-                                <button onClick={handleAdminSave} className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border border-transparent border-zinc-200 dark:border-zinc-800">
-                                    <Save size={14}/> Salvar Alterações (Sem mudar status)
-                                </button>
-                            </div>
-                        </div>
+                                {/* Bloco de Informações Principais */}
+                                <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-3xl p-5 border border-zinc-200 dark:border-zinc-800">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1">Solicitante</p>
+                                            <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">{schedule.requesterName}</p>
+                                            {schedule.clientName && (
+                                                <div className="mt-1">
+                                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold">Cliente: {schedule.clientName}</p>
+                                                    {schedule.clientPhone && (
+                                                        <p className="text-[10px] text-zinc-400 flex items-center gap-1 font-mono"><Phone size={10}/> {schedule.clientPhone}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {responsibleCompany && (
+                                                <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 w-fit">
+                                                    <Building2 size={10}/> {responsibleCompany.name}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-700">
+                                            <Clock size={12} className="text-zinc-400"/>
+                                            <span className="text-[10px] font-mono font-bold text-zinc-600 dark:text-zinc-300">{new Date(schedule.createdAt).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
 
-                        {/* Footer de Ações (Fixo) */}
-                        <div className="p-6 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
-                            {isCancelling ? (
-                                <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-2xl border border-red-100 dark:border-red-900/20">
-                                    <div className="flex items-center gap-2 text-red-500 mb-2">
-                                        <AlertTriangle size={16} />
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Motivo do Cancelamento</span>
+                                    <div className="h-px bg-zinc-200 dark:bg-zinc-800 w-full mb-4" />
+
+                                    <div className="mb-2 flex justify-between items-center">
+                                        <span className="text-[10px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest">Veículo</span>
+                                        <span className="bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[9px] px-2 py-0.5 rounded font-black uppercase">{schedule.serviceType}</span>
                                     </div>
-                                    <textarea 
-                                        value={cancelReason} 
-                                        onChange={e => setCancelReason(e.target.value)}
-                                        className="w-full bg-white dark:bg-zinc-950 border border-red-200 dark:border-red-900/30 rounded-xl p-3 text-xs font-medium outline-none focus:border-red-500 mb-3 text-zinc-700 dark:text-zinc-300"
-                                        placeholder="Descreva o motivo..."
-                                        rows={2}
-                                        autoFocus
-                                    />
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setIsCancelling(false)} className="flex-1 py-2 bg-white dark:bg-zinc-950 text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase hover:bg-zinc-50 dark:hover:bg-zinc-900">Voltar</button>
-                                        <button onClick={handleConfirmCancel} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700">Confirmar</button>
+                                    <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1">{schedule.vehiclePlate}</h1>
+                                    <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-2">
+                                        {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"/> {schedule.deviceType}
+                                    </p>
+
+                                    {/* Informações Adicionais (Vistoria/Pagamento) */}
+                                    <div className="flex gap-2 mt-4 flex-wrap">
+                                        {schedule.needsInspection && (
+                                            <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">
+                                                Necessita Vistoria
+                                            </span>
+                                        )}
+                                        {schedule.paymentOnSite && (
+                                            <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">
+                                                Pagamento no Local
+                                            </span>
+                                        )}
                                     </div>
-                                </div>
-                            ) : isFinishing ? (
-                                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/20">
-                                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
-                                        <ScanBarcode size={16} />
-                                        <span className="text-[10px] font-black uppercase tracking-widest">IMEI do Equipamento (Opcional)</span>
+
+                                    <div className="mt-4 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
+                                        <MapPin size={16} className="text-red-500 shrink-0 mt-0.5"/>
+                                        <div className="w-full">
+                                            {/* Admin pode editar endereço aqui se quiser, basta mudar o input */}
+                                            <input 
+                                                type="text" 
+                                                value={formData.locationAddress} 
+                                                onChange={e => setFormData({...formData, locationAddress: e.target.value})}
+                                                className="w-full bg-transparent border-none p-0 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-0 focus:outline-none"
+                                            />
+                                            <a 
+                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(schedule.locationAddress)}`} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="text-[9px] font-black text-[#f59e0b] uppercase tracking-widest inline-flex items-center gap-1 hover:underline mt-1"
+                                            >
+                                                Ver no Mapa <ExternalLink size={10}/>
+                                            </a>
+                                        </div>
                                     </div>
-                                    <input 
-                                        type="text"
-                                        value={installImei} 
-                                        onChange={e => setInstallImei(e.target.value)}
-                                        className="w-full bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/30 rounded-xl p-3 text-xs font-bold outline-none focus:border-emerald-500 mb-3 text-zinc-900 dark:text-white"
-                                        placeholder="Digite o IMEI..."
-                                        autoFocus
-                                    />
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setIsFinishing(false)} className="flex-1 py-2 bg-white dark:bg-zinc-950 text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase hover:bg-zinc-50 dark:hover:bg-zinc-900">Voltar</button>
-                                        <button onClick={handleConfirmFinish} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600">Confirmar Finalização</button>
-                                    </div>
-                                </div>
-                            ) : schedule.status === 'Concluída' ? (
-                                <div className="flex gap-3">
-                                    <div className="flex-1 py-4 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 cursor-default">
-                                        <CheckCircle2 size={18}/> Serviço Concluído
-                                    </div>
-                                    <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 hover:text-red-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2">
-                                        Cancelar
-                                    </button>
-                                    {onDelete && (
-                                        <button onClick={() => onDelete(schedule.id)} className="w-14 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl flex items-center justify-center transition-all hover:border-red-300 dark:hover:border-red-900/30">
-                                            <Trash2 size={18}/>
-                                        </button>
+                                    {schedule.notes && (
+                                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-xl">
+                                            <p className="text-[9px] font-black uppercase text-blue-500 tracking-widest mb-1">Observações do Solicitante</p>
+                                            <p className="text-xs text-blue-900 dark:text-blue-100 font-medium">{schedule.notes}</p>
+                                        </div>
                                     )}
                                 </div>
-                            ) : (
-                                <>
-                                    <div className="grid grid-cols-2 gap-3 mb-3">
-                                        {schedule.status === 'Solicitada' && (
-                                            <button onClick={() => handleUpdateStatus('Em análise')} className="col-span-2 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 active:scale-95">
-                                                <Eye size={18}/> Marcar como Verificando
+
+                                {/* Inputs de Controle */}
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Atribuir Técnico</label>
+                                        <div className="flex gap-2">
+                                            <select 
+                                                value={formData.technicianId} 
+                                                onChange={e => setFormData({...formData, technicianId: e.target.value})} 
+                                                className="flex-1 px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500"
+                                            >
+                                                <option value="">-- Selecione --</option>
+                                                {technicians.filter(t => t.active).map(t => (
+                                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                                ))}
+                                            </select>
+                                            <button 
+                                                onClick={handleSendToTechnician}
+                                                className="px-4 bg-[#25D366] hover:bg-[#1fb550] text-white rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95"
+                                                title="Enviar WhatsApp"
+                                            >
+                                                <Send size={18} />
                                             </button>
-                                        )}
-                                        <button 
-                                            onClick={() => handleUpdateStatus('Confirmada')} 
-                                            className={`py-4 bg-[#10b981] hover:bg-[#059669] text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-95 ${schedule.status === 'Confirmada' ? 'col-span-1' : 'col-span-2'}`}
-                                        >
-                                            <CheckCircle2 size={18}/> Confirmar Agendamento
-                                        </button>
-                                        {schedule.status === 'Confirmada' && (
-                                            <button onClick={() => handleUpdateStatus('Reagendada')} className="py-4 bg-orange-500 hover:bg-orange-400 text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 active:scale-95">
-                                                <CalendarDays size={18}/> Reagendar
-                                            </button>
-                                        )}
+                                        </div>
                                     </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Data</label>
+                                            <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Hora</label>
+                                            <input type="time" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} className="w-full px-4 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                        </div>
+                                    </div>
+                                    
+                                    <button onClick={handleAdminSave} className="w-full py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border border-transparent border-zinc-200 dark:border-zinc-800">
+                                        <Save size={14}/> Salvar Alterações (Sem mudar status)
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Footer de Ações - Sempre acessível via scroll se o conteúdo for grande */}
+                            <div className="p-6 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
+                                {isCancelling ? (
+                                    <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-2xl border border-red-100 dark:border-red-900/20">
+                                        <div className="flex items-center gap-2 text-red-500 mb-2">
+                                            <AlertTriangle size={16} />
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Motivo do Cancelamento</span>
+                                        </div>
+                                        <textarea 
+                                            value={cancelReason} 
+                                            onChange={e => setCancelReason(e.target.value)}
+                                            className="w-full bg-white dark:bg-zinc-950 border border-red-200 dark:border-red-900/30 rounded-xl p-3 text-xs font-medium outline-none focus:border-red-500 mb-3 text-zinc-700 dark:text-zinc-300"
+                                            placeholder="Descreva o motivo..."
+                                            rows={2}
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setIsCancelling(false)} className="flex-1 py-2 bg-white dark:bg-zinc-950 text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase hover:bg-zinc-50 dark:hover:bg-zinc-900">Voltar</button>
+                                            <button onClick={handleConfirmCancel} className="flex-1 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700">Confirmar</button>
+                                        </div>
+                                    </div>
+                                ) : isFinishing ? (
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/20">
+                                        <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
+                                            <ScanBarcode size={16} />
+                                            <span className="text-[10px] font-black uppercase tracking-widest">IMEI do Equipamento (Opcional)</span>
+                                        </div>
+                                        <input 
+                                            type="text"
+                                            value={installImei} 
+                                            onChange={e => setInstallImei(e.target.value)}
+                                            className="w-full bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/30 rounded-xl p-3 text-xs font-bold outline-none focus:border-emerald-500 mb-3 text-zinc-900 dark:text-white"
+                                            placeholder="Digite o IMEI..."
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setIsFinishing(false)} className="flex-1 py-2 bg-white dark:bg-zinc-950 text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase hover:bg-zinc-50 dark:hover:bg-zinc-900">Voltar</button>
+                                            <button onClick={handleConfirmFinish} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600">Confirmar Finalização</button>
+                                        </div>
+                                    </div>
+                                ) : schedule.status === 'Concluída' ? (
                                     <div className="flex gap-3">
-                                        <button onClick={() => setIsFinishing(true)} className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg hover:bg-zinc-800 dark:hover:bg-zinc-200">
-                                            <Check size={16} /> Finalizar Serviço
-                                        </button>
-                                        <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-red-500 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/10">
+                                        <div className="flex-1 py-4 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 cursor-default">
+                                            <CheckCircle2 size={18}/> Serviço Concluído
+                                        </div>
+                                        <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 hover:text-red-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2">
                                             Cancelar
                                         </button>
                                         {onDelete && (
-                                            <button onClick={() => onDelete(schedule.id)} className="w-12 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-red-500 rounded-xl flex items-center justify-center transition-all hover:border-red-300 dark:hover:border-red-900/30">
-                                                <Trash2 size={16}/>
+                                            <button onClick={() => onDelete(schedule.id)} className="w-14 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:text-red-500 rounded-xl flex items-center justify-center transition-all hover:border-red-300 dark:hover:border-red-900/30">
+                                                <Trash2 size={18}/>
                                             </button>
                                         )}
                                     </div>
-                                </>
-                            )}
+                                ) : (
+                                    <>
+                                        {/* Botões de Status */}
+                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                            {/* Opção 1: Se Solicitada, pode Marcar Verificando OU Assumir */}
+                                            {schedule.status === 'Solicitada' && (
+                                                <>
+                                                    <button onClick={() => handleUpdateStatus('Em análise')} className="py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 active:scale-95">
+                                                        <Eye size={18}/> Verificando
+                                                    </button>
+                                                    <button onClick={handleAssume} className="py-4 bg-zinc-900 dark:bg-white text-white dark:text-black hover:opacity-90 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                                                        <UserCheck size={18}/> Assumir
+                                                    </button>
+                                                </>
+                                            )}
+                                            
+                                            {/* Opção 2: Se já Em Análise, mostra Assumir se não fui eu */}
+                                            {schedule.status === 'Em análise' && (
+                                                <button onClick={handleAssume} className="col-span-2 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95 border border-zinc-200 dark:border-zinc-700">
+                                                    <UserCheck size={18}/> Assumir Agendamento
+                                                </button>
+                                            )}
+
+                                            {/* Botão Principal: Confirmar */}
+                                            <button 
+                                                onClick={() => handleUpdateStatus('Confirmada')} 
+                                                className={`py-4 bg-[#10b981] hover:bg-[#059669] text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-95 ${schedule.status === 'Confirmada' ? 'col-span-1' : 'col-span-2'}`}
+                                            >
+                                                <CheckCircle2 size={18}/> Confirmar Agendamento
+                                            </button>
+
+                                            {/* Se Confirmada, pode Reagendar */}
+                                            {schedule.status === 'Confirmada' && (
+                                                <button onClick={() => handleUpdateStatus('Reagendada')} className="py-4 bg-orange-500 hover:bg-orange-400 text-white rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 active:scale-95">
+                                                    <CalendarDays size={18}/> Reagendar
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Ações Secundárias */}
+                                        <div className="flex gap-3">
+                                            <button onClick={() => setIsFinishing(true)} className="flex-1 py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg hover:bg-zinc-800 dark:hover:bg-zinc-200">
+                                                <Check size={16} /> Finalizar Serviço
+                                            </button>
+                                            <button onClick={() => setIsCancelling(true)} className="px-6 py-3 bg-zinc-100 dark:bg-zinc-950 text-red-500 border border-zinc-200 dark:border-zinc-800 hover:border-red-500 dark:hover:border-red-900 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/10">
+                                                Cancelar
+                                            </button>
+                                            {onDelete && (
+                                                <button onClick={() => onDelete(schedule.id)} className="w-12 py-3 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-red-500 rounded-xl flex items-center justify-center transition-all hover:border-red-300 dark:hover:border-red-900/30">
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
 
