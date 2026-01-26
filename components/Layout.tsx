@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { AiAssistant } from './AiAssistant';
+import { pushService } from '../services/pushService'; // Importação do Push Service
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
@@ -25,6 +26,15 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // --- ATIVAÇÃO DO PUSH NOTIFICATION ---
+  useEffect(() => {
+    if (user) {
+        // Tenta registrar o push assim que o usuário loga e o layout monta
+        pushService.register(user.id);
+    }
+  }, [user]);
+  // -------------------------------------
 
   const isMapPage = location.pathname === '/map';
 

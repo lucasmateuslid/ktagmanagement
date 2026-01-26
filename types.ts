@@ -202,6 +202,10 @@ export interface Schedule {
   notes?: string; // Observações adicionais
   cancellationReason?: string; // Motivo do cancelamento
   
+  // Operational Checks
+  needsInspection?: boolean; // Vistoria
+  paymentOnSite?: boolean; // Pagamento no local
+
   // Location
   locationAddress: string;
   locationLat: number;

@@ -5,12 +5,30 @@
  */
 
 const functions = require("firebase-functions");
+const admin = require("firebase-admin");
 const axios = require("axios");
 const cors = require("cors")({ origin: true });
+const webpush = require("web-push");
+
+// Inicializa o Admin SDK se ainda não estiver inicializado
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
+
+// --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
+// GERE SUAS CHAVES COM: npx web-push generate-vapid-keys
+const vapidKeys = {
+  publicKey: "SUA_PUBLIC_KEY_AQUI",
+  privateKey: "SUA_PRIVATE_KEY_AQUI"
+};
+
+webpush.setVapidDetails(
+  "mailto:admin@ktag.com.br", // Email de contato obrigatório
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
 
 // --- RATE LIMIT MEMORY STORE (Instance-level) ---
-// Note: Cloud Functions instances are reused. This works for basic throttling.
-// For distributed strict limiting, Redis would be needed.
 const requestCounts = new Map();
 const BLOCK_DURATION_MS = 60000; // 1 minute window
 const MAX_REQUESTS_PER_MIN = 60; // 60 requests per minute per IP
@@ -90,4 +108,62 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       res.status(status).send({ error: message || "Internal Proxy Error" });
     }
   });
+});
+
+/**
+ * Função Callable para enviar notificações Push
+ * Pode ser chamada do Frontend via: const sendPush = httpsCallable(functions, 'sendPushNotification');
+ */
+exports.sendPushNotification = functions.https.onCall(async (data, context) => {
+  // Opcional: Validar autenticação
+  // if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+
+  const { userId, title, body, url } = data;
+
+  if (!userId || !title || !body) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing userId, title, or body');
+  }
+
+  try {
+    // Busca todas as assinaturas do usuário (pode ter desktop e laptop)
+    const subscriptionsSnapshot = await admin.firestore()
+      .collection('ktag_push_subscriptions')
+      .where('userId', '==', userId)
+      .get();
+
+    if (subscriptionsSnapshot.empty) {
+      return { success: false, message: 'User has no push subscriptions' };
+    }
+
+    const notifications = [];
+    const payload = JSON.stringify({
+      title: title,
+      body: body,
+      url: url || '/',
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png' // Ícone do app
+    });
+
+    subscriptionsSnapshot.forEach(doc => {
+      const subscription = doc.data().subscription;
+      
+      const pushPromise = webpush.sendNotification(subscription, payload)
+        .catch(err => {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            // Assinatura expirou ou inválida, deletar do banco
+            console.log(`Deleting expired subscription: ${doc.id}`);
+            return doc.ref.delete();
+          }
+          console.error('Error sending push:', err);
+        });
+        
+      notifications.push(pushPromise);
+    });
+
+    await Promise.all(notifications);
+    return { success: true, count: notifications.length };
+
+  } catch (error) {
+    console.error('Error in sendPushNotification:', error);
+    throw new functions.https.HttpsError('internal', 'Error sending notifications');
+  }
 });

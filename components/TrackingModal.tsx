@@ -180,6 +180,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             ? `https://www.google.com/maps?q=${schedule.locationLat},${schedule.locationLng}`
             : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.locationAddress)}`;
 
+        // Campos adicionais
+        const vistoriaTxt = schedule.needsInspection ? 'Sim' : 'Não';
+        const pagtoTxt = schedule.paymentOnSite ? 'Sim' : 'Não';
+
         const msg = `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
             `🏢 *Regional:* ${companyName}\n` +
             `🚗 *Veículo:* ${schedule.vehicleModel}\n` +
@@ -187,6 +191,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             `👤 *Cliente:* ${schedule.clientName || 'Cliente'} (${clientPhone})\n` +
             `📡 *Equipamento:* ${schedule.deviceType}\n` +
             `🔧 *Serviço:* ${schedule.serviceType}\n` +
+            `📋 *Necessita de vistoria?* ${vistoriaTxt}\n` +
+            `💰 *Pagamento no local?* ${pagtoTxt}\n` +
             `📅 *Data Pref:* ${dateDisplay} às ${timeDisplay}\n` +
             `📍 *Local:* ${formData.locationAddress}\n` +
             `🗺 *Google Maps:* ${mapLink}`;
@@ -300,6 +306,20 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                 <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-2">
                                     {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"/> {schedule.deviceType}
                                 </p>
+
+                                {/* Informações Adicionais (Vistoria/Pagamento) */}
+                                <div className="flex gap-2 mt-4 flex-wrap">
+                                    {schedule.needsInspection && (
+                                        <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">
+                                            ⚠️ Necessita Vistoria
+                                        </span>
+                                    )}
+                                    {schedule.paymentOnSite && (
+                                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">
+                                            💰 Pagamento no Local
+                                        </span>
+                                    )}
+                                </div>
 
                                 <div className="mt-4 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
                                     <MapPin size={16} className="text-red-500 shrink-0 mt-0.5"/>

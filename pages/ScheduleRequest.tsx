@@ -6,7 +6,7 @@ import { Schedule, DeviceType, ServiceType, Vehicle, User, Company } from '../ty
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, Settings, CheckCircle2, User as UserIcon, CreditCard, MapPin, Search, Loader2, Database, Phone, Lock, ChevronDown, Check, X, Building2, FileText } from 'lucide-react';
+import { Calendar, Clock, Car, Settings, CheckCircle2, User as UserIcon, CreditCard, MapPin, Search, Loader2, Database, Phone, Lock, ChevronDown, Check, X, Building2, FileText, ClipboardCheck, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const ScheduleRequest = () => {
@@ -28,7 +28,9 @@ export const ScheduleRequest = () => {
     deviceType: 'Rastreador',
     serviceType: 'Instalação',
     fipeValue: '',
-    notes: '' 
+    notes: '',
+    needsInspection: false,
+    paymentOnSite: false
   });
 
   useEffect(() => {
@@ -181,6 +183,8 @@ export const ScheduleRequest = () => {
             preferredDate: formData.preferredDate,
             preferredTime: formData.preferredTime,
             notes: formData.notes,
+            needsInspection: formData.needsInspection,
+            paymentOnSite: formData.paymentOnSite,
             locationAddress: formData.locationAddress,
             locationLat: formData.locationLat || 0,
             locationLng: formData.locationLng || 0,
@@ -433,6 +437,24 @@ export const ScheduleRequest = () => {
                                     className="w-full pl-9 pr-2 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none dark:text-white" 
                                 />
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* VISTORIA E PAGAMENTO */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><ClipboardCheck size={14}/> Vistoria Necessária?</label>
+                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
+                            <button type="button" onClick={() => setFormData({...formData, needsInspection: true})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.needsInspection ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Sim</button>
+                            <button type="button" onClick={() => setFormData({...formData, needsInspection: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!formData.needsInspection ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Não</button>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Wallet size={14}/> Pagamento no Local?</label>
+                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
+                            <button type="button" onClick={() => setFormData({...formData, paymentOnSite: true})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.paymentOnSite ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Sim</button>
+                            <button type="button" onClick={() => setFormData({...formData, paymentOnSite: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!formData.paymentOnSite ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Não</button>
                         </div>
                     </div>
                 </div>
