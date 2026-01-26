@@ -1,10 +1,10 @@
+
 import * as React from 'react';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
 import { storage } from '../services/storage';
-import { jwtService } from '../services/jwt';
-import { functions } from '../services/firebase';
-import { httpsCallable } from 'firebase/functions';
+import { rateLimitService } from '../services/rateLimit';
+import { securityService } from '../services/security';
 
 interface AuthContextType {
   user: User | null;
@@ -19,25 +19,35 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const ADMIN_EMAIL = 'lucasmateus.lima@outlook.com';
+
 export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Inicialização de Sessão (Verifica Token no Storage)
   useEffect(() => {
     const initSession = async () => {
       try {
-        const token = localStorage.getItem('ktag_auth_token');
-        if (token) {
-          // Apenas decodifica para pegar dados de UI. Se o token for inválido,
-          // as chamadas de API subsequentes falharão.
-          const userData = await jwtService.verify(token);
+        const cachedUser = await storage.getSessionUser();
+        
+        if (cachedUser) {
+          await storage.initEncryption(cachedUser);
           
-          if (userData) {
-            await storage.initEncryption(userData);
-            setUser(userData);
-          } else {
+          // Busca usuário RAW para evitar travamentos caso a chave tenha mudado
+          const dbUserRaw = await storage.findUserByEmail(cachedUser.email, false);
+          
+          if (dbUserRaw && dbUserRaw.status === 'approved') {
+            // Agora com a criptografia inicializada, buscamos a versão completa/decriptada
+            const dbUserDecrypted = await storage.findUserByEmail(cachedUser.email, true);
+            const finalUser = dbUserDecrypted || dbUserRaw;
+            
+            setUser(finalUser);
+            await storage.setSessionUser(finalUser);
+          } else if (dbUserRaw) {
             await storage.clearSessionUser();
+            setUser(null);
+          } else {
+            setUser(cachedUser);
           }
         }
       } catch (e) {
@@ -50,55 +60,109 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     initSession();
   }, []);
 
-  // LOGIN SEGURO VIA BACKEND
   const login = async (email: string, password?: string): Promise<string | void> => {
+    // RATE LIMIT: 5 tentativas por 15 min
+    const limitCheck = rateLimitService.check('login_attempt', 5, 900);
+    if (!limitCheck.allowed) {
+      return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
+    }
+
     setLoading(true);
     try {
-      const authLogin = httpsCallable(functions, 'authLogin');
+      // 1. Buscamos o usuário RAW (sem tentar decriptar ainda) para evitar deadlocks de chave
+      const dbUser = await storage.findUserByEmail(email.toLowerCase().trim(), false);
       
-      // Enviamos a senha crua via HTTPS. O Backend cuida do Hash e comparação.
-      const result = await authLogin({ 
-        identifier: email, 
-        password: password 
-      });
-
-      const { token, user: apiUser } = result.data as any;
-
-      if (token && apiUser) {
-        // Armazena token assinado pelo backend
-        localStorage.setItem('ktag_auth_token', token);
-        
-        // Inicializa criptografia E2EE (Client-side)
-        await storage.initEncryption(apiUser);
-        
-        setUser(apiUser);
-        return;
-      } else {
-        return "Resposta inválida do servidor.";
+      if (!dbUser) {
+        rateLimitService.record('login_attempt');
+        setLoading(false);
+        return "Usuário não encontrado ou erro de conexão.";
       }
 
-    } catch (e: any) {
-      console.error("Login Failed:", e);
+      // --- LÓGICA DE VALIDAÇÃO DE SENHA SEGURA ---
+      let isPasswordValid = false;
+      let needsMigration = false;
+
+      // Valida senha hashada (segura)
+      if (dbUser.password) {
+        isPasswordValid = await securityService.verifyPassword(password || '', dbUser.password);
+        
+        // Fallback para migração de texto plano (se necessário)
+        if (!isPasswordValid && dbUser.password === password) {
+            isPasswordValid = true;
+            needsMigration = true;
+        }
+      }
+
+      if (!isPasswordValid) {
+        rateLimitService.record('login_attempt');
+        setLoading(false);
+        return "Senha incorreta.";
+      }
+
+      if (dbUser.status !== 'approved' && dbUser.email !== ADMIN_EMAIL) {
+        setLoading(false);
+        return "Seu acesso está pendente de aprovação.";
+      }
+
+      // Migração automática para Hash se necessário
+      if (needsMigration && password) {
+          const newHash = await securityService.hashPassword(password);
+          await storage.updateUserProfile(dbUser.id, { password: newHash });
+          dbUser.password = newHash;
+      }
+
+      rateLimitService.clear('login_attempt');
+      
+      // 2. AGORA inicializamos a criptografia usando os dados do usuário validado (companySlug)
+      await storage.initEncryption(dbUser);
+      
+      // 3. E buscamos a versão completa (decriptada) para o estado da aplicação
+      const decryptedUser = await storage.findUserByEmail(dbUser.email, true);
+      
+      const userFinal = decryptedUser || dbUser;
+      await storage.setSessionUser(userFinal);
+      setUser(userFinal);
+      
+      return;
+    } catch (e) {
+      console.error(e);
       setLoading(false);
-      return e.message || "Credenciais inválidas ou erro no servidor.";
+      return "Falha na comunicação com o servidor.";
     } finally {
       setLoading(false);
     }
   };
 
-  // REGISTRO SEGURO VIA BACKEND
   const register = async (name: string, email: string, password: string, ip: string) => {
-    const authRegister = httpsCallable(functions, 'authRegister');
-    await authRegister({ name, email, password, ip });
+    // Hash da senha antes de enviar para o storage
+    const hashedPassword = await securityService.hashPassword(password);
+    
+    const newUser: User = { 
+        id: crypto.randomUUID(), 
+        name, 
+        email: email.trim().toLowerCase(), 
+        password: hashedPassword,
+        role: email.trim().toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user', 
+        status: email.trim().toLowerCase() === ADMIN_EMAIL ? 'approved' : 'pending',
+        ip,
+        createdAt: Date.now()
+    };
+    await storage.registerUserRequest(newUser);
   };
 
   const updateProfile = async (data: Partial<User>) => {
     if (!user) return;
-    // Para updates de senha, idealmente também usaríamos uma Cloud Function dedicada
-    // para garantir hash correto no servidor.
-    const updatedUser = { ...user, ...data };
-    // TODO: Migrar updateProfile para Cloud Function para segurança total
-    await storage.updateUserProfile(user.id, data);
+    
+    // Se estiver atualizando a senha, faz o hash antes
+    const dataToUpdate = { ...data };
+    if (dataToUpdate.password) {
+        dataToUpdate.password = await securityService.hashPassword(dataToUpdate.password);
+    }
+
+    const updatedUser = { ...user, ...dataToUpdate };
+    
+    await storage.registerUserRequest(updatedUser); // Usa método genérico de save
+    await storage.setSessionUser(updatedUser);
     setUser(updatedUser);
   };
 
@@ -111,7 +175,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     <div className="h-screen w-screen flex items-center justify-center bg-zinc-950">
       <div className="flex flex-col items-center gap-6">
         <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Autenticação Segura</h2>
+        <h2 className="font-display font-black text-white uppercase tracking-[0.3em] text-[10px]">Verificando Credenciais</h2>
       </div>
     </div>
   );

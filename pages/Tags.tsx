@@ -8,8 +8,9 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks, HandCoins } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks, HandCoins, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as XLSX from 'xlsx';
 
 const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
@@ -20,6 +21,13 @@ export const Tags = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // States de Importação
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState<any[]>([]);
+  const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number }>({ type: 'K_TAG', warranty: 1 });
+  const [importing, setImporting] = useState(false);
+
   const [formData, setFormData] = useState<Partial<Tag>>({ batteryWarrantyYears: 1, type: 'K_TAG' });
   const [searchTerm, setSearchTerm] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,10 +51,6 @@ export const Tags = () => {
         setIsModalOpen(true);
     }
   }, [searchParams]);
-
-  const unlinkedCount = tags.length - vehicles.filter(v => v.tagId).length;
-  const isStockLow = unlinkedCount <= 80;
-  const isStockCritical = unlinkedCount <= 40;
 
   const filteredTags = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -76,6 +80,133 @@ export const Tags = () => {
     }
   };
 
+  // --- LÓGICA DE IMPORTAÇÃO ---
+
+  const handleDownloadTemplate = () => {
+    const headers = [
+      { 
+        "Identificacao (Nome)": "Tag Exemplo 01", 
+        "Serial/IMEI": "ABC12345", 
+        "Chave Publica (Opcional K-Tag)": "key_hash...", 
+        "Chave Privada (Opcional K-Tag)": "priv_key..." 
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(headers);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Importacao");
+    XLSX.writeFile(wb, "template_equipamentos_ktag.xlsx");
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        if (data.length === 0) {
+          addNotification('error', 'Arquivo Vazio', 'A planilha não contém dados ou cabeçalhos reconhecíveis.');
+          return;
+        }
+
+        setImportData(data);
+        
+        // Auto-detecção de tipo
+        const firstRow = JSON.stringify(data[0]).toLowerCase();
+        let suggestedType: TagType = 'K_TAG';
+        if (firstRow.includes('imei') || (!firstRow.includes('chave') && !firstRow.includes('key'))) {
+           // Se tiver IMEI ou não tiver chaves, sugere XADTAG se parecer serial numérico longo, 
+           // mas K-TAG é o padrão mais seguro se houver dúvida. 
+           // Melhor regra: Se tem "chave" ou "key" é K_TAG, senão pode ser XADTAG.
+           if (firstRow.includes('imei')) suggestedType = 'XADTAG';
+        }
+
+        setImportConfig(prev => ({ ...prev, type: suggestedType }));
+        setIsImportModalOpen(true);
+        
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (error) {
+        console.error(error);
+        addNotification('error', 'Erro de Leitura', 'Falha ao processar o arquivo. Verifique se é um CSV ou Excel válido.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const processImport = async () => {
+    setImporting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      const promises = importData.map(async (row: any) => {
+        try {
+          // Normalização de chaves (Case Insensitive e variações)
+          const getVal = (keys: string[]) => {
+            for (let k of keys) {
+              const foundKey = Object.keys(row).find(rk => rk.toLowerCase().includes(k.toLowerCase()));
+              if (foundKey && row[foundKey]) return String(row[foundKey]).trim();
+            }
+            return undefined;
+          };
+
+          const name = getVal(['nome', 'name', 'identificacao', 'apelido']) || `Equip-${Math.floor(Math.random()*10000)}`;
+          const serial = getVal(['serial', 'sn', 'imei', 'numero', 'accessory']);
+          const pubKey = getVal(['public', 'publica', 'hashed', 'adv']);
+          const privKey = getVal(['private', 'privada', 'priv']);
+
+          if (!serial) {
+             failCount++; 
+             return;
+          }
+
+          const newTag: Tag = {
+            id: crypto.randomUUID(),
+            name: name,
+            type: importConfig.type,
+            accessoryId: serial, // Para XADTAG, usamos Serial como ID também ou IMEI
+            imei: importConfig.type === 'XADTAG' ? serial : undefined,
+            hashedAdvKey: pubKey,
+            privateKey: privKey,
+            batteryWarrantyYears: importConfig.warranty,
+            createdAt: Date.now()
+          };
+
+          await storage.saveTag(newTag);
+          
+          // Auto-activate XADTAG if imported
+          if (newTag.type === 'XADTAG') {
+             xadtagService.activate(newTag).catch(err => console.warn("Auto-activate failed", err));
+          }
+
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      });
+
+      await Promise.all(promises);
+      
+      storage.logAction(user, 'CREATE', 'Equipamento', `Importou ${successCount} equipamentos via planilha`);
+      addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados. ${failCount > 0 ? `${failCount} falhas.` : ''}`);
+      setIsImportModalOpen(false);
+      loadData();
+    } catch (e) {
+      addNotification('error', 'Erro Crítico', 'Falha durante o processamento em lote.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // --- FIM LÓGICA IMPORTAÇÃO ---
+
   const handleMassDelete = async () => {
     const count = selectedTags.size;
     if (count === 0) return;
@@ -86,7 +217,6 @@ export const Tags = () => {
         const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
         await Promise.all(promises);
         
-        // Remove associações nos veículos se houver
         const vehicleUpdates = vehicles
             .filter(v => v.tagId && selectedTags.has(v.tagId))
             .map(v => storage.saveVehicle({ ...v, tagId: undefined }));
@@ -151,18 +281,24 @@ export const Tags = () => {
           <p className="text-zinc-500 text-sm mt-1 font-medium italic opacity-70">Gestão e controle de ativos de segurança.</p>
         </div>
         <div className="flex items-center gap-3">
-            <button onClick={() => fileInputRef.current?.click()} className="px-5 py-3 bg-white dark:bg-zinc-800 text-zinc-500 rounded-2xl flex items-center gap-3 font-black uppercase text-[10px] tracking-widest border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 transition-all shadow-sm">
-              <Upload size={16} /> Importar CSV
-            </button>
+            <div className="flex bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-1 shadow-sm">
+                <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
+                    <FileSpreadsheet size={18} />
+                </button>
+                <button onClick={() => fileInputRef.current?.click()} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
+                  <Upload size={16} /> Importar Lista
+                </button>
+            </div>
+            
             <button onClick={() => { setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' }); setIsModalOpen(true); }} className="bg-primary-500 hover:bg-primary-400 text-black px-8 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-widest transition-all shadow-2xl shadow-primary-500/20 active:scale-95">
               <Plus size={18} strokeWidth={3} /> NOVO EQUIPAMENTO
             </button>
         </div>
       </div>
 
-      <input type="file" ref={fileInputRef} onChange={() => {}} accept=".csv" className="hidden" />
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
 
-      {/* BARRA DE CONTROLE REFORMULADA */}
+      {/* BARRA DE CONTROLE */}
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
         <div className="relative flex-1 w-full">
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -282,6 +418,64 @@ export const Tags = () => {
         })}
       </div>
 
+      {/* MODAL DE IMPORTAÇÃO */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-lg p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative animate-in zoom-in-95">
+                <div className="flex justify-between items-center mb-8">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-primary-500/10 text-primary-500 rounded-2xl flex items-center justify-center">
+                            <FileSpreadsheet size={24} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Confirmar Importação</h2>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{importData.length} itens encontrados</p>
+                        </div>
+                    </div>
+                    <button onClick={() => setIsImportModalOpen(false)} className="text-zinc-400 hover:text-red-500 transition-colors"><X size={24}/></button>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Detectado: {importConfig.type}</p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setImportConfig({...importConfig, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'K_TAG' ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-lg' : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500'}`}>K-TAG</button>
+                            <button onClick={() => setImportConfig({...importConfig, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-lg' : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500'}`}>XADTAG</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider mb-2 block">Garantia Padrão da Bateria</label>
+                        <div className="flex gap-2">
+                            {[1, 2, 3].map(y => (
+                                <button key={y} onClick={() => setImportConfig({...importConfig, warranty: y})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.warranty === y ? 'bg-primary-500 text-black shadow-lg' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
+                                    {y} {y === 1 ? 'Ano' : 'Anos'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/20 flex items-start gap-3">
+                        <Info size={16} className="text-blue-500 mt-0.5 shrink-0"/>
+                        <p className="text-[10px] font-medium text-blue-700 dark:text-blue-300 leading-relaxed">
+                            O sistema tentará mapear colunas como "Serial", "IMEI", "Nome" e "Chaves". Itens sem identificação única serão ignorados.
+                        </p>
+                    </div>
+
+                    <button 
+                        onClick={processImport} 
+                        disabled={importing}
+                        className="w-full py-5 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                    >
+                        {importing ? <Loader2 className="animate-spin" size={18}/> : <Upload size={18}/>}
+                        {importing ? 'Processando...' : 'Iniciar Importação'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO/EDITAR */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
           <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-lg p-12 shadow-2xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-300">
