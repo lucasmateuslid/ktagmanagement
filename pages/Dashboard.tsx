@@ -10,7 +10,7 @@ import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YA
 import { 
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
   Car, Lock, ShoppingCart, Map as MapIcon, 
-  Zap, TrendingUp, HandCoins, Calendar, Hourglass, CheckCircle2, Wrench, Users, Building2, Server, ArrowUpRight
+  Zap, TrendingUp, HandCoins, Calendar, Hourglass, CheckCircle2, Wrench, Users, Building2, Server, ArrowUpRight, Timer
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -169,6 +169,7 @@ export const Dashboard = () => {
     const monthsArray: any[] = [];
     const now = new Date();
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    // Analisa os últimos 6 meses (0 = atual)
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthLabel = monthNames[d.getMonth()];
@@ -194,6 +195,48 @@ export const Dashboard = () => {
       
       return { status, minStock, criticalStock };
   }, [unlinkedCount, settings]);
+
+  // CÁLCULO PREDITIVO DE ESTOQUE (PONDERADO)
+  const stockPrediction = useMemo(() => {
+      if (trendChartData.length === 0) return { days: 0, label: 'Calculando...' };
+
+      // Dados dos últimos 6 meses. O índice 5 é o mês atual.
+      // Pesos: Mês Atual (3x), Mês Anterior (2x), Outros (1x)
+      // Isso garante que picos recentes (ex: 56 ativações) influenciem mais a previsão.
+      
+      let weightedSum = 0;
+      let totalWeights = 0;
+
+      trendChartData.forEach((data, idx) => {
+          const count = data[' entradas'] || 0;
+          let weight = 1;
+          
+          if (idx === trendChartData.length - 1) weight = 3; // Mês atual
+          else if (idx === trendChartData.length - 2) weight = 2; // Mês anterior
+          
+          weightedSum += count * weight;
+          totalWeights += weight;
+      });
+
+      const weightedAveragePerMonth = weightedSum / totalWeights;
+      const averagePerDay = weightedAveragePerMonth / 30;
+
+      // Se consumo for zero, previsão infinita
+      if (averagePerDay <= 0.05) return { days: 999, label: 'Sem consumo', monthlyRate: 0 };
+
+      const daysLeft = Math.floor(unlinkedCount / averagePerDay);
+      
+      let label = '';
+      if (daysLeft > 365) label = '+1 Ano';
+      else if (daysLeft > 30) label = `${Math.floor(daysLeft / 30)} Meses`;
+      else label = `${daysLeft} Dias`;
+
+      return {
+          days: daysLeft,
+          label: label,
+          monthlyRate: Math.round(weightedAveragePerMonth)
+      };
+  }, [trendChartData, unlinkedCount]);
 
   const leasedCount = vehicles.filter(v => v.ownershipStatus !== 'purchased').length; 
   const purchasedCount = vehicles.filter(v => v.ownershipStatus === 'purchased').length;
@@ -227,7 +270,7 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
             {t('overview')}
           </h1>
-          <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.4em]">Control Center</p>
+          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-[0.4em]">Control Center</p>
         </div>
         {lastSync && (
           <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -250,7 +293,7 @@ export const Dashboard = () => {
                   { to: "/schedule/new", icon: Calendar, label: "Agendar Serviço", sub: "Agenda" },
                   { to: "/map", icon: MapIcon, label: "Monitoramento", sub: "Tempo Real" }
               ].map((item, idx) => (
-                  <Link key={idx} to={item.to} className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50 dark:hover:border-primary-500/50 p-5 rounded-[24px] transition-all duration-300 flex items-center gap-4 shadow-sm hover:shadow-lg">
+                  <Link key={idx} to={item.to} className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50 dark:hover:border-primary-500/50 p-5 rounded-[24px] transition-all duration-300 flex items-center gap-4 shadow-sm hover:shadow-lg hover:-translate-y-1">
                       <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors">
                           <item.icon size={18} />
                       </div>
@@ -273,7 +316,7 @@ export const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* CARD 1: TOTAL EQUIPAMENTOS (Area Chart Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between relative overflow-hidden h-[340px] shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between relative overflow-hidden h-[340px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="relative z-10">
                       <div className="flex justify-between items-start">
                           <div>
@@ -283,7 +326,7 @@ export const Dashboard = () => {
                           <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-primary-500"><TagIcon size={20}/></div>
                       </div>
                   </div>
-                  <div className="absolute bottom-0 left-0 right-0 h-32 opacity-20 dark:opacity-30">
+                  <div className="absolute bottom-0 left-0 right-0 h-32 opacity-20 dark:opacity-30 pointer-events-none">
                       <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={chartData}>
                               <defs>
@@ -298,35 +341,35 @@ export const Dashboard = () => {
                   </div>
               </div>
 
-              {/* CARD 2: VEÍCULOS E CATEGORIAS (Grid Visual conforme Imagem Solicitada) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-sm min-h-[340px]">
-                  <div className="flex justify-between items-start mb-8">
+              {/* CARD 2: VEÍCULOS E CATEGORIAS (ALWAYS DARK) */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-lg shadow-zinc-900/20 min-h-[340px] relative overflow-hidden group">
+                  <div className="flex justify-between items-start mb-8 relative z-10">
                       <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Total de Veículos</p>
-                          <h3 className="text-7xl font-display font-black text-zinc-900 dark:text-white mt-1 tracking-tighter">{vehicles.length}</h3>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total de Veículos</p>
+                          <h3 className="text-7xl font-display font-black text-white mt-1 tracking-tighter">{vehicles.length}</h3>
                       </div>
                       <div className="w-12 h-12 rounded-2xl border border-primary-500/30 text-primary-500 flex items-center justify-center bg-primary-500/5">
                           <CarFront size={24} />
                       </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-3 flex-1">
+                  <div className="grid grid-cols-2 gap-3 flex-1 relative z-10">
                       {categoryStats.map((cat, idx) => (
-                          <div key={idx} className="bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-4 flex items-center gap-4 transition-all hover:border-zinc-200 dark:hover:border-zinc-700">
-                              <div className="w-10 h-10 rounded-xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 dark:text-zinc-400 shrink-0">
+                          <div key={idx} className="bg-zinc-800/50 border border-zinc-800/80 rounded-2xl p-4 flex items-center gap-4 transition-all hover:bg-zinc-800 hover:border-zinc-700">
+                              <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 shrink-0">
                                   <cat.icon size={18} />
                               </div>
                               <div className="min-w-0">
-                                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest truncate">{cat.name}</p>
-                                  <p className="text-xl font-black text-zinc-900 dark:text-white leading-none mt-0.5">{cat.count}</p>
+                                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest truncate">{cat.name}</p>
+                                  <p className="text-xl font-black text-white leading-none mt-0.5">{cat.count}</p>
                               </div>
                           </div>
                       ))}
                   </div>
               </div>
 
-              {/* CARD 3: ESTOQUE (Barra de Progresso) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[340px] shadow-sm">
+              {/* CARD 3: ESTOQUE (Com Estimativa de Dias) */}
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[340px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-start">
                       <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Estoque Disponível</p>
@@ -348,16 +391,26 @@ export const Dashboard = () => {
                             style={{ width: `${Math.min(100, (unlinkedCount / 100) * 100)}%` }} 
                           />
                       </div>
-                      <p className="text-[9px] text-zinc-400 mt-3 font-medium leading-relaxed">
-                          Baseado no consumo médio, seu estoque atual é suficiente para operações regulares.
-                      </p>
+                      
+                      {/* NOVA LÓGICA DE ESTIMATIVA */}
+                      <div className="mt-4 flex items-start gap-3 bg-zinc-50 dark:bg-zinc-950/50 p-3.5 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                          <Timer size={16} className="text-primary-500 shrink-0 mt-0.5"/>
+                          <div className="flex flex-col gap-1">
+                              <p className="text-[9px] text-zinc-500 dark:text-zinc-400 font-medium leading-relaxed">
+                                  Média Ponderada: <strong className="text-zinc-900 dark:text-white">{stockPrediction.monthlyRate} ativações/mês</strong>
+                              </p>
+                              <p className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
+                                  Estoque estimado para: <strong className="text-primary-500 uppercase">{stockPrediction.label}</strong>
+                              </p>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* CARD 4: MODELO DE CONTRATO (Pie Bicolor) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Modelo de Contrato</p>
                       <HandCoins size={16} className="text-zinc-400"/>
@@ -398,7 +451,7 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 5: CRESCIMENTO OPERACIONAL (Area Gradient) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] lg:col-span-2 flex flex-col shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] lg:col-span-2 flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Crescimento Operacional (6 Meses)</p>
                       <TrendingUp size={16} className="text-zinc-400"/>
@@ -423,7 +476,7 @@ export const Dashboard = () => {
           </div>
 
           {/* CARD 6: VEÍCULOS POR REGIONAL (Bar Horizontal) */}
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
               <div className="flex justify-between items-center mb-6">
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Veículos por Regional (Top 5)</p>
                   <Building2 size={16} className="text-zinc-400"/>
@@ -455,14 +508,14 @@ export const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* CARD 7: TOP SOLICITANTES (Lista Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Top Solicitantes</p>
                       <Users size={16} className="text-zinc-400"/>
                   </div>
                   <div className="space-y-3">
                       {topRequestersData.map((req, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                          <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                               <div className="flex items-center gap-3">
                                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-primary-500 text-black' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
                                       {idx + 1}
@@ -477,14 +530,14 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 8: TOP INSTALADORES (Lista Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Top Instaladores</p>
                       <Wrench size={16} className="text-zinc-400"/>
                   </div>
                   <div className="space-y-3">
                       {topTechsData.map((tech, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                          <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                               <div className="flex items-center gap-3">
                                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-primary-500 text-black' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
                                       {idx + 1}
@@ -501,7 +554,7 @@ export const Dashboard = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* CARD 9: TIPOS DE SERVIÇO (Pie Bicolor/Tricolor) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Tipos de Serviço</p>
                       <Activity size={16} className="text-zinc-400"/>
@@ -529,7 +582,7 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 10: DEMANDA POR SERVIÇOS (Area - Tempo) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 lg:col-span-2 h-[340px] flex flex-col shadow-sm">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 lg:col-span-2 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Demanda (Últimos 10 Dias)</p>
                       <Calendar size={16} className="text-zinc-400"/>
