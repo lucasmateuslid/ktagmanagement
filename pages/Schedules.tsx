@@ -59,8 +59,8 @@ const UserStepper = ({ status }: { status: string }) => {
 
   return (
       <div className="relative w-full mt-8 mb-4 px-4">
-          {/* Linha de fundo cinza contínua */}
-          <div className="absolute top-1/2 left-0 w-full h-[3px] bg-zinc-100 dark:bg-zinc-800 -translate-y-1/2 rounded-full z-0"></div>
+          {/* Linha de fundo cinza contínua - Ajustado top-4 para alinhar com centro do circulo h-8 (32px) */}
+          <div className="absolute top-4 left-0 w-full h-[3px] bg-zinc-100 dark:bg-zinc-800 -translate-y-1/2 rounded-full z-0"></div>
           
           <div className="flex justify-between relative z-10 w-full">
               {steps.map((step, index) => {
@@ -721,6 +721,10 @@ export const Schedules = () => {
                                 <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                                     <div className="flex flex-wrap gap-2 items-center">
                                         <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${getStatusStyle(item.status).badgeBg} ${getStatusStyle(item.status).badgeText}`}>{item.status}</span>
+                                        {/* NOVO BADGE DE TEMPO DE ESPERA */}
+                                        <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
+                                            <Clock size={12}/> {timeElapsedStr}
+                                        </span>
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={(e) => handleCopyConfirmation(e, item)} className="p-2.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all border border-emerald-200 dark:border-emerald-500/30" title="Copiar confirmação"><Copy size={16} /></button>

@@ -14,7 +14,7 @@ import {
   Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, 
   ShieldAlert, Filter, ListChecks, HandCoins, FileSpreadsheet, 
   Download, Loader2, Terminal, Play, RefreshCw, ChevronRight, ChevronDown, Code,
-  Signal
+  Signal, AlertCircle, FileCheck, CheckCircle2, XCircle, LayoutGrid, Box
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -44,11 +44,18 @@ export const Tags = () => {
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // States de Filtros
+  const [filterType, setFilterType] = useState<string>('all'); // all, K_TAG, XADTAG
+  const [filterStatus, setFilterStatus] = useState<string>('all'); // all, linked, stock
+
   // States de Importação
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importData, setImportData] = useState<any[]>([]);
   const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number }>({ type: 'K_TAG', warranty: 1 });
   const [importing, setImporting] = useState(false);
+  const [importStep, setImportStep] = useState<'upload' | 'validate' | 'processing'>('upload');
+  const [validationSummary, setValidationSummary] = useState({ valid: 0, invalid: 0 });
+  const [importProgress, setImportProgress] = useState(0);
 
   // States do Terminal de Diagnóstico
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
@@ -93,14 +100,27 @@ export const Tags = () => {
     const term = searchTerm.toLowerCase().trim();
     return tags.filter(tag => {
       const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
-      return (
+      
+      // Filtro de Texto
+      const matchesText = (
         tag.name.toLowerCase().includes(term) ||
         tag.accessoryId.toLowerCase().includes(term) ||
         (tag.imei && tag.imei.toLowerCase().includes(term)) ||
         (linkedVehicle && linkedVehicle.plate.toLowerCase().includes(term))
       );
+
+      if (!matchesText) return false;
+
+      // Filtro de Tipo
+      if (filterType !== 'all' && tag.type !== filterType) return false;
+
+      // Filtro de Status (Estoque vs Vinculado)
+      if (filterStatus === 'linked' && !linkedVehicle) return false;
+      if (filterStatus === 'stock' && linkedVehicle) return false;
+
+      return true;
     });
-  }, [tags, searchTerm, vehicles]);
+  }, [tags, searchTerm, vehicles, filterType, filterStatus]);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedTags);
@@ -152,10 +172,6 @@ export const Tags = () => {
           const settings = await storage.getSettings();
           
           if (tag.type === 'XADTAG') {
-              // ... (XADTAG Logic remains similar, but now we expect standard output format from service if we used it here)
-              // For diagnostics, we might hit the API raw to show debug info.
-              // Reusing existing logic but extracting battery info.
-              
               const url = `https://tags.traqcare.com/api/tag?tagId=${tag.traqcareId || ''}`;
               
               if (!tag.traqcareId) throw new Error("Traqcare ID não encontrado na tag.");
@@ -172,14 +188,11 @@ export const Tags = () => {
               const data = await response.json();
               const duration = Date.now() - startTime;
 
-              // Extract Battery from Raw Data (XADTAG: 3=High)
               let batteryInfo = null;
               if (data && (data.battery !== undefined)) {
-                  // Simplified adapter for display
-                  batteryInfo = data.battery === 3 ? { level: 100, label: 'Alto' } : { level: 30, label: 'Baixo' };
+                  batteryInfo = data.battery === 3 ? { level: 100, label: 'Alto', color: '#10b981' } : { level: 30, label: 'Baixo', color: '#f97316' };
               }
 
-              // Update Badge
               setTestResults(prev => ({ 
                   ...prev, 
                   [tag.id]: { 
@@ -224,7 +237,6 @@ export const Tags = () => {
               try { data = JSON.parse(text); } catch { data = text; }
               const duration = Date.now() - startTime;
 
-              // Parse K-Tag v1.2 Battery from result
               let batteryInfo = null;
               if (data && data.results && data.results.length > 0) {
                   const point = data.results[0];
@@ -233,7 +245,6 @@ export const Tags = () => {
                   }
               }
 
-              // Update Badge
               setTestResults(prev => ({ 
                   ...prev, 
                   [tag.id]: { 
@@ -275,12 +286,12 @@ export const Tags = () => {
       }
   };
 
-  // --- FIM LÓGICA CONSOLE ---
+  // --- LÓGICA DE IMPORTAÇÃO ---
 
   const handleDownloadTemplate = () => {
     const headers = [
       { 
-        "Identificacao (Nome)": "Tag Exemplo 01", 
+        "Identificacao": "Tag Exemplo 01", 
         "Serial/IMEI": "ABC12345", 
         "Chave Publica (Opcional K-Tag)": "key_hash...", 
         "Chave Privada (Opcional K-Tag)": "priv_key..." 
@@ -306,54 +317,50 @@ export const Tags = () => {
         const data = XLSX.utils.sheet_to_json(ws);
 
         if (data.length === 0) {
-          addNotification('error', 'Arquivo Vazio', 'A planilha não contém dados ou cabeçalhos reconhecíveis.');
+          addNotification('error', 'Arquivo Vazio', 'A planilha não contém dados.');
           return;
         }
 
-        setImportData(data);
-        
-        const firstRow = JSON.stringify(data[0]).toLowerCase();
-        let suggestedType: TagType = 'K_TAG';
-        if (firstRow.includes('imei') || (!firstRow.includes('chave') && !firstRow.includes('key'))) {
-           if (firstRow.includes('imei')) suggestedType = 'XADTAG';
-        }
+        // Validação Preliminar
+        const validatedData = data.map((row: any) => {
+            const serial = row['Serial/IMEI'] || row['serial'] || row['imei'] || row['sn'];
+            return {
+                ...row,
+                _valid: !!serial,
+                _serial: serial
+            };
+        });
 
-        setImportConfig(prev => ({ ...prev, type: suggestedType }));
+        const validCount = validatedData.filter((r: any) => r._valid).length;
+        setImportData(validatedData);
+        setValidationSummary({ valid: validCount, invalid: validatedData.length - validCount });
+        setImportStep('validate');
         setIsImportModalOpen(true);
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error) {
-        console.error(error);
-        addNotification('error', 'Erro de Leitura', 'Falha ao processar o arquivo. Verifique se é um CSV ou Excel válido.');
+        addNotification('error', 'Erro de Leitura', 'Falha ao processar o arquivo.');
       }
     };
     reader.readAsBinaryString(file);
   };
 
   const processImport = async () => {
+    setImportStep('processing');
+    setImportProgress(0);
     setImporting(true);
     let successCount = 0;
-    let failCount = 0;
+    
+    // Filtra apenas válidos
+    const validRows = importData.filter(d => d._valid);
+    const total = validRows.length;
 
     try {
-      const promises = importData.map(async (row: any) => {
-        try {
-          const getVal = (keys: string[]) => {
-            for (let k of keys) {
-              const foundKey = Object.keys(row).find(rk => rk.toLowerCase().includes(k.toLowerCase()));
-              if (foundKey && row[foundKey]) return String(row[foundKey]).trim();
-            }
-            return undefined;
-          };
-
-          const name = getVal(['nome', 'name', 'identificacao', 'apelido']) || `Equip-${Math.floor(Math.random()*10000)}`;
-          const serial = getVal(['serial', 'sn', 'imei', 'numero', 'accessory']);
-          const pubKey = getVal(['public', 'publica', 'hashed', 'adv']);
-          const privKey = getVal(['private', 'privada', 'priv']);
-
-          if (!serial) {
-             failCount++; 
-             return;
-          }
+      for (let i = 0; i < total; i++) {
+          const row = validRows[i];
+          const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
+          const serial = row._serial;
+          const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
+          const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
 
           const newTag: Tag = {
             id: crypto.randomUUID(),
@@ -370,25 +377,25 @@ export const Tags = () => {
           await storage.saveTag(newTag);
           
           if (newTag.type === 'XADTAG') {
-             xadtagService.activate(newTag).catch(err => console.warn("Auto-activate failed", err));
+             // Tenta ativar silenciosamente
+             xadtagService.activate(newTag).catch(() => {});
           }
 
           successCount++;
-        } catch (e) {
-          failCount++;
-        }
-      });
-
-      await Promise.all(promises);
+          setImportProgress(Math.round(((i + 1) / total) * 100));
+          // Pequeno delay para a UI atualizar a barra
+          await new Promise(r => setTimeout(r, 20));
+      }
       
       storage.logAction(user, 'CREATE', 'Equipamento', `Importou ${successCount} equipamentos via planilha`);
-      addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados. ${failCount > 0 ? `${failCount} falhas.` : ''}`);
+      addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados.`);
       setIsImportModalOpen(false);
       loadData();
     } catch (e) {
-      addNotification('error', 'Erro Crítico', 'Falha durante o processamento em lote.');
+      addNotification('error', 'Erro Crítico', 'Falha durante o processamento.');
     } finally {
       setImporting(false);
+      setImportStep('upload');
     }
   };
 
@@ -410,8 +417,7 @@ export const Tags = () => {
         setSelectedTags(new Set());
         loadData();
     } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Falha ao processar exclusão em massa.';
-        addNotification('error', 'Erro', errorMessage);
+        addNotification('error', 'Erro', 'Falha ao processar exclusão.');
     }
   };
 
@@ -420,11 +426,28 @@ export const Tags = () => {
     const isEdit = !!formData.id;
     const type = formData.type || 'K_TAG';
 
+    // Validação básica
+    if (!formData.name) {
+        addNotification('error', 'Campos Obrigatórios', 'Informe o nome/identificação.');
+        return;
+    }
+    
+    // Define Accessory ID principal
+    let accessoryId = formData.accessoryId;
+    if (type === 'XADTAG') {
+        accessoryId = formData.imei || formData.accessoryId;
+    }
+    
+    if (!accessoryId) {
+        addNotification('error', 'Campos Obrigatórios', type === 'XADTAG' ? 'Informe o IMEI.' : 'Informe o Serial Number (SN).');
+        return;
+    }
+
     const newTag: Tag = {
       id: formData.id || crypto.randomUUID(),
-      name: formData.name!,
+      name: formData.name,
       type: type as TagType,
-      accessoryId: type === 'XADTAG' ? (formData.imei || formData.name!) : formData.accessoryId!,
+      accessoryId: accessoryId,
       hashedAdvKey: formData.hashedAdvKey,
       privateKey: formData.privateKey,
       imei: formData.imei,
@@ -469,7 +492,7 @@ export const Tags = () => {
                 <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
                     <FileSpreadsheet size={18} />
                 </button>
-                <button onClick={() => fileInputRef.current?.click()} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
+                <button onClick={() => { setImportStep('upload'); setImportConfig({ type: 'K_TAG', warranty: 1 }); setIsImportModalOpen(true); }} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
                   <Upload size={16} /> Importar Lista
                 </button>
             </div>
@@ -482,8 +505,8 @@ export const Tags = () => {
 
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
 
-      {/* BARRA DE CONTROLE */}
-      <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
+      {/* BARRA DE CONTROLE E FILTROS */}
+      <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col xl:flex-row gap-3 items-center transition-all">
         <div className="relative flex-1 w-full">
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input 
@@ -494,8 +517,22 @@ export const Tags = () => {
             className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
           />
         </div>
+
+        {/* FILTROS DROPDOWN */}
+        <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-1 px-1">
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none min-w-[120px]">
+                <option value="all">Todos Tipos</option>
+                <option value="K_TAG">K-Tag</option>
+                <option value="XADTAG">XADTAG</option>
+            </select>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none min-w-[120px]">
+                <option value="all">Todos Status</option>
+                <option value="linked">Em Uso</option>
+                <option value="stock">Em Estoque</option>
+            </select>
+        </div>
         
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2">
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
             <AnimatePresence mode="popLayout">
                 {selectedTags.size > 0 && (
                     <MotionDiv 
@@ -506,13 +543,13 @@ export const Tags = () => {
                     >
                         <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
                             <ListChecks size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size} SELECIONADOS</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size}</span>
                         </div>
                         <button 
                             onClick={handleMassDelete} 
                             className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95"
                         >
-                            <Trash2 size={14} /> Remover em Massa
+                            <Trash2 size={14} />
                         </button>
                         <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
                     </MotionDiv>
@@ -528,7 +565,7 @@ export const Tags = () => {
                 }`}
             >
                 {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
-                {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? 'Desmarcar' : 'Todos'}
             </button>
         </div>
       </div>
@@ -562,41 +599,44 @@ export const Tags = () => {
                   {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
                 </div>
                 
-                {testResult && !isSelected && (
-                    <div className={`absolute top-10 right-10 flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
-                        testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
-                        testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                        'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
-                    }`}>
-                        {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-widest">
-                                {testResult.status === 'loading' ? 'PING...' : 
-                                testResult.status === 'success' ? `200 OK` : 
-                                `ERR ${testResult.code || 'TIMEOUT'}`}
-                            </span>
-                            {testResult.battery && (
-                                <span className="text-[8px] font-bold" style={{ color: testResult.battery.color }}>
-                                    Bat. {testResult.battery.label}
-                                </span>
-                            )}
+                {/* CORREÇÃO VISUAL: Container Flex para Actions e Badge */}
+                <div className="flex flex-col items-end gap-2">
+                    {!isSelected && (
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleTestConnection(tag); }} 
+                                className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"
+                                title="Testar Conexão"
+                            >
+                                <Activity size={16}/>
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"><Edit2 size={16}/></button>
+                            <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"><Trash2 size={16}/></button>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {!isSelected && (
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleTestConnection(tag); }} 
-                            className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 transition-all border border-zinc-200 dark:border-zinc-700"
-                            title="Testar Conexão"
-                        >
-                            <Activity size={16}/>
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all border border-zinc-200 dark:border-zinc-700"><Edit2 size={16}/></button>
-                        <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all border border-zinc-200 dark:border-zinc-700"><Trash2 size={16}/></button>
-                    </div>
-                )}
+                    {testResult && !isSelected && (
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
+                            testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
+                            testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                            'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                        }`}>
+                            {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest">
+                                    {testResult.status === 'loading' ? 'PING...' : 
+                                    testResult.status === 'success' ? `200 OK` : 
+                                    `ERR ${testResult.code || 'TIMEOUT'}`}
+                                </span>
+                                {testResult.battery && (
+                                    <span className="text-[8px] font-bold" style={{ color: testResult.battery.color }}>
+                                        Bat. {testResult.battery.label}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
               </div>
 
               <div className="mt-8">
@@ -622,9 +662,13 @@ export const Tags = () => {
                     <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
                     {vehicle ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
                  </div>
-                 {vehicle && (
+                 {vehicle ? (
                     <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
                         <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicle.plate}</span>
+                    </div>
+                 ) : (
+                    <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
+                        <span className="text-[10px] font-black text-zinc-300 uppercase flex items-center gap-2"><Box size={12}/> Livre</span>
                     </div>
                  )}
               </div>
@@ -633,7 +677,7 @@ export const Tags = () => {
         })}
       </div>
 
-      {/* TERMINAL DE DIAGNÓSTICO (BOTTOM SHEET) */}
+      {/* TERMINAL DE DIAGNÓSTICO (FIXED Z-INDEX 5000) */}
       <AnimatePresence>
         {isConsoleOpen && (
             <MotionDiv
@@ -641,7 +685,7 @@ export const Tags = () => {
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed bottom-0 left-0 right-0 z-[2000] bg-zinc-950 border-t border-zinc-800 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[45vh] lg:h-[400px] flex flex-col font-mono text-xs rounded-t-[30px]"
+                className="fixed bottom-0 left-0 right-0 z-[5000] bg-zinc-950 border-t border-zinc-800 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[45vh] lg:h-[400px] flex flex-col font-mono text-xs rounded-t-[30px]"
             >
                 <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-900/50 rounded-t-[30px]">
                     <div className="flex items-center gap-3">
@@ -727,7 +771,195 @@ export const Tags = () => {
             </MotionDiv>
         )}
       </AnimatePresence>
-      {/* ...rest of the modal code... */}
+
+      {/* MODAL ADICIONAR / EDITAR EQUIPAMENTO */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto animate-in fade-in zoom-in-95">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
+                        {formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
+                    </h2>
+                    <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X size={24}/></button>
+                </div>
+
+                <form onSubmit={handleSave} className="space-y-5">
+                    {/* TIPO DE EQUIPAMENTO (Switch) */}
+                    <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
+                        <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
+                            K-Tag (Padrão)
+                        </button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
+                            XADTAG (Satélite)
+                        </button>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Identificação (Nome/Apelido) <span className="text-red-500">*</span></label>
+                        <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: Tag 01 - Reserva" />
+                    </div>
+
+                    {formData.type === 'K_TAG' ? (
+                        <>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Serial Number (SN) <span className="text-red-500">*</span></label>
+                                <input type="text" required value={formData.accessoryId || ''} onChange={e => setFormData({...formData, accessoryId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: KTAG-12345" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Chave Pública (Hashed)</label>
+                                    <input type="text" value={formData.hashedAdvKey || ''} onChange={e => setFormData({...formData, hashedAdvKey: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono text-[10px] outline-none" placeholder="Opcional" />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Chave Privada</label>
+                                    <input type="text" value={formData.privateKey || ''} onChange={e => setFormData({...formData, privateKey: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono text-[10px] outline-none" placeholder="Opcional" />
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI <span className="text-red-500">*</span></label>
+                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Apenas números" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
+                                <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="ID Interno da API" />
+                            </div>
+                        </>
+                    )}
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><BatteryCharging size={12}/> Garantia Bateria (Anos)</label>
+                        <input type="number" min="1" max="10" value={formData.batteryWarrantyYears || 1} onChange={e => setFormData({...formData, batteryWarrantyYears: parseInt(e.target.value)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
+                    </div>
+
+                    <button type="submit" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg mt-4">
+                        <Save size={16} /> Salvar Equipamento
+                    </button>
+                </form>
+            </div>
+        </div>
+      )}
+
+      {/* MODAL DE IMPORTAÇÃO COM VALIDAÇÃO */}
+      {isImportModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+              <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto flex flex-col max-h-[90vh]">
+                  <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-950/50 rounded-t-[32px]">
+                      <div>
+                          <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Importação em Massa</h2>
+                          <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
+                              {importStep === 'upload' ? 'Selecione o arquivo e tipo' : importStep === 'validate' ? 'Validação de Dados' : 'Processando...'}
+                          </p>
+                      </div>
+                      <button onClick={() => setIsImportModalOpen(false)} disabled={importing} className="p-2 text-zinc-400 hover:text-zinc-600 disabled:opacity-50"><X size={20}/></button>
+                  </div>
+
+                  <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
+                      {importStep === 'upload' && (
+                          <div className="space-y-6">
+                              <div className="space-y-2">
+                                  <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Equipamento na Planilha</label>
+                                  <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
+                                      <button onClick={() => setImportConfig({...importConfig, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-md' : 'text-zinc-500'}`}>K-Tag</button>
+                                      <button onClick={() => setImportConfig({...importConfig, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-md' : 'text-zinc-500'}`}>XADTAG</button>
+                                  </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                  <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Garantia Padrão (Anos)</label>
+                                  <input type="number" min="1" value={importConfig.warranty} onChange={e => setImportConfig({...importConfig, warranty: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" />
+                              </div>
+
+                              <div 
+                                  onClick={() => fileInputRef.current?.click()}
+                                  className="border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                              >
+                                  <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400">
+                                      <FileSpreadsheet size={32} />
+                                  </div>
+                                  <div className="text-center">
+                                      <p className="font-bold text-zinc-700 dark:text-zinc-300">Clique para selecionar arquivo</p>
+                                      <p className="text-xs text-zinc-400 mt-1">Suporta .xlsx, .xls ou .csv</p>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+
+                      {(importStep === 'validate' || importStep === 'processing') && (
+                          <div className="space-y-6">
+                              <div className="flex gap-4">
+                                  <div className="flex-1 bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl flex items-center gap-3">
+                                      <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold"><Check size={20}/></div>
+                                      <div>
+                                          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{validationSummary.valid}</p>
+                                          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600/70 dark:text-emerald-400/70">Registros Válidos</p>
+                                      </div>
+                                  </div>
+                                  <div className="flex-1 bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-center gap-3">
+                                      <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"><AlertCircle size={20}/></div>
+                                      <div>
+                                          <p className="text-2xl font-black text-red-600 dark:text-red-400">{validationSummary.invalid}</p>
+                                          <p className="text-[9px] font-black uppercase tracking-widest text-red-600/70 dark:text-red-400/70">Inválidos (Sem Serial)</p>
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <div className="max-h-60 overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                                  <table className="w-full text-left text-xs">
+                                      <thead className="bg-zinc-100 dark:bg-zinc-950 font-bold text-zinc-500 sticky top-0">
+                                          <tr>
+                                              <th className="p-3">Status</th>
+                                              <th className="p-3">Identificação</th>
+                                              <th className="p-3">Serial/IMEI</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+                                          {importData.slice(0, 50).map((row, idx) => (
+                                              <tr key={idx} className={row._valid ? '' : 'bg-red-50 dark:bg-red-900/10'}>
+                                                  <td className="p-3">
+                                                      {row._valid ? <CheckCircle2 size={14} className="text-emerald-500"/> : <XCircle size={14} className="text-red-500"/>}
+                                                  </td>
+                                                  <td className="p-3 font-medium truncate max-w-[150px]">{row['Identificacao'] || row['nome'] || 'Sem Nome'}</td>
+                                                  <td className="p-3 font-mono text-zinc-500">{row._serial || '-'}</td>
+                                              </tr>
+                                          ))}
+                                          {importData.length > 50 && (
+                                              <tr><td colSpan={3} className="p-3 text-center text-zinc-400 italic">...e mais {importData.length - 50} itens</td></tr>
+                                          )}
+                                      </tbody>
+                                  </table>
+                              </div>
+
+                              {importStep === 'processing' && (
+                                  <div className="space-y-2">
+                                      <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                          <span>Processando...</span>
+                                          <span>{importProgress}%</span>
+                                      </div>
+                                      <div className="h-3 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                          <div className="h-full bg-primary-500 transition-all duration-300" style={{ width: `${importProgress}%` }} />
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 rounded-b-[32px] flex justify-end gap-3">
+                      {importStep === 'validate' && (
+                          <>
+                              <button onClick={() => { setImportStep('upload'); setImportData([]); }} className="px-6 py-3 rounded-xl font-bold text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>
+                              <button onClick={processImport} disabled={validationSummary.valid === 0} className="px-8 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                                  <FileCheck size={16}/> Confirmar Importação
+                              </button>
+                          </>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
