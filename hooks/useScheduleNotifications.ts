@@ -29,7 +29,7 @@ export const useScheduleNotifications = () => {
   const analysisReminderRef = useRef<Map<string, number>>(new Map());
 
   // Som de notificação (Base64 beep simples)
-  const playSound = (type: 'user' | 'admin' | 'critical' = 'user') => {
+  const playSound = (type: 'user' | 'admin' | 'critical' | 'arrival' = 'user') => {
       try {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
           if (!AudioContextClass) return;
@@ -41,42 +41,37 @@ export const useScheduleNotifications = () => {
               audioCtx.resume().catch(() => {});
           }
 
-          const oscillator = audioCtx.createOscillator();
-          const gainNode = audioCtx.createGain();
-          
-          oscillator.connect(gainNode);
-          gainNode.connect(audioCtx.destination);
-          
-          if (type === 'critical') {
+          const playBeep = (startTime: number, freq: number, typeWave: OscillatorType = 'sine', duration: number = 0.2) => {
+              const oscillator = audioCtx.createOscillator();
+              const gainNode = audioCtx.createGain();
+              
+              oscillator.connect(gainNode);
+              gainNode.connect(audioCtx.destination);
+              
+              oscillator.type = typeWave;
+              oscillator.frequency.setValueAtTime(freq, startTime);
+              
+              gainNode.gain.setValueAtTime(0.2, startTime);
+              gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+              
+              oscillator.start(startTime);
+              oscillator.stop(startTime + duration);
+          };
+
+          if (type === 'arrival') {
+              // Som duplo de chegada (Técnico no local)
+              playBeep(audioCtx.currentTime, 600, 'square', 0.15);
+              playBeep(audioCtx.currentTime + 0.2, 800, 'square', 0.4);
+          } else if (type === 'critical') {
               // Som muito agudo e repetitivo para crítico (30 min)
-              oscillator.type = 'sawtooth';
-              oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
-              oscillator.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.1);
-              oscillator.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.2);
-              gainNode.gain.setValueAtTime(0.6, audioCtx.currentTime); 
-              gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
-              oscillator.start();
-              oscillator.stop(audioCtx.currentTime + 0.5);
+              playBeep(audioCtx.currentTime, 800, 'sawtooth', 0.5);
           } else if (type === 'admin') {
               // Som de "Sino" duplo para Admin
-              oscillator.type = 'triangle';
-              oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
-              oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1);
-              
-              gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-              gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-              
-              oscillator.start();
-              oscillator.stop(audioCtx.currentTime + 0.3);
+              playBeep(audioCtx.currentTime, 880, 'triangle', 0.1);
+              playBeep(audioCtx.currentTime + 0.15, 660, 'triangle', 0.3);
           } else {
               // Som suave para User
-              oscillator.type = 'sine';
-              oscillator.frequency.setValueAtTime(500, audioCtx.currentTime);
-              oscillator.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
-              gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
-              gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-              oscillator.start();
-              oscillator.stop(audioCtx.currentTime + 0.4);
+              playBeep(audioCtx.currentTime, 600, 'sine', 0.3);
           }
       } catch (e) {
           console.error("Audio play failed", e);
@@ -95,6 +90,7 @@ export const useScheduleNotifications = () => {
           let title = '';
           let msg = '';
           let type: 'success' | 'error' | 'info' = 'info';
+          let soundType: 'user' | 'arrival' = 'user';
 
           const lastEvent = schedule.history[schedule.history.length - 1];
           const actionUser = lastEvent ? lastEvent.actionBy : 'Equipe Técnica';
@@ -115,6 +111,12 @@ export const useScheduleNotifications = () => {
               msg = `Horário atualizado por ${actionUser}.`;
               type = 'info'; 
               break;
+            case 'Técnico no local':
+              title = 'Técnico Chegou!';
+              msg = 'O técnico informou que está no local de atendimento.';
+              type = 'success';
+              soundType = 'arrival';
+              break;
             case 'Cancelada':
               title = 'Cancelado';
               msg = `Solicitação cancelada por ${actionUser}.`;
@@ -129,7 +131,7 @@ export const useScheduleNotifications = () => {
 
           if (title) {
             addNotification(type, title, msg, true);
-            playSound('user');
+            playSound(soundType);
           }
         }
         previousStatusRef.current[schedule.id] = schedule.status;

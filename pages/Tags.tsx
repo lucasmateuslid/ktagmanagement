@@ -8,12 +8,33 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, ShieldAlert, Filter, ListChecks, HandCoins, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
+import { 
+  Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, 
+  Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, 
+  Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, 
+  ShieldAlert, Filter, ListChecks, HandCoins, FileSpreadsheet, 
+  Download, Loader2, Terminal, Play, RefreshCw, ChevronRight, ChevronDown, Code,
+  Signal
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 
 const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
+
+// --- TIPOS DO CONSOLE ---
+interface ConsoleLog {
+  id: string;
+  timestamp: number;
+  type: 'info' | 'success' | 'error' | 'warning';
+  method?: string;
+  url?: string;
+  status?: number;
+  requestBody?: any;
+  responseBody?: any;
+  duration?: number;
+  expanded?: boolean;
+}
 
 export const Tags = () => {
   const [searchParams] = useSearchParams();
@@ -27,6 +48,14 @@ export const Tags = () => {
   const [importData, setImportData] = useState<any[]>([]);
   const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number }>({ type: 'K_TAG', warranty: 1 });
   const [importing, setImporting] = useState(false);
+
+  // States do Terminal de Diagnóstico
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
+  const [activeTestTag, setActiveTestTag] = useState<Tag | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, { status: 'success' | 'error' | 'loading', code?: number, timestamp: number }>>({});
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<Partial<Tag>>({ batteryWarrantyYears: 1, type: 'K_TAG' });
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +80,13 @@ export const Tags = () => {
         setIsModalOpen(true);
     }
   }, [searchParams]);
+
+  // Auto-scroll do terminal
+  useEffect(() => {
+    if (isConsoleOpen && logsEndRef.current) {
+        logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleLogs, isConsoleOpen]);
 
   const filteredTags = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -80,7 +116,163 @@ export const Tags = () => {
     }
   };
 
-  // --- LÓGICA DE IMPORTAÇÃO ---
+  // --- LÓGICA DO CONSOLE / TESTE ---
+
+  const addLog = (log: Omit<ConsoleLog, 'id' | 'timestamp'>) => {
+      setConsoleLogs(prev => [...prev, { ...log, id: crypto.randomUUID(), timestamp: Date.now(), expanded: false }]);
+  };
+
+  const toggleLogExpand = (id: string) => {
+      setConsoleLogs(prev => prev.map(l => l.id === id ? { ...l, expanded: !l.expanded } : l));
+  };
+
+  const clearConsole = () => setConsoleLogs([]);
+
+  const handleTestConnection = async (tag: Tag | null = activeTestTag) => {
+      if (!tag) return;
+      
+      setActiveTestTag(tag);
+      setIsConsoleOpen(true);
+      setTesting(true);
+      
+      // Update Badge State to Loading
+      setTestResults(prev => ({ ...prev, [tag.id]: { status: 'loading', timestamp: Date.now() } }));
+
+      const startTime = Date.now();
+
+      addLog({
+          type: 'info',
+          method: 'INFO',
+          url: 'Iniciando diagnóstico...',
+          responseBody: { target: tag.name, type: tag.type, sn: tag.accessoryId }
+      });
+
+      try {
+          const settings = await storage.getSettings();
+          
+          if (tag.type === 'XADTAG') {
+              const url = `https://tags.traqcare.com/api/tag?tagId=${tag.traqcareId || ''}`;
+              
+              addLog({
+                  type: 'warning',
+                  method: 'GET',
+                  url: url,
+                  requestBody: { headers: { 'api_token': '***HIDDEN***' } }
+              });
+
+              if (!tag.traqcareId) throw new Error("Traqcare ID não encontrado na tag.");
+
+              const response = await fetch(settings.customProxyUrl || url, {
+                  method: 'GET',
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'api_token': settings.traqcareToken,
+                      'timestamp': Math.floor(Date.now() / 1000).toString()
+                  }
+              });
+
+              const data = await response.json();
+              const duration = Date.now() - startTime;
+
+              // Update Badge
+              setTestResults(prev => ({ 
+                  ...prev, 
+                  [tag.id]: { 
+                      status: response.ok ? 'success' : 'error', 
+                      code: response.status,
+                      timestamp: Date.now()
+                  } 
+              }));
+
+              addLog({
+                  type: response.ok ? 'success' : 'error',
+                  method: 'GET',
+                  url: url,
+                  status: response.status,
+                  responseBody: data,
+                  duration
+              });
+
+          } else {
+              const payload = {
+                accessoryId: tag.accessoryId,
+                hashed_keys: [tag.hashedAdvKey], 
+                priv_keys: [tag.privateKey],     
+              };
+
+              const targetUrl = settings.ktagUrl || 'https://api.ktag...';
+              const requestUrl = settings.customProxyUrl || targetUrl;
+              
+              addLog({
+                  type: 'warning',
+                  method: 'POST',
+                  url: requestUrl,
+                  requestBody: { 
+                      target: targetUrl,
+                      payload: { ...payload, hashed_keys: ['***'], priv_keys: ['***'] } 
+                  }
+              });
+
+              const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
+              
+              const response = await fetch(settings.customProxyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url: settings.ktagUrl,
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+                  body: payload
+                })
+              });
+
+              const text = await response.text();
+              let data;
+              try { data = JSON.parse(text); } catch { data = text; }
+              const duration = Date.now() - startTime;
+
+              // Update Badge
+              setTestResults(prev => ({ 
+                  ...prev, 
+                  [tag.id]: { 
+                      status: response.ok ? 'success' : 'error', 
+                      code: response.status,
+                      timestamp: Date.now()
+                  } 
+              }));
+
+              addLog({
+                  type: response.ok ? 'success' : 'error',
+                  method: 'POST',
+                  url: settings.ktagUrl, 
+                  status: response.status,
+                  responseBody: data,
+                  duration
+              });
+          }
+
+      } catch (e: any) {
+          setTestResults(prev => ({ 
+              ...prev, 
+              [tag.id]: { 
+                  status: 'error', 
+                  code: 0,
+                  timestamp: Date.now()
+              } 
+          }));
+
+          addLog({
+              type: 'error',
+              method: 'ERROR',
+              url: 'System Error',
+              responseBody: { message: e.message }
+          });
+      } finally {
+          setTesting(false);
+      }
+  };
+
+  // --- FIM LÓGICA CONSOLE ---
 
   const handleDownloadTemplate = () => {
     const headers = [
@@ -117,20 +309,14 @@ export const Tags = () => {
 
         setImportData(data);
         
-        // Auto-detecção de tipo
         const firstRow = JSON.stringify(data[0]).toLowerCase();
         let suggestedType: TagType = 'K_TAG';
         if (firstRow.includes('imei') || (!firstRow.includes('chave') && !firstRow.includes('key'))) {
-           // Se tiver IMEI ou não tiver chaves, sugere XADTAG se parecer serial numérico longo, 
-           // mas K-TAG é o padrão mais seguro se houver dúvida. 
-           // Melhor regra: Se tem "chave" ou "key" é K_TAG, senão pode ser XADTAG.
            if (firstRow.includes('imei')) suggestedType = 'XADTAG';
         }
 
         setImportConfig(prev => ({ ...prev, type: suggestedType }));
         setIsImportModalOpen(true);
-        
-        // Reset input
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error) {
         console.error(error);
@@ -148,7 +334,6 @@ export const Tags = () => {
     try {
       const promises = importData.map(async (row: any) => {
         try {
-          // Normalização de chaves (Case Insensitive e variações)
           const getVal = (keys: string[]) => {
             for (let k of keys) {
               const foundKey = Object.keys(row).find(rk => rk.toLowerCase().includes(k.toLowerCase()));
@@ -171,7 +356,7 @@ export const Tags = () => {
             id: crypto.randomUUID(),
             name: name,
             type: importConfig.type,
-            accessoryId: serial, // Para XADTAG, usamos Serial como ID também ou IMEI
+            accessoryId: serial,
             imei: importConfig.type === 'XADTAG' ? serial : undefined,
             hashedAdvKey: pubKey,
             privateKey: privKey,
@@ -181,7 +366,6 @@ export const Tags = () => {
 
           await storage.saveTag(newTag);
           
-          // Auto-activate XADTAG if imported
           if (newTag.type === 'XADTAG') {
              xadtagService.activate(newTag).catch(err => console.warn("Auto-activate failed", err));
           }
@@ -205,12 +389,9 @@ export const Tags = () => {
     }
   };
 
-  // --- FIM LÓGICA IMPORTAÇÃO ---
-
   const handleMassDelete = async () => {
     const count = selectedTags.size;
     if (count === 0) return;
-    
     if (!confirm(`ATENÇÃO: Você está prestes a excluir ${count} equipamentos.\n\nEquipamentos vinculados a veículos perderão a associação.\nDeseja continuar?`)) return;
 
     try {
@@ -274,7 +455,7 @@ export const Tags = () => {
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-32 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Estoque de Equipamentos</h1>
@@ -353,6 +534,7 @@ export const Tags = () => {
         {filteredTags.map((tag) => {
           const isSelected = selectedTags.has(tag.id);
           const vehicle = vehicles.find(v => v.tagId === tag.id);
+          const testResult = testResults[tag.id];
 
           return (
             <MotionDiv 
@@ -376,10 +558,33 @@ export const Tags = () => {
                 <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
                   {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
                 </div>
+                
+                {testResult && !isSelected && (
+                    <div className={`absolute top-10 right-10 flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
+                        testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
+                        testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                        'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                    }`}>
+                        {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
+                        <span className="text-[10px] font-black uppercase tracking-widest">
+                            {testResult.status === 'loading' ? 'PING...' : 
+                             testResult.status === 'success' ? `200 OK` : 
+                             `ERR ${testResult.code || 'TIMEOUT'}`}
+                        </span>
+                    </div>
+                )}
+
                 {!isSelected && (
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all"><Edit2 size={16}/></button>
-                        <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all"><Trash2 size={16}/></button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleTestConnection(tag); }} 
+                            className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 transition-all border border-zinc-200 dark:border-zinc-700"
+                            title="Testar Conexão"
+                        >
+                            <Activity size={16}/>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all border border-zinc-200 dark:border-zinc-700"><Edit2 size={16}/></button>
+                        <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all border border-zinc-200 dark:border-zinc-700"><Trash2 size={16}/></button>
                     </div>
                 )}
               </div>
@@ -417,6 +622,101 @@ export const Tags = () => {
           );
         })}
       </div>
+
+      {/* TERMINAL DE DIAGNÓSTICO (BOTTOM SHEET) */}
+      <AnimatePresence>
+        {isConsoleOpen && (
+            <MotionDiv
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed bottom-0 left-0 right-0 z-[2000] bg-zinc-950 border-t border-zinc-800 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[45vh] lg:h-[400px] flex flex-col font-mono text-xs rounded-t-[30px]"
+            >
+                <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-900/50 rounded-t-[30px]">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-zinc-800 rounded-lg text-emerald-500"><Terminal size={16}/></div>
+                        <div>
+                            <h3 className="font-bold text-zinc-300 uppercase tracking-wider">Terminal de Diagnóstico</h3>
+                            <p className="text-[10px] text-zinc-500">Alvo: {activeTestTag?.name || 'N/A'} ({activeTestTag?.accessoryId})</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => handleTestConnection(activeTestTag)} disabled={testing} className="px-4 py-2 bg-zinc-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-zinc-400 rounded-lg flex items-center gap-2 transition-all font-bold uppercase tracking-wider disabled:opacity-50">
+                            {testing ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>} Re-Testar
+                        </button>
+                        <button onClick={clearConsole} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg transition-all font-bold uppercase tracking-wider">Limpar</button>
+                        <button onClick={() => setIsConsoleOpen(false)} className="px-4 py-2 bg-zinc-800 hover:bg-red-500/20 hover:text-red-500 text-zinc-400 rounded-lg transition-all"><X size={16}/></button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#0c0c0c] custom-scrollbar text-zinc-300">
+                    {consoleLogs.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-zinc-700 gap-4 opacity-50">
+                            <Terminal size={48} />
+                            <span className="uppercase font-bold tracking-widest">Aguardando comandos...</span>
+                        </div>
+                    ) : (
+                        consoleLogs.map(log => (
+                            <div key={log.id} className="border-b border-zinc-900 pb-2 mb-2 last:border-0">
+                                <div 
+                                    onClick={() => toggleLogExpand(log.id)}
+                                    className="flex items-center gap-3 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors"
+                                >
+                                    <span className="text-zinc-600 font-bold">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                    
+                                    {log.method && (
+                                        <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
+                                            log.method === 'GET' ? 'bg-blue-900/30 text-blue-400' : 
+                                            log.method === 'POST' ? 'bg-emerald-900/30 text-emerald-400' : 
+                                            log.method === 'ERROR' ? 'bg-red-900/30 text-red-400' :
+                                            'bg-zinc-800 text-zinc-400'
+                                        }`}>
+                                            {log.method}
+                                        </span>
+                                    )}
+
+                                    <span className="flex-1 truncate font-medium text-zinc-400">{log.url}</span>
+                                    
+                                    {log.status && (
+                                        <span className={`font-bold ${log.status >= 200 && log.status < 300 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                            {log.status}
+                                        </span>
+                                    )}
+
+                                    {log.duration && <span className="text-zinc-600 text-[10px]">{log.duration}ms</span>}
+                                    
+                                    <ChevronRight size={14} className={`transform transition-transform ${log.expanded ? 'rotate-90' : ''} text-zinc-600`}/>
+                                </div>
+
+                                {log.expanded && (
+                                    <div className="mt-2 pl-4 border-l-2 border-zinc-800 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
+                                        {log.requestBody && (
+                                            <div>
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1">Payload / Headers</span>
+                                                <pre className="bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] text-blue-300">
+                                                    {JSON.stringify(log.requestBody, null, 2)}
+                                                </pre>
+                                            </div>
+                                        )}
+                                        {log.responseBody && (
+                                            <div>
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1">Response Body</span>
+                                                <pre className={`bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] ${log.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
+                                                    {typeof log.responseBody === 'object' ? JSON.stringify(log.responseBody, null, 2) : log.responseBody}
+                                                </pre>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ))
+                    )}
+                    <div ref={logsEndRef} />
+                </div>
+            </MotionDiv>
+        )}
+      </AnimatePresence>
 
       {/* MODAL DE IMPORTAÇÃO */}
       {isImportModalOpen && (

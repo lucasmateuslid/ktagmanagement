@@ -13,7 +13,7 @@ import {
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
-  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase
+  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -275,15 +275,15 @@ export const Settings = () => {
           
           {isAdmin && (
             <>
-              {/* CONFIGURAÇÃO DE ESTOQUE */}
+              {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
                   <ShoppingBag size={24} />
-                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Gestão de Estoque</h2>
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Estoque & Financeiro</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Mínimo (Alerta Baixo)</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Mínimo</label>
                         <div className="relative">
                             <AlertTriangle className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={16} />
                             <input 
@@ -293,10 +293,10 @@ export const Settings = () => {
                                 className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500"
                             />
                         </div>
-                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível para aviso de necessidade de compra.</p>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível alerta compra.</p>
                     </div>
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Crítico (Previsão)</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Crítico</label>
                         <div className="relative">
                             <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
                             <input 
@@ -306,7 +306,20 @@ export const Settings = () => {
                                 className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500"
                             />
                         </div>
-                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível para cálculo de dias restantes.</p>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível de risco de ruptura.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Margem de Lucro (%)</label>
+                        <div className="relative">
+                            <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
+                            <input 
+                                type="number" 
+                                value={settings.budgetMarginThreshold || 25} 
+                                onChange={e => setSettings({...settings, budgetMarginThreshold: parseFloat(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Limite mín. para aprovação (Default: 25%).</p>
                     </div>
                 </div>
               </div>

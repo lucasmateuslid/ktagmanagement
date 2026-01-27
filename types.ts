@@ -155,13 +155,15 @@ export interface AppSettings {
   // Inventory Levels
   minStockLevel?: number;
   criticalStockLevel?: number;
+  // Financeiro
+  budgetMarginThreshold?: number; // Porcentagem padrão para aprovação (ex: 25)
 }
 
 // --- NEW TYPES FOR SCHEDULING SYSTEM ---
 
-export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Confirmada' | 'Reagendada' | 'Cancelada' | 'Concluída';
+export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cancelada' | 'Concluída';
 export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag';
-export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada';
+export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada' | 'Vistoria';
 
 export interface Technician {
   id: string;
@@ -169,6 +171,12 @@ export interface Technician {
   phone: string;
   active: boolean;
   color?: string; // Hex color for calendar
+  serviceRates?: {
+    installation: number;
+    maintenance: number;
+    removal: number;
+    inspection: number;
+  };
 }
 
 export interface ScheduleHistory {
@@ -206,6 +214,14 @@ export interface Schedule {
   needsInspection?: boolean; // Vistoria
   paymentOnSite?: boolean; // Pagamento no local
   installedImei?: string; // IMEI do equipamento instalado (Opcional ao finalizar)
+
+  // Remote / Displacement
+  isRemoteLocation?: boolean; // Local distante
+  displacementKm?: number; // Total KM ida e volta
+  displacementValue?: number; // Valor R$ do deslocamento
+  
+  // Financeiro (Orçamento)
+  adhesionValue?: number; // Valor negociado/adesão
 
   // Location
   locationAddress: string;

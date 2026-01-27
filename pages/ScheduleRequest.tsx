@@ -408,6 +408,7 @@ export const ScheduleRequest = () => {
                             <option value="Instalação">Instalação</option>
                             <option value="Manutenção">Manutenção</option>
                             <option value="Retirada">Retirada</option>
+                            <option value="Vistoria">Vistoria</option>
                         </select>
                     </div>
                     {/* Grid de Data e Hora */}

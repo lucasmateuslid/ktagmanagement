@@ -4,7 +4,7 @@ import { storage } from '../services/storage';
 import { Technician, Schedule } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw } from 'lucide-react';
+import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
 const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: Technician, schedules: Schedule[], onClose: () => void }) => {
@@ -44,9 +44,25 @@ const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: 
             // Breakdown
             instalacao: filteredSchedules.filter(s => s.serviceType === 'Instalação').length,
             manutencao: filteredSchedules.filter(s => s.serviceType === 'Manutenção').length,
-            retirada: filteredSchedules.filter(s => s.serviceType === 'Retirada').length
+            retirada: filteredSchedules.filter(s => s.serviceType === 'Retirada').length,
+            vistoria: filteredSchedules.filter(s => s.serviceType === 'Vistoria').length
         };
     }, [filteredSchedules]);
+
+    // Cálculo Estimado de Valor (Apenas concluídos)
+    const estimatedValue = useMemo(() => {
+        const rates = technician.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 };
+        const completedOnly = filteredSchedules.filter(s => s.status === 'Concluída');
+        
+        let total = 0;
+        completedOnly.forEach(s => {
+            if (s.serviceType === 'Instalação') total += rates.installation || 0;
+            if (s.serviceType === 'Manutenção') total += rates.maintenance || 0;
+            if (s.serviceType === 'Retirada') total += rates.removal || 0;
+            if (s.serviceType === 'Vistoria') total += rates.inspection || 0;
+        });
+        return total;
+    }, [filteredSchedules, technician.serviceRates]);
 
     return (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
@@ -91,9 +107,10 @@ const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: 
                             <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-1">Concluídos</span>
                             <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.completed}</span>
                         </div>
-                        <div className="bg-red-500/10 p-4 rounded-2xl flex flex-col items-center text-center border border-red-500/20">
-                            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">Cancelados</span>
-                            <span className="text-2xl font-black text-red-600 dark:text-red-400">{stats.canceled}</span>
+                        <div className="bg-zinc-900 text-white p-4 rounded-2xl flex flex-col items-center text-center border border-zinc-800 shadow-xl relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none"/>
+                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1 relative z-10">Valor Est.</span>
+                            <span className="text-2xl font-black text-white relative z-10">R$ {estimatedValue.toFixed(2)}</span>
                         </div>
                     </div>
 
@@ -121,6 +138,13 @@ const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: 
                             </div>
                             <span className="text-lg font-black text-zinc-900 dark:text-white">{stats.retirada}</span>
                         </div>
+                        <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/30 border border-zinc-100 dark:border-zinc-800">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center"><ClipboardCheck size={16}/></div>
+                                <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase">Vistoria</span>
+                            </div>
+                            <span className="text-lg font-black text-zinc-900 dark:text-white">{stats.vistoria}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -134,7 +158,11 @@ export const Technicians = () => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState<Partial<Technician>>({ active: true, color: '#3b82f6' });
+  const [formData, setFormData] = useState<Partial<Technician>>({ 
+      active: true, 
+      color: '#3b82f6',
+      serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
+  });
   
   // State para o Modal de Detalhes
   const [selectedTechForDetail, setSelectedTechForDetail] = useState<Technician | null>(null);
@@ -160,13 +188,22 @@ export const Technicians = () => {
         name: formData.name,
         phone: formData.phone,
         active: formData.active ?? true,
-        color: formData.color
+        color: formData.color,
+        serviceRates: formData.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
     };
 
     await storage.saveTechnician(tech);
     addNotification('success', 'Sucesso', 'Técnico salvo com sucesso.');
     setIsModalOpen(false);
     loadData();
+  };
+
+  const handleEdit = (tech: Technician) => {
+      setFormData({
+          ...tech,
+          serviceRates: tech.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
+      });
+      setIsModalOpen(true);
   };
 
   const toggleStatus = async (tech: Technician) => {
@@ -181,6 +218,17 @@ export const Technicians = () => {
       ).length;
   };
 
+  const updateRate = (type: keyof NonNullable<Technician['serviceRates']>, value: string) => {
+      const numValue = parseFloat(value) || 0;
+      setFormData(prev => ({
+          ...prev,
+          serviceRates: {
+              ...prev.serviceRates,
+              [type]: numValue
+          } as any
+      }));
+  };
+
   if (user?.role !== 'admin') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
 
   return (
@@ -188,9 +236,9 @@ export const Technicians = () => {
       <div className="flex justify-between items-end">
         <div>
             <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Equipe Técnica</h1>
-            <p className="text-zinc-500 mt-1 font-medium text-xs">Gestão de instaladores e técnicos de campo.</p>
+            <p className="text-zinc-500 mt-1 font-medium text-xs">Gestão de instaladores, técnicos de campo e valores.</p>
         </div>
-        <button onClick={() => { setFormData({ active: true, color: '#3b82f6' }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
+        <button onClick={() => { setFormData({ active: true, color: '#3b82f6', serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 } }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
             <Plus size={16} /> Novo Técnico
         </button>
       </div>
@@ -219,7 +267,7 @@ export const Technicians = () => {
                         </div>
                         <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                             <button 
-                                onClick={() => { setFormData(tech); setIsModalOpen(true); }} 
+                                onClick={() => handleEdit(tech)} 
                                 className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 transition-colors"
                                 title="Editar Dados"
                             >
@@ -248,7 +296,7 @@ export const Technicians = () => {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 w-full max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
                 <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase mb-6">{formData.id ? 'Editar Técnico' : 'Cadastro de Técnico'}</h2>
                 <form onSubmit={handleSave} className="space-y-4">
                     <div>
@@ -259,6 +307,30 @@ export const Technicians = () => {
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefone</label>
                         <input type="text" required value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="(00) 00000-0000" />
                     </div>
+                    
+                    {/* SEÇÃO DE TAXAS */}
+                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                        <label className="text-[10px] font-black text-primary-500 uppercase tracking-widest mb-3 flex items-center gap-2"><DollarSign size={14}/> Tabela de Preços (R$)</label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Instalação</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.installation || 0} onChange={e => updateRate('installation', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Manutenção</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.maintenance || 0} onChange={e => updateRate('maintenance', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Retirada</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.removal || 0} onChange={e => updateRate('removal', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Vistoria</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.inspection || 0} onChange={e => updateRate('inspection', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                        </div>
+                    </div>
+
                     <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Cor na Agenda</label>
                         <div className="flex gap-2 mt-2">
