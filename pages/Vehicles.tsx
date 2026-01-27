@@ -14,15 +14,17 @@ import {
   Car, Truck, Bike, Edit2, Trash2, Link as LinkIcon, 
   Loader2, X, CheckCircle2, XCircle, Save, Hash, 
   Tag as TagIcon, Building2, User, Phone, Book, ChevronRight, Mail, Calendar,
-  Download, FileText, FileSpreadsheet, FileCode, AlertCircle, HandCoins, ArrowLeft
+  Download, FileText, FileSpreadsheet, FileCode, AlertCircle, HandCoins, ArrowLeft, CheckSquare, Square, ListChecks
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const { useSearchParams } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
-const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly }: any) => {
+const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly, isSelected, toggleSelect }: any) => {
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
@@ -34,9 +36,17 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
   };
 
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors group gap-3 md:gap-0">
+    <div 
+        onClick={() => !isReadOnly && toggleSelect && toggleSelect(vehicle.id)}
+        className={`flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-3 md:gap-0 cursor-pointer ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
+    >
       {/* PLACA & STATUS */}
-      <div className="w-full md:w-[15%] shrink-0 flex items-center justify-between md:justify-start gap-4">
+      <div className="w-full md:w-[20%] shrink-0 flex items-center justify-between md:justify-start gap-4">
+        {!isReadOnly && (
+            <div className="hidden md:flex items-center text-zinc-400 group-hover:text-primary-500 transition-colors">
+                {isSelected ? <CheckSquare size={18} className="text-primary-500" /> : <Square size={18} />}
+            </div>
+        )}
         <div className="flex items-center gap-3 md:gap-4">
             <div className="flex flex-col gap-1 min-w-0">
                 <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
@@ -57,14 +67,14 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
         {/* Mobile Actions - Ocultar se readonly */}
         {!isReadOnly && (
             <div className="flex md:hidden gap-1">
-                <button onClick={() => onEdit(vehicle)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
-                <button onClick={() => onDelete(vehicle.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
+                <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
+                <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
             </div>
         )}
       </div>
 
       {/* VEÍCULO */}
-      <div className="w-full md:flex-1 md:w-[35%] px-0 md:px-3 overflow-hidden">
+      <div className="w-full md:flex-1 md:w-[30%] px-0 md:px-3 overflow-hidden">
         <div className="flex items-center gap-2 md:hidden mb-1">
             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Veículo:</span>
         </div>
@@ -103,8 +113,8 @@ const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onD
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
           <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => onEdit(vehicle)} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-            <button onClick={() => onDelete(vehicle.id)} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
           </div>
       )}
     </div>
@@ -130,6 +140,9 @@ export const Vehicles = () => {
   const [tagSearch, setTagSearch] = useState('');
   const [isTagListOpen, setIsTagListOpen] = useState(false);
   const [hinovaStatus, setHinovaStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+
+  // Multi-Selection State
+  const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
 
   // FIPE STATES
   const [isFipeModalOpen, setIsFipeModalOpen] = useState(false);
@@ -203,8 +216,30 @@ export const Vehicles = () => {
     });
   }, [vehicles, globalSearch, clients]);
 
+  // --- SELECTION HELPERS ---
+  const toggleSelect = (id: string) => {
+      const newSet = new Set(selectedVehicles);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedVehicles(newSet);
+  };
+
+  const handleSelectAll = () => {
+      if (selectedVehicles.size === filteredVehicles.length && filteredVehicles.length > 0) {
+          setSelectedVehicles(new Set());
+      } else {
+          setSelectedVehicles(new Set(filteredVehicles.map(v => v.id)));
+      }
+  };
+
   const getExportData = () => {
-    return filteredVehicles.map(v => {
+    // Se houver seleção, exporta APENAS os selecionados.
+    // Caso contrário, exporta a lista filtrada atual.
+    const sourceList = selectedVehicles.size > 0 
+        ? vehicles.filter(v => selectedVehicles.has(v.id))
+        : filteredVehicles;
+
+    return sourceList.map(v => {
       const client = clients.find(c => c.id === v.clientId);
       const category = categories.find(c => c.id === v.type);
       const company = companies.find(c => c.id === v.companyId);
@@ -255,6 +290,7 @@ export const Vehicles = () => {
 
       doc.save(`veiculos_ktag_${Date.now()}.pdf`);
       addNotification('success', 'Exportação PDF', 'O relatório foi gerado com sucesso.');
+      setSelectedVehicles(new Set()); // Limpa seleção após exportar
     } finally {
       setIsExporting(false);
     }
@@ -267,6 +303,7 @@ export const Vehicles = () => {
     XLSX.utils.book_append_sheet(wb, ws, "Veículos");
     XLSX.writeFile(wb, `veiculos_ktag_${Date.now()}.xlsx`);
     addNotification('success', 'Exportação Excel', 'Planilha gerada com sucesso.');
+    setSelectedVehicles(new Set()); // Limpa seleção após exportar
   };
 
   const handleExportCSV = () => {
@@ -287,6 +324,7 @@ export const Vehicles = () => {
     link.click();
     document.body.removeChild(link);
     addNotification('success', 'Exportação CSV', 'Arquivo CSV gerado com sucesso.');
+    setSelectedVehicles(new Set()); // Limpa seleção após exportar
   };
 
   const checkExistingClient = useCallback((cpf: string) => {
@@ -458,12 +496,6 @@ export const Vehicles = () => {
           <p className="text-zinc-500 text-xs mt-1 font-medium">{isClientView ? 'Gestão dos seus veículos e equipamentos.' : 'Gestão operacional da frota.'}</p>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {/* Export Group */}
-          <div className="flex bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm mr-2">
-             <button onClick={handleExportPDF} title="Exportar PDF" className="p-2.5 text-zinc-400 hover:text-red-500 transition-colors"><FileText size={18}/></button>
-             <button onClick={handleExportExcel} title="Exportar Excel" className="p-2.5 text-zinc-400 hover:text-emerald-500 transition-colors"><FileSpreadsheet size={18}/></button>
-             <button onClick={handleExportCSV} title="Exportar CSV" className="p-2.5 text-zinc-400 hover:text-blue-500 transition-colors"><FileCode size={18}/></button>
-          </div>
           {!isClientView && (
               <button
                 onClick={() => { 
@@ -478,16 +510,64 @@ export const Vehicles = () => {
         </div>
       </div>
 
-      <div className="relative">
-        <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" />
-        <input type="text" placeholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."} value={globalSearch} onChange={e => setGlobalSearch(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm text-sm font-bold outline-none focus:border-primary-500" />
+      {/* BARRA DE CONTROLE E PESQUISA */}
+      <div className="sticky top-4 z-20 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
+        <div className="relative flex-1 w-full">
+          <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input 
+            type="text" 
+            placeholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."} 
+            value={globalSearch} 
+            onChange={e => setGlobalSearch(e.target.value)} 
+            className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
+          />
+        </div>
+
+        {/* SELECTION ACTIONS */}
+        {!isClientView && (
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
+                <AnimatePresence mode="popLayout">
+                    {selectedVehicles.size > 0 && (
+                        <MotionDiv 
+                            initial={{ opacity: 0, x: 20 }} 
+                            animate={{ opacity: 1, x: 0 }} 
+                            exit={{ opacity: 0, x: 20 }}
+                            className="flex items-center gap-2"
+                        >
+                            <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
+                                <ListChecks size={16} />
+                                <span className="text-[10px] font-black uppercase tracking-widest">{selectedVehicles.size}</span>
+                            </div>
+                            
+                            <button onClick={handleExportPDF} title="Exportar PDF" className="p-2.5 bg-red-500/10 text-red-600 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-colors"><FileText size={18}/></button>
+                            <button onClick={handleExportExcel} title="Exportar Excel" className="p-2.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-colors"><FileSpreadsheet size={18}/></button>
+                            <button onClick={handleExportCSV} title="Exportar CSV" className="p-2.5 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl transition-colors"><FileCode size={18}/></button>
+                            
+                            <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                        </MotionDiv>
+                    )}
+                </AnimatePresence>
+
+                <button 
+                    onClick={handleSelectAll} 
+                    className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center gap-2 transition-all border ${
+                        selectedVehicles.size === filteredVehicles.length && filteredVehicles.length > 0 
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
+                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                    }`}
+                >
+                    {selectedVehicles.size === filteredVehicles.length && filteredVehicles.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
+                    {selectedVehicles.size === filteredVehicles.length && filteredVehicles.length > 0 ? 'Desmarcar' : 'Todos'}
+                </button>
+            </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
          {/* CABEÇALHO TABELA - VISÍVEL APENAS EM DESKTOP */}
          <div className="hidden md:flex px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
-            <div className="w-[15%] shrink-0">Placa & Status</div>
-            <div className="w-[35%] px-3">Veículo</div>
+            <div className="w-[20%] shrink-0">Placa & Status</div>
+            <div className="w-[30%] px-3">Veículo</div>
             <div className="w-[25%] px-2">Cliente</div>
             {!isClientView && <div className="w-[15%]">Responsável & Data</div>}
             {!isClientView && <div className="w-[10%] text-right">Ações</div>}
@@ -507,6 +587,8 @@ export const Vehicles = () => {
                     categories={categories} 
                     clients={clients} 
                     isReadOnly={isClientView}
+                    isSelected={selectedVehicles.has(v.id)}
+                    toggleSelect={toggleSelect}
                     onEdit={(v: any) => { setFormData(v); setClientData(clients.find(c => c.id === v.clientId) || {}); setTagSearch(tags.find(t => t.id === v.tagId)?.accessoryId || ''); setIsModalOpen(true); }} 
                     onDelete={async (id: string) => { if(confirm('Excluir?')) { await storage.deleteVehicle(id); loadData(); } }} 
                 />

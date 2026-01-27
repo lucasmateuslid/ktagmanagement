@@ -21,6 +21,7 @@ const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.S
 const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const AuditLogs = lazy(() => import('./pages/AuditLogs').then(m => ({ default: m.AuditLogs })));
+const FeedbackPage = lazy(() => import('./pages/Feedback').then(m => ({ default: m.FeedbackPage }))); // New
 
 // New Pages
 const ScheduleRequest = lazy(() => import('./pages/ScheduleRequest').then(m => ({ default: m.ScheduleRequest })));
@@ -91,6 +92,9 @@ function App() {
                       <Route path="/schedules" element={<Schedules />} /> {/* Acesso condicional gerido dentro da página */}
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/technicians" element={<RoleProtectedRoute roles={['admin']}><Technicians /></RoleProtectedRoute>} />
+
+                      {/* Feedback - Available to all non-clients */}
+                      <Route path="/feedback" element={<RoleProtectedRoute roles={['user', 'admin', 'moderator']}><FeedbackPage /></RoleProtectedRoute>} />
 
                       <Route path="/clients" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Clients /></RoleProtectedRoute>} />
                       <Route path="/tags" element={<RoleProtectedRoute roles={['admin', 'moderator']}><Tags /></RoleProtectedRoute>} />

@@ -7,6 +7,20 @@ import { Schedule } from '../types';
 import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
 
+// SINGLETON AUDIO CONTEXT
+// Mantém uma única instância de áudio para toda a aplicação para evitar bloqueios de hardware e política de autoplay
+let sharedAudioCtx: AudioContext | null = null;
+
+const getAudioContext = () => {
+    if (!sharedAudioCtx) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+            sharedAudioCtx = new AudioContextClass();
+        }
+    }
+    return sharedAudioCtx;
+};
+
 export const useScheduleNotifications = () => {
   const { user } = useAuth();
   const { addNotification, setCriticalAlerts } = useNotification();
@@ -25,18 +39,37 @@ export const useScheduleNotifications = () => {
   const notified30MinSoundRef = useRef<Set<string>>(new Set());
   
   // Novo Ref: Mapa para controlar o último lembrete recorrente de cada agendamento em análise
-  // Key: ScheduleID, Value: Timestamp do último aviso
   const analysisReminderRef = useRef<Map<string, number>>(new Map());
 
-  // Som de notificação (Base64 beep simples)
-  const playSound = (type: 'user' | 'admin' | 'critical' | 'arrival' = 'user') => {
-      try {
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          if (!AudioContextClass) return;
+  // --- DESBLOQUEIO DE ÁUDIO ---
+  // O navegador bloqueia sons iniciados via timer/socket se o usuário não tiver interagido com a página.
+  // Este efeito "destrava" o áudio no primeiro clique ou tecla do usuário.
+  useEffect(() => {
+      const unlockAudio = () => {
+          const ctx = getAudioContext();
+          if (ctx && ctx.state === 'suspended') {
+              ctx.resume().catch((e) => console.error("Audio resume failed", e));
+          }
+      };
 
-          const audioCtx = new AudioContextClass();
-          
-          // Se o contexto estiver suspenso (política de autoplay), tenta retomar
+      window.addEventListener('click', unlockAudio);
+      window.addEventListener('keydown', unlockAudio);
+      window.addEventListener('touchstart', unlockAudio);
+
+      return () => {
+          window.removeEventListener('click', unlockAudio);
+          window.removeEventListener('keydown', unlockAudio);
+          window.removeEventListener('touchstart', unlockAudio);
+      };
+  }, []);
+
+  // Som de notificação (Oscillator)
+  const playSound = (type: 'user' | 'admin' | 'critical' | 'arrival' | 'change' = 'user') => {
+      try {
+          const audioCtx = getAudioContext();
+          if (!audioCtx) return;
+
+          // Tenta retomar se estiver suspenso (fallback)
           if (audioCtx.state === 'suspended') {
               audioCtx.resume().catch(() => {});
           }
@@ -51,27 +84,38 @@ export const useScheduleNotifications = () => {
               oscillator.type = typeWave;
               oscillator.frequency.setValueAtTime(freq, startTime);
               
-              gainNode.gain.setValueAtTime(0.2, startTime);
-              gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+              // Volume diferenciado para críticos
+              const volume = type === 'critical' ? 0.3 : 0.1;
+
+              gainNode.gain.setValueAtTime(volume, startTime);
+              gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
               
               oscillator.start(startTime);
               oscillator.stop(startTime + duration);
           };
 
+          const now = audioCtx.currentTime;
+
           if (type === 'arrival') {
-              // Som duplo de chegada (Técnico no local)
-              playBeep(audioCtx.currentTime, 600, 'square', 0.15);
-              playBeep(audioCtx.currentTime + 0.2, 800, 'square', 0.4);
+              // Som "Ding-Dong" (Chegada do técnico)
+              playBeep(now, 600, 'sine', 0.2);
+              playBeep(now + 0.25, 450, 'sine', 0.4);
+          } else if (type === 'change') {
+              // Som rápido de alteração (Reagendamento)
+              playBeep(now, 500, 'triangle', 0.1);
+              playBeep(now + 0.1, 700, 'triangle', 0.1);
           } else if (type === 'critical') {
-              // Som muito agudo e repetitivo para crítico (30 min)
-              playBeep(audioCtx.currentTime, 800, 'sawtooth', 0.5);
+              // Som muito agudo e repetitivo para crítico (30 min) - "Alarme"
+              playBeep(now, 800, 'sawtooth', 0.15);
+              playBeep(now + 0.2, 800, 'sawtooth', 0.15);
+              playBeep(now + 0.4, 800, 'sawtooth', 0.4);
           } else if (type === 'admin') {
               // Som de "Sino" duplo para Admin
-              playBeep(audioCtx.currentTime, 880, 'triangle', 0.1);
-              playBeep(audioCtx.currentTime + 0.15, 660, 'triangle', 0.3);
+              playBeep(now, 880, 'triangle', 0.1);
+              playBeep(now + 0.15, 660, 'triangle', 0.3);
           } else {
-              // Som suave para User
-              playBeep(audioCtx.currentTime, 600, 'sine', 0.3);
+              // Som suave para User (Genérico)
+              playBeep(now, 600, 'sine', 0.3);
           }
       } catch (e) {
           console.error("Audio play failed", e);
@@ -90,7 +134,7 @@ export const useScheduleNotifications = () => {
           let title = '';
           let msg = '';
           let type: 'success' | 'error' | 'info' = 'info';
-          let soundType: 'user' | 'arrival' = 'user';
+          let soundType: 'user' | 'arrival' | 'change' = 'user';
 
           const lastEvent = schedule.history[schedule.history.length - 1];
           const actionUser = lastEvent ? lastEvent.actionBy : 'Equipe Técnica';
@@ -108,14 +152,15 @@ export const useScheduleNotifications = () => {
               break;
             case 'Reagendada':
               title = 'Agendamento Alterado';
-              msg = `Horário atualizado por ${actionUser}.`;
+              msg = `Data/Hora atualizada por ${actionUser}.`;
               type = 'info'; 
+              soundType = 'change'; // Som específico de mudança
               break;
             case 'Técnico no local':
               title = 'Técnico Chegou!';
               msg = 'O técnico informou que está no local de atendimento.';
               type = 'success';
-              soundType = 'arrival';
+              soundType = 'arrival'; // Som de campainha
               break;
             case 'Cancelada':
               title = 'Cancelado';
@@ -234,10 +279,8 @@ export const useScheduleNotifications = () => {
             if (minutes >= 30) {
                 criticalMsgs.push(`Agendamento ${s.vehiclePlate} (${s.status}) requer ação imediata`);
                 
-                if (!notified30MinSoundRef.current.has(s.id)) {
-                    playSound('critical');
-                    notified30MinSoundRef.current.add(s.id);
-                }
+                // Toca som a cada verificação (30s) se estiver crítico, para forçar atenção
+                playSound('critical');
             }
         });
 

@@ -10,11 +10,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
 import { 
   Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, 
-  Wifi, Search, Car, AlertTriangle, Activity, BatteryCharging, 
-  Calendar, Check, Cpu, Info, ShoppingBag, Lock, ShieldCheck, 
-  ShieldAlert, Filter, ListChecks, HandCoins, FileSpreadsheet, 
-  Download, Loader2, Terminal, Play, RefreshCw, ChevronRight, ChevronDown, Code,
-  Signal, AlertCircle, FileCheck, CheckCircle2, XCircle, LayoutGrid, Box
+  Wifi, Search, Car, Activity, BatteryCharging, 
+  Check, Cpu, ListChecks, FileSpreadsheet, 
+  Loader2, Terminal, RefreshCw, ChevronRight, FileText,
+  Signal, FileCheck, CheckCircle2, XCircle, Box, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -96,6 +95,14 @@ export const Tags = () => {
     }
   }, [consoleLogs, isConsoleOpen]);
 
+  // Contadores Totais
+  const stats = useMemo(() => {
+      return {
+          totalKTag: tags.filter(t => t.type === 'K_TAG').length,
+          totalXadTag: tags.filter(t => t.type === 'XADTAG').length
+      };
+  }, [tags]);
+
   const filteredTags = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     return tags.filter(tag => {
@@ -135,6 +142,52 @@ export const Tags = () => {
     } else {
       setSelectedTags(new Set(filteredTags.map(t => t.id)));
     }
+  };
+
+  // --- EXPORTAÇÃO DE SELECIONADOS ---
+  const handleExportSelected = (format: 'xlsx' | 'csv') => {
+      if (selectedTags.size === 0) return;
+
+      const dataToExport = tags
+          .filter(t => selectedTags.has(t.id))
+          .map(t => {
+              const linkedVehicle = vehicles.find(v => v.tagId === t.id);
+              return {
+                  "Nome": t.name,
+                  "Tipo": t.type,
+                  "Serial (Accessory ID)": t.accessoryId,
+                  "IMEI": t.imei || '-',
+                  "Traqcare ID": t.traqcareId || '-',
+                  "Status": linkedVehicle ? 'VINCULADO' : 'ESTOQUE',
+                  "Veículo Vinculado": linkedVehicle ? linkedVehicle.plate : '-',
+                  "Data Cadastro": new Date(t.createdAt).toLocaleDateString()
+              };
+          });
+
+      if (format === 'csv') {
+          const headers = Object.keys(dataToExport[0]);
+          const csvContent = [
+            headers.join(','),
+            ...dataToExport.map(row => headers.map(h => `"${(row as any)[h]}"`).join(','))
+          ].join('\n');
+
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", `tags_export_${Date.now()}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+      } else {
+          const ws = XLSX.utils.json_to_sheet(dataToExport);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Equipamentos Selecionados");
+          XLSX.writeFile(wb, `tags_export_${Date.now()}.xlsx`);
+      }
+      
+      addNotification('success', 'Exportação Concluída', `${selectedTags.size} itens exportados.`);
+      setSelectedTags(new Set());
   };
 
   // --- LÓGICA DO CONSOLE / TESTE ---
@@ -362,26 +415,30 @@ export const Tags = () => {
           const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
           const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
 
-          const newTag: Tag = {
-            id: crypto.randomUUID(),
-            name: name,
-            type: importConfig.type,
-            accessoryId: serial,
-            imei: importConfig.type === 'XADTAG' ? serial : undefined,
-            hashedAdvKey: pubKey,
-            privateKey: privKey,
-            batteryWarrantyYears: importConfig.warranty,
-            createdAt: Date.now()
-          };
+          // Validação de duplicidade na importação
+          const exists = tags.some(t => t.accessoryId === serial || t.imei === serial);
+          if (!exists) {
+              const newTag: Tag = {
+                id: crypto.randomUUID(),
+                name: name,
+                type: importConfig.type,
+                accessoryId: serial,
+                imei: importConfig.type === 'XADTAG' ? serial : undefined,
+                hashedAdvKey: pubKey,
+                privateKey: privKey,
+                batteryWarrantyYears: importConfig.warranty,
+                createdAt: Date.now()
+              };
 
-          await storage.saveTag(newTag);
-          
-          if (newTag.type === 'XADTAG') {
-             // Tenta ativar silenciosamente
-             xadtagService.activate(newTag).catch(() => {});
+              await storage.saveTag(newTag);
+              
+              if (newTag.type === 'XADTAG') {
+                 // Tenta ativar silenciosamente
+                 xadtagService.activate(newTag).catch(() => {});
+              }
+              successCount++;
           }
 
-          successCount++;
           setImportProgress(Math.round(((i + 1) / total) * 100));
           // Pequeno delay para a UI atualizar a barra
           await new Promise(r => setTimeout(r, 20));
@@ -443,6 +500,21 @@ export const Tags = () => {
         return;
     }
 
+    // Validação de Duplicidade (Feature Nova)
+    // Verifica se já existe outra tag com o mesmo Serial ou IMEI, ignorando a própria tag (em caso de edição)
+    const isDuplicate = tags.some(t => 
+        t.id !== (formData.id || '') && 
+        (
+            (t.accessoryId && t.accessoryId.toUpperCase() === accessoryId.toUpperCase()) ||
+            (t.imei && t.imei.toUpperCase() === accessoryId.toUpperCase())
+        )
+    );
+
+    if (isDuplicate) {
+        addNotification('error', 'Duplicidade Detectada', `O identificador ${accessoryId} já existe no sistema.`);
+        return;
+    }
+
     const newTag: Tag = {
       id: formData.id || crypto.randomUUID(),
       name: formData.name,
@@ -486,7 +558,20 @@ export const Tags = () => {
         <div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Estoque de Equipamentos</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium italic opacity-70">Gestão e controle de ativos de segurança.</p>
+          
+          {/* CONTADORES DE TIPO */}
+          <div className="flex gap-3 mt-4">
+              <div className="flex items-center gap-2 px-3 py-1 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+                  <div className="w-2 h-2 bg-primary-500 rounded-full"/>
+                  <span className="text-[10px] font-black text-primary-600 dark:text-primary-400 uppercase tracking-widest">K-Tag: {stats.totalKTag}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+                  <div className="w-2 h-2 bg-cyan-500 rounded-full"/>
+                  <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-400 uppercase tracking-widest">XadTag: {stats.totalXadTag}</span>
+              </div>
+          </div>
         </div>
+        
         <div className="flex items-center gap-3">
             <div className="flex bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-1 shadow-sm">
                 <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
@@ -545,6 +630,23 @@ export const Tags = () => {
                             <ListChecks size={16} />
                             <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size}</span>
                         </div>
+                        
+                        {/* BOTÕES DE EXPORTAÇÃO */}
+                        <button 
+                            onClick={() => handleExportSelected('xlsx')} 
+                            className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95"
+                            title="Exportar Excel"
+                        >
+                            <FileSpreadsheet size={14} /> XLSX
+                        </button>
+                        <button 
+                            onClick={() => handleExportSelected('csv')} 
+                            className="px-4 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 border border-blue-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95"
+                            title="Exportar CSV"
+                        >
+                            <FileText size={14} /> CSV
+                        </button>
+
                         <button 
                             onClick={handleMassDelete} 
                             className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95"
@@ -643,7 +745,7 @@ export const Tags = () => {
                 <div className="flex items-center gap-3">
                   <h3 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate">{tag.name}</h3>
                   <span title="Criptografia Ativa">
-                    <ShieldCheck size={18} className="text-emerald-500" />
+                    <CheckCircle2 size={18} className="text-emerald-500" />
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -898,7 +1000,7 @@ export const Tags = () => {
                                       </div>
                                   </div>
                                   <div className="flex-1 bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-center gap-3">
-                                      <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"><AlertCircle size={20}/></div>
+                                      <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"><AlertTriangle size={20}/></div>
                                       <div>
                                           <p className="text-2xl font-black text-red-600 dark:text-red-400">{validationSummary.invalid}</p>
                                           <p className="text-[9px] font-black uppercase tracking-widest text-red-600/70 dark:text-red-400/70">Inválidos (Sem Serial)</p>

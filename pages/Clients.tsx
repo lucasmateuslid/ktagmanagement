@@ -9,9 +9,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { 
   Users, Search, User as UserIcon, Phone, Mail, MapPin, 
   Car, ShieldCheck, ShieldX, Edit2, Trash2, X, Plus, Save, ChevronRight, Check,
-  KeyRound, RotateCcw, ShieldQuestion, Fingerprint, Lock
+  KeyRound, RotateCcw, ShieldQuestion, Fingerprint, Lock, CheckSquare, Square, FileSpreadsheet, FileText, ListChecks
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 const MotionDiv = motion.div as any;
 
@@ -25,6 +28,9 @@ export const Clients = () => {
   const [selectedClient, setSelectedClient] = useState<Partial<Client>>({});
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set());
   
+  // Selection State
+  const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
+
   const { t } = useLanguage();
   const { addNotification } = useNotification();
   const { user: currentUser } = useAuth();
@@ -40,7 +46,6 @@ export const Clients = () => {
   // Função para detectar se o dado está provavelmente encriptado (corrompido visualmente)
   const isCorrupted = (str?: string) => {
     if (!str) return false;
-    // Heurística: Strings Base64 típicas são longas, sem espaços e contêm caracteres específicos
     return str.length > 20 && !str.includes(' ') && /^[A-Za-z0-9+/=]+$/.test(str);
   };
 
@@ -68,6 +73,60 @@ export const Clients = () => {
       newSelection.add(id);
     }
     setSelectedVehicleIds(newSelection);
+  };
+
+  // --- SELECTION LOGIC ---
+  const toggleSelectClient = (id: string) => {
+      const newSet = new Set(selectedClients);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedClients(newSet);
+  };
+
+  const handleSelectAll = () => {
+      if (selectedClients.size === filteredClients.length && filteredClients.length > 0) {
+          setSelectedClients(new Set());
+      } else {
+          setSelectedClients(new Set(filteredClients.map(c => c.id)));
+      }
+  };
+
+  const handleExportSelected = (format: 'pdf' | 'xlsx') => {
+      if (selectedClients.size === 0) return;
+      
+      const dataToExport = clients.filter(c => selectedClients.has(c.id)).map(c => {
+          const vehs = allVehicles.filter(v => v.clientId === c.id).map(v => v.plate).join(', ');
+          return {
+              "Nome": c.name,
+              "CPF": c.cpf,
+              "Telefone": c.phone,
+              "Email": c.email || '-',
+              "Veiculos": vehs || 'Nenhum',
+              "Acesso Portal": c.hasAccess ? 'Sim' : 'Não',
+              "Cadastro": new Date(c.createdAt).toLocaleDateString()
+          };
+      });
+
+      if (format === 'xlsx') {
+          const ws = XLSX.utils.json_to_sheet(dataToExport);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Clientes Selecionados");
+          XLSX.writeFile(wb, `clientes_export_${Date.now()}.xlsx`);
+      } else {
+          const doc = new jsPDF();
+          doc.text("Relatório de Clientes", 14, 20);
+          autoTable(doc, {
+              startY: 30,
+              head: [['Nome', 'CPF', 'Telefone', 'Veículos', 'Acesso']],
+              body: dataToExport.map(c => [c.Nome, c.CPF, c.Telefone, c.Veiculos, c["Acesso Portal"]]),
+              styles: { fontSize: 8 },
+              headStyles: { fillColor: [24, 24, 27] }
+          });
+          doc.save(`clientes_export_${Date.now()}.pdf`);
+      }
+      
+      addNotification('success', 'Exportação Concluída', `${selectedClients.size} clientes exportados.`);
+      setSelectedClients(new Set());
   };
 
   const handleOpenModal = (client?: Client) => {
@@ -198,16 +257,55 @@ export const Clients = () => {
         </button>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 p-3 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="relative">
-          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+      {/* BARRA DE CONTROLE E PESQUISA */}
+      <div className="sticky top-4 z-20 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
+        <div className="relative flex-1 w-full">
+          <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input 
             type="text" 
             placeholder="Buscar por nome ou CPF..." 
             value={searchTerm} 
             onChange={e => setSearchTerm(e.target.value)} 
-            className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white font-bold" 
+            className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
           />
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
+            <AnimatePresence mode="popLayout">
+                {selectedClients.size > 0 && (
+                    <MotionDiv 
+                        initial={{ opacity: 0, x: 20 }} 
+                        animate={{ opacity: 1, x: 0 }} 
+                        exit={{ opacity: 0, x: 20 }}
+                        className="flex items-center gap-2"
+                    >
+                        <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
+                            <ListChecks size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">{selectedClients.size}</span>
+                        </div>
+                        
+                        <button onClick={() => handleExportSelected('pdf')} className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 border border-red-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all">
+                            <FileText size={14} /> PDF
+                        </button>
+                        <button onClick={() => handleExportSelected('xlsx')} className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all">
+                            <FileSpreadsheet size={14} /> Excel
+                        </button>
+                        <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                    </MotionDiv>
+                )}
+            </AnimatePresence>
+
+            <button 
+                onClick={handleSelectAll} 
+                className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center gap-2 transition-all border ${
+                    selectedClients.size === filteredClients.length && filteredClients.length > 0 
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
+                    : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                }`}
+            >
+                {selectedClients.size === filteredClients.length && filteredClients.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
+                {selectedClients.size === filteredClients.length && filteredClients.length > 0 ? 'Desmarcar' : 'Todos'}
+            </button>
         </div>
       </div>
 
@@ -215,16 +313,24 @@ export const Clients = () => {
         {filteredClients.map(client => {
           const clientVehicles = allVehicles.filter(v => v.clientId === client.id);
           const dataCorrupted = isCorrupted(client.name);
+          const isSelected = selectedClients.has(client.id);
 
           return (
-            <div key={client.id} className={`bg-white dark:bg-zinc-850 p-8 rounded-[40px] border shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[420px] ${dataCorrupted ? 'border-red-500/30' : 'border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50'}`}>
+            <div 
+                key={client.id} 
+                className={`bg-white dark:bg-zinc-850 p-8 rounded-[40px] border shadow-sm group transition-all relative overflow-hidden flex flex-col justify-between min-h-[420px] cursor-pointer ${
+                    isSelected ? 'border-primary-500 ring-4 ring-primary-500/10' : 
+                    dataCorrupted ? 'border-red-500/30' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                }`}
+                onClick={() => toggleSelectClient(client.id)}
+            >
               
               <div>
                 <div className="flex justify-between items-start mb-6">
                   <div className={`p-4 rounded-2xl ${dataCorrupted ? 'bg-red-500/10 text-red-500' : client.hasAccess ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'} shadow-lg transition-colors`}>
                     {dataCorrupted ? <Lock size={24} /> : <UserIcon size={24} />}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                     {client.hasAccess && !dataCorrupted && (
                       <button 
                         onClick={() => { setSelectedClient(client); setIsResetModalOpen(true); }}
@@ -246,9 +352,12 @@ export const Clients = () => {
                   </div>
                 </div>
 
-                <h3 className={`text-xl font-display font-black uppercase tracking-tight truncate leading-tight ${dataCorrupted ? 'text-zinc-400 break-all whitespace-normal text-[10px] font-mono' : 'text-zinc-900 dark:text-white'}`}>
-                    {client.name}
-                </h3>
+                <div className="flex items-center justify-between">
+                    <h3 className={`text-xl font-display font-black uppercase tracking-tight truncate leading-tight ${dataCorrupted ? 'text-zinc-400 break-all whitespace-normal text-[10px] font-mono' : 'text-zinc-900 dark:text-white'}`}>
+                        {client.name}
+                    </h3>
+                    {isSelected && <div className="bg-primary-500 text-white rounded-full p-1"><Check size={12} strokeWidth={4}/></div>}
+                </div>
                 {dataCorrupted && <span className="text-[9px] text-red-500 font-bold uppercase mt-1 block">Erro de Decriptação - Chave Inválida</span>}
                 
                 <div className="flex items-center gap-2 mt-1">

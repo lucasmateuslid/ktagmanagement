@@ -1,6 +1,6 @@
 
 // ... keep imports ...
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory, Feedback, SystemUpdate } from '../types';
 import { db } from './firebase';
 import { 
   collection, getDocs, addDoc, doc, updateDoc, deleteDoc, 
@@ -24,6 +24,8 @@ const KEYS = {
   NOTIFICATIONS: 'ktag_notifications',
   SCHEDULES: 'ktag_schedules',
   TECHNICIANS: 'ktag_technicians',
+  FEEDBACKS: 'ktag_feedbacks',
+  SYSTEM_UPDATES: 'ktag_system_updates',
 };
 
 // ... keep cache and cleanData ...
@@ -65,9 +67,7 @@ const fetchResilient = async (colName: string) => {
 };
 
 export const storage = {
-  // ... existing methods (initEncryption, sessions, users, vehicles, clients, tags, companies, categories, stolen, settings, audit) ...
-  
-  // --- SEGURANÇA E SESSÃO (JWT UPDATED) ---
+  // ... existing methods ...
   initEncryption: async (user: User) => {
     const scope = user.companySlug || 'default-global-scope';
     const seed = `ktag-enterprise-master-key-${scope}-v2`; 
@@ -161,7 +161,7 @@ export const storage = {
     }
   },
 
-  // --- GESTÃO DE VEÍCULOS E CLIENTES (E2EE PROTECTED) ---
+  // ... Vehicle & Client methods ...
   getVehicles: async (): Promise<Vehicle[]> => {
     const raw = await fetchResilient(KEYS.VEHICLES) as Vehicle[];
     if (raw.length > 0) cache.set(KEYS.VEHICLES, raw);
@@ -225,7 +225,7 @@ export const storage = {
     cache.set(KEYS.CLIENTS, list);
   },
 
-  // --- GESTÃO DE EQUIPAMENTOS (ESTOQUE) ---
+  // ... Tags, Companies, Categories methods ...
   getTags: async (): Promise<Tag[]> => {
     const raw = await fetchResilient(KEYS.TAGS) as Tag[];
     if (raw.length > 0) cache.set(KEYS.TAGS, raw);
@@ -254,7 +254,6 @@ export const storage = {
     cache.set(KEYS.TAGS, tags);
   },
 
-  // --- GESTÃO DE EMPRESAS E CATEGORIAS ---
   getCompanies: async (): Promise<Company[]> => {
     const data = await fetchResilient(KEYS.COMPANIES) as Company[];
     if (data.length > 0) cache.set(KEYS.COMPANIES, data);
@@ -295,7 +294,6 @@ export const storage = {
     cache.set(KEYS.CATEGORIES, list.filter(c => c.id !== id));
   },
 
-  // --- GESTÃO DE OCORRÊNCIAS (ROUBO) ---
   getStolenRecords: async (): Promise<StolenRecord[]> => {
     const data = await fetchResilient(KEYS.STOLEN_RECORDS) as StolenRecord[];
     if (data.length > 0) cache.set(KEYS.STOLEN_RECORDS, data);
@@ -317,7 +315,6 @@ export const storage = {
     return []; 
   },
 
-  // --- CONFIGURAÇÕES E AUDITORIA ---
   getSettings: async (): Promise<AppSettings> => {
     if (db) {
       try {
@@ -365,9 +362,7 @@ export const storage = {
     }
   },
 
-  // --- AGENDAMENTOS E TÉCNICOS (NOVO) ---
-  
-  // Técnicos
+  // ... Schedule & Tech methods ...
   getTechnicians: async (): Promise<Technician[]> => {
     if (!db) return [];
     const res = await fetchResilient(KEYS.TECHNICIANS);
@@ -378,14 +373,13 @@ export const storage = {
     if (db) await setDoc(doc(db, KEYS.TECHNICIANS, tech.id), cleanData(tech));
   },
 
-  // Agendamentos (Legacy One-Time Fetch)
   getSchedules: async (role: string, userId: string): Promise<Schedule[]> => {
     if (!db) return [];
     let q;
     if (role === 'user') {
       q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
     } else {
-      q = query(collection(db, KEYS.SCHEDULES)); // Admin/Mod vê tudo
+      q = query(collection(db, KEYS.SCHEDULES)); 
     }
     const snap = await getDocs(q);
     return snap.docs.map(d => d.data() as Schedule);
@@ -399,24 +393,46 @@ export const storage = {
     if (db) await deleteDoc(doc(db, KEYS.SCHEDULES, id));
   },
 
-  // Realtime Listener para Agendamentos (Principal)
-  // Agora suporta Role para filtrar corretamente
   subscribeToSchedules: (role: string, userId: string, onUpdate: (schedules: Schedule[]) => void) => {
     if (!db) return () => {};
-    
     let q;
     if (role === 'user') {
-      // Usuário vê apenas os dele
       q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
     } else {
-      // Admin/Moderator vê tudo
       q = query(collection(db, KEYS.SCHEDULES));
     }
-
     return onSnapshot(q, (snap) => {
         const schedules = snap.docs.map(d => d.data() as Schedule);
         onUpdate(schedules);
     });
+  },
+
+  // --- FEEDBACK & SUGGESTIONS ---
+  saveFeedback: async (feedback: Feedback) => {
+    if (db) await setDoc(doc(db, KEYS.FEEDBACKS, feedback.id), cleanData(feedback));
+  },
+
+  getFeedbacks: async (): Promise<Feedback[]> => {
+    if (!db) return [];
+    const q = query(collection(db, KEYS.FEEDBACKS), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as Feedback);
+  },
+
+  // --- SYSTEM UPDATES (NOVIDADES) ---
+  saveSystemUpdate: async (update: SystemUpdate) => {
+    if (db) await setDoc(doc(db, KEYS.SYSTEM_UPDATES, update.id), cleanData(update));
+  },
+
+  getSystemUpdates: async (): Promise<SystemUpdate[]> => {
+    if (!db) return [];
+    const q = query(collection(db, KEYS.SYSTEM_UPDATES), orderBy('date', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as SystemUpdate);
+  },
+
+  deleteSystemUpdate: async (id: string) => {
+    if (db) await deleteDoc(doc(db, KEYS.SYSTEM_UPDATES, id));
   },
 
   deleteTag: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.TAGS, id)); },

@@ -5,36 +5,35 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { AiAssistant } from './AiAssistant';
-import { pushService } from '../services/pushService'; // Importação do Push Service
+import { pushService } from '../services/pushService'; 
+import { ChangelogModal } from './ChangelogModal'; // Import Changelog
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
-  Crown, Briefcase, User as UserIcon, Wallet
+  Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MotionDiv = motion.div as any;
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false); // State for Changelog
   const location = useLocation();
   const navigate = useNavigate();
 
-  // --- ATIVAÇÃO DO PUSH NOTIFICATION ---
   useEffect(() => {
     if (user) {
-        // Tenta registrar o push assim que o usuário loga e o layout monta
         pushService.register(user.id);
     }
   }, [user]);
-  // -------------------------------------
 
   const isMapPage = location.pathname === '/map';
 
@@ -43,16 +42,11 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     navigate('/login');
   };
 
-  // Helper para estilização baseada no cargo
   const getRoleStyle = (role?: string) => {
     switch (role) {
-      // Admin: Dourado, sem ícone (ícone null)
       case 'admin': return { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: null, label: 'Administrador' };
-      // Moderator: Azul, sem ícone (ícone null)
       case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
-      // Client: Retorna null para não renderizar
       case 'client': return null;
-      // Default (Operador): Cinza mais escuro no light mode, Label "Usuário"
       default: return { color: 'text-zinc-600 dark:text-zinc-400', bg: 'bg-zinc-200 dark:bg-zinc-800', border: 'border-zinc-300 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
     }
   };
@@ -72,6 +66,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       ];
     }
 
+    // Menu for Non-Clients (Admin, Moderator, User)
     return [
       { title: 'MONITORAMENTO', items: [
         { label: 'DASHBOARD', path: '/', icon: LayoutGrid }, 
@@ -91,6 +86,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
         ...(role === 'admin' ? [{ label: 'TÉCNICOS', path: '/technicians', icon: Wrench }] : [])
       ]},
+      // Feedback Section for Internal Users
+      { title: 'COMUNIDADE', items: [
+          { label: isAdmin ? 'COMENTÁRIOS' : 'FEEDBACK & SUGESTÕES', path: '/feedback', icon: MessageSquare }
+      ]},
       ...(role === 'admin' || role === 'moderator' ? [
         { title: 'GESTÃO', items: [
           { label: 'RELATÓRIOS', path: '/reports', icon: FileText },
@@ -106,7 +105,6 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   return (
     <div className="flex h-screen bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col">
       
-      {/* CRITICAL ALERT BANNER (30 MINUTOS+) */}
       <AnimatePresence>
         {criticalAlerts.length > 0 && (
           <MotionDiv 
@@ -125,7 +123,6 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       </AnimatePresence>
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* TOAST NOTIFICATION OVERLAY */}
         <AnimatePresence>
           {activeToast && (
             <MotionDiv 
@@ -252,6 +249,15 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
             </div>
 
             <div className="flex items-center gap-3">
+                {/* Botão de Novidades */}
+                <button
+                    onClick={() => setIsChangelogOpen(true)}
+                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-blue-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-blue-500/30"
+                    title="Novidades do Sistema"
+                >
+                    <Megaphone size={20}/>
+                </button>
+
                 <button 
                   onClick={() => setIsNotifOpen(!isNotifOpen)}
                   className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all relative border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
@@ -269,10 +275,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
                 
-                {/* Separator */}
                 <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
 
-                {/* USER PROFILE PILL */}
                 <div className="flex items-center gap-3 pl-2 group cursor-default">
                   <div className="flex flex-col items-end hidden sm:flex">
                       <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight leading-none mb-1">{user?.name}</p>
@@ -324,12 +328,12 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
             </div>
           </header>
 
-          {/* CONTENT - Padronização Global de Padding */}
           <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-8'}`}>
               {children || <Outlet />}
           </div>
           
           <AiAssistant />
+          {isChangelogOpen && <ChangelogModal onClose={() => setIsChangelogOpen(false)} />}
         </main>
       </div>
     </div>

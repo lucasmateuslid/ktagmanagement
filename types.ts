@@ -247,3 +247,27 @@ export interface Schedule {
   createdAt: number;
   analysisStartedAt?: number; // Para resetar o timer quando entrar em análise
 }
+
+// --- FEEDBACK & SYSTEM UPDATES ---
+
+export type FeedbackType = 'suggestion' | 'bug' | 'improvement';
+
+export interface Feedback {
+  id: string;
+  userId: string;
+  userName: string;
+  type: FeedbackType;
+  content: string;
+  // Attachments in Base64 for simplicity in this architecture
+  attachments?: string[]; 
+  createdAt: number;
+}
+
+export interface SystemUpdate {
+  id: string;
+  version: string;
+  title: string;
+  content: string;
+  date: number;
+  type: 'feature' | 'fix' | 'announcement';
+}

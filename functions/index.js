@@ -1,7 +1,7 @@
 
 /**
- * Generic Proxy Function to bypass CORS with RATE LIMITING
- * Deploy with: firebase deploy --only functions
+ * Backend Functions - Firebase
+ * Inclui Proxy API, Rate Limiting e Triggers de Notificação Push
  */
 
 const functions = require("firebase-functions");
@@ -17,8 +17,9 @@ if (admin.apps.length === 0) {
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
 // GERE SUAS CHAVES COM: npx web-push generate-vapid-keys
+// Substitua pelas chaves geradas para ativar o recurso
 const vapidKeys = {
-  publicKey: "SUA_PUBLIC_KEY_AQUI",
+  publicKey: "SUA_PUBLIC_KEY_AQUI", // Deve ser igual à do pushService.ts
   privateKey: "SUA_PRIVATE_KEY_AQUI"
 };
 
@@ -45,6 +46,9 @@ const cleanupOldRecords = () => {
 // Garbage collect every 5 mins (approx)
 setInterval(cleanupOldRecords, 300000);
 
+/**
+ * PROXY API: Contorna CORS e protege credenciais
+ */
 exports.proxyApi = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     
@@ -111,13 +115,106 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
 });
 
 /**
- * Função Callable para enviar notificações Push
- * Pode ser chamada do Frontend via: const sendPush = httpsCallable(functions, 'sendPushNotification');
+ * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
+ * Envia notificação Push para o solicitante quando o status muda.
+ */
+exports.onScheduleUpdate = functions.firestore
+  .document('ktag_schedules/{scheduleId}')
+  .onUpdate(async (change, context) => {
+    const newData = change.after.data();
+    const previousData = change.before.data();
+
+    // Se o status não mudou, não faz nada
+    if (newData.status === previousData.status) return null;
+
+    const requesterId = newData.requesterId;
+    if (!requesterId) return null;
+
+    // Define a mensagem baseada no status
+    let title = '';
+    let body = '';
+    const status = newData.status;
+    const plate = newData.vehiclePlate;
+
+    switch (status) {
+      case 'Confirmada':
+        title = 'Agendamento Confirmado! ✅';
+        body = `Sua solicitação para a placa ${plate} foi agendada.`;
+        break;
+      case 'Reagendada':
+        title = 'Agendamento Alterado 🕒';
+        body = `Nova data/hora definida para o veículo ${plate}.`;
+        break;
+      case 'Técnico no local':
+        title = 'Técnico no Local 📍';
+        body = `O técnico chegou para atender o veículo ${plate}.`;
+        break;
+      case 'Concluída':
+        title = 'Serviço Concluído 🎉';
+        body = `O serviço no veículo ${plate} foi finalizado com sucesso.`;
+        break;
+      case 'Cancelada':
+        title = 'Solicitação Cancelada ❌';
+        body = `O serviço para ${plate} foi cancelado. Verifique os detalhes.`;
+        break;
+      case 'Em análise':
+        title = 'Em Análise 🔍';
+        body = `Estamos analisando sua solicitação para ${plate}.`;
+        break;
+      default:
+        return null; // Não notifica outros status
+    }
+
+    try {
+      // Busca assinaturas push do usuário solicitante
+      const subscriptionsSnapshot = await admin.firestore()
+        .collection('ktag_push_subscriptions')
+        .where('userId', '==', requesterId)
+        .get();
+
+      if (subscriptionsSnapshot.empty) {
+        console.log(`User ${requesterId} has no push subscriptions.`);
+        return null;
+      }
+
+      const notifications = [];
+      const payload = JSON.stringify({
+        title: title,
+        body: body,
+        url: '/', // Abre a home/app
+        icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
+      });
+
+      subscriptionsSnapshot.forEach(doc => {
+        const subscription = doc.data().subscription;
+        
+        const pushPromise = webpush.sendNotification(subscription, payload)
+          .catch(err => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              // Assinatura expirou, limpa do banco
+              console.log(`Deleting expired subscription: ${doc.id}`);
+              return doc.ref.delete();
+            }
+            console.error('Error sending push:', err);
+          });
+          
+        notifications.push(pushPromise);
+      });
+
+      await Promise.all(notifications);
+      console.log(`Notifications sent to user ${requesterId} for status ${status}`);
+      return { success: true };
+
+    } catch (error) {
+      console.error('Error in onScheduleUpdate trigger:', error);
+      return null;
+    }
+});
+
+/**
+ * Função Manual (Callable) para Testes ou Envios Específicos
  */
 exports.sendPushNotification = functions.https.onCall(async (data, context) => {
-  // Opcional: Validar autenticação
-  // if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
-
   const { userId, title, body, url } = data;
 
   if (!userId || !title || !body) {
@@ -125,7 +222,6 @@ exports.sendPushNotification = functions.https.onCall(async (data, context) => {
   }
 
   try {
-    // Busca todas as assinaturas do usuário (pode ter desktop e laptop)
     const subscriptionsSnapshot = await admin.firestore()
       .collection('ktag_push_subscriptions')
       .where('userId', '==', userId)
@@ -140,22 +236,17 @@ exports.sendPushNotification = functions.https.onCall(async (data, context) => {
       title: title,
       body: body,
       url: url || '/',
-      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png' // Ícone do app
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
     });
 
     subscriptionsSnapshot.forEach(doc => {
       const subscription = doc.data().subscription;
-      
       const pushPromise = webpush.sendNotification(subscription, payload)
         .catch(err => {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            // Assinatura expirou ou inválida, deletar do banco
-            console.log(`Deleting expired subscription: ${doc.id}`);
             return doc.ref.delete();
           }
-          console.error('Error sending push:', err);
         });
-        
       notifications.push(pushPromise);
     });
 
