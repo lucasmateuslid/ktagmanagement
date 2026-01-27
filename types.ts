@@ -79,13 +79,21 @@ export interface Vehicle {
   plateHash?: string;
 }
 
+// K-Tag API v1.2 - Battery Info Structure
+export interface KTagBatteryInfo {
+  level: number; // Percentual estimado (0-100)
+  label: string; // Normal, Médio, Baixo, Crítico
+  color: string; // green, yellow, orange, red
+}
+
 export interface LocationHistory {
   id: string;
   tagId: string;
   lat: number;
   lon: number;
   conf: number;
-  status: number;
+  status: number; // Raw status from API
+  battery?: KTagBatteryInfo; // Interpreted battery status
   timestamp: number;
   isodatetime: string;
 }
@@ -96,6 +104,7 @@ export interface KTagLocationResult {
   lon: number;
   conf: number;
   status: number;
+  battery: KTagBatteryInfo;
   timestamp: number;
   isodatetime: string;
 }

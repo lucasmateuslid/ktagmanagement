@@ -16,7 +16,7 @@ import {
   Clock, Navigation, X, LayoutGrid,
   ChevronRight, ArrowLeft, FileText, FileSpreadsheet, 
   ChevronUp, ChevronDown, Signal, Download,
-  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays, Eye, User, Tag as TagIcon, Box
+  History, MapPinned, Wifi, WifiOff, Loader2, CalendarDays, Eye, User, Tag as TagIcon, Box, BatteryCharging
 } from 'lucide-react';
 import { FaCar, FaMotorcycle, FaTruck } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
@@ -536,6 +536,23 @@ export const LiveMap = () => {
                     </div>
                 )}
 
+                {/* Battery Status (K-Tag v1.2) */}
+                {lastLoc && lastLoc.battery && (
+                    <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center shadow-sm shrink-0" style={{ color: lastLoc.battery.color }}>
+                                <BatteryCharging size={20} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">Nível de Bateria</span>
+                                <span className="text-xs font-bold uppercase" style={{ color: lastLoc.battery.color }}>
+                                    {lastLoc.battery.label} ({lastLoc.battery.level}%)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-zinc-50 dark:bg-zinc-950/60 p-6 rounded-[32px] border border-zinc-100 dark:border-zinc-800/50 relative overflow-hidden group">
                     <div className="flex items-center gap-2 text-primary-500 mb-2">
                         <MapPin size={16} />
@@ -624,9 +641,18 @@ export const LiveMap = () => {
                                     {idx === 0 ? <Navigation size={18} className="fill-current"/> : <div className="w-2 h-2 rounded-full bg-current"/>}
                                 </div>
                                 <div className="flex-1 pb-10">
-                                    <div className="flex justify-between items-center mb-1.5">
-                                        <span className="text-[12px] font-black text-zinc-900 dark:text-white uppercase font-mono tracking-tight">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                        <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{new Date(item.timestamp).toLocaleDateString()}</span>
+                                    <div className="flex justify-between items-start mb-1.5">
+                                        <div>
+                                            <span className="text-[12px] font-black text-zinc-900 dark:text-white uppercase font-mono tracking-tight block">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{new Date(item.timestamp).toLocaleDateString()}</span>
+                                        </div>
+                                        {/* History Battery (Small) */}
+                                        {item.battery && item.battery.level > 0 && (
+                                            <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg">
+                                                <BatteryCharging size={10} style={{ color: item.battery.color }} />
+                                                <span className="text-[8px] font-black" style={{ color: item.battery.color }}>{item.battery.level}%</span>
+                                            </div>
+                                        )}
                                     </div>
                                     <p className={`text-[14px] font-bold leading-tight transition-colors ${resolvedAddresses[item.id] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-700 italic font-medium'}`}>
                                         {resolvedAddresses[item.id] || (idx < 3 ? 'Resolvendo...' : `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`)}

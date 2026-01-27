@@ -8,6 +8,7 @@ import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { FaCar, FaMotorcycle, FaTruck, FaQuestion, FaBox } from 'react-icons/fa';
+import { BatteryCharging } from 'lucide-react';
 
 const { BaseLayer } = LayersControl;
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
@@ -149,6 +150,21 @@ export const MapComponent: React.FC<MapProps> = ({
                             <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">{isUnlinked ? 'Sem Vínculo' : (category?.name || 'Geral')}</span>
                           </div>
                       </div>
+
+                      {/* Battery Indicator (K-Tag v1.2) */}
+                      {loc.battery && (
+                          <div className="flex items-center gap-2 mb-2 px-1.5">
+                              <BatteryCharging size={12} style={{ color: loc.battery.color }} />
+                              <div className="flex flex-col">
+                                  <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: loc.battery.color }}>
+                                      Bateria {loc.battery.label}
+                                  </span>
+                                  <div className="w-full h-1 bg-zinc-200 rounded-full mt-0.5 overflow-hidden">
+                                      <div className="h-full rounded-full" style={{ width: `${loc.battery.level}%`, backgroundColor: loc.battery.color }}></div>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
 
                       <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[9px] font-mono text-zinc-400">
                           <span>{new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>

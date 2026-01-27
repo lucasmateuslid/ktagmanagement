@@ -1,7 +1,25 @@
 
-import { Tag, KTagLocationResult } from '../types';
+import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 import { storage } from './storage';
 import { xadtagService } from './xadtag';
+
+// K-Tag API v1.2 (2025-11-06)
+// status field now represents battery level
+// This logic is shared between map and inventory views
+export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
+  switch (status) {
+    case 0:
+      return { level: 100, label: 'Normal', color: '#10b981' }; // Green
+    case 1:
+      return { level: 60, label: 'Médio', color: '#eab308' }; // Yellow
+    case 2:
+      return { level: 30, label: 'Baixo', color: '#f97316' }; // Orange
+    case 3:
+      return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // Red
+    default:
+      return { level: 0, label: 'Desconhecido', color: '#71717a' }; // Gray
+  }
+};
 
 export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
   // Dispatcher Baseado no Tipo de Dispositivo
@@ -41,7 +59,21 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
       const text = await response.text();
       try {
         const data = JSON.parse(text);
-        return data?.results || [];
+        
+        // Parse da Resposta conforme K-Tag API v1.2
+        if (data && Array.isArray(data.results)) {
+            return data.results.map((p: any) => ({
+                lat: p.lat,
+                lon: p.lon,
+                conf: p.conf,
+                status: p.status, // Raw status
+                battery: ktagBatteryStatus(p.status), // New interpreted battery
+                timestamp: p.timestamp, // Already in ms
+                isodatetime: p.isodatetime
+            }));
+        }
+        
+        return [];
       } catch (jsonErr) {
         throw new Error("Resposta inválida do servidor K-Tag.");
       }
@@ -54,8 +86,17 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
 };
 
 export const exportToCSV = (locations: KTagLocationResult[]) => {
-  const headers = ['Timestamp', 'ISO Date', 'Latitude', 'Longitude', 'Confidence', 'Status'];
-  const rows = locations.map(l => [l.timestamp, l.isodatetime, l.lat, l.lon, l.conf, l.status].join(','));
+  const headers = ['Timestamp', 'ISO Date', 'Latitude', 'Longitude', 'Confidence', 'Battery Level', 'Battery Label'];
+  const rows = locations.map(l => [
+      l.timestamp, 
+      l.isodatetime, 
+      l.lat, 
+      l.lon, 
+      l.conf, 
+      l.battery.level, 
+      l.battery.label
+  ].join(','));
+  
   const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
