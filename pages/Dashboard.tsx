@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useEffect, useState, useMemo } from 'react';
 import { Tag, Vehicle, Company, VehicleCategory, AppSettings, Schedule, Technician } from '../types';
@@ -12,11 +11,9 @@ import {
   Car, Lock, ShoppingCart, Map as MapIcon, 
   Zap, TrendingUp, HandCoins, Calendar, Hourglass, CheckCircle2, Wrench, Users, Building2, Server, ArrowUpRight, Timer
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import * as ReactRouterDOM from 'react-router-dom';
 
 const { Link, useNavigate } = ReactRouterDOM as any;
-const MotionDiv = motion.div as any;
 
 // --- CORES PREMIUM (C6 STYLE) ---
 const COLORS = {
@@ -196,13 +193,12 @@ export const Dashboard = () => {
       return { status, minStock, criticalStock };
   }, [unlinkedCount, settings]);
 
-  // CÁLCULO PREDITIVO DE ESTOQUE (PONDERADO)
+  // CÁLCULO PREDITIVO DE ESTOQUE (Média Ponderada de Saída Mensal)
   const stockPrediction = useMemo(() => {
       if (trendChartData.length === 0) return { days: 0, label: 'Calculando...' };
 
-      // Dados dos últimos 6 meses. O índice 5 é o mês atual.
-      // Pesos: Mês Atual (3x), Mês Anterior (2x), Outros (1x)
-      // Isso garante que picos recentes (ex: 56 ativações) influenciem mais a previsão.
+      // O trendChartData contém as ativações (saídas de estoque) dos últimos 6 meses.
+      // Vamos dar mais peso aos meses recentes para uma previsão mais realista.
       
       let weightedSum = 0;
       let totalWeights = 0;
@@ -211,30 +207,27 @@ export const Dashboard = () => {
           const count = data[' entradas'] || 0;
           let weight = 1;
           
-          if (idx === trendChartData.length - 1) weight = 3; // Mês atual
-          else if (idx === trendChartData.length - 2) weight = 2; // Mês anterior
+          if (idx === trendChartData.length - 1) weight = 3; // Mês atual (Maior peso)
+          if (idx === trendChartData.length - 2) weight = 2; // Mês anterior
           
           weightedSum += count * weight;
           totalWeights += weight;
       });
 
-      const weightedAveragePerMonth = weightedSum / totalWeights;
-      const averagePerDay = weightedAveragePerMonth / 30;
-
-      // Se consumo for zero, previsão infinita
-      if (averagePerDay <= 0.05) return { days: 999, label: 'Sem consumo', monthlyRate: 0 };
-
-      const daysLeft = Math.floor(unlinkedCount / averagePerDay);
+      // Média mensal ponderada de saídas
+      const weightedAverageMonthlyOutput = weightedSum / totalWeights;
       
-      let label = '';
-      if (daysLeft > 365) label = '+1 Ano';
-      else if (daysLeft > 30) label = `${Math.floor(daysLeft / 30)} Meses`;
-      else label = `${daysLeft} Dias`;
+      // Média diária
+      const averageDailyOutput = weightedAverageMonthlyOutput / 30;
 
+      // Evita divisão por zero se não houve saídas
+      if (averageDailyOutput <= 0.05) return { days: 999, label: '> 1 Ano' };
+
+      const daysLeft = Math.floor(unlinkedCount / averageDailyOutput);
+      
       return {
           days: daysLeft,
-          label: label,
-          monthlyRate: Math.round(weightedAveragePerMonth)
+          label: `${daysLeft} DIAS`
       };
   }, [trendChartData, unlinkedCount]);
 
@@ -368,41 +361,34 @@ export const Dashboard = () => {
                   </div>
               </div>
 
-              {/* CARD 3: ESTOQUE (Com Estimativa de Dias) */}
+              {/* CARD 3: ESTOQUE (REESTILIZADO CONFORME PEDIDO) */}
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[340px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-start">
-                      <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Estoque Disponível</p>
-                          <h3 className="text-6xl font-display font-black text-zinc-900 dark:text-white mt-2 tracking-tighter">{unlinkedCount}</h3>
-                      </div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">Estoque</p>
                       <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-zinc-400"><ShoppingCart size={20}/></div>
                   </div>
                   
-                  <div>
-                      <div className="flex justify-between items-end mb-2">
-                          <span className={`text-[10px] font-black uppercase tracking-widest ${stockInfo.status === 'critical' ? 'text-red-500' : stockInfo.status === 'low' ? 'text-amber-500' : 'text-emerald-500'}`}>
-                              {stockInfo.status === 'critical' ? 'Nível Crítico' : stockInfo.status === 'low' ? 'Nível Baixo' : 'Nível Seguro'}
-                          </span>
-                          <span className="text-[9px] font-bold text-zinc-400">Capacidade</span>
+                  <div className="flex flex-col gap-1">
+                      <h3 className="text-[80px] font-display font-black text-zinc-900 dark:text-white tracking-tighter leading-none">{unlinkedCount}</h3>
+                      <p className={`text-[11px] font-black uppercase tracking-widest ${stockInfo.status === 'critical' ? 'text-red-500' : stockInfo.status === 'low' ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                          {stockInfo.status === 'critical' ? 'ESTOQUE CRÍTICO' : stockInfo.status === 'low' ? 'NÍVEL BAIXO' : 'ESTOQUE CONFORTÁVEL'}
+                      </p>
+                  </div>
+
+                  <div className="space-y-4">
+                      <div className="flex items-center gap-3 text-zinc-400">
+                          <Hourglass size={14} className="text-zinc-400"/>
+                          <p className="text-[10px] font-black uppercase tracking-widest">
+                              Duração Est.: <span className="text-zinc-900 dark:text-white">{stockPrediction.label}</span>
+                          </p>
                       </div>
-                      <div className="w-full bg-zinc-100 dark:bg-zinc-950 h-3 rounded-full overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                      
+                      {/* Barra de Capacidade Sutil */}
+                      <div className="w-full bg-zinc-100 dark:bg-zinc-950 h-1.5 rounded-full overflow-hidden">
                           <div 
                             className={`h-full transition-all duration-500 ${stockInfo.status === 'critical' ? 'bg-red-500' : stockInfo.status === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}`} 
                             style={{ width: `${Math.min(100, (unlinkedCount / 100) * 100)}%` }} 
                           />
-                      </div>
-                      
-                      {/* NOVA LÓGICA DE ESTIMATIVA */}
-                      <div className="mt-4 flex items-start gap-3 bg-zinc-50 dark:bg-zinc-950/50 p-3.5 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
-                          <Timer size={16} className="text-primary-500 shrink-0 mt-0.5"/>
-                          <div className="flex flex-col gap-1">
-                              <p className="text-[9px] text-zinc-500 dark:text-zinc-400 font-medium leading-relaxed">
-                                  Média Ponderada: <strong className="text-zinc-900 dark:text-white">{stockPrediction.monthlyRate} ativações/mês</strong>
-                              </p>
-                              <p className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
-                                  Estoque estimado para: <strong className="text-primary-500 uppercase">{stockPrediction.label}</strong>
-                              </p>
-                          </div>
                       </div>
                   </div>
               </div>
@@ -430,7 +416,10 @@ export const Dashboard = () => {
                                       <Cell key={`cell-${index}`} fill={index === 0 ? COLORS.primary : '#52525b'} />
                                   ))}
                               </Pie>
-                              <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }}
+                                itemStyle={{ color: '#e4e4e7' }}
+                              />
                           </PieChart>
                       </ResponsiveContainer>
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -467,7 +456,12 @@ export const Dashboard = () => {
                               </defs>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.1} />
                               <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} dy={10} />
-                              <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} cursor={{ stroke: '#3f3f46' }} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                                cursor={{ stroke: '#3f3f46' }} 
+                                itemStyle={{ color: '#e4e4e7' }}
+                                labelStyle={{ color: '#e4e4e7' }}
+                              />
                               <Area type="monotone" dataKey=" entradas" stroke={COLORS.primary} strokeWidth={3} fill="url(#gradTrend)" />
                           </AreaChart>
                       </ResponsiveContainer>
@@ -486,7 +480,12 @@ export const Dashboard = () => {
                       <BarChart data={companyChartData} layout="vertical" margin={{ left: 0, right: 30 }}>
                           <XAxis type="number" hide />
                           <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
-                          <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} />
+                          <Tooltip 
+                            cursor={{fill: 'transparent'}} 
+                            contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                            itemStyle={{ color: '#e4e4e7' }}
+                            labelStyle={{ color: '#e4e4e7' }}
+                          />
                           <Bar dataKey="contador" radius={[0, 4, 4, 0]} barSize={20}>
                               {companyChartData.map((entry, index) => (
                                   <Cell key={`cell-${index}`} fill={index === 0 ? COLORS.primary : '#52525b'} />
@@ -574,7 +573,10 @@ export const Dashboard = () => {
                                       <Cell key={`cell-${index}`} fill={COLORS.chartPalette[index % COLORS.chartPalette.length]} />
                                   ))}
                               </Pie>
-                              <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                                itemStyle={{ color: '#e4e4e7' }}
+                              />
                               <Legend verticalAlign="bottom" height={36} iconSize={8} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', paddingTop: '10px', color: '#71717a' }}/>
                           </PieChart>
                       </ResponsiveContainer>
@@ -598,7 +600,12 @@ export const Dashboard = () => {
                               </defs>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.1} />
                               <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} dy={10} />
-                              <Tooltip contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} cursor={{ stroke: '#3f3f46' }} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                                cursor={{ stroke: '#3f3f46' }} 
+                                itemStyle={{ color: '#e4e4e7' }}
+                                labelStyle={{ color: '#e4e4e7' }}
+                              />
                               <Area type="monotone" dataKey="total" stroke={COLORS.primary} strokeWidth={3} fill="url(#gradService)" />
                           </AreaChart>
                       </ResponsiveContainer>

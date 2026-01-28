@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../services/storage';
 import { hinovaService } from '../services/hinova'; // Importação do serviço
@@ -7,7 +6,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
 import { Calendar, Clock, Car, Settings, CheckCircle2, User as UserIcon, CreditCard, MapPin, Search, Loader2, Database, Phone, Lock, ChevronDown, Check, X, Building2, FileText, ClipboardCheck, Wallet } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
+
+const { useNavigate } = ReactRouterDOM as any;
 
 export const ScheduleRequest = () => {
   const { user } = useAuth();
@@ -447,42 +448,4 @@ export const ScheduleRequest = () => {
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><ClipboardCheck size={14}/> Vistoria Necessária?</label>
                         <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                            <button type="button" onClick={() => setFormData({...formData, needsInspection: true})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.needsInspection ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Sim</button>
-                            <button type="button" onClick={() => setFormData({...formData, needsInspection: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!formData.needsInspection ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Não</button>
-                        </div>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Wallet size={14}/> Pagamento no Local?</label>
-                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                            <button type="button" onClick={() => setFormData({...formData, paymentOnSite: true})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.paymentOnSite ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Sim</button>
-                            <button type="button" onClick={() => setFormData({...formData, paymentOnSite: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${!formData.paymentOnSite ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>Não</button>
-                        </div>
-                    </div>
-                </div>
-                
-                <LocationPicker 
-                    tileProvider="google" 
-                    onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))} 
-                />
-
-                {/* Campo de Observações */}
-                <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2 mb-2">
-                        <FileText size={14}/> Observações
-                    </label>
-                    <textarea
-                        value={formData.notes || ''}
-                        onChange={e => setFormData(prev => ({...prev, notes: e.target.value}))}
-                        className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none placeholder:text-zinc-300 min-h-[100px] resize-none"
-                        placeholder="Informações adicionais para o técnico (ponto de referência, restrições, etc)..."
-                    />
-                </div>
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full py-5 bg-primary-500 hover:bg-primary-400 text-black rounded-2xl font-black uppercase tracking-[0.2em] text-sm shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
-                {loading ? 'Enviando...' : <><CheckCircle2 size={20} /> Enviar Solicitação</>}
-            </button>
-        </form>
-    </div>
-  );
-};
+                            <button type="button" onClick={() => setFormData({...formData, needsInspection: true

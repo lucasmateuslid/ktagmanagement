@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const { Outlet, Link, useLocation, useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {

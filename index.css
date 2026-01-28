@@ -3,6 +3,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global Base Styles */
+@layer base {
+  /* Garante contraste em formulários */
+  input, textarea, select {
+    @apply text-zinc-900 dark:text-white caret-primary-500;
+  }
+  
+  /* Placeholder color */
+  input::placeholder, textarea::placeholder {
+    @apply text-zinc-400 dark:text-zinc-500;
+  }
+
+  /* Reset de autofill do Chrome para não estragar o tema escuro */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active{
+      -webkit-box-shadow: 0 0 0 30px #18181b inset !important;
+      -webkit-text-fill-color: white !important;
+      transition: background-color 5000s ease-in-out 0s;
+  }
+  
+  .light input:-webkit-autofill,
+  .light input:-webkit-autofill:hover, 
+  .light input:-webkit-autofill:focus, 
+  .light input:-webkit-autofill:active{
+      -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+      -webkit-text-fill-color: black !important;
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

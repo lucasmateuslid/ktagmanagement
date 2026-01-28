@@ -11,7 +11,7 @@ import {
   AlertCircle, XCircle, Clock, ChevronRight, ClipboardList, Check,
   TrendingUp, Activity, RotateCcw, ClipboardCheck, Wallet, DollarSign,
   AlertTriangle, ArrowRight, Map as MapIcon, History, Phone, FileText, FileSpreadsheet, SearchCheck,
-  ChevronLeft, Users
+  ChevronLeft, Users, Download
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -93,6 +93,7 @@ export const Schedules = () => {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -226,8 +227,10 @@ export const Schedules = () => {
           total, scheduled, completed, canceled,
           installation, maintenance, removal, inspection,
           totalRevenue, totalDisplacement,
-          byTech: Object.entries(byTech).sort((a, b) => b[1] - a[1]).slice(0, 4),
-          byService: Object.entries(byService).sort((a, b) => b[1] - a[1]).slice(0, 3)
+          byTech: Object.entries(byTech).sort((a, b) => b[1] - a[1]),
+          byService: Object.entries(byService).sort((a, b) => b[1] - a[1]),
+          avgTicket: (completed + scheduled) > 0 ? totalRevenue / (completed + scheduled) : 0,
+          monthSchedules // Raw data for PDF
       };
   }, [schedules, technicians, isPrivileged, viewDate]);
 
@@ -299,6 +302,213 @@ export const Schedules = () => {
 
       return filtered;
   }, [schedules, searchTerm, statusFilter, adminTab, isPrivileged, filterTech, filterService, filterStatusDropdown, technicians, showMyRequests, viewDate, user]);
+
+  // Função de Exportação PDF
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+        const jsPDFModule = await import('jspdf');
+        const jsPDF = jsPDFModule.jsPDF || (jsPDFModule as any).default;
+        const autoTableModule = await import('jspdf-autotable');
+        const autoTable = autoTableModule.default || (autoTableModule as any);
+
+        const doc = new jsPDF();
+        
+        // --- HEADER ---
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(24, 24, 27);
+        doc.text("RELATÓRIO DE SERVIÇOS", 14, 22);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`Competência: ${viewDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}`, 14, 30);
+        doc.text(`Gerado por: ${user?.name} em ${new Date().toLocaleString()}`, 14, 36);
+
+        if (dashboardData) {
+            // --- KPI BOXES (VISUAL) ---
+            const startY = 45;
+            
+            // Total Box
+            doc.setFillColor(24, 24, 27); // Dark
+            doc.roundedRect(14, startY, 45, 25, 3, 3, "F");
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(8); doc.text("TOTAL MÊS", 19, startY + 8);
+            doc.setFontSize(14); doc.text(dashboardData.total.toString(), 19, startY + 20);
+
+            // Concluídos Box
+            doc.setFillColor(16, 185, 129); // Emerald
+            doc.roundedRect(64, startY, 45, 25, 3, 3, "F");
+            doc.setFontSize(8); doc.text("CONCLUÍDAS", 69, startY + 8);
+            doc.setFontSize(14); doc.text(dashboardData.completed.toString(), 69, startY + 20);
+
+            // Cancelados Box
+            doc.setFillColor(239, 68, 68); // Red
+            doc.roundedRect(114, startY, 45, 25, 3, 3, "F");
+            doc.setFontSize(8); doc.text("CANCELADAS", 119, startY + 8);
+            doc.setFontSize(14); doc.text(dashboardData.canceled.toString(), 119, startY + 20);
+
+            // Ticket Médio Box
+            doc.setFillColor(59, 130, 246); // Blue
+            doc.roundedRect(164, startY, 45, 25, 3, 3, "F");
+            doc.setFontSize(8); doc.text("TICKET MÉDIO", 169, startY + 8);
+            doc.setFontSize(14); doc.text(`R$ ${dashboardData.avgTicket.toFixed(0)}`, 169, startY + 20);
+
+            // --- BREAKDOWN DE SERVIÇOS ---
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text("Detalhamento Operacional", 14, startY + 40);
+
+            autoTable(doc, {
+                startY: startY + 45,
+                head: [['Tipo de Serviço', 'Quantidade', 'Representatividade']],
+                body: [
+                    ['Instalação', dashboardData.installation, `${((dashboardData.installation/dashboardData.total)*100 || 0).toFixed(1)}%`],
+                    ['Manutenção', dashboardData.maintenance, `${((dashboardData.maintenance/dashboardData.total)*100 || 0).toFixed(1)}%`],
+                    ['Retirada', dashboardData.removal, `${((dashboardData.removal/dashboardData.total)*100 || 0).toFixed(1)}%`],
+                    ['Vistoria', dashboardData.inspection, `${((dashboardData.inspection/dashboardData.total)*100 || 0).toFixed(1)}%`],
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [63, 63, 70] },
+                styles: { fontSize: 9 }
+            });
+
+            // --- FINANCEIRO & TÉCNICOS ---
+            let currentY = (doc as any).lastAutoTable.finalY + 15;
+            doc.text("Análise Financeira e Produtividade", 14, currentY);
+
+            // Tabela de Técnicos
+            const techData = dashboardData.byTech.map(([name, value]) => [
+                name,
+                `R$ ${value.toFixed(2)}`
+            ]);
+
+            // Add Total Row
+            techData.push(['TOTAL GERAL', `R$ ${dashboardData.totalRevenue.toFixed(2)}`]);
+            // Add Displacement Row separately for clarity
+            techData.push(['(Gasto com Deslocamento)', `(R$ ${dashboardData.totalDisplacement.toFixed(2)})`]);
+
+            autoTable(doc, {
+                startY: currentY + 5,
+                head: [['Técnico Responsável', 'Valor Produzido']],
+                body: techData,
+                theme: 'grid',
+                headStyles: { fillColor: [245, 158, 11], textColor: [0,0,0] }, // Amber
+                columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+                styles: { fontSize: 9 }
+            });
+        }
+
+        // --- LISTAGEM COMPLETA DOS SERVIÇOS DO MÊS ---
+        doc.addPage();
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("Relatório Detalhado de Serviços", 14, 20);
+
+        // Prepara dados da tabela principal
+        // Usa filteredList para respeitar filtros da tela, ou dashboardData.monthSchedules para todo o mês
+        // O pedido foi "Junto com os serviços e os que tiverem deslocamento quero que contenha também"
+        const sourceData = dashboardData?.monthSchedules || filteredList;
+        
+        const detailedRows = sourceData.map(s => {
+            const tech = technicians.find(t => t.id === s.technicianId)?.name || '-';
+            const date = s.confirmedDate ? new Date(s.confirmedDate).toLocaleDateString() : (s.preferredDate ? new Date(s.preferredDate).toLocaleDateString() : '-');
+            
+            // Calcula valor individual deste serviço para a tabela
+            let val = 0;
+            const tObj = technicians.find(t => t.id === s.technicianId);
+            if (tObj && tObj.serviceRates && ['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local'].includes(s.status)) {
+                 if (s.serviceType === 'Instalação') val = tObj.serviceRates.installation || 0;
+                 else if (s.serviceType === 'Manutenção') val = tObj.serviceRates.maintenance || 0;
+                 else if (s.serviceType === 'Retirada') val = tObj.serviceRates.removal || 0;
+                 else if (s.serviceType === 'Vistoria') val = tObj.serviceRates.inspection || 0;
+            }
+            const disp = s.displacementValue || 0;
+
+            return [
+                date,
+                s.vehiclePlate,
+                s.serviceType,
+                s.status,
+                tech,
+                disp > 0 ? `R$ ${disp.toFixed(2)}` : '-',
+                `R$ ${(val + disp).toFixed(2)}`
+            ];
+        });
+
+        autoTable(doc, {
+            startY: 25,
+            head: [['Data', 'Placa', 'Tipo', 'Status', 'Técnico', 'Desloc.', 'Valor Total']],
+            body: detailedRows,
+            theme: 'striped',
+            headStyles: { fillColor: [24, 24, 27] },
+            styles: { fontSize: 7, cellPadding: 2 },
+            columnStyles: {
+                5: { halign: 'right' },
+                6: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+        doc.save(`relatorio_servicos_${viewDate.getMonth()+1}_${viewDate.getFullYear()}.pdf`);
+        addNotification('success', 'PDF Gerado', 'Relatório operacional exportado.');
+
+    } catch (e) {
+        console.error(e);
+        addNotification('error', 'Erro', 'Falha ao gerar PDF.');
+    } finally {
+        setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+      try {
+          const XLSX = await import('xlsx');
+          // Exporta o que está filtrado na tela OU o mês todo se for admin dashboard
+          const sourceData = (isPrivileged && dashboardData) ? dashboardData.monthSchedules : filteredList;
+
+          const data = sourceData.map(s => {
+              const tech = technicians.find(t => t.id === s.technicianId);
+              
+              // Recalcula valor
+              let val = 0;
+              if (tech && tech.serviceRates && ['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local'].includes(s.status)) {
+                   if (s.serviceType === 'Instalação') val = tech.serviceRates.installation || 0;
+                   else if (s.serviceType === 'Manutenção') val = tech.serviceRates.maintenance || 0;
+                   else if (s.serviceType === 'Retirada') val = tech.serviceRates.removal || 0;
+                   else if (s.serviceType === 'Vistoria') val = tech.serviceRates.inspection || 0;
+              }
+
+              return {
+                  "ID": s.id.substring(0, 8),
+                  "Data": s.confirmedDate ? new Date(s.confirmedDate).toLocaleDateString() : (s.preferredDate ? new Date(s.preferredDate).toLocaleDateString() : '-'),
+                  "Hora": s.confirmedTime || s.preferredTime || '-',
+                  "Placa": s.vehiclePlate,
+                  "Modelo": s.vehicleModel,
+                  "Cliente": s.clientName || '-',
+                  "Serviço": s.serviceType,
+                  "Status": s.status,
+                  "Técnico": tech?.name || '-',
+                  "Endereço": s.locationAddress,
+                  "Distante?": s.isRemoteLocation ? 'SIM' : 'NÃO',
+                  "KM Desloc.": s.displacementKm || 0,
+                  "Valor Desloc.": s.displacementValue || 0,
+                  "Valor Serviço": val,
+                  "Valor Total": val + (s.displacementValue || 0),
+                  "Solicitante": s.requesterName
+              };
+          });
+
+          const ws = XLSX.utils.json_to_sheet(data);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Agendamentos");
+          XLSX.writeFile(wb, `agendamentos_${Date.now()}.xlsx`);
+          addNotification('success', 'Excel Gerado', 'Planilha exportada com sucesso.');
+      } catch (e) {
+          addNotification('error', 'Erro', 'Falha ao exportar Excel.');
+      }
+  };
 
   // Função para cores da borda e badge
   const getStatusStyle = (status: string) => {
@@ -524,8 +734,8 @@ export const Schedules = () => {
                     </div>
                     {isPrivileged && (
                         <div className="flex gap-2">
-                            <button className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-400 hover:text-zinc-600 shadow-sm"><FileText size={18}/></button>
-                            <button className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-400 hover:text-zinc-600 shadow-sm"><FileSpreadsheet size={18}/></button>
+                            <button onClick={handleExportPDF} disabled={isExporting} className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-400 hover:text-red-500 shadow-sm disabled:opacity-50"><FileText size={18}/></button>
+                            <button onClick={handleExportExcel} disabled={isExporting} className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-400 hover:text-emerald-500 shadow-sm disabled:opacity-50"><FileSpreadsheet size={18}/></button>
                         </div>
                     )}
                 </div>
