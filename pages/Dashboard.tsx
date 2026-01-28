@@ -1,17 +1,32 @@
+
 import * as React from 'react';
-import { useEffect, useState, useMemo } from 'react';
-import { Tag, Vehicle, Company, VehicleCategory, AppSettings, Schedule, Technician } from '../types';
-import { storage } from '../services/storage';
+import { useEffect, useMemo } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { 
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
-  Car, Lock, ShoppingCart, Map as MapIcon, 
-  Zap, TrendingUp, HandCoins, Calendar, Hourglass, CheckCircle2, Wrench, Users, Building2, Server, ArrowUpRight, Timer
+  Car, ShoppingCart, Map as MapIcon, 
+  TrendingUp, HandCoins, Calendar, Hourglass, Wrench, Users, Building2
 } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
+
+// Import Hook & Utils
+import { useDashboardData } from './dashboard/hooks/useDashboardData';
+import { 
+  calculateServiceHistory, 
+  calculateTopTechnicians, 
+  calculateTopRequesters, 
+  calculateServiceTypes, 
+  calculateTagHistory, 
+  calculateCompanyDistribution, 
+  calculateGrowthTrend, 
+  calculateStockStatus, 
+  calculateStockPrediction, 
+  calculateOwnershipStats, 
+  calculateCategoryStats 
+} from './dashboard/utils/dashboardCalculations';
 
 const { Link, useNavigate } = ReactRouterDOM as any;
 
@@ -28,231 +43,50 @@ const COLORS = {
 export const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [categories, setCategories] = useState<VehicleCategory[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [technicians, setTechnicians] = useState<Technician[]>([]);
-  
-  // Chart Data States
-  const [serviceHistoryData, setServiceHistoryData] = useState<any[]>([]);
-  const [topTechsData, setTopTechsData] = useState<any[]>([]);
-  const [topRequestersData, setTopRequestersData] = useState<any[]>([]);
-  const [serviceTypeData, setServiceTypeData] = useState<any[]>([]);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [companyChartData, setCompanyChartData] = useState<any[]>([]);
-  const [trendChartData, setTrendChartData] = useState<any[]>([]);
-  
   const { t } = useLanguage();
   const { lastSync } = useConnection();
 
+  // 1. Data Fetching via Hook
+  const { 
+    tags, vehicles, companies, categories, settings, schedules, technicians, loading 
+  } = useDashboardData();
+
+  // 2. Redirect Client
   useEffect(() => {
     if (user?.role === 'client') {
       navigate('/map', { replace: true });
-      return;
     }
-    loadData();
   }, [user, navigate]);
 
-  const loadData = async () => {
-    const [loadedTags, loadedVehicles, loadedCompanies, loadedCategories, loadedSettings, loadedSchedules, loadedTechs] = await Promise.all([
-      storage.getTags(),
-      storage.getVehicles(),
-      storage.getCompanies(),
-      storage.getCategories(),
-      storage.getSettings(),
-      storage.getSchedules('admin', user?.id || ''),
-      storage.getTechnicians()
-    ]);
-
-    setTags(loadedTags);
-    setVehicles(loadedVehicles);
-    setCompanies(loadedCompanies);
-    setCategories(loadedCategories);
-    setSettings(loadedSettings);
-    setSchedules(loadedSchedules);
-    setTechnicians(loadedTechs);
-
-    processHistoryData(loadedTags);
-    processCompanyData(loadedVehicles, loadedCompanies);
-    processTrendData(loadedVehicles);
-    processServiceData(loadedSchedules, loadedTechs);
-  };
-
-  const processServiceData = (scheduleList: Schedule[], techList: Technician[]) => {
-      // 1. Demandas por Serviços (10 Dias)
-      const historyMap: Record<string, number> = {};
-      const last10Days: string[] = [];
-      for (let i = 9; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-          last10Days.push(key);
-          historyMap[key] = 0;
-      }
-      scheduleList.forEach(s => {
-          const d = new Date(s.createdAt);
-          const key = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-          if (historyMap[key] !== undefined) historyMap[key]++;
-      });
-      setServiceHistoryData(last10Days.map(day => ({ name: day, total: historyMap[day] })));
-
-      // 2. Top Instaladores
-      const installSchedules = scheduleList.filter(s => ['Concluída', 'Confirmada', 'Técnico no local'].includes(s.status));
-      const techCount: Record<string, number> = {};
-      installSchedules.forEach(s => {
-          if (s.technicianId) techCount[s.technicianId] = (techCount[s.technicianId] || 0) + 1;
-      });
-      const topTechs = Object.keys(techCount).map(id => {
-          const tech = techList.find(t => t.id === id);
-          return { name: tech ? tech.name.split(' ')[0] : 'Desc.', total: techCount[id] };
-      }).sort((a, b) => b.total - a.total).slice(0, 3);
-      setTopTechsData(topTechs);
-
-      // 3. Top Solicitantes
-      const reqCount: Record<string, number> = {};
-      scheduleList.forEach(s => {
-          const name = s.requesterName || 'Sistema';
-          reqCount[name] = (reqCount[name] || 0) + 1;
-      });
-      const topRequesters = Object.keys(reqCount).map(name => ({ 
-          name: name.length > 12 ? name.substring(0, 12) + '.' : name, 
-          total: reqCount[name] 
-      })).sort((a, b) => b.total - a.total).slice(0, 5);
-      setTopRequestersData(topRequesters);
-
-      // 4. Tipos de Serviço
-      const typeCount: Record<string, number> = {};
-      scheduleList.forEach(s => {
-          typeCount[s.serviceType] = (typeCount[s.serviceType] || 0) + 1;
-      });
-      setServiceTypeData(Object.keys(typeCount).map(key => ({ name: key, value: typeCount[key] })));
-  };
-
-  const processHistoryData = (tagsList: Tag[]) => {
-    const days = 7;
-    const data = [];
-    const now = new Date();
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toLocaleDateString(undefined, { weekday: 'short' });
-      const timestamp = date.setHours(23, 59, 59, 999);
-      const existingTags = tagsList.filter(t => t.createdAt <= timestamp);
-      data.push({ name: dateStr, total: existingTags.length });
-    }
-    setChartData(data);
-  };
-
-  const processCompanyData = (vehiclesList: Vehicle[], companiesList: Company[]) => {
-    const counts: Record<string, number> = {};
-    const activeVehicles = vehiclesList.filter(v => v.status === 'active');
-    activeVehicles.forEach(v => {
-      const id = v.companyId || 'unknown';
-      counts[id] = (counts[id] || 0) + 1;
-    });
-    let data = companiesList.map(c => ({
-      name: c.prefix || c.name.substring(0, 8),
-      fullName: c.name,
-      contador: counts[c.id] || 0
-    }));
-    setCompanyChartData(data.sort((a, b) => b.contador - a.contador).slice(0, 5));
-  };
-
-  const processTrendData = (vehiclesList: Vehicle[]) => {
-    const monthsArray: any[] = [];
-    const now = new Date();
-    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    // Analisa os últimos 6 meses (0 = atual)
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthLabel = monthNames[d.getMonth()];
-      const count = vehiclesList.filter(v => {
-        if (!v.createdAt) return false;
-        const vDate = new Date(v.createdAt);
-        return vDate.getMonth() === d.getMonth() && vDate.getFullYear() === d.getFullYear();
-      }).length;
-      monthsArray.push({ name: monthLabel, ' entradas': count });
-    }
-    setTrendChartData(monthsArray);
-  };
-
-  const linkedCount = vehicles.filter(v => v.tagId).length;
-  const unlinkedCount = tags.length - linkedCount;
+  // 3. Derived State & Calculations (Orchestration)
   
-  const stockInfo = useMemo(() => {
-      const minStock = settings?.minStockLevel || 80;
-      const criticalStock = settings?.criticalStockLevel || 40;
-      let status: 'high' | 'low' | 'critical' = 'high';
-      if (unlinkedCount <= criticalStock) status = 'critical';
-      else if (unlinkedCount <= minStock) status = 'low';
-      
-      return { status, minStock, criticalStock };
-  }, [unlinkedCount, settings]);
-
-  // CÁLCULO PREDITIVO DE ESTOQUE (Média Ponderada de Saída Mensal)
-  const stockPrediction = useMemo(() => {
-      if (trendChartData.length === 0) return { days: 0, label: 'Calculando...' };
-
-      // O trendChartData contém as ativações (saídas de estoque) dos últimos 6 meses.
-      // Vamos dar mais peso aos meses recentes para uma previsão mais realista.
-      
-      let weightedSum = 0;
-      let totalWeights = 0;
-
-      trendChartData.forEach((data, idx) => {
-          const count = data[' entradas'] || 0;
-          let weight = 1;
-          
-          if (idx === trendChartData.length - 1) weight = 3; // Mês atual (Maior peso)
-          if (idx === trendChartData.length - 2) weight = 2; // Mês anterior
-          
-          weightedSum += count * weight;
-          totalWeights += weight;
-      });
-
-      // Média mensal ponderada de saídas
-      const weightedAverageMonthlyOutput = weightedSum / totalWeights;
-      
-      // Média diária
-      const averageDailyOutput = weightedAverageMonthlyOutput / 30;
-
-      // Evita divisão por zero se não houve saídas
-      if (averageDailyOutput <= 0.05) return { days: 999, label: '> 1 Ano' };
-
-      const daysLeft = Math.floor(unlinkedCount / averageDailyOutput);
-      
-      return {
-          days: daysLeft,
-          label: `${daysLeft} DIAS`
-      };
-  }, [trendChartData, unlinkedCount]);
-
-  const leasedCount = vehicles.filter(v => v.ownershipStatus !== 'purchased').length; 
-  const purchasedCount = vehicles.filter(v => v.ownershipStatus === 'purchased').length;
+  // Basic Counts
+  const linkedCount = useMemo(() => vehicles.filter(v => v.tagId).length, [vehicles]);
+  const unlinkedCount = useMemo(() => tags.length - linkedCount, [tags, linkedCount]);
   
-  const OWNERSHIP_DATA = [
-      { name: 'Comodato', value: leasedCount },
-      { name: 'Adquirido', value: purchasedCount }
-  ];
+  // Service Metrics
+  const serviceHistoryData = useMemo(() => calculateServiceHistory(schedules), [schedules]);
+  const topTechsData = useMemo(() => calculateTopTechnicians(schedules, technicians), [schedules, technicians]);
+  const topRequestersData = useMemo(() => calculateTopRequesters(schedules), [schedules]);
+  const serviceTypeData = useMemo(() => calculateServiceTypes(schedules), [schedules]);
+  
+  // Asset Metrics
+  const chartData = useMemo(() => calculateTagHistory(tags), [tags]);
+  const companyChartData = useMemo(() => calculateCompanyDistribution(vehicles, companies), [vehicles, companies]);
+  const trendChartData = useMemo(() => calculateGrowthTrend(vehicles), [vehicles]);
+  const ownershipData = useMemo(() => calculateOwnershipStats(vehicles), [vehicles]);
+  const categoryStats = useMemo(() => calculateCategoryStats(vehicles, categories), [vehicles, categories]);
 
-  const categoryStats = useMemo(() => {
-    const counts: Record<string, number> = {};
-    vehicles.forEach(v => {
-      const typeKey = v.type || 'outros';
-      counts[typeKey] = (counts[typeKey] || 0) + 1;
-    });
-    return categories.map(cat => ({
-      name: cat.name,
-      count: counts[cat.id] || 0,
-      icon: cat.fipeType === 'motos' ? Bike : cat.fipeType === 'caminhoes' ? Truck : cat.name.toLowerCase().includes('pickup') ? Activity : Car
-    })).sort((a,b) => b.count - a.count).slice(0, 4);
-  }, [vehicles, categories]);
+  // Stock Intelligence
+  const stockInfo = useMemo(() => calculateStockStatus(unlinkedCount, settings), [unlinkedCount, settings]);
+  const stockPrediction = useMemo(() => calculateStockPrediction(trendChartData, unlinkedCount), [trendChartData, unlinkedCount]);
+
+  // Constants
+  const purchasedCount = ownershipData.find(d => d.name === 'Adquirido')?.value || 0;
+  const leasedCount = ownershipData.find(d => d.name === 'Comodato')?.value || 0;
 
   if (user?.role === 'client') return null;
+  if (loading && tags.length === 0) return <div className="p-10 flex justify-center"><div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div className="space-y-10 pb-24 font-sans max-w-[1600px] mx-auto">
@@ -405,14 +239,14 @@ export const Dashboard = () => {
                       <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                               <Pie 
-                                  data={OWNERSHIP_DATA} 
+                                  data={ownershipData} 
                                   innerRadius={60} 
                                   outerRadius={80} 
                                   paddingAngle={5} 
                                   dataKey="value" 
                                   stroke="none"
                               >
-                                  {OWNERSHIP_DATA.map((entry, index) => (
+                                  {ownershipData.map((entry, index) => (
                                       <Cell key={`cell-${index}`} fill={index === 0 ? COLORS.primary : '#52525b'} />
                                   ))}
                               </Pie>
