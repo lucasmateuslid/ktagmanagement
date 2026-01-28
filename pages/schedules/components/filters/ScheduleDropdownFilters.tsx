@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Technician } from '../../../types';
+import { Technician } from '../../../../types';
 
 interface ScheduleDropdownFiltersProps {
   technicians: Technician[];

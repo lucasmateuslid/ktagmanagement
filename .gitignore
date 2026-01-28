@@ -12,6 +12,20 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (SECURITY: Never commit!)
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.production.local
+
+# Security sensitive files
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

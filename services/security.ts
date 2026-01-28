@@ -23,10 +23,22 @@ export const securityService = {
 
   /**
    * Verifica se a senha corresponde ao hash armazenado.
+   * Uses timing-safe comparison to prevent timing attacks.
    */
   verifyPassword: async (inputPassword: string, storedHash: string): Promise<boolean> => {
     const inputHash = await securityService.hashPassword(inputPassword);
-    return inputHash === storedHash;
+    
+    // Timing-safe comparison
+    if (inputHash.length !== storedHash.length) {
+      return false;
+    }
+    
+    let result = 0;
+    for (let i = 0; i < inputHash.length; i++) {
+      result |= inputHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+    }
+    
+    return result === 0;
   },
 
   /**
@@ -45,15 +57,39 @@ export const securityService = {
 
   /**
    * Gera uma senha aleatória forte e legível.
-   * Ex: KTag-8392, Secure-9123
+   * Minimum 12 characters for enhanced security
    */
   generateStrongPassword: (): string => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Remove caracteres confusos como I, 1, 0, O
+    const specials = '!@#$%&*';
     let result = '';
-    for (let i = 0; i < 6; i++) {
+    
+    // Generate 8 alphanumeric characters
+    for (let i = 0; i < 8; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    
+    // Add special character
+    result += specials.charAt(Math.floor(Math.random() * specials.length));
+    
     return `Ktag-${result}`;
+  },
+
+  /**
+   * Validates if URL uses HTTPS protocol
+   */
+  validateSecureUrl: (url: string): boolean => {
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.protocol !== 'https:') {
+        console.error('⚠️ SECURITY WARNING: Non-HTTPS URL detected:', url);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Invalid URL format:', url);
+      return false;
+    }
   },
 
   /**

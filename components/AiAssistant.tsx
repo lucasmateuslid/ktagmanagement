@@ -424,15 +424,12 @@ export const AiAssistant: React.FC = () => {
         );
 
         currentResponse = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [
-            { role: 'user', parts: [{ text: userMsg }] },
-            currentResponse.candidates[0].content,
-            { role: 'function', parts: toolResponses }
-          ],
-          config: {
-             tools: [{ functionDeclarations: [getVehicleLocationTool, getFleetStatsTool, prepareRegistrationDraftTool, generateReportTool, commitRegistrationTool] }]
-          }
+            { role: 'user', content: { parts: [{ text: userMsg }] } },
+            currentResponse.candidates?.[0]?.content || { parts: [] },
+            { role: 'user', content: { parts: toolResponses } }
+          ]
         });
       }
 

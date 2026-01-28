@@ -1,0 +1,107 @@
+# 🔐 .gitignore - Segurança
+
+# Variáveis de Ambiente
+.env
+.env.local
+.env.*.local
+.env.production.local
+.env.development.local
+.env.test.local
+
+# Arquivos de Secrets
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+secrets.json
+.secrets
+
+# Firebase
+*firebase-debug.log
+.firebaserc
+firebase-key.json
+firebase-secret.json
+
+# AWS
+aws-credentials.json
+.aws/credentials
+.aws/config
+
+# SSH Keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+ssh_config
+
+# Certificados SSL
+*.cert
+*.csr
+*.der
+
+# Database Backups
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+dump.rdb
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Tests
+coverage/
+*.lcov
+.nyc_output/
+
+# Cache
+.eslintcache
+.prettier-ignore
+.cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Node
+.node_modules/
+.npm
+.env
+.node-gyp
+
+# Yarn
+.yarn/cache
+.yarn/install-state.gz

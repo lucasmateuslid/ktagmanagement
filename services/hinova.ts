@@ -1,6 +1,7 @@
 
 import { storage } from './storage';
 import { Vehicle, Client, AppSettings } from '../types';
+import { securityService } from './security';
 
 interface HinovaResponseItem {
   codigo_veiculo: string;
@@ -48,6 +49,15 @@ const authenticate = async (settings: AppSettings): Promise<string> => {
 
     const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
     const authUrl = `${baseUrl}/usuario/autenticar`;
+
+    // Validate HTTPS for security
+    if (!securityService.validateSecureUrl(settings.customProxyUrl)) {
+        throw new Error('SECURITY_ERROR: Proxy URL must use HTTPS');
+    }
+    
+    if (!securityService.validateSecureUrl(authUrl)) {
+        throw new Error('SECURITY_ERROR: Hinova API URL must use HTTPS');
+    }
 
     try {
         const response = await fetch(settings.customProxyUrl, {

@@ -37,11 +37,14 @@ class EncryptionService {
         ['deriveKey']
       );
 
+      // Generate cryptographically secure random salt
+      const salt = crypto.getRandomValues(new Uint8Array(32));
+      
       this.key = await crypto.subtle.deriveKey(
         {
           name: 'PBKDF2',
-          salt: encoder.encode('ktag-enterprise-salt-2025'),
-          iterations: 100000,
+          salt: salt,
+          iterations: 600000, // Increased from 100k to 600k for better security
           hash: 'SHA-256'
         },
         keyMaterial,

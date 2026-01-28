@@ -5,6 +5,7 @@ import { User } from '../types';
 import { storage } from '../services/storage';
 import { rateLimitService } from '../services/rateLimit';
 import { securityService } from '../services/security';
+import { xssProtection } from '../services/xssProtection';
 
 interface AuthContextType {
   user: User | null;
@@ -64,18 +65,25 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     // RATE LIMIT: 5 tentativas por 15 min
     const limitCheck = rateLimitService.check('login_attempt', 5, 900);
     if (!limitCheck.allowed) {
-      return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
+      return xssProtection.getSafeErrorMessage('RATE_LIMIT');
     }
 
     setLoading(true);
     try {
+      // Sanitize email input
+      const sanitizedEmail = xssProtection.sanitizeEmail(email);
+      if (!sanitizedEmail) {
+        setLoading(false);
+        return xssProtection.getSafeErrorMessage('VALIDATION_ERROR');
+      }
+
       // 1. Buscamos o usuário RAW (sem tentar decriptar ainda) para evitar deadlocks de chave
-      const dbUser = await storage.findUserByEmail(email.toLowerCase().trim(), false);
+      const dbUser = await storage.findUserByEmail(sanitizedEmail, false);
       
       if (!dbUser) {
         rateLimitService.record('login_attempt');
         setLoading(false);
-        return "Usuário não encontrado ou erro de conexão.";
+        return xssProtection.getSafeErrorMessage('USER_NOT_FOUND');
       }
 
       // --- LÓGICA DE VALIDAÇÃO DE SENHA SEGURA ---
@@ -96,12 +104,12 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       if (!isPasswordValid) {
         rateLimitService.record('login_attempt');
         setLoading(false);
-        return "Senha incorreta.";
+        return xssProtection.getSafeErrorMessage('LOGIN_FAILED');
       }
 
       if (dbUser.status !== 'approved' && dbUser.email !== ADMIN_EMAIL) {
         setLoading(false);
-        return "Seu acesso está pendente de aprovação.";
+        return xssProtection.getSafeErrorMessage('PENDING_APPROVAL');
       }
 
       // Migração automática para Hash se necessário
@@ -127,7 +135,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     } catch (e) {
       console.error(e);
       setLoading(false);
-      return "Falha na comunicação com o servidor.";
+      return xssProtection.getSafeErrorMessage('SERVER_ERROR');
     } finally {
       setLoading(false);
     }
