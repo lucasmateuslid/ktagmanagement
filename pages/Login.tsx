@@ -7,7 +7,6 @@ import { useNotification } from '../contexts/NotificationContext';
 import * as ReactRouterDOM from 'react-router-dom';
 import { ShieldCheck, ArrowRight, Loader2, AlertCircle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { xssProtection } from '../services/xssProtection';
 
 const { useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
@@ -33,24 +32,19 @@ export const Login = () => {
     setLoading(true);
 
     try {
-        // Sanitize inputs to prevent XSS
-        let loginIdentifier = xssProtection.sanitizeText(emailOrCpf.trim());
-        
         // Se for apenas números, tratamos como login de cliente
+        let loginIdentifier = emailOrCpf.trim();
         if (/^\d+$/.test(loginIdentifier)) {
           loginIdentifier = `${loginIdentifier}@client.ktag`;
         }
 
         const err = await login(loginIdentifier, password);
         if (err) {
-            // Use sanitized error message
-            const safeError = xssProtection.sanitizeText(err);
-            setError(safeError);
-            addNotification('error', 'Falha no Login', safeError);
+            setError(err);
+            addNotification('error', 'Falha no Login', err);
         }
     } catch (e: any) {
-        const safeError = xssProtection.getSafeErrorMessage('SERVER_ERROR');
-        setError(safeError);
+        setError(e.message);
     } finally {
         setLoading(false);
     }

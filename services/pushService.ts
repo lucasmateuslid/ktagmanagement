@@ -50,12 +50,7 @@ export const pushService = {
       // 4. Salvar no Firestore para que o backend possa enviar mensagens
       // Usamos um ID baseado no endpoint para evitar duplicatas do mesmo dispositivo
       // O endpoint é único por navegador/perfil
-      if (!db) {
-        console.warn('Firestore not initialized, skipping subscription save');
-        return { success: true, message: 'Push notification configured but subscription not saved' };
-      }
-      
-      const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, '');
+      const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, ''); 
       
       await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
         userId: userId,

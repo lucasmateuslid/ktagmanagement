@@ -2,103 +2,55 @@
 /**
  * Backend Functions - Firebase
  * Inclui Proxy API, Rate Limiting e Triggers de Notificação Push
- * SECURITY ENHANCED VERSION - GEN 2
  */
 
+const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
+const cors = require("cors")({ origin: true });
 const webpush = require("web-push");
-const { onRequest } = require('firebase-functions/v2/https');
-const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
-const { onCall } = require('firebase-functions/v2/https');
-const {
-  FirestoreRateLimitStore,
-  createRateLimiter,
-  enforceHttps,
-  securityHeaders,
-  validateRequest,
-  auditLog
-} = require("./middleware/security");
 
 // Inicializa o Admin SDK se ainda não estiver inicializado
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-const db = admin.firestore();
-const rateLimitStore = new FirestoreRateLimitStore(db);
-
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
-// Chaves geradas: 28/01/2026
-// Para regenerar: npx web-push generate-vapid-keys
+// GERE SUAS CHAVES COM: npx web-push generate-vapid-keys
+// Substitua pelas chaves geradas para ativar o recurso
 const vapidKeys = {
-  publicKey: "BMcoYBADX62CIf3ThyaB0dyE5RlRqgADg9nUKNz19jR4IIND8P-Av4-xamj6dXCwlc3P_CU0cC8IjM-lCqG4q40",
-  privateKey: "FTA9bngl0c2fcXyiUsUgznNj0T2S4yzXgONcqpXeZ8A"
+  publicKey: "SUA_PUBLIC_KEY_AQUI", // Deve ser igual à do pushService.ts
+  privateKey: "SUA_PRIVATE_KEY_AQUI"
 };
 
-// Initialize VAPID with try-catch to handle any configuration issues
-try {
-  webpush.setVapidDetails(
-    "mailto:admin@ktag.com.br",
-    vapidKeys.publicKey,
-    vapidKeys.privateKey
-  );
-  console.log('✓ VAPID keys initialized successfully');
-} catch (error) {
-  console.warn('⚠️ VAPID configuration warning:', error.message);
-  console.warn('Push notifications may not work. Please verify keys.');
-}
+webpush.setVapidDetails(
+  "mailto:admin@ktag.com.br", // Email de contato obrigatório
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
 
-// --- RATE LIMITING CONFIGURATION ---
-// Distributed rate limiting using Firestore
-const loginRateLimiter = createRateLimiter(rateLimitStore, {
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 5, // 5 login attempts per 15 minutes
-  action: 'login'
-});
-
-const apiRateLimiter = createRateLimiter(rateLimitStore, {
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 60, // 60 requests per minute
-  action: 'api'
-});
-
-// Cleanup old rate limit entries (runs once per day)
-exports.cleanupRateLimits = onSchedule('every 24 hours', async (context) => {
-  await rateLimitStore.cleanup();
-  console.log('Rate limit cleanup completed');
-  return null;
-});
-
-// --- IN-MEMORY RATE LIMITING FOR PROXY API ---
+// --- RATE LIMIT MEMORY STORE (Instance-level) ---
 const requestCounts = new Map();
-const MAX_REQUESTS_PER_MIN = 60;
-const BLOCK_DURATION_MS = 60 * 1000; // 60 seconds
+const BLOCK_DURATION_MS = 60000; // 1 minute window
+const MAX_REQUESTS_PER_MIN = 60; // 60 requests per minute per IP
+
+const cleanupOldRecords = () => {
+  const now = Date.now();
+  for (const [ip, data] of requestCounts.entries()) {
+    if (now - data.startTime > BLOCK_DURATION_MS) {
+      requestCounts.delete(ip);
+    }
+  }
+};
+
+// Garbage collect every 5 mins (approx)
+setInterval(cleanupOldRecords, 300000);
 
 /**
  * PROXY API: Contorna CORS e protege credenciais
  */
-exports.proxyApi = onRequest(async (req, res) => {
-    // CORS Headers
-    const allowedOrigins = [
-      'https://ktag-manager.web.app',
-      'https://ktag-manager.firebaseapp.com',
-      'https://k-tag-manager-pro-192841108882.us-west1.run.app'
-    ];
-    
-    const origin = req.headers.origin;
-    if (allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
-    // Handle preflight OPTIONS request
-    if (req.method === 'OPTIONS') {
-      res.status(204).send('');
-      return;
-    }
+exports.proxyApi = functions.https.onRequest((req, res) => {
+  return cors(req, res, async () => {
     
     // 1. RATE LIMIT CHECK
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
@@ -159,16 +111,18 @@ exports.proxyApi = onRequest(async (req, res) => {
       
       res.status(status).send({ error: message || "Internal Proxy Error" });
     }
+  });
 });
 
 /**
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
  * Envia notificação Push para o solicitante quando o status muda.
  */
-exports.onScheduleUpdate = onDocumentUpdated('ktag_schedules/{scheduleId}', async (event) => {
-  const change = event.data;
-  const newData = change.after.data();
-  const previousData = change.before.data();
+exports.onScheduleUpdate = functions.firestore
+  .document('ktag_schedules/{scheduleId}')
+  .onUpdate(async (change, context) => {
+    const newData = change.after.data();
+    const previousData = change.before.data();
 
     // Se o status não mudou, não faz nada
     if (newData.status === previousData.status) return null;
@@ -260,11 +214,11 @@ exports.onScheduleUpdate = onDocumentUpdated('ktag_schedules/{scheduleId}', asyn
 /**
  * Função Manual (Callable) para Testes ou Envios Específicos
  */
-exports.sendPushNotification = onCall(async (request) => {
-  const { userId, title, body, url } = request.data;
+exports.sendPushNotification = functions.https.onCall(async (data, context) => {
+  const { userId, title, body, url } = data;
 
   if (!userId || !title || !body) {
-    throw new Error('invalid-argument: Missing userId, title, or body');
+    throw new functions.https.HttpsError('invalid-argument', 'Missing userId, title, or body');
   }
 
   try {
@@ -301,6 +255,6 @@ exports.sendPushNotification = onCall(async (request) => {
 
   } catch (error) {
     console.error('Error in sendPushNotification:', error);
-    throw new Error('internal: Error sending notifications');
+    throw new functions.https.HttpsError('internal', 'Error sending notifications');
   }
 });

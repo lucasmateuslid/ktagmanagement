@@ -8,8 +8,7 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log"
-      ],
-      "gen": 2
+      ]
     }
   ],
   "firestore": {

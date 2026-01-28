@@ -9,7 +9,7 @@ import react from '@vitejs/plugin-react';
  *
  * ⚠️ NÃO coloque react / react-dom aqui
  */
-const BUILD_EXTERNALS: string[] = [
+const BUILD_EXTERNALS = [
   // Exemplo de libs pesadas que podem virar CDN no futuro
   // 'xlsx',
   // 'jspdf',
@@ -19,7 +19,7 @@ const BUILD_EXTERNALS: string[] = [
 /**
  * Prefixos que podem ser tratados como externos no build
  */
-const BUILD_EXTERNAL_PREFIXES: string[] = [
+const BUILD_EXTERNAL_PREFIXES = [
   // 'firebase'
 ];
 

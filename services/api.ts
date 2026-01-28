@@ -2,7 +2,6 @@
 import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 import { storage } from './storage';
 import { xadtagService } from './xadtag';
-import { securityService } from './security';
 
 // K-Tag API v1.2 (2025-11-06)
 // status field now represents battery level
@@ -39,15 +38,6 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
   const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
   
   if (settings.customProxyUrl) {
-    // Validate HTTPS before making request
-    if (!securityService.validateSecureUrl(settings.customProxyUrl)) {
-      throw new Error('Security Error: API calls require HTTPS connection');
-    }
-    
-    if (!securityService.validateSecureUrl(settings.ktagUrl)) {
-      throw new Error('Security Error: K-Tag API URL must use HTTPS');
-    }
-    
     try {
       const response = await fetch(settings.customProxyUrl, {
         method: 'POST',
