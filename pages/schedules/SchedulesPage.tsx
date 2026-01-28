@@ -6,7 +6,7 @@ import { useNotification } from '../../contexts/NotificationContext';
 import { storage } from '../../services/storage';
 import { Schedule, Technician } from '../../types';
 import { TrackingModal } from '../../components/TrackingModal';
-import { Plus, UserCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle } from 'lucide-react';
 
 // Hooks
 import { useScheduleStats } from './hooks/useScheduleStats';
@@ -88,9 +88,30 @@ export const SchedulesPage = () => {
 
   const handleCopyConfirmation = (e: React.MouseEvent, schedule: Schedule) => {
       e.stopPropagation();
-      const text = `AGENDAMENTO K-TAG\nPlaca: ${schedule.vehiclePlate}\nServiço: ${schedule.serviceType}\nStatus: ${schedule.status}\nData: ${schedule.confirmedDate ? new Date(schedule.confirmedDate).toLocaleDateString() : 'A definir'}`;
+      
+      const tech = technicians.find(t => t.id === schedule.technicianId);
+      const techName = tech ? tech.name : 'A definir';
+      
+      // Formata data corretamente corrigindo timezone
+      const dateParts = schedule.confirmedDate ? schedule.confirmedDate.split('-') : null;
+      const dateDisplay = dateParts 
+        ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` 
+        : 'A definir';
+
+      const timeDisplay = schedule.confirmedTime || 'A definir';
+      const clientDisplay = schedule.clientName ? schedule.clientName.split(' ')[0] : (schedule.requesterName.split(' ')[0] || 'Cliente');
+
+      const text = `Nova ordem de serviço (${schedule.id.substring(0, 8).toUpperCase()}) disponível.\n\n` +
+      `Olá, ${clientDisplay}! 👋\n\n` +
+      `O seu agendamento de ${schedule.serviceType} para o veiculo: ${schedule.vehicleModel} (${schedule.vehiclePlate}) foi confirmado ✅\n\n` +
+      `📅 Data: ${dateDisplay}\n` +
+      `⏰ Horário: ${timeDisplay}\n` +
+      `👨‍🔧 Técnico responsável: ${techName}\n` +
+      `📍 O atendimento será realizado no endereço informado.\n\n` +
+      `Fique tranquilo(a), nossa equipe estará no local dentro do horário programado.`;
+
       navigator.clipboard.writeText(text);
-      addNotification('success', 'Copiado', 'Resumo copiado para área de transferência.');
+      addNotification('success', 'Copiado', 'Mensagem de confirmação copiada.');
   };
 
   const handleUpdateSchedule = async (updated: Schedule) => {
@@ -140,14 +161,37 @@ export const SchedulesPage = () => {
 
                 {stats && (
                     <div className="space-y-6">
-                        {/* KPI Boxes would go here if extracted, but sticking to structure requested */}
+                        {/* KPI Boxes */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            {/* Simple KPIs inline to save space as requested structure prioritized components for rows */}
+                            
+                            {/* Total */}
                             <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
                                 <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest z-10">Total no Mês</span>
                                 <span className="text-5xl font-black text-zinc-900 dark:text-white z-10 tracking-tighter">{stats.total}</span>
+                                <div className="absolute right-[-20px] bottom-[-20px] opacity-5"><LayoutGrid size={100}/></div>
                             </div>
-                            {/* ... other KPIs can stay here or be extracted ... */}
+
+                            {/* Agendadas (Blue) */}
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
+                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest z-10">Agendadas</span>
+                                <span className="text-5xl font-black text-blue-600 dark:text-blue-400 z-10 tracking-tighter">{stats.scheduled}</span>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500 opacity-10"><Calendar size={48} strokeWidth={1.5}/></div>
+                            </div>
+
+                            {/* Concluídas (Emerald) */}
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
+                                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest z-10">Concluídas</span>
+                                <span className="text-5xl font-black text-emerald-600 dark:text-emerald-400 z-10 tracking-tighter">{stats.completed}</span>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 opacity-10"><CheckCircle2 size={48} strokeWidth={1.5}/></div>
+                            </div>
+
+                            {/* Canceladas (Red) */}
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
+                                <span className="text-[10px] font-black text-red-500 uppercase tracking-widest z-10">Canceladas</span>
+                                <span className="text-5xl font-black text-red-600 dark:text-red-400 z-10 tracking-tighter">{stats.canceled}</span>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 opacity-10"><XCircle size={48} strokeWidth={1.5}/></div>
+                            </div>
+
                         </div>
 
                         <ServiceTypesRow data={stats} />
