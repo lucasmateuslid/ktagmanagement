@@ -1,11 +1,11 @@
 [build]
   command = "npm run build"
-  functions = "functions"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
   NODE_ENV = "production"
+  CI = "true"
 
 # Rewrite rules for SPA (Single Page Application)
 [[redirects]]
