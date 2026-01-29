@@ -23,11 +23,15 @@ const vapidKeys = {
   privateKey: "SUA_PRIVATE_KEY_AQUI"
 };
 
-webpush.setVapidDetails(
-  "mailto:admin@ktag.com.br", // Email de contato obrigatório
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
+try {
+  webpush.setVapidDetails(
+    "mailto:admin@ktag.com.br", // Email de contato obrigatório
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+  );
+} catch (e) {
+  console.warn("VAPID Keys not configured properly.");
+}
 
 // --- RATE LIMIT MEMORY STORE (Instance-level) ---
 const requestCounts = new Map();
@@ -84,11 +88,18 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       return;
     }
 
-    // Sanitize Headers
+    // Sanitize Headers & Inject User-Agent
     const safeHeaders = { ...headers };
     delete safeHeaders['host'];
     delete safeHeaders['content-length'];
     delete safeHeaders['connection'];
+    delete safeHeaders['origin'];
+    delete safeHeaders['referer'];
+
+    // Mimetiza um navegador real para evitar bloqueios de API (Essencial para Hinova)
+    if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
+        safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    }
 
     try {
       // 3. Make the Request using Axios
@@ -97,19 +108,24 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
         method: method || 'GET',
         headers: safeHeaders, 
         data: body || undefined,
-        validateStatus: () => true, 
-        timeout: 20000 
+        validateStatus: () => true, // Permite capturar erros 4xx/5xx sem throw
+        timeout: 25000 // Aumentado para APIs lentas
       });
 
+      // Repassa dados e status exatos
       res.status(response.status).send(response.data);
 
     } catch (error) {
-      console.error("[Proxy Error]", error.message);
+      console.error("[Proxy Error]", error.message, url);
       
       const status = error.response ? error.response.status : 500;
       const message = error.response ? error.response.data : error.message;
       
-      res.status(status).send({ error: message || "Internal Proxy Error" });
+      // Garante retorno JSON
+      res.status(status).json({ 
+          error: typeof message === 'object' ? JSON.stringify(message) : message,
+          proxyError: true 
+      });
     }
   });
 });
@@ -124,13 +140,11 @@ exports.onScheduleUpdate = functions.firestore
     const newData = change.after.data();
     const previousData = change.before.data();
 
-    // Se o status não mudou, não faz nada
     if (newData.status === previousData.status) return null;
 
     const requesterId = newData.requesterId;
     if (!requesterId) return null;
 
-    // Define a mensagem baseada no status
     let title = '';
     let body = '';
     const status = newData.status;
@@ -162,18 +176,16 @@ exports.onScheduleUpdate = functions.firestore
         body = `Estamos analisando sua solicitação para ${plate}.`;
         break;
       default:
-        return null; // Não notifica outros status
+        return null;
     }
 
     try {
-      // Busca assinaturas push do usuário solicitante
       const subscriptionsSnapshot = await admin.firestore()
         .collection('ktag_push_subscriptions')
         .where('userId', '==', requesterId)
         .get();
 
       if (subscriptionsSnapshot.empty) {
-        console.log(`User ${requesterId} has no push subscriptions.`);
         return null;
       }
 
@@ -181,28 +193,22 @@ exports.onScheduleUpdate = functions.firestore
       const payload = JSON.stringify({
         title: title,
         body: body,
-        url: '/', // Abre a home/app
+        url: '/',
         icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
       });
 
       subscriptionsSnapshot.forEach(doc => {
         const subscription = doc.data().subscription;
-        
         const pushPromise = webpush.sendNotification(subscription, payload)
           .catch(err => {
             if (err.statusCode === 410 || err.statusCode === 404) {
-              // Assinatura expirou, limpa do banco
-              console.log(`Deleting expired subscription: ${doc.id}`);
               return doc.ref.delete();
             }
-            console.error('Error sending push:', err);
           });
-          
         notifications.push(pushPromise);
       });
 
       await Promise.all(notifications);
-      console.log(`Notifications sent to user ${requesterId} for status ${status}`);
       return { success: true };
 
     } catch (error) {
@@ -211,9 +217,6 @@ exports.onScheduleUpdate = functions.firestore
     }
 });
 
-/**
- * Função Manual (Callable) para Testes ou Envios Específicos
- */
 exports.sendPushNotification = functions.https.onCall(async (data, context) => {
   const { userId, title, body, url } = data;
 

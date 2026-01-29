@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -13,7 +14,8 @@ import {
   Wifi, Search, Car, Activity, BatteryCharging, 
   Check, Cpu, ListChecks, FileSpreadsheet, 
   Loader2, Terminal, RefreshCw, ChevronRight, FileText,
-  Signal, FileCheck, CheckCircle2, XCircle, Box, AlertTriangle
+  Signal, FileCheck, CheckCircle2, XCircle, Box, AlertTriangle,
+  Power
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -37,17 +39,16 @@ interface ConsoleLog {
 }
 
 export const Tags = () => {
+  // ... state declarations ...
   const [searchParams] = useSearchParams();
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // States de Filtros
-  const [filterType, setFilterType] = useState<string>('all'); // all, K_TAG, XADTAG
-  const [filterStatus, setFilterStatus] = useState<string>('all'); // all, linked, stock
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  // States de Importação
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importData, setImportData] = useState<any[]>([]);
   const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number }>({ type: 'K_TAG', warranty: 1 });
@@ -56,7 +57,6 @@ export const Tags = () => {
   const [validationSummary, setValidationSummary] = useState({ valid: 0, invalid: 0 });
   const [importProgress, setImportProgress] = useState(0);
 
-  // States do Terminal de Diagnóstico
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
   const [activeTestTag, setActiveTestTag] = useState<Tag | null>(null);
@@ -88,14 +88,12 @@ export const Tags = () => {
     }
   }, [searchParams]);
 
-  // Auto-scroll do terminal
   useEffect(() => {
     if (isConsoleOpen && logsEndRef.current) {
         logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [consoleLogs, isConsoleOpen]);
 
-  // Contadores Totais
   const stats = useMemo(() => {
       return {
           totalKTag: tags.filter(t => t.type === 'K_TAG').length,
@@ -108,7 +106,6 @@ export const Tags = () => {
     return tags.filter(tag => {
       const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
       
-      // Filtro de Texto
       const matchesText = (
         tag.name.toLowerCase().includes(term) ||
         tag.accessoryId.toLowerCase().includes(term) ||
@@ -117,11 +114,7 @@ export const Tags = () => {
       );
 
       if (!matchesText) return false;
-
-      // Filtro de Tipo
       if (filterType !== 'all' && tag.type !== filterType) return false;
-
-      // Filtro de Status (Estoque vs Vinculado)
       if (filterStatus === 'linked' && !linkedVehicle) return false;
       if (filterStatus === 'stock' && linkedVehicle) return false;
 
@@ -144,7 +137,6 @@ export const Tags = () => {
     }
   };
 
-  // --- EXPORTAÇÃO DE SELECIONADOS ---
   const handleExportSelected = (format: 'xlsx' | 'csv') => {
       if (selectedTags.size === 0) return;
 
@@ -190,6 +182,18 @@ export const Tags = () => {
       setSelectedTags(new Set());
   };
 
+  const handleActivate = async (tag: Tag) => {
+      const success = await xadtagService.activate(tag);
+      if (success) {
+          addNotification('success', 'Ativação XADTAG', `Comando de ativação enviado para ${tag.name}.`);
+          const updated = { ...tag, isActivated: true };
+          await storage.saveTag(updated);
+          loadData();
+      } else {
+          addNotification('error', 'Erro na Ativação', `Falha ao ativar ${tag.name}. Verifique o ID Traqcare e configurações.`);
+      }
+  };
+
   // --- LÓGICA DO CONSOLE / TESTE ---
 
   const addLog = (log: Omit<ConsoleLog, 'id' | 'timestamp'>) => {
@@ -209,7 +213,6 @@ export const Tags = () => {
       setIsConsoleOpen(true);
       setTesting(true);
       
-      // Update Badge State to Loading
       setTestResults(prev => ({ ...prev, [tag.id]: { status: 'loading', timestamp: Date.now() } }));
 
       const startTime = Date.now();
@@ -224,26 +227,47 @@ export const Tags = () => {
       try {
           const settings = await storage.getSettings();
           
+          if (!settings.customProxyUrl) {
+              throw new Error("Proxy não configurado nas Configurações do Sistema. O diagnóstico requer um proxy para evitar bloqueio CORS.");
+          }
+
           if (tag.type === 'XADTAG') {
-              const url = `https://tags.traqcare.com/api/tag?tagId=${tag.traqcareId || ''}`;
+              const url = `https://tags.traqcare.com/api/tag?ids=${tag.traqcareId || ''}`;
               
               if (!tag.traqcareId) throw new Error("Traqcare ID não encontrado na tag.");
+              if (!settings.traqcareToken) throw new Error("Token Traqcare não configurado.");
 
-              const response = await fetch(settings.customProxyUrl || url, {
-                  method: 'GET',
-                  headers: {
-                      'Content-Type': 'application/json',
-                      'api_token': settings.traqcareToken,
-                      'timestamp': Math.floor(Date.now() / 1000).toString()
-                  }
+              const response = await fetch(settings.customProxyUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      url: url,
+                      method: 'GET',
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'api_token': settings.traqcareToken,
+                          'timestamp': Math.floor(Date.now() / 1000).toString()
+                      }
+                  })
               });
 
-              const data = await response.json();
+              let data;
+              try {
+                  data = await response.json();
+              } catch (parseError) {
+                  throw new Error(`Erro ao parsear resposta: ${response.statusText}`);
+              }
+
               const duration = Date.now() - startTime;
 
               let batteryInfo = null;
-              if (data && (data.battery !== undefined)) {
-                  batteryInfo = data.battery === 3 ? { level: 100, label: 'Alto', color: '#10b981' } : { level: 30, label: 'Baixo', color: '#f97316' };
+              if (data && data.data && Array.isArray(data.data) && data.data.length > 0) {
+                  const info = data.data[0];
+                  // Adaptação da lógica de bateria
+                  if (info.battery === 3) batteryInfo = { level: 100, label: 'Alto', color: '#10b981' };
+                  else if (info.battery === 2) batteryInfo = { level: 60, label: 'Médio', color: '#eab308' };
+                  else if (info.battery === 1) batteryInfo = { level: 30, label: 'Baixo', color: '#f97316' };
+                  else batteryInfo = { level: 10, label: 'Crítico', color: '#ef4444' };
               }
 
               setTestResults(prev => ({ 
@@ -266,6 +290,7 @@ export const Tags = () => {
               });
 
           } else {
+              // K-TAG Logic
               const payload = {
                 accessoryId: tag.accessoryId,
                 hashed_keys: [tag.hashedAdvKey], 
@@ -319,6 +344,7 @@ export const Tags = () => {
           }
 
       } catch (e: any) {
+          console.error("Diagnostic failed", e);
           setTestResults(prev => ({ 
               ...prev, 
               [tag.id]: { 
@@ -332,15 +358,15 @@ export const Tags = () => {
               type: 'error',
               method: 'ERROR',
               url: 'System Error',
-              responseBody: { message: e.message }
+              responseBody: { message: e.message || "Failed to fetch" }
           });
       } finally {
           setTesting(false);
       }
   };
 
-  // --- LÓGICA DE IMPORTAÇÃO ---
-
+  // ... (Rest of the file remains unchanged: imports, handles, render)
+  // Just copying the rest of the component structure to ensure file integrity in response
   const handleDownloadTemplate = () => {
     const headers = [
       { 
@@ -374,7 +400,6 @@ export const Tags = () => {
           return;
         }
 
-        // Validação Preliminar
         const validatedData = data.map((row: any) => {
             const serial = row['Serial/IMEI'] || row['serial'] || row['imei'] || row['sn'];
             return {
@@ -403,7 +428,6 @@ export const Tags = () => {
     setImporting(true);
     let successCount = 0;
     
-    // Filtra apenas válidos
     const validRows = importData.filter(d => d._valid);
     const total = validRows.length;
 
@@ -415,7 +439,6 @@ export const Tags = () => {
           const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
           const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
 
-          // Validação de duplicidade na importação
           const exists = tags.some(t => t.accessoryId === serial || t.imei === serial);
           if (!exists) {
               const newTag: Tag = {
@@ -433,14 +456,12 @@ export const Tags = () => {
               await storage.saveTag(newTag);
               
               if (newTag.type === 'XADTAG') {
-                 // Tenta ativar silenciosamente
                  xadtagService.activate(newTag).catch(() => {});
               }
               successCount++;
           }
 
           setImportProgress(Math.round(((i + 1) / total) * 100));
-          // Pequeno delay para a UI atualizar a barra
           await new Promise(r => setTimeout(r, 20));
       }
       
@@ -483,13 +504,11 @@ export const Tags = () => {
     const isEdit = !!formData.id;
     const type = formData.type || 'K_TAG';
 
-    // Validação básica
     if (!formData.name) {
         addNotification('error', 'Campos Obrigatórios', 'Informe o nome/identificação.');
         return;
     }
     
-    // Define Accessory ID principal
     let accessoryId = formData.accessoryId;
     if (type === 'XADTAG') {
         accessoryId = formData.imei || formData.accessoryId;
@@ -500,8 +519,6 @@ export const Tags = () => {
         return;
     }
 
-    // Validação de Duplicidade (Feature Nova)
-    // Verifica se já existe outra tag com o mesmo Serial ou IMEI, ignorando a própria tag (em caso de edição)
     const isDuplicate = tags.some(t => 
         t.id !== (formData.id || '') && 
         (
@@ -552,6 +569,7 @@ export const Tags = () => {
     loadData();
   };
 
+  // ... return JSX (same as original, using defined variables)
   return (
     <div className="space-y-8 pb-32 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -559,7 +577,6 @@ export const Tags = () => {
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Estoque de Equipamentos</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium italic opacity-70">Gestão e controle de ativos de segurança.</p>
           
-          {/* CONTADORES DE TIPO */}
           <div className="flex gap-3 mt-4">
               <div className="flex items-center gap-2 px-3 py-1 bg-primary-500/10 border border-primary-500/20 rounded-lg">
                   <div className="w-2 h-2 bg-primary-500 rounded-full"/>
@@ -590,7 +607,6 @@ export const Tags = () => {
 
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
 
-      {/* BARRA DE CONTROLE E FILTROS */}
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col xl:flex-row gap-3 items-center transition-all">
         <div className="relative flex-1 w-full">
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -603,7 +619,6 @@ export const Tags = () => {
           />
         </div>
 
-        {/* FILTROS DROPDOWN */}
         <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-1 px-1">
             <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none min-w-[120px]">
                 <option value="all">Todos Tipos</option>
@@ -631,7 +646,6 @@ export const Tags = () => {
                             <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size}</span>
                         </div>
                         
-                        {/* BOTÕES DE EXPORTAÇÃO */}
                         <button 
                             onClick={() => handleExportSelected('xlsx')} 
                             className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95"
@@ -701,10 +715,18 @@ export const Tags = () => {
                   {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
                 </div>
                 
-                {/* CORREÇÃO VISUAL: Container Flex para Actions e Badge */}
                 <div className="flex flex-col items-end gap-2">
                     {!isSelected && (
                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {tag.type === 'XADTAG' && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleActivate(tag); }} 
+                                    className={`p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm ${tag.isActivated ? 'text-emerald-500 hover:text-emerald-600' : 'text-zinc-400 hover:text-cyan-500'}`}
+                                    title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
+                                >
+                                    <Power size={16}/>
+                                </button>
+                            )}
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleTestConnection(tag); }} 
                                 className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"
@@ -751,9 +773,9 @@ export const Tags = () => {
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' : 'bg-primary-500/10 text-primary-600 border-primary-500/20'}`}>{tag.type}</span>
                     <span className="text-[10px] font-mono text-zinc-400 font-bold">{tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}</span>
-                    {vehicle && vehicle.ownershipStatus && (
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-blue-500/10 text-blue-600 border-blue-500/20'}`}>
-                            {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
+                    {vehicles.find(v => v.tagId === tag.id)?.ownershipStatus && (
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${vehicles.find(v => v.tagId === tag.id)?.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-blue-500/10 text-blue-600 border-blue-500/20'}`}>
+                            {vehicles.find(v => v.tagId === tag.id)?.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
                         </span>
                     )}
                 </div>
@@ -762,11 +784,11 @@ export const Tags = () => {
               <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
                  <div className="flex flex-col">
                     <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
-                    {vehicle ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
+                    {vehicles.find(v => v.tagId === tag.id) ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
                  </div>
-                 {vehicle ? (
+                 {vehicles.find(v => v.tagId === tag.id) ? (
                     <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
-                        <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicle.plate}</span>
+                        <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicles.find(v => v.tagId === tag.id)?.plate}</span>
                     </div>
                  ) : (
                     <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
@@ -779,7 +801,6 @@ export const Tags = () => {
         })}
       </div>
 
-      {/* TERMINAL DE DIAGNÓSTICO (FIXED Z-INDEX 5000) */}
       <AnimatePresence>
         {isConsoleOpen && (
             <MotionDiv
@@ -874,7 +895,7 @@ export const Tags = () => {
         )}
       </AnimatePresence>
 
-      {/* MODAL ADICIONAR / EDITAR EQUIPAMENTO */}
+      {/* MODAL ADD/EDIT */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
             <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto animate-in fade-in zoom-in-95">
@@ -886,7 +907,6 @@ export const Tags = () => {
                 </div>
 
                 <form onSubmit={handleSave} className="space-y-5">
-                    {/* TIPO DE EQUIPAMENTO (Switch) */}
                     <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                         <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
                             K-Tag (Padrão)

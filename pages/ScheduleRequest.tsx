@@ -6,7 +6,7 @@ import { Schedule, DeviceType, ServiceType, Vehicle, User, Company } from '../ty
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send } from 'lucide-react';
+import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
 
 const { useNavigate } = ReactRouterDOM as any;
@@ -31,8 +31,7 @@ export const ScheduleRequest = () => {
     serviceType: 'Instalação',
     fipeValue: '',
     notes: '',
-    needsInspection: false,
-    paymentOnSite: false,
+    // needsInspection e paymentOnSite removidos para iniciar como undefined (sem seleção)
     locationAddress: '',
     locationLat: 0,
     locationLng: 0
@@ -150,6 +149,17 @@ export const ScheduleRequest = () => {
     
     if (!formData.vehiclePlate || !formData.vehicleModel || !formData.preferredDate || !formData.preferredTime || !formData.locationAddress) {
         addNotification('error', 'Campos Obrigatórios', 'Preencha todos os dados obrigatórios (*), incluindo localização.');
+        return;
+    }
+
+    // Validação de Campos Booleanos Obrigatórios
+    if (formData.needsInspection === undefined) {
+        addNotification('error', 'Campos Obrigatórios', 'Informe se o veículo necessita de vistoria.');
+        return;
+    }
+
+    if (formData.paymentOnSite === undefined) {
+        addNotification('error', 'Campos Obrigatórios', 'Informe se o pagamento será realizado no local.');
         return;
     }
 
@@ -277,8 +287,20 @@ export const ScheduleRequest = () => {
                                     {searchingPlate ? <Loader2 size={16} className="animate-spin text-primary-500"/> : <Search size={16}/>}
                                 </div>
                             </div>
-                            <button type="button" onClick={handleHinovaLookup} disabled={hinovaStatus === 'loading'} className="px-4 rounded-xl bg-[#006e82] hover:bg-[#008ba3] text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[70px]">
-                                {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 'SGA'}
+                            <button 
+                                type="button" 
+                                onClick={handleHinovaLookup} 
+                                disabled={hinovaStatus === 'loading'} 
+                                className={`px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[70px] text-white ${
+                                    hinovaStatus === 'success' ? 'bg-emerald-500 hover:bg-emerald-600' :
+                                    hinovaStatus === 'error' ? 'bg-red-500 hover:bg-red-600' :
+                                    'bg-[#006e82] hover:bg-[#008ba3]'
+                                }`}
+                            >
+                                {hinovaStatus === 'loading' ? <Loader2 className="animate-spin" size={16}/> : 
+                                 hinovaStatus === 'success' ? <Check size={16} strokeWidth={4} /> :
+                                 hinovaStatus === 'error' ? <X size={16} strokeWidth={4} /> :
+                                 'SGA'}
                             </button>
                         </div>
                     </div>
@@ -367,17 +389,17 @@ export const ScheduleRequest = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><ClipboardCheck size={14}/> Vistoria Necessária?</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><ClipboardCheck size={14}/> Vistoria Necessária? <span className="text-red-500">*</span></label>
                         <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                            <button type="button" onClick={() => setFormData(prev => ({...prev, needsInspection: true}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.needsInspection ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-lg' : 'text-zinc-500'}`}>Sim</button>
-                            <button type="button" onClick={() => setFormData(prev => ({...prev, needsInspection: false}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!formData.needsInspection ? 'bg-[#18181b] text-white shadow-lg' : 'text-zinc-500'}`}>Não</button>
+                            <button type="button" onClick={() => setFormData(prev => ({...prev, needsInspection: true}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.needsInspection === true ? 'bg-zinc-900 dark:bg-white text-white dark:text-black shadow-lg' : 'text-zinc-500'}`}>Sim</button>
+                            <button type="button" onClick={() => setFormData(prev => ({...prev, needsInspection: false}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.needsInspection === false ? 'bg-[#18181b] text-white shadow-lg' : 'text-zinc-500'}`}>Não</button>
                         </div>
                     </div>
                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Wallet size={14}/> Pagamento no Local?</label>
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Wallet size={14}/> Pagamento no Local? <span className="text-red-500">*</span></label>
                         <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                            <button type="button" onClick={() => setFormData(prev => ({...prev, paymentOnSite: true}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.paymentOnSite ? 'bg-emerald-500 text-white shadow-lg' : 'text-zinc-500'}`}>Sim</button>
-                            <button type="button" onClick={() => setFormData(prev => ({...prev, paymentOnSite: false}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!formData.paymentOnSite ? 'bg-[#18181b] text-white shadow-lg' : 'text-zinc-500'}`}>Não</button>
+                            <button type="button" onClick={() => setFormData(prev => ({...prev, paymentOnSite: true}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.paymentOnSite === true ? 'bg-emerald-500 text-white shadow-lg' : 'text-zinc-500'}`}>Sim</button>
+                            <button type="button" onClick={() => setFormData(prev => ({...prev, paymentOnSite: false}))} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.paymentOnSite === false ? 'bg-[#18181b] text-white shadow-lg' : 'text-zinc-500'}`}>Não</button>
                         </div>
                     </div>
                 </div>

@@ -45,6 +45,9 @@ const authenticate = async (settings: AppSettings): Promise<string> => {
     if (!settings.hinovaToken || !settings.hinovaUser || !settings.hinovaPass) {
         throw new Error("CONFIG_INCOMPLETE: Verifique Token SGA, Usuário e Senha nas configurações.");
     }
+    if (!settings.customProxyUrl) {
+        throw new Error("PROXY_MISSING: Configure a URL do Proxy nas Configurações.");
+    }
 
     const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
     const authUrl = `${baseUrl}/usuario/autenticar`;
@@ -100,7 +103,7 @@ const getToken = async (settings: AppSettings): Promise<string> => {
 export const hinovaService = {
   searchVehicle: async (plateOrChassis: string): Promise<{ vehicle: Partial<Vehicle>, client: Partial<Client>, price?: string } | null> => {
     const settings = await storage.getSettings();
-    if (!settings.customProxyUrl) throw new Error("PROXY_OFFLINE: URL do Proxy não configurada.");
+    if (!settings.customProxyUrl) throw new Error("PROXY_OFFLINE: URL do Proxy não configurada nas Configurações.");
 
     const query = plateOrChassis.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     if (query.length < 7) throw new Error("INVALID_INPUT: Informe ao menos 7 caracteres.");
