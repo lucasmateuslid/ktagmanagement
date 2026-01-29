@@ -9,28 +9,35 @@ const BASE_URL = 'https://tags.traqcare.com/api';
  */
 
 // Adapter for TraqCare Battery
-// Based on documentation/typical values: 0-4 scale or 0-100.
-// Documentation example shows "battery": 0.
+// Documentation implies 0-100 or specific status codes.
+// We map typical values to our system's color scheme.
 const batteryToInfo = (battery?: number): KTagBatteryInfo => {
     if (battery === undefined || battery === null) {
-        return { level: 0, label: 'Desconhecido', color: '#71717a' };
+        return { level: 0, label: 'N/A', color: '#71717a' };
     }
 
-    // Escala 0-4 (comum em rastreadores chineses)
-    if (battery <= 4) {
-        switch (battery) {
-            case 3: return { level: 100, label: 'Alto', color: '#10b981' };
-            case 2: return { level: 60, label: 'Médio', color: '#eab308' };
-            case 1: return { level: 30, label: 'Baixo', color: '#f97316' };
-            case 0: return { level: 10, label: 'Crítico', color: '#ef4444' };
-            default: return { level: 0, label: 'Desconhecido', color: '#71717a' };
-        }
+    // If API returns 0-4 scale (common in some firmwares)
+    if (battery <= 5 && battery >= 0) {
+       // Assuming it might be a status code, or just very low battery if it's 0-100
+       // However, often 0 = Empty, 1 = Low, ..., 4 = Full in compact protocols
+       // If usage suggests 0-100, we treat low numbers as critical.
     }
 
-    // Escala percentual (0-100)
-    if (battery > 50) return { level: battery, label: 'Normal', color: '#10b981' };
-    if (battery > 20) return { level: battery, label: 'Médio', color: '#eab308' };
-    return { level: battery, label: 'Baixo', color: '#ef4444' };
+    let label = 'Normal';
+    let color = '#10b981'; // Green
+
+    if (battery < 20) {
+        label = 'Crítico';
+        color = '#ef4444'; // Red
+    } else if (battery < 50) {
+        label = 'Baixo';
+        color = '#f97316'; // Orange
+    } else if (battery < 80) {
+        label = 'Médio';
+        color = '#eab308'; // Yellow
+    }
+
+    return { level: battery, label, color };
 };
 
 // Converts Milliseconds (App) to Unix Seconds (API Requirement)
@@ -41,7 +48,7 @@ const getHeaders = (token: string) => {
     return {
         'Content-Type': 'application/json',
         'api_token': token,
-        'timestamp': toUnixSeconds(Date.now()).toString(), // API exige timestamp em SEGUNDOS
+        'timestamp': toUnixSeconds(Date.now()).toString(), // API requires String
     };
 };
 
@@ -96,7 +103,10 @@ export const xadtagService = {
             if (!settings.customProxyUrl) throw new Error("Proxy não configurado.");
 
             // A API espera um array de IDs no corpo
-            const idToActivate = parseInt(tag.traqcareId) || tag.traqcareId;
+            // Importante: Enviar como string se a API esperar string, ou number se number.
+            // A doc mostra "7260100489" no query param example, geralmente strings em JSON.
+            // Vamos tentar enviar como numbers primeiro se for numérico.
+            const idToActivate = tag.traqcareId; 
             const body = [idToActivate];
             
             const targetUrl = `${BASE_URL}/tag`;
@@ -118,7 +128,7 @@ export const xadtagService = {
             }
 
             const json = await response.json();
-            // A API retorna statusCode 200 no corpo se der certo
+            
             if (json && (json.statusCode === 200 || json.message === 'OK')) {
                 return true;
             }
@@ -136,16 +146,20 @@ export const xadtagService = {
      * Query: ids (separados por virgula)
      */
     fetchLocation: async (tag: Tag): Promise<KTagLocationResult[]> => {
-        if (!tag.traqcareId) return [];
+        if (!tag.traqcareId) throw new Error("ID Traqcare não definido no cadastro.");
 
+        const settings = await storage.getSettings();
+        if (!settings.traqcareToken) throw new Error("Token API Traqcare ausente nas configurações.");
+        if (!settings.customProxyUrl) throw new Error("Proxy URL ausente nas configurações.");
+
+        // Monta URL com Query Params
+        const url = new URL(`${BASE_URL}/tag`);
+        url.searchParams.append('ids', tag.traqcareId);
+        
+        // Adiciona timestamp na query também conforme alguns exemplos de Swagger, 
+        // mas a doc diz Header. Vamos manter Header principal.
+        
         try {
-            const settings = await storage.getSettings();
-            if (!settings.traqcareToken || !settings.customProxyUrl) return [];
-
-            // Monta URL com Query Params (ids em minúsculo)
-            const url = new URL(`${BASE_URL}/tag`);
-            url.searchParams.append('ids', tag.traqcareId);
-
             const response = await fetch(settings.customProxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -156,28 +170,36 @@ export const xadtagService = {
                 })
             });
 
-            if (!response.ok) return [];
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Erro HTTP ${response.status}: ${errText}`);
+            }
 
             const json: TraqCareResponse<TraqCareLocationDto[]> = await response.json();
             
-            if (!json || json.statusCode !== 200 || !Array.isArray(json.data)) {
-                return [];
+            if (json.statusCode !== 200) {
+                throw new Error(json.message || "Erro na API Traqcare");
+            }
+
+            if (!json.data || !Array.isArray(json.data) || json.data.length === 0) {
+                // Sucesso mas sem dados = array vazio
+                return []; 
             }
 
             // Mapeamento para o formato interno do App
             return json.data.map(loc => ({
                 lat: loc.lat,
-                lon: loc.lng, // API usa 'lng', App usa 'lon'
+                lon: loc.lng, 
                 conf: 100,
                 status: loc.isActived ? 1 : 0,
                 battery: batteryToInfo(loc.battery),
-                timestamp: loc.timestamp * 1000, // Seconds -> Milliseconds para JS Date
+                timestamp: loc.timestamp * 1000, 
                 isodatetime: new Date(loc.timestamp * 1000).toISOString()
             }));
 
-        } catch (e) {
+        } catch (e: any) {
             console.error("[XADTAG] Fetch Error:", e);
-            return [];
+            throw e; // Propagate error for UI handling
         }
     },
 
@@ -187,19 +209,19 @@ export const xadtagService = {
      * Query Params: Id, TimeFrom, TimeTo (Case Sensitive!)
      */
     fetchHistory: async (tag: Tag, startTimeMs: number, endTimeMs: number): Promise<KTagLocationResult[]> => {
-        if (!tag.traqcareId) return [];
+        if (!tag.traqcareId) throw new Error("ID Traqcare não definido.");
+
+        const settings = await storage.getSettings();
+        if (!settings.traqcareToken || !settings.customProxyUrl) throw new Error("Configuração de API incompleta.");
+
+        const url = new URL(`${BASE_URL}/tag/history`);
+        
+        // Documentação especifica parâmetros sensíveis a maiúsculas/minúsculas
+        url.searchParams.append('Id', tag.traqcareId); 
+        url.searchParams.append('TimeFrom', toUnixSeconds(startTimeMs).toString());
+        url.searchParams.append('TimeTo', toUnixSeconds(endTimeMs).toString());
 
         try {
-            const settings = await storage.getSettings();
-            if (!settings.traqcareToken || !settings.customProxyUrl) return [];
-
-            const url = new URL(`${BASE_URL}/tag/history`);
-            
-            // Documentação especifica parâmetros sensíveis a maiúsculas/minúsculas
-            url.searchParams.append('Id', tag.traqcareId); 
-            url.searchParams.append('TimeFrom', toUnixSeconds(startTimeMs).toString());
-            url.searchParams.append('TimeTo', toUnixSeconds(endTimeMs).toString());
-
             const response = await fetch(settings.customProxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -210,11 +232,17 @@ export const xadtagService = {
                 })
             });
 
-            if (!response.ok) return [];
+            if (!response.ok) {
+                throw new Error(`Erro Proxy: ${response.status}`);
+            }
 
             const json: TraqCareResponse<TraqCareHistoryDto[]> = await response.json();
             
-            if (!json || json.statusCode !== 200 || !Array.isArray(json.data)) {
+            if (json.statusCode !== 200) {
+                throw new Error(json.message || "Erro API History");
+            }
+
+            if (!json.data || !Array.isArray(json.data)) {
                 return [];
             }
 
@@ -228,9 +256,9 @@ export const xadtagService = {
                 isodatetime: new Date(p.timestamp * 1000).toISOString()
             }));
 
-        } catch (e) {
+        } catch (e: any) {
             console.error("[XADTAG] History Error:", e);
-            return [];
+            throw e;
         }
     }
 };

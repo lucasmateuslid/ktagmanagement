@@ -16,16 +16,14 @@ if (admin.apps.length === 0) {
 }
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
-// GERE SUAS CHAVES COM: npx web-push generate-vapid-keys
-// Substitua pelas chaves geradas para ativar o recurso
 const vapidKeys = {
-  publicKey: "SUA_PUBLIC_KEY_AQUI", // Deve ser igual à do pushService.ts
+  publicKey: "SUA_PUBLIC_KEY_AQUI", 
   privateKey: "SUA_PRIVATE_KEY_AQUI"
 };
 
 try {
   webpush.setVapidDetails(
-    "mailto:admin@ktag.com.br", // Email de contato obrigatório
+    "mailto:admin@ktag.com.br", 
     vapidKeys.publicKey,
     vapidKeys.privateKey
   );
@@ -35,8 +33,8 @@ try {
 
 // --- RATE LIMIT MEMORY STORE (Instance-level) ---
 const requestCounts = new Map();
-const BLOCK_DURATION_MS = 60000; // 1 minute window
-const MAX_REQUESTS_PER_MIN = 60; // 60 requests per minute per IP
+const BLOCK_DURATION_MS = 60000; 
+const MAX_REQUESTS_PER_MIN = 60; 
 
 const cleanupOldRecords = () => {
   const now = Date.now();
@@ -47,7 +45,6 @@ const cleanupOldRecords = () => {
   }
 };
 
-// Garbage collect every 5 mins (approx)
 setInterval(cleanupOldRecords, 300000);
 
 /**
@@ -56,6 +53,16 @@ setInterval(cleanupOldRecords, 300000);
 exports.proxyApi = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     
+    // Set CORS headers for all responses
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, api_token, timestamp, Authorization');
+
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+
     // 1. RATE LIMIT CHECK
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
@@ -66,7 +73,6 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       clientData = { count: 1, startTime: now };
       requestCounts.set(clientIp, clientData);
     } else {
-      // Reset window if expired
       if (now - clientData.startTime > BLOCK_DURATION_MS) {
         clientData.count = 1;
         clientData.startTime = now;
@@ -88,15 +94,20 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       return;
     }
 
+    console.log(`Proxying request to: ${url}`);
+
     // Sanitize Headers & Inject User-Agent
     const safeHeaders = { ...headers };
+    
+    // Remove headers que causam problemas em repasse
     delete safeHeaders['host'];
     delete safeHeaders['content-length'];
     delete safeHeaders['connection'];
     delete safeHeaders['origin'];
     delete safeHeaders['referer'];
+    delete safeHeaders['accept-encoding']; // Importante: Deixa o axios/node negociar a compressão
 
-    // Mimetiza um navegador real para evitar bloqueios de API (Essencial para Hinova)
+    // Mimetiza um navegador real para evitar bloqueios de API (Essencial para Hinova/SGA)
     if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
         safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     }
@@ -121,7 +132,6 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
       const status = error.response ? error.response.status : 500;
       const message = error.response ? error.response.data : error.message;
       
-      // Garante retorno JSON
       res.status(status).json({ 
           error: typeof message === 'object' ? JSON.stringify(message) : message,
           proxyError: true 
@@ -132,7 +142,6 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
 
 /**
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
- * Envia notificação Push para o solicitante quando o status muda.
  */
 exports.onScheduleUpdate = functions.firestore
   .document('ktag_schedules/{scheduleId}')

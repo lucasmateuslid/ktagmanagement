@@ -72,14 +72,15 @@ const authenticate = async (settings: AppSettings): Promise<string> => {
         try { data = JSON.parse(responseText); } catch (e) { data = { error: responseText }; }
 
         if (!response.ok) {
-            if (response.status === 401 || response.status === 403) throw new Error("AUTH_INVALID: Token SGA ou Credenciais de Usuário incorretas.");
+            if (response.status === 401 || response.status === 403) throw new Error("AUTH_INVALID: Credenciais SGA inválidas.");
             if (responseText.toLowerCase().includes("timeout")) throw new Error("TIMEOUT: O servidor Hinova demorou a responder.");
-            throw new Error(data.error || `ERRO_${response.status}: Falha na comunicação com SGA.`);
+            throw new Error(data.error || `ERRO_${response.status}: Falha na autenticação SGA.`);
         }
 
-        if (!data.token_usuario) throw new Error("TOKEN_MISSING: Autenticação aceita, mas SGA não gerou token de sessão.");
+        if (!data.token_usuario) throw new Error("TOKEN_MISSING: Autenticação aceita, mas SGA não gerou token.");
         return data.token_usuario;
     } catch (e: any) {
+        console.error("Hinova Auth Error:", e);
         throw e;
     }
 };
@@ -103,7 +104,7 @@ const getToken = async (settings: AppSettings): Promise<string> => {
 export const hinovaService = {
   searchVehicle: async (plateOrChassis: string): Promise<{ vehicle: Partial<Vehicle>, client: Partial<Client>, price?: string } | null> => {
     const settings = await storage.getSettings();
-    if (!settings.customProxyUrl) throw new Error("PROXY_OFFLINE: URL do Proxy não configurada nas Configurações.");
+    if (!settings.customProxyUrl) throw new Error("PROXY_OFFLINE: URL do Proxy não configurada.");
 
     const query = plateOrChassis.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     if (query.length < 7) throw new Error("INVALID_INPUT: Informe ao menos 7 caracteres.");
@@ -136,8 +137,7 @@ export const hinovaService = {
                 cachedUserToken = newToken;
                 return hinovaService.searchVehicle(plateOrChassis);
             }
-            if (responseText.toLowerCase().includes("timeout")) throw new Error("TIMEOUT: Servidor Hinova instável no momento.");
-            throw new Error(data.error || "ERRO_BUSCA: Não foi possível localizar os dados.");
+            throw new Error(data.error || "ERRO_BUSCA: Falha na comunicação com SGA.");
         }
 
         if (!Array.isArray(data) || data.length === 0) return null;
@@ -165,7 +165,7 @@ export const hinovaService = {
                 year: item.ano_modelo, fipeCode: item.codigo_fipe, hinovaId: item.codigo_veiculo,
                 type: matchedCategory.id, status: 'active'
             },
-            price: item.valor_fipe // Retorna o valor FIPE vindo da API
+            price: item.valor_fipe
         };
     } catch (e: any) {
         throw e;
