@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Schedule, Technician, ScheduleStatus, User as AppUser, Company, AppSettings } from '../types';
+import { Schedule, Technician, ScheduleStatus, User as AppUser, Company, AppSettings, DeviceType } from '../types';
 import { storage } from '../services/storage';
 import { 
     Calendar, X, Save, Copy, Wrench, MapPin, User, Check, Send, 
     Eye, Trash2, CheckCircle2, History, ExternalLink, CalendarDays,
-    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle, ScanBarcode, UserCheck, Milestone, Map, DollarSign, Wallet, TrendingUp, TrendingDown, Percent
+    Briefcase, UserCircle2, Clock, AlertTriangle, Edit2, MessageCircle, Phone, Building2, XCircle, ScanBarcode, UserCheck, Milestone, Map, DollarSign, Wallet, TrendingUp, TrendingDown, Percent, ClipboardCheck, Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotification } from '../contexts/NotificationContext';
@@ -101,6 +101,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
     // State for Edits (Shared)
     const [formData, setFormData] = useState({
         technicianId: schedule.technicianId || '',
+        companyId: schedule.companyId || '', // ID da Regional (Empresa)
         date: schedule.confirmedDate || schedule.preferredDate,
         time: schedule.confirmedTime || schedule.preferredTime,
         locationAddress: schedule.locationAddress,
@@ -109,7 +110,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
         displacementKm: schedule.displacementKm || 0,
         displacementValue: schedule.displacementValue || 0,
         // Financeiro
-        adhesionValue: schedule.adhesionValue || 0
+        adhesionValue: schedule.adhesionValue || 0,
+        // Novos campos editáveis
+        deviceType: schedule.deviceType,
+        needsInspection: schedule.needsInspection || false,
+        paymentOnSite: schedule.paymentOnSite || false
     });
 
     useEffect(() => {
@@ -129,7 +134,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
     };
 
     const assignedTech = technicians.find(t => t.id === schedule.technicianId);
-    const responsibleCompany = companies.find(c => c.id === schedule.companyId);
+    
+    // Encontra a empresa responsável baseada no estado atual (editável) ou no schedule original
+    const responsibleCompany = companies.find(c => c.id === (formData.companyId || schedule.companyId));
 
     // --- CÁLCULO FINANCEIRO INTELIGENTE ---
     const financialAnalysis = useMemo(() => {
@@ -180,6 +187,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             displacementKm: formData.isRemoteLocation ? formData.displacementKm : 0,
             displacementValue: formData.isRemoteLocation ? formData.displacementValue : 0,
             adhesionValue: formData.adhesionValue, // Salva valor negociado
+            
+            // Novos campos editados
+            deviceType: formData.deviceType,
+            needsInspection: formData.needsInspection,
+            paymentOnSite: formData.paymentOnSite,
+            companyId: formData.companyId, // Salva a empresa selecionada
             
             ...(status === 'Confirmada' || status === 'Reagendada' ? {
                 technicianId: formData.technicianId,
@@ -303,13 +316,20 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             displacementKm: formData.isRemoteLocation ? formData.displacementKm : 0,
             displacementValue: formData.isRemoteLocation ? formData.displacementValue : 0,
             adhesionValue: formData.adhesionValue,
+            
+            // Novos campos editáveis
+            deviceType: formData.deviceType,
+            needsInspection: formData.needsInspection,
+            paymentOnSite: formData.paymentOnSite,
+            companyId: formData.companyId, // Salva a empresa selecionada
+
             history: [...schedule.history, { action: 'Editou', actionBy: currentUser?.name || 'Admin', timestamp: Date.now(), details: 'Atualizou dados de agendamento' }]
         };
         onUpdate(updatedSchedule);
         addNotification('success', 'Atualizado', 'Dados da solicitação salvos.');
     };
 
-    const handleSendToTechnician = () => {
+    const generateTechnicianMessage = () => {
         const dateDisplay = formData.date ? formatSafeDate(formData.date) : 'A definir';
         const timeDisplay = formData.time || '--:--';
         const companyName = responsibleCompany ? responsibleCompany.name : 'Não informada';
@@ -320,16 +340,16 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.locationAddress)}`;
 
         // Campos adicionais
-        const vistoriaTxt = schedule.needsInspection ? 'Sim' : 'Não';
-        const pagtoTxt = schedule.paymentOnSite ? 'Sim' : 'Não';
+        const vistoriaTxt = formData.needsInspection ? 'Sim' : 'Não';
+        const pagtoTxt = formData.paymentOnSite ? 'Sim' : 'Não';
         const deslocamentoTxt = formData.isRemoteLocation ? `\n⛽ *Deslocamento:* ${formData.displacementKm}KM (R$${formData.displacementValue})` : '';
 
-        const msg = `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
+        return `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
             `🏢 *Regional:* ${companyName}\n` +
             `🚗 *Veículo:* ${schedule.vehicleModel}\n` +
             `🪪 *Placa:* ${schedule.vehiclePlate}\n` +
             `👤 *Cliente:* ${schedule.clientName || 'Cliente'} (${clientPhone})\n` +
-            `📡 *Equipamento:* ${schedule.deviceType}\n` +
+            `📡 *Equipamento:* ${formData.deviceType}\n` +
             `🔧 *Serviço:* ${schedule.serviceType}\n` +
             `📋 *Necessita de vistoria?* ${vistoriaTxt}\n` +
             `💰 *Pagamento no local?* ${pagtoTxt}` +
@@ -338,7 +358,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             `📅 *Data Pref:* ${dateDisplay} às ${timeDisplay}\n` +
             `📍 *Local:* ${formData.locationAddress}\n` +
             `🗺 *Google Maps:* ${mapLink}`;
+    };
 
+    const handleSendToTechnician = () => {
+        const msg = generateTechnicianMessage();
         const encodedMsg = encodeURIComponent(msg);
         let url = `https://wa.me/?text=${encodedMsg}`;
         if (formData.technicianId) {
@@ -349,6 +372,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             }
         }
         window.open(url, '_blank');
+    };
+
+    const handleCopyTechnicianMessage = () => {
+        const msg = generateTechnicianMessage();
+        navigator.clipboard.writeText(msg);
+        addNotification('success', 'Sucesso', 'Mensagem copiada com sucesso!');
     };
 
     const handleUserSave = () => {
@@ -362,7 +391,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                 confirmedTime: formData.time
             }),
             locationAddress: formData.locationAddress,
-            history: [...schedule.history, { action: 'Atualizou', actionBy: currentUser?.name || 'Usuário', timestamp: Date.now(), details: 'Atualizou local/data de preferência' }]
+            // Usuário também pode editar alguns detalhes
+            deviceType: formData.deviceType,
+            needsInspection: formData.needsInspection,
+            paymentOnSite: formData.paymentOnSite,
+            
+            history: [...schedule.history, { action: 'Atualizou', actionBy: currentUser?.name || 'Usuário', timestamp: Date.now(), details: 'Atualizou detalhes da solicitação' }]
         };
         onUpdate(updatedSchedule);
         setIsUserEditing(false);
@@ -380,8 +414,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
             `HORA: ${timeDisplay}\n` +
             `TÉCNICO: ${techDisplay}\n` +
             `VEÍCULO: ${schedule.vehicleModel} (${schedule.vehiclePlate})\n` +
-            `DISPOSITIVO: ${schedule.deviceType}\n` +
-            `ENDEREÇO: ${schedule.locationAddress}`;
+            `DISPOSITIVO: ${formData.deviceType}\n` +
+            `ENDEREÇO: ${formData.locationAddress}`;
 
         navigator.clipboard.writeText(msg);
         addNotification('success', 'Sucesso', 'Mensagem copiada com sucesso');
@@ -436,13 +470,39 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                     </div>
                                     <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1">{schedule.vehiclePlate}</h1>
                                     <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-2">
-                                        {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"/> {schedule.deviceType}
+                                        {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"/> {formData.deviceType}
                                     </p>
 
-                                    {/* Informações Adicionais */}
-                                    <div className="flex gap-2 mt-4 flex-wrap">
-                                        {schedule.needsInspection && <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded border border-blue-200 dark:border-blue-800">Necessita Vistoria</span>}
-                                        {schedule.paymentOnSite && <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">Pagamento no Local</span>}
+                                    {/* Edição de Tipo de Equipamento e Flags */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="text-[9px] font-black uppercase text-zinc-400 tracking-wider flex items-center gap-2 mb-1"><Building2 size={12}/> Regional</label>
+                                                <select value={formData.companyId} onChange={e => setFormData({...formData, companyId: e.target.value})} className="w-full bg-zinc-100 dark:bg-zinc-950 px-2 py-1.5 rounded-lg text-xs font-bold outline-none border border-transparent focus:border-primary-500">
+                                                    <option value="">-- Não Informada --</option>
+                                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-black uppercase text-zinc-400 tracking-wider flex items-center gap-2 mb-1"><Tag size={12}/> Tipo Equipamento</label>
+                                                <select value={formData.deviceType} onChange={e => setFormData({...formData, deviceType: e.target.value as DeviceType})} className="w-full bg-zinc-100 dark:bg-zinc-950 px-2 py-1.5 rounded-lg text-xs font-bold outline-none border border-transparent focus:border-primary-500">
+                                                    <option value="Rastreador">Rastreador</option>
+                                                    <option value="Tag">Tag</option>
+                                                    <option value="Rastreador + Tag">Rastreador + Tag</option>
+                                                    <option value="Não precisa">Não precisa</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input type="checkbox" checked={formData.needsInspection} onChange={e => setFormData({...formData, needsInspection: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
+                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">Necessita Vistoria</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input type="checkbox" checked={formData.paymentOnSite} onChange={e => setFormData({...formData, paymentOnSite: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
+                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">Pagamento no Local</span>
+                                            </label>
+                                        </div>
                                     </div>
 
                                     <div className="mt-4 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
@@ -497,7 +557,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                                                     <option key={t.id} value={t.id}>{t.name}</option>
                                                 ))}
                                             </select>
+                                            {/* Button Group */}
                                             <button onClick={handleSendToTechnician} className="px-4 bg-[#25D366] hover:bg-[#1fb550] text-white rounded-xl flex items-center justify-center shadow-lg transition-all active:scale-95" title="Enviar WhatsApp"><Send size={18} /></button>
+                                            <button onClick={handleCopyTechnicianMessage} className="px-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 rounded-xl flex items-center justify-center transition-all active:scale-95" title="Copiar Mensagem"><Copy size={18} /></button>
                                         </div>
                                     </div>
 
@@ -727,9 +789,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
         );
     }
 
+    // USER VIEW (READ ONLY/MINIMAL EDIT)
     return (
         <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-            {/* ... user layout unchanged ... */}
+            {/* ... user layout ... */}
             <MotionDiv 
                 initial={{ opacity: 0, scale: 0.95 }} 
                 animate={{ opacity: 1, scale: 1 }} 
@@ -745,28 +808,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                 <div className="px-8 pb-8 flex flex-col gap-1">
                     <h2 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{schedule.vehiclePlate}</h2>
                     <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                        {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"/> {schedule.serviceType}
+                        {schedule.vehicleModel} <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700"/> {formData.deviceType}
                     </p>
                 </div>
 
                 <div className="px-8">
-                    {/* Alerta de Status Financeiro para o Usuário (Se Local Distante) */}
-                    {schedule.isRemoteLocation && (schedule.status === 'Em orçamento' || schedule.status === 'Autorizada') && (
-                        <div className={`mb-6 p-4 rounded-xl border flex items-center justify-between transition-colors
-                            ${financialAnalysis.status === 'green' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 
-                              financialAnalysis.status === 'yellow' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400' :
-                              'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'}
-                        `}>
-                            <div className="flex items-center gap-3">
-                                {financialAnalysis.status === 'red' ? <AlertTriangle size={20}/> : <Wallet size={20}/>}
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] font-black uppercase tracking-widest opacity-70">Status Financeiro</span>
-                                    <span className="text-sm font-black tracking-tight">{financialAnalysis.label}</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-[24px] p-6 border border-zinc-100 dark:border-zinc-800 space-y-5 relative">
                         {!isUserEditing && (
                             <button 
@@ -791,6 +837,30 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ schedule, technici
                             )}
                             </div>
                         </div>
+                        
+                        {/* Detalhes Técnicos para o Usuário - Editáveis */}
+                        {isUserEditing && (
+                            <div className="p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                                <label className="text-[9px] font-black uppercase text-zinc-400 tracking-wider flex items-center gap-2 mb-2"><Tag size={12}/> Tipo Equipamento</label>
+                                <select value={formData.deviceType} onChange={e => setFormData({...formData, deviceType: e.target.value as DeviceType})} className="w-full bg-zinc-100 dark:bg-zinc-950 px-2 py-1.5 rounded-lg text-xs font-bold outline-none border border-transparent focus:border-primary-500 mb-2">
+                                    <option value="Rastreador">Rastreador</option>
+                                    <option value="Tag">Tag</option>
+                                    <option value="Rastreador + Tag">Rastreador + Tag</option>
+                                    <option value="Não precisa">Não precisa</option>
+                                </select>
+                                <div className="flex flex-col gap-2">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" checked={formData.needsInspection} onChange={e => setFormData({...formData, needsInspection: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
+                                        <span className="text-[9px] font-bold text-zinc-500 uppercase">Necessita Vistoria</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" checked={formData.paymentOnSite} onChange={e => setFormData({...formData, paymentOnSite: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
+                                        <span className="text-[9px] font-bold text-zinc-500 uppercase">Pagamento no Local</span>
+                                    </label>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex items-start gap-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
                             <div className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-400 border border-zinc-200 dark:border-zinc-700 shrink-0"><Calendar size={16}/></div>
                             <div className="w-full">

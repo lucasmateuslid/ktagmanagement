@@ -137,6 +137,7 @@ export const VehiclesPage = () => {
             companies={companies}
             categories={categories}
             tags={tags}
+            allVehicles={vehicles} // Passa todos os veículos para verificar vínculos de tags
             tagSearch={tagSearch}
             setTagSearch={setTagSearch}
             onHinovaLookup={() => lookupPlate(formData.plate || '')}

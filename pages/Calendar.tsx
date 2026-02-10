@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
-import { Schedule, Technician } from '../types';
+import { Schedule, Technician, Company } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { ChevronLeft, ChevronRight, User, MapPin, CalendarDays, Clock, MoreHorizontal, Wrench, Activity, RotateCcw, Filter } from 'lucide-react';
 import { TrackingModal } from '../components/TrackingModal';
 import { useNotification } from '../contexts/NotificationContext';
+import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -161,6 +162,7 @@ export const Calendar = () => {
   const { addNotification } = useNotification();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   
@@ -177,12 +179,14 @@ export const Calendar = () => {
 
   const loadData = async () => {
     if (!user) return;
-    const [sch, techs] = await Promise.all([
+    const [sch, techs, comps] = await Promise.all([
         storage.getSchedules('admin', user.id), 
-        storage.getTechnicians()
+        storage.getTechnicians(),
+        storage.getCompanies()
     ]);
     setSchedules(sch.filter(s => ['Confirmada', 'Reagendada', 'Concluída'].includes(s.status)));
     setTechnicians(techs);
+    setCompanies(comps);
   };
 
   const handleUpdateSchedule = async (updated: Schedule) => {
@@ -413,6 +417,7 @@ export const Calendar = () => {
             <TrackingModal 
                 schedule={selectedSchedule} 
                 technicians={technicians} 
+                companies={companies}
                 onClose={() => setSelectedSchedule(null)} 
                 onUpdate={handleUpdateSchedule}
                 currentUser={user}
@@ -459,6 +464,8 @@ export const Calendar = () => {
                 </div>
             </div>
         </div>
+
+        <TechnicianAvailabilityAlert />
 
         <div className="bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 overflow-hidden flex-1 shadow-sm flex flex-col relative">
             {viewMode === 'month' && renderMonthView()}

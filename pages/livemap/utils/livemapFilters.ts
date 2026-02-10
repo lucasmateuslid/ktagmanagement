@@ -68,7 +68,7 @@ export const filterLocationsToRender = (
     fleetLocations: LocationHistory[],
     selectedTagId: string,
     filter: FleetFilter,
-    limit50: boolean,
+    displayLimit: number | 'all', // Atualizado de limit50
     vehicles: Vehicle[]
 ) => {
     if (selectedTagId) {
@@ -83,8 +83,8 @@ export const filterLocationsToRender = (
 
     // Se filter === 'online', já está implícito pois fleetLocations são os onlines
     
-    if (limit50 && base.length > 50) {
-        return base.slice(0, 50);
+    if (displayLimit !== 'all' && base.length > displayLimit) {
+        return base.slice(0, displayLimit);
     }
     return base;
 };

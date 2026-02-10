@@ -79,7 +79,7 @@ export const Dashboard = () => {
 
   // Stock Intelligence
   const stockInfo = useMemo(() => calculateStockStatus(unlinkedCount, settings), [unlinkedCount, settings]);
-  const stockPrediction = useMemo(() => calculateStockPrediction(trendChartData, unlinkedCount), [trendChartData, unlinkedCount]);
+  const stockPrediction = useMemo(() => calculateStockPrediction(schedules, unlinkedCount), [schedules, unlinkedCount]);
 
   // Constants
   const purchasedCount = ownershipData.find(d => d.name === 'Adquirido')?.value || 0;
@@ -157,7 +157,7 @@ export const Dashboard = () => {
                       <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={chartData}>
                               <defs>
-                                  <linearGradient id="gradTags" x1="0" y1="0" x2="0" y2="1">
+                                  <linearGradient id="gradTags" x1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor={COLORS.primary} stopOpacity={0.5}/>
                                       <stop offset="100%" stopColor={COLORS.primary} stopOpacity={0}/>
                                   </linearGradient>
@@ -283,7 +283,7 @@ export const Dashboard = () => {
                       <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={trendChartData}>
                               <defs>
-                                  <linearGradient id="gradTrend" x1="0" y1="0" x2="0" y2="1">
+                                  <linearGradient id="gradTrend" x1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor={COLORS.primary} stopOpacity={0.2}/>
                                       <stop offset="100%" stopColor={COLORS.primary} stopOpacity={0}/>
                                   </linearGradient>
@@ -427,7 +427,7 @@ export const Dashboard = () => {
                       <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={serviceHistoryData}>
                               <defs>
-                                  <linearGradient id="gradService" x1="0" y1="0" x2="0" y2="1">
+                                  <linearGradient id="gradService" x1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor={COLORS.primary} stopOpacity={0.3}/>
                                       <stop offset="100%" stopColor={COLORS.primary} stopOpacity={0}/>
                                   </linearGradient>

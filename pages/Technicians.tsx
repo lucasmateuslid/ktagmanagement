@@ -4,7 +4,7 @@ import { storage } from '../services/storage';
 import { Technician, Schedule } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck } from 'lucide-react';
+import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
 const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: Technician, schedules: Schedule[], onClose: () => void }) => {
@@ -161,8 +161,11 @@ export const Technicians = () => {
   const [formData, setFormData] = useState<Partial<Technician>>({ 
       active: true, 
       color: '#3b82f6',
-      serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
+      serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
+      unavailableDates: []
   });
+  
+  const [newUnavailabilityDate, setNewUnavailabilityDate] = useState('');
   
   // State para o Modal de Detalhes
   const [selectedTechForDetail, setSelectedTechForDetail] = useState<Technician | null>(null);
@@ -189,7 +192,8 @@ export const Technicians = () => {
         phone: formData.phone,
         active: formData.active ?? true,
         color: formData.color,
-        serviceRates: formData.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
+        serviceRates: formData.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
+        unavailableDates: formData.unavailableDates || []
     };
 
     await storage.saveTechnician(tech);
@@ -201,8 +205,10 @@ export const Technicians = () => {
   const handleEdit = (tech: Technician) => {
       setFormData({
           ...tech,
-          serviceRates: tech.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 }
+          serviceRates: tech.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
+          unavailableDates: tech.unavailableDates || []
       });
+      setNewUnavailabilityDate('');
       setIsModalOpen(true);
   };
 
@@ -229,6 +235,24 @@ export const Technicians = () => {
       }));
   };
 
+  const addUnavailabilityDate = () => {
+      if (!newUnavailabilityDate) return;
+      
+      const currentDates = formData.unavailableDates || [];
+      if (!currentDates.includes(newUnavailabilityDate)) {
+          const newDates = [...currentDates, newUnavailabilityDate].sort();
+          setFormData(prev => ({ ...prev, unavailableDates: newDates }));
+      }
+      setNewUnavailabilityDate('');
+  };
+
+  const removeUnavailabilityDate = (dateToRemove: string) => {
+      setFormData(prev => ({
+          ...prev,
+          unavailableDates: (prev.unavailableDates || []).filter(d => d !== dateToRemove)
+      }));
+  };
+
   if (user?.role !== 'admin') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
 
   return (
@@ -238,7 +262,7 @@ export const Technicians = () => {
             <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Equipe Técnica</h1>
             <p className="text-zinc-500 mt-1 font-medium text-xs">Gestão de instaladores, técnicos de campo e valores.</p>
         </div>
-        <button onClick={() => { setFormData({ active: true, color: '#3b82f6', serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 } }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
+        <button onClick={() => { setFormData({ active: true, color: '#3b82f6', serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 }, unavailableDates: [] }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
             <Plus size={16} /> Novo Técnico
         </button>
       </div>
@@ -329,6 +353,39 @@ export const Technicians = () => {
                                 <input type="number" step="0.01" value={formData.serviceRates?.inspection || 0} onChange={e => updateRate('inspection', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
                             </div>
                         </div>
+                    </div>
+
+                    {/* SEÇÃO DE INDISPONIBILIDADE */}
+                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                        <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><CalendarOff size={14}/> Gestão de Indisponibilidade</label>
+                        <div className="flex gap-2 mb-3">
+                            <input 
+                                type="date" 
+                                value={newUnavailabilityDate} 
+                                onChange={e => setNewUnavailabilityDate(e.target.value)} 
+                                className="flex-1 px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none"
+                            />
+                            <button 
+                                type="button" 
+                                onClick={addUnavailabilityDate}
+                                className="px-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all"
+                            >
+                                Adicionar
+                            </button>
+                        </div>
+                        
+                        {formData.unavailableDates && formData.unavailableDates.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
+                                {formData.unavailableDates.map(date => (
+                                    <span key={date} className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-bold border border-amber-200 dark:border-amber-800">
+                                        {new Date(date + 'T12:00:00').toLocaleDateString()}
+                                        <button type="button" onClick={() => removeUnavailabilityDate(date)} className="hover:text-red-500"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-[10px] text-zinc-400 italic">Nenhuma data de folga registrada.</p>
+                        )}
                     </div>
 
                     <div>

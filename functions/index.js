@@ -55,8 +55,8 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
     
     // Set CORS headers for all responses
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, api_token, timestamp, Authorization');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, api_token, timestamp, Authorization, x-goog-api-key, x-goog-api-client, x-goog-user-project');
 
     if (req.method === 'OPTIONS') {
         res.status(204).send('');

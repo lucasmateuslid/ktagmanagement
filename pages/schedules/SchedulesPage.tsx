@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { storage } from '../../services/storage';
-import { Schedule, Technician } from '../../types';
+import { Schedule, Technician, Company } from '../../types';
 import { TrackingModal } from '../../components/TrackingModal';
 import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle } from 'lucide-react';
+import { TechnicianAvailabilityAlert } from '../../components/TechnicianAvailabilityAlert';
 
 // Hooks
 import { useScheduleStats } from './hooks/useScheduleStats';
@@ -15,6 +16,7 @@ import { useScheduleExport } from './hooks/useScheduleExport';
 
 // Components
 import { ServiceTypesRow } from './components/dashboard/ServiceTypesRow';
+import { DeviceTypesRow } from './components/dashboard/DeviceTypesRow';
 import { FinancialSummaryRow } from './components/dashboard/FinancialSummaryRow';
 import { ScheduleTabs } from './components/filters/ScheduleTabs';
 import { ScheduleSearchBar } from './components/filters/ScheduleSearchBar';
@@ -30,6 +32,7 @@ export const SchedulesPage = () => {
   
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
@@ -38,8 +41,12 @@ export const SchedulesPage = () => {
   useEffect(() => {
     const init = async () => {
         setLoading(true);
-        const techs = await storage.getTechnicians();
+        const [techs, comps] = await Promise.all([
+            storage.getTechnicians(),
+            storage.getCompanies()
+        ]);
         setTechnicians(techs);
+        setCompanies(comps);
         setLoading(false);
     };
     init();
@@ -66,7 +73,9 @@ export const SchedulesPage = () => {
     showMyRequests, setShowMyRequests,
     filterTech, setFilterTech,
     filterService, setFilterService,
-    filterStatusDropdown, setFilterStatusDropdown
+    filterStatusDropdown, setFilterStatusDropdown,
+    filterDevice, setFilterDevice,
+    filterDate, setFilterDate
   } = useScheduleFilters(schedules, technicians, user, viewDate);
 
   const stats = useScheduleStats(schedules, technicians, viewDate, isPrivileged);
@@ -159,6 +168,8 @@ export const SchedulesPage = () => {
                     </div>
                 </div>
 
+                <TechnicianAvailabilityAlert />
+
                 {stats && (
                     <div className="space-y-6">
                         {/* KPI Boxes */}
@@ -195,6 +206,7 @@ export const SchedulesPage = () => {
                         </div>
 
                         <ServiceTypesRow data={stats} />
+                        <DeviceTypesRow data={stats} />
                         <FinancialSummaryRow data={stats} />
                     </div>
                 )}
@@ -233,6 +245,8 @@ export const SchedulesPage = () => {
                     onExportPDF={handleExportPDF}
                     onExportExcel={handleExportExcel}
                     isExporting={isExporting}
+                    filterDate={filterDate}
+                    setFilterDate={setFilterDate}
                 />
             </div>
 
@@ -242,6 +256,7 @@ export const SchedulesPage = () => {
                     filterTech={filterTech} setFilterTech={setFilterTech}
                     filterService={filterService} setFilterService={setFilterService}
                     filterStatusDropdown={filterStatusDropdown} setFilterStatusDropdown={setFilterStatusDropdown}
+                    filterDevice={filterDevice} setFilterDevice={setFilterDevice}
                 />
             )}
         </div>
@@ -275,6 +290,7 @@ export const SchedulesPage = () => {
             <TrackingModal 
                 schedule={selectedSchedule} 
                 technicians={technicians} 
+                companies={companies}
                 onClose={() => setSelectedSchedule(null)} 
                 onUpdate={handleUpdateSchedule}
                 onDelete={handleDeleteSchedule}

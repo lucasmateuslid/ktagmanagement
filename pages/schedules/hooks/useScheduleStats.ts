@@ -36,6 +36,11 @@ export const useScheduleStats = (
     const removal = monthSchedules.filter(s => s.serviceType === 'Retirada').length;
     const inspection = monthSchedules.filter(s => s.serviceType === 'Vistoria').length;
 
+    // Device Type Stats
+    const deviceTagOnly = monthSchedules.filter(s => s.deviceType === 'Tag').length;
+    const deviceTrackerOnly = monthSchedules.filter(s => s.deviceType === 'Rastreador').length;
+    const deviceCombo = monthSchedules.filter(s => s.deviceType === 'Rastreador + Tag').length;
+
     let totalRevenue = 0;
     let totalDisplacement = 0;
     const byTech: Record<string, number> = {};
@@ -69,6 +74,7 @@ export const useScheduleStats = (
     return {
         total, scheduled, completed, canceled,
         installation, maintenance, removal, inspection,
+        deviceTagOnly, deviceTrackerOnly, deviceCombo,
         totalRevenue, totalDisplacement,
         byTech: Object.entries(byTech).sort((a, b) => b[1] - a[1]),
         byService: Object.entries(byService).sort((a, b) => b[1] - a[1]),

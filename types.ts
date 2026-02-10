@@ -17,6 +17,7 @@ export interface Company {
   id: string;
   name: string;
   prefix: string;
+  hasSgaIntegration?: boolean;
 }
 
 export interface VehicleCategory {
@@ -53,8 +54,26 @@ export interface Client {
   state?: string;
   hasAccess?: boolean;
   createdAt: number;
-  // Security Index
   cpfHash?: string;
+}
+
+// K-Tag API v1.2 - Battery Info Structure
+export interface KTagBatteryInfo {
+  level: number;
+  label: string;
+  color: string;
+}
+
+export interface LocationHistory {
+  id: string;
+  tagId: string;
+  lat: number;
+  lon: number;
+  conf: number;
+  status: number; // Raw status from API
+  battery?: KTagBatteryInfo; // Interpreted battery status
+  timestamp: number;
+  isodatetime: string;
 }
 
 export interface Vehicle {
@@ -69,33 +88,15 @@ export interface Vehicle {
   clientId?: string;
   status?: 'active' | 'stolen' | 'maintenance';
   installationType?: 'tag_only' | 'tag_tracker';
-  ownershipStatus?: 'leased' | 'purchased'; // leased = Comodato, purchased = Adquirido
+  ownershipStatus?: 'leased' | 'purchased'; 
   createdAt: number;
   updatedBy?: string;
   chassis?: string;
   fipeCode?: string;
   hinovaId?: string;
-  // Security Index
   plateHash?: string;
-}
-
-// K-Tag API v1.2 - Battery Info Structure
-export interface KTagBatteryInfo {
-  level: number; // Percentual estimado (0-100)
-  label: string; // Normal, Médio, Baixo, Crítico
-  color: string; // green, yellow, orange, red
-}
-
-export interface LocationHistory {
-  id: string;
-  tagId: string;
-  lat: number;
-  lon: number;
-  conf: number;
-  status: number; // Raw status from API
-  battery?: KTagBatteryInfo; // Interpreted battery status
-  timestamp: number;
-  isodatetime: string;
+  // New Field for Offline Persistence
+  lastPosition?: LocationHistory; 
 }
 
 // Result format for location fetching APIs
@@ -158,20 +159,15 @@ export interface AppSettings {
   hinovaToken: string;
   hinovaUser: string;
   hinovaPass: string;
-  // Added properties for Plate API configuration
   plateApiUrl?: string;
   plateApiToken?: string;
-  // Inventory Levels
   minStockLevel?: number;
   criticalStockLevel?: number;
-  // Financeiro
-  budgetMarginThreshold?: number; // Porcentagem padrão para aprovação (ex: 25)
+  budgetMarginThreshold?: number; 
 }
 
-// --- NEW TYPES FOR SCHEDULING SYSTEM ---
-
 export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cancelada' | 'Concluída';
-export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag';
+export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag' | 'Não precisa';
 export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada' | 'Vistoria';
 
 export interface Technician {
@@ -179,7 +175,8 @@ export interface Technician {
   name: string;
   phone: string;
   active: boolean;
-  color?: string; // Hex color for calendar
+  color?: string; 
+  unavailableDates?: string[]; // Array de datas ISO (YYYY-MM-DD)
   serviceRates?: {
     installation: number;
     maintenance: number;
@@ -189,8 +186,8 @@ export interface Technician {
 }
 
 export interface ScheduleHistory {
-  actionBy: string; // User Name
-  action: string; // "Confirmou", "Reagendou", "Solicitou"
+  actionBy: string; 
+  action: string; 
   timestamp: number;
   details?: string;
   statusSnapshot?: string;
@@ -199,56 +196,37 @@ export interface ScheduleHistory {
 export interface Schedule {
   id: string;
   requesterId: string;
-  requesterName: string; // Operador/Usuário do sistema
-  
-  // Client Data (Optional - from SGA)
-  clientName?: string; // Nome do Cliente Final (Dono do veículo)
+  requesterName: string;
+  clientName?: string; 
   clientPhone?: string;
-
-  // Vehicle Data
   vehiclePlate: string;
   vehicleModel: string;
-  fipeValue: string; // Formatted R$ string
+  fipeValue: string; 
   deviceType: DeviceType;
   serviceType: ServiceType;
-  companyId?: string; // ID da Regional/Empresa
-
-  // Preferences
-  preferredDate: string; // YYYY-MM-DD
-  preferredTime: string; // HH:mm
-  notes?: string; // Observações adicionais
-  cancellationReason?: string; // Motivo do cancelamento
-  
-  // Operational Checks
-  needsInspection?: boolean; // Vistoria
-  paymentOnSite?: boolean; // Pagamento no local
-  installedImei?: string; // IMEI do equipamento instalado (Opcional ao finalizar)
-
-  // Remote / Displacement
-  isRemoteLocation?: boolean; // Local distante
-  displacementKm?: number; // Total KM ida e volta
-  displacementValue?: number; // Valor R$ do deslocamento
-  
-  // Financeiro (Orçamento)
-  adhesionValue?: number; // Valor negociado/adesão
-
-  // Location
+  companyId?: string; 
+  preferredDate: string; 
+  preferredTime: string; 
+  notes?: string; 
+  cancellationReason?: string; 
+  needsInspection?: boolean; 
+  paymentOnSite?: boolean; 
+  installedImei?: string; 
+  isRemoteLocation?: boolean; 
+  displacementKm?: number; 
+  displacementValue?: number; 
+  adhesionValue?: number; 
   locationAddress: string;
   locationLat: number;
   locationLng: number;
-
-  // Status & Assignment
   status: ScheduleStatus;
   technicianId?: string;
-  confirmedDate?: string; // YYYY-MM-DD
-  confirmedTime?: string; // HH:mm
-  
+  confirmedDate?: string; 
+  confirmedTime?: string; 
   history: ScheduleHistory[];
   createdAt: number;
-  analysisStartedAt?: number; // Para resetar o timer quando entrar em análise
+  analysisStartedAt?: number; 
 }
-
-// --- FEEDBACK & SYSTEM UPDATES ---
 
 export type FeedbackType = 'suggestion' | 'bug' | 'improvement';
 
@@ -258,7 +236,6 @@ export interface Feedback {
   userName: string;
   type: FeedbackType;
   content: string;
-  // Attachments in Base64 for simplicity in this architecture
   attachments?: string[]; 
   createdAt: number;
 }

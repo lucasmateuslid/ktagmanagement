@@ -13,7 +13,7 @@ import {
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
-  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent
+  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -21,7 +21,10 @@ export const Settings = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   
-  const [newCompany, setNewCompany] = useState({ name: '', prefix: '' });
+  // States para Regionais
+  const [newCompany, setNewCompany] = useState({ name: '', prefix: '', hasSgaIntegration: true });
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
+
   const [newCategory, setNewCategory] = useState({ name: '', fipeType: 'carros' as const });
   
   const [profileForm, setProfileForm] = useState({ name: '', avatarInitial: '' });
@@ -136,19 +139,49 @@ export const Settings = () => {
     } finally { setPwdLoading(false); }
   };
 
-  const handleAddCompany = async () => {
+  const handleSaveCompany = async () => {
     if (!newCompany.name || !newCompany.prefix) return;
-    const company: Company = { id: crypto.randomUUID(), name: newCompany.name, prefix: newCompany.prefix.toUpperCase() };
+    
+    const id = editingCompanyId || crypto.randomUUID();
+    const company: Company = { 
+        id: id, 
+        name: newCompany.name, 
+        prefix: newCompany.prefix.toUpperCase(),
+        hasSgaIntegration: newCompany.hasSgaIntegration
+    };
+    
     await storage.saveCompany(company);
-    setCompanies([...companies, company]);
-    setNewCompany({ name: '', prefix: '' });
-    addNotification('success', 'Regional Criada', 'Nova regional adicionada com sucesso.');
+    
+    if (editingCompanyId) {
+        setCompanies(companies.map(c => c.id === id ? company : c));
+        addNotification('success', 'Regional Atualizada', 'Dados atualizados com sucesso.');
+    } else {
+        setCompanies([...companies, company]);
+        addNotification('success', 'Regional Criada', 'Nova regional adicionada com sucesso.');
+    }
+    
+    handleCancelEdit();
+  };
+
+  const handleStartEditCompany = (c: Company) => {
+      setNewCompany({
+          name: c.name,
+          prefix: c.prefix,
+          hasSgaIntegration: c.hasSgaIntegration ?? true
+      });
+      setEditingCompanyId(c.id);
+  };
+
+  const handleCancelEdit = () => {
+      setNewCompany({ name: '', prefix: '', hasSgaIntegration: true });
+      setEditingCompanyId(null);
   };
 
   const handleDeleteCompany = async (id: string) => {
     if (!confirm('Excluir regional?')) return;
     await storage.deleteCompany(id);
     setCompanies(companies.filter(c => c.id !== id));
+    if (editingCompanyId === id) handleCancelEdit();
   };
 
   const handleAddCategory = async () => {
@@ -441,15 +474,37 @@ export const Settings = () => {
                    <div className="space-y-6">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14}/> Regionais</h4>
                       <div className="flex gap-2">
-                         <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                         <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
-                         <button onClick={handleAddCompany} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
+                         <div className="flex-1 flex gap-2">
+                             <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                             <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
+                         </div>
+                         <div className="flex gap-1">
+                             {editingCompanyId && (
+                                <button onClick={handleCancelEdit} className="p-3.5 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><X size={18} strokeWidth={3}/></button>
+                             )}
+                             <button onClick={handleSaveCompany} className={`p-3.5 ${editingCompanyId ? 'bg-emerald-500 text-white' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black'} rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0`}>
+                                {editingCompanyId ? <Check size={18} strokeWidth={3}/> : <Plus size={18} strokeWidth={3}/>}
+                             </button>
+                         </div>
                       </div>
+                      <div className="flex items-center gap-2 mb-2">
+                          <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 cursor-pointer">
+                              <input type="checkbox" checked={newCompany.hasSgaIntegration} onChange={e => setNewCompany({...newCompany, hasSgaIntegration: e.target.checked})} className="accent-emerald-500 w-4 h-4 rounded" />
+                              Integração com SGA Ativa
+                          </label>
+                      </div>
+                      
                       <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                          {companies.map(c => (
                             <div key={c.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
-                               <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
-                               <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>
+                               <div className="flex flex-col">
+                                   <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
+                                   <span className={`text-[9px] font-bold ${c.hasSgaIntegration === false ? 'text-amber-500' : 'text-emerald-500'}`}>{c.hasSgaIntegration === false ? 'Sem Integração SGA' : 'Integrado ao SGA'}</span>
+                               </div>
+                               <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
+                                   <button onClick={() => handleStartEditCompany(c)} className="p-1.5 text-zinc-300 hover:text-primary-500"><Edit2 size={14}/></button>
+                                   <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500"><Trash2 size={14}/></button>
+                               </div>
                             </div>
                          ))}
                       </div>

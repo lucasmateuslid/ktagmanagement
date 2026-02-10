@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -230,7 +231,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         </aside>
 
         <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-100 dark:bg-black">
-          <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-30 sticky top-0">
+          <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0">
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => setIsSidebarOpen(true)}
@@ -294,8 +295,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
                 {isNotifOpen && (
                     <>
-                      <div className="fixed inset-0 z-[60]" onClick={() => setIsNotifOpen(false)} />
-                      <div className="absolute right-8 top-20 mt-2 w-80 sm:w-96 bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl border border-zinc-200 dark:border-zinc-800 z-[70] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                      <div className="fixed inset-0 z-[4000]" onClick={() => setIsNotifOpen(false)} />
+                      <div className="absolute right-8 top-20 mt-2 w-80 sm:w-96 bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl border border-zinc-200 dark:border-zinc-800 z-[5000] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/50">
                             <h4 className="text-xs font-black uppercase tracking-widest">Notificações</h4>
                             <button onClick={clearAll} className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-bold uppercase">Limpar tudo</button>
@@ -332,7 +333,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               {children || <Outlet />}
           </div>
           
-          <AiAssistant />
+          {user?.role !== 'client' && <AiAssistant />}
           {isChangelogOpen && <ChangelogModal onClose={() => setIsChangelogOpen(false)} />}
         </main>
       </div>

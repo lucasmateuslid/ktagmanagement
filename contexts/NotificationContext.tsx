@@ -30,7 +30,7 @@ export const NotificationProvider = ({ children }: { children?: ReactNode }) => 
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const addNotification = useCallback((type: 'error' | 'success' | 'info', title: string, message: string, showToast: boolean = false) => {
+  const addNotification = useCallback((type: 'error' | 'success' | 'info', title: string, message: string, showToast: boolean = true) => {
     const newNote: AppNotification = {
       id: crypto.randomUUID(),
       type,
@@ -46,7 +46,7 @@ export const NotificationProvider = ({ children }: { children?: ReactNode }) => 
       setActiveToast(newNote);
       setTimeout(() => {
         setActiveToast(prev => (prev?.id === newNote.id ? null : prev));
-      }, 3000);
+      }, 1500); // 1.5 segundos
     }
   }, []);
 

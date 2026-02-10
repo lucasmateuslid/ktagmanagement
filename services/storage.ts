@@ -191,6 +191,17 @@ export const storage = {
     cache.set(KEYS.VEHICLES, list);
   },
 
+  // Novo método para atualização leve de posição
+  updateVehiclePosition: async (vehicleId: string, location: LocationHistory) => {
+    if (!db) return;
+    try {
+        const vehicleRef = doc(db, KEYS.VEHICLES, vehicleId);
+        await updateDoc(vehicleRef, { lastPosition: location });
+    } catch (e) {
+        console.warn("Falha ao persistir localização (offline ou erro):", e);
+    }
+  },
+
   getClients: async (): Promise<Client[]> => {
     const raw = await fetchResilient(KEYS.CLIENTS) as Client[];
     if (raw.length > 0) cache.set(KEYS.CLIENTS, raw);

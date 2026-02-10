@@ -116,33 +116,39 @@ export const calculateStockStatus = (unlinkedCount: number, settings: AppSetting
   return { status, minStock, criticalStock };
 };
 
-export const calculateStockPrediction = (trendChartData: any[], unlinkedCount: number) => {
-  if (trendChartData.length === 0) return { days: 0, label: 'Calculando...' };
-
-  let weightedSum = 0;
-  let totalWeights = 0;
-
-  trendChartData.forEach((data, idx) => {
-      const count = data[' entradas'] || 0;
-      let weight = 1;
-      
-      if (idx === trendChartData.length - 1) weight = 3; // Mês atual (Maior peso)
-      if (idx === trendChartData.length - 2) weight = 2; // Mês anterior
-      
-      weightedSum += count * weight;
-      totalWeights += weight;
-  });
-
-  const weightedAverageMonthlyOutput = weightedSum / totalWeights;
-  const averageDailyOutput = weightedAverageMonthlyOutput / 30;
-
-  if (averageDailyOutput <= 0.05) return { days: 999, label: '> 1 Ano' };
-
-  const daysLeft = Math.floor(unlinkedCount / averageDailyOutput);
+/**
+ * Predição de Estoque baseada em SAÍDAS (Instalações Concluídas)
+ * Ignora cadastros e foca no consumo real do estoque.
+ */
+export const calculateStockPrediction = (schedules: Schedule[], unlinkedCount: number) => {
+  const now = new Date();
   
+  // Filtra instalações concluídas nos últimos 90 dias para média
+  const ninetyDaysAgo = now.getTime() - (90 * 24 * 60 * 60 * 1000);
+  const installations = schedules.filter(s => 
+    s.status === 'Concluída' && 
+    s.serviceType === 'Instalação' && 
+    s.createdAt >= ninetyDaysAgo
+  );
+
+  // Calcula média mensal (Saídas por mês)
+  const monthlyAvg = installations.length / 3;
+
+  // Se a média for muito baixa, assume uma saída residual para não dar infinito
+  const safeMonthlyAvg = monthlyAvg > 0 ? monthlyAvg : 1; 
+  const dailyAvg = safeMonthlyAvg / 30;
+
+  const daysLeft = Math.floor(unlinkedCount / dailyAvg);
+
+  if (installations.length === 0 && unlinkedCount > 0) {
+      return { days: 365, label: '> 1 ANO (BAIXO USO)' };
+  }
+
+  if (unlinkedCount === 0) return { days: 0, label: 'ESGOTADO' };
+
   return {
       days: daysLeft,
-      label: `${daysLeft} DIAS`
+      label: daysLeft > 365 ? '> 1 ANO' : `${daysLeft} DIAS`
   };
 };
 

@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { X, Save, Search, Loader2, Building2, Book, User, Phone, ClipboardCheck, CreditCard, Calendar } from 'lucide-react';
+import { X, Save, Search, Loader2, Building2, Book, User, Phone, ClipboardCheck, CreditCard, Calendar, Tag as TagIcon } from 'lucide-react';
 import { Vehicle, Client, Company, VehicleCategory, Tag, DeviceType } from '../../../types';
-import { getPlateInputStatus } from '../utils/plateValidation';
+import { getPlateInputStatus, validateBrazilianPlate } from '../utils/plateValidation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface VehicleModalProps {
@@ -15,6 +15,7 @@ interface VehicleModalProps {
   companies: Company[];
   categories: VehicleCategory[];
   tags: Tag[];
+  allVehicles: Vehicle[]; // Nova dependência para validar vínculos
   tagSearch: string;
   setTagSearch: (s: string) => void;
   onHinovaLookup: () => void;
@@ -28,11 +29,36 @@ interface VehicleModalProps {
 
 export const VehicleModal: React.FC<VehicleModalProps> = ({
   onClose, onSubmit, formData, setFormData, clientData, setClientData,
-  companies, categories, tags, tagSearch, setTagSearch,
+  companies, categories, tags, allVehicles, tagSearch, setTagSearch,
   onHinovaLookup, hinovaStatus, onCheckClient, onFipeOpen,
   isTagListOpen, setIsTagListOpen, isPlateValid
 }) => {
   const plateStatus = getPlateInputStatus(formData.plate || '');
+
+  // Determina quais Tags estão ocupadas por outros veículos
+  const occupiedTagIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    allVehicles.forEach(v => {
+      // Se o veículo tem uma tag vinculada E não é o veículo que estamos editando agora
+      if (v.tagId && v.id !== formData.id) {
+        ids.add(v.tagId);
+      }
+    });
+    return ids;
+  }, [allVehicles, formData.id]);
+
+  // Filtra as tags disponíveis para seleção
+  const availableTags = React.useMemo(() => {
+    const term = tagSearch.toLowerCase();
+    return tags.filter(t => {
+      // 1. Deve bater com a pesquisa
+      const matchesSearch = t.accessoryId.toLowerCase().includes(term) || t.name.toLowerCase().includes(term);
+      // 2. Não deve estar ocupada por outro veículo
+      const isFreeOrMine = !occupiedTagIds.has(t.id);
+      
+      return matchesSearch && isFreeOrMine;
+    });
+  }, [tags, tagSearch, occupiedTagIds]);
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
@@ -150,7 +176,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                             <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                         </div>
                         
-                        {/* Tag Linking */}
+                        {/* Tag Linking com Filtro de Ocupação */}
                         <div className="space-y-2 relative">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TAG VINCULADA</label>
                             <div className="relative">
@@ -163,11 +189,11 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                                     className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none focus:border-primary-500" 
                                 />
                                 {isTagListOpen && (
-                                    <div className="absolute top-full mt-1 left-0 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[1100] max-h-40 overflow-y-auto p-1 ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-200">
-                                        {tags.filter(t => t.accessoryId.toLowerCase().includes(tagSearch.toLowerCase()) || t.name.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 ? (
-                                            <div className="p-3 text-[9px] font-black text-zinc-400 uppercase text-center italic">Nenhuma tag disponível</div>
+                                    <div className="absolute bottom-full mb-1 left-0 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[1100] max-h-40 overflow-y-auto p-1 ring-1 ring-black/5 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                                        {availableTags.length === 0 ? (
+                                            <div className="p-3 text-[9px] font-black text-zinc-400 uppercase text-center italic">Nenhuma tag livre localizada</div>
                                         ) : (
-                                            tags.filter(t => t.accessoryId.toLowerCase().includes(tagSearch.toLowerCase()) || t.name.toLowerCase().includes(tagSearch.toLowerCase())).map(t => (
+                                            availableTags.map(t => (
                                                 <button key={t.id} type="button" onClick={() => { setFormData({...formData, tagId: t.id}); setTagSearch(t.accessoryId); setIsTagListOpen(false); }} className="w-full p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left border-b last:border-0 border-zinc-100 dark:border-zinc-800 group transition-colors">
                                                     <span className="text-[10px] font-black uppercase text-zinc-900 dark:text-white block group-hover:text-primary-500">{t.accessoryId}</span>
                                                     <span className="text-[8px] font-bold text-zinc-400 uppercase">{t.name}</span>

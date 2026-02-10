@@ -6,8 +6,9 @@ import { Schedule, DeviceType, ServiceType, Vehicle, User, Company } from '../ty
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X } from 'lucide-react';
+import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X, Tag } from 'lucide-react';
 import * as ReactRouterDOM from 'react-router-dom';
+import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
 
 const { useNavigate } = ReactRouterDOM as any;
 
@@ -27,11 +28,10 @@ export const ScheduleRequest = () => {
   const [userSearch, setUserSearch] = useState('');
 
   const [formData, setFormData] = useState<Partial<Schedule>>({
-    deviceType: 'Rastreador',
+    deviceType: undefined, // Removida pré-seleção conforme solicitado
     serviceType: 'Instalação',
     fipeValue: '',
     notes: '',
-    // needsInspection e paymentOnSite removidos para iniciar como undefined (sem seleção)
     locationAddress: '',
     locationLat: 0,
     locationLng: 0
@@ -68,6 +68,15 @@ export const ScheduleRequest = () => {
           setUserSearch(formData.requesterName);
       }
   }, [formData.requesterName, isUserSelectOpen]);
+
+  const selectedCompany = useMemo(() => {
+      return companies.find(c => c.id === formData.companyId);
+  }, [companies, formData.companyId]);
+
+  const requiresManualClientEntry = useMemo(() => {
+      if (!selectedCompany) return false;
+      return selectedCompany.hasSgaIntegration === false;
+  }, [selectedCompany]);
 
   const filteredUsers = useMemo(() => {
       if (!userSearch) return usersDb;
@@ -147,12 +156,22 @@ export const ScheduleRequest = () => {
     e.preventDefault();
     if (!user) return;
     
-    if (!formData.vehiclePlate || !formData.vehicleModel || !formData.preferredDate || !formData.preferredTime || !formData.locationAddress) {
-        addNotification('error', 'Campos Obrigatórios', 'Preencha todos os dados obrigatórios (*), incluindo localização.');
+    // Validação estrita do deviceType conforme solicitado
+    if (!formData.deviceType) {
+        addNotification('error', 'Dispositivo Obrigatório', 'Selecione o tipo de dispositivo para prosseguir.');
         return;
     }
 
-    // Validação de Campos Booleanos Obrigatórios
+    if (!formData.vehiclePlate || !formData.vehicleModel || !formData.preferredDate || !formData.preferredTime || !formData.locationAddress) {
+        addNotification('error', 'Campos Obrigatórios', 'Preencha todos os dados obrigatórios (*).');
+        return;
+    }
+
+    if (requiresManualClientEntry && !formData.clientName) {
+        addNotification('error', 'Campos Obrigatórios', 'Para esta empresa, o nome do cliente é obrigatório.');
+        return;
+    }
+
     if (formData.needsInspection === undefined) {
         addNotification('error', 'Campos Obrigatórios', 'Informe se o veículo necessita de vistoria.');
         return;
@@ -199,10 +218,9 @@ export const ScheduleRequest = () => {
         };
 
         await storage.saveSchedule(schedule);
-        addNotification('success', 'Solicitação Enviada', `Agendamento criado para ${finalRequesterName}.`);
+        addNotification('success', 'Solicitação Enviada', `Agendamento criado com sucesso.`);
         navigate('/schedules'); 
     } catch (err) {
-        console.error(err);
         addNotification('error', 'Erro', 'Falha ao enviar solicitação.');
     } finally {
         setLoading(false);
@@ -211,7 +229,6 @@ export const ScheduleRequest = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 md:space-y-8 pb-24">
-        {/* Header */}
         <div className="bg-zinc-900 text-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] shadow-2xl relative overflow-hidden border border-zinc-800">
             <div className="relative z-10">
                 <h1 className="text-2xl md:text-3xl font-display font-black uppercase tracking-tight">Nova Solicitação</h1>
@@ -221,6 +238,8 @@ export const ScheduleRequest = () => {
                 <Calendar size={100} />
             </div>
         </div>
+
+        <TechnicianAvailabilityAlert />
 
         <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
             {/* DADOS DO SOLICITANTE */}
@@ -277,6 +296,20 @@ export const ScheduleRequest = () => {
                     <Car size={20} />
                     <h3 className="font-black uppercase tracking-widest text-xs">Dados do Veículo & Cliente</h3>
                 </div>
+                
+                <div className="md:col-span-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Empresa Responsável (Regional)</label>
+                    <div className="relative mt-1">
+                        <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                        <select value={formData.companyId || ''} onChange={e => setFormData(prev => ({...prev, companyId: e.target.value}))} className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
+                            <option value="">-- Selecione a Regional --</option>
+                            {companies.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Placa <span className="text-red-500">*</span></label>
@@ -290,8 +323,10 @@ export const ScheduleRequest = () => {
                             <button 
                                 type="button" 
                                 onClick={handleHinovaLookup} 
-                                disabled={hinovaStatus === 'loading'} 
+                                disabled={hinovaStatus === 'loading' || requiresManualClientEntry} 
+                                title={requiresManualClientEntry ? "Integração SGA não disponível para esta empresa" : "Consultar SGA"}
                                 className={`px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center justify-center min-w-[70px] text-white ${
+                                    requiresManualClientEntry ? 'bg-zinc-300 dark:bg-zinc-700 cursor-not-allowed opacity-50' : 
                                     hinovaStatus === 'success' ? 'bg-emerald-500 hover:bg-emerald-600' :
                                     hinovaStatus === 'error' ? 'bg-red-500 hover:bg-red-600' :
                                     'bg-[#006e82] hover:bg-[#008ba3]'
@@ -317,39 +352,51 @@ export const ScheduleRequest = () => {
                     </div>
                     <div>
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Dispositivo <span className="text-red-500">*</span></label>
-                        <select value={formData.deviceType} onChange={e => setFormData(prev => ({...prev, deviceType: e.target.value as DeviceType}))} className="w-full px-4 py-3.5 mt-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
-                            <option value="Rastreador">Rastreador</option>
-                            <option value="Tag">Tag</option>
-                            <option value="Rastreador + Tag">Rastreador + Tag</option>
-                        </select>
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Empresa Responsável (Regional)</label>
                         <div className="relative mt-1">
-                            <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                            <select value={formData.companyId || ''} onChange={e => setFormData(prev => ({...prev, companyId: e.target.value}))} className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
-                                <option value="">-- Selecione a Regional --</option>
-                                {companies.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
+                            <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                            <select value={formData.deviceType || ''} onChange={e => setFormData(prev => ({...prev, deviceType: e.target.value as DeviceType}))} className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none">
+                                <option value="" disabled>-- Selecione o Dispositivo --</option>
+                                <option value="Rastreador">Rastreador</option>
+                                <option value="Tag">Tag</option>
+                                <option value="Rastreador + Tag">Rastreador + Tag</option>
+                                <option value="Não precisa">Não precisa</option>
                             </select>
                         </div>
                     </div>
                 </div>
 
-                {(formData.clientName || formData.clientPhone) && (
-                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-2 mt-4">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg"><UserIcon size={20}/></div>
-                        <div className="overflow-hidden">
-                            <p className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest">Cliente Identificado (SGA)</p>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-0.5">
-                                <span className="text-sm font-bold text-zinc-900 dark:text-white truncate">{formData.clientName || 'Nome não informado'}</span>
-                                {formData.clientPhone && (
-                                    <span className="text-xs text-zinc-500 font-mono flex items-center gap-1"><Phone size={10}/> {formData.clientPhone}</span>
-                                )}
+                {requiresManualClientEntry ? (
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/20 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center gap-2 mb-3 text-amber-600 dark:text-amber-500">
+                            <UserIcon size={16} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Entrada Manual de Cliente</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Nome do Cliente <span className="text-red-500">*</span></label>
+                                <input type="text" required value={formData.clientName || ''} onChange={e => setFormData(prev => ({...prev, clientName: e.target.value}))} className="w-full px-4 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none mt-1" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
+                                <input type="text" value={formData.clientPhone || ''} onChange={e => setFormData(prev => ({...prev, clientPhone: e.target.value}))} className="w-full px-4 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none mt-1" placeholder="(00) 00000-0000" />
                             </div>
                         </div>
                     </div>
+                ) : (
+                    (formData.clientName || formData.clientPhone) && (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-2 mt-4">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg"><UserIcon size={20}/></div>
+                            <div className="overflow-hidden">
+                                <p className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest">Cliente Identificado (SGA)</p>
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-0.5">
+                                    <span className="text-sm font-bold text-zinc-900 dark:text-white truncate">{formData.clientName || 'Nome não informado'}</span>
+                                    {formData.clientPhone && (
+                                        <span className="text-xs text-zinc-500 font-mono flex items-center gap-1"><Phone size={10}/> {formData.clientPhone}</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )
                 )}
             </div>
 
@@ -404,7 +451,6 @@ export const ScheduleRequest = () => {
                     </div>
                 </div>
 
-                {/* LOCALIZAÇÃO (MAPA & INPUT) */}
                 <div>
                     <LocationPicker 
                         onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))}

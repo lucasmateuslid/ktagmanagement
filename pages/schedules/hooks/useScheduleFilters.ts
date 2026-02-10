@@ -20,6 +20,10 @@ export const useScheduleFilters = (
   const [filterTech, setFilterTech] = useState('Todos Técnicos');
   const [filterService, setFilterService] = useState('Todos Serviços');
   const [filterStatusDropdown, setFilterStatusDropdown] = useState('Todos Status');
+  const [filterDevice, setFilterDevice] = useState('Todos Dispositivos');
+  
+  // Date Filter (Overrides month view)
+  const [filterDate, setFilterDate] = useState('');
 
   const filteredList = useMemo(() => {
     let filtered = schedules;
@@ -43,20 +47,42 @@ export const useScheduleFilters = (
         } else {
             if (adminTab === 'pendentes') {
                 filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada'].includes(s.status));
+                // Para pendentes, filtro de data é opcional (geralmente vê tudo), mas se tiver data, filtra pela preferred
+                if (filterDate) {
+                    filtered = filtered.filter(s => s.preferredDate === filterDate);
+                }
             } else if (adminTab === 'agendados') {
                 filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local'].includes(s.status));
-                // Month filter
-                filtered = filtered.filter(s => {
-                    const d = new Date(s.confirmedDate || s.preferredDate + 'T12:00:00');
-                    return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
-                });
+                
+                // DATE FILTER LOGIC
+                if (filterDate) {
+                    // Filtra pela data exata
+                    filtered = filtered.filter(s => (s.confirmedDate || s.preferredDate) === filterDate);
+                } else {
+                    // Fallback para Filtro de Mês (viewDate)
+                    filtered = filtered.filter(s => {
+                        const d = new Date((s.confirmedDate || s.preferredDate) + 'T12:00:00');
+                        return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+                    });
+                }
+
             } else if (adminTab === 'historico') {
                 filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
-                // Month filter
-                filtered = filtered.filter(s => {
-                    const d = s.createdAt ? new Date(s.createdAt) : new Date();
-                    return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
-                });
+                
+                // DATE FILTER LOGIC
+                if (filterDate) {
+                    filtered = filtered.filter(s => {
+                        // Tenta usar confirmedDate, se não existir (canceladas antes de agendar), usa createdAt
+                        const target = s.confirmedDate || new Date(s.createdAt).toISOString().split('T')[0];
+                        return target === filterDate;
+                    });
+                } else {
+                    // Month filter
+                    filtered = filtered.filter(s => {
+                        const d = s.createdAt ? new Date(s.createdAt) : new Date();
+                        return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
+                    });
+                }
             }
         }
 
@@ -66,6 +92,9 @@ export const useScheduleFilters = (
         }
         if (filterStatusDropdown !== 'Todos Status') {
             filtered = filtered.filter(s => s.status === filterStatusDropdown);
+        }
+        if (filterDevice !== 'Todos Dispositivos') {
+            filtered = filtered.filter(s => s.deviceType === filterDevice);
         }
         if (filterTech !== 'Todos Técnicos') {
             if (filterTech === 'Sem Técnico') {
@@ -86,7 +115,7 @@ export const useScheduleFilters = (
     }
 
     return filtered;
-  }, [schedules, searchTerm, statusFilter, adminTab, isPrivileged, filterTech, filterService, filterStatusDropdown, technicians, showMyRequests, viewDate, user]);
+  }, [schedules, searchTerm, statusFilter, adminTab, isPrivileged, filterTech, filterService, filterStatusDropdown, filterDevice, filterDate, technicians, showMyRequests, viewDate, user]);
 
   return {
     searchTerm, setSearchTerm,
@@ -96,6 +125,8 @@ export const useScheduleFilters = (
     filterTech, setFilterTech,
     filterService, setFilterService,
     filterStatusDropdown, setFilterStatusDropdown,
+    filterDevice, setFilterDevice,
+    filterDate, setFilterDate,
     filteredList,
     isPrivileged
   };

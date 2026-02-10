@@ -3,262 +3,324 @@ import { storage } from './storage';
 import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 
 const BASE_URL = 'https://tags.traqcare.com/api';
+const REQUEST_TIMEOUT = 20000; // Aumentado para 20s
 
 /**
- * UTILS & PARSERS
+ * UTILS
  */
 
-// Adapter for TraqCare Battery
-// Documentation implies 0-100 or specific status codes.
-// We map typical values to our system's color scheme.
+// Battery Adapter (TraqCare → K-TAG)
 const batteryToInfo = (battery?: number): KTagBatteryInfo => {
-    if (battery === undefined || battery === null) {
-        return { level: 0, label: 'N/A', color: '#71717a' };
+    // 0 pode ser bateria crítica ou desconhecida dependendo do firmware, tratando como crítica
+    switch (battery) {
+        case 3: return { level: 100, label: 'Alto', color: '#10b981' }; // Green
+        case 2: return { level: 60, label: 'Médio', color: '#eab308' }; // Yellow
+        case 1: return { level: 30, label: 'Baixo', color: '#f97316' }; // Orange
+        case 0: return { level: 10, label: 'Crítico', color: '#ef4444' }; // Red
+        default: return { level: 0, label: 'N/A', color: '#71717a' };
     }
-
-    // If API returns 0-4 scale (common in some firmwares)
-    if (battery <= 5 && battery >= 0) {
-       // Assuming it might be a status code, or just very low battery if it's 0-100
-       // However, often 0 = Empty, 1 = Low, ..., 4 = Full in compact protocols
-       // If usage suggests 0-100, we treat low numbers as critical.
-    }
-
-    let label = 'Normal';
-    let color = '#10b981'; // Green
-
-    if (battery < 20) {
-        label = 'Crítico';
-        color = '#ef4444'; // Red
-    } else if (battery < 50) {
-        label = 'Baixo';
-        color = '#f97316'; // Orange
-    } else if (battery < 80) {
-        label = 'Médio';
-        color = '#eab308'; // Yellow
-    }
-
-    return { level: battery, label, color };
 };
 
-// Converts Milliseconds (App) to Unix Seconds (API Requirement)
-const toUnixSeconds = (ms: number) => Math.floor(ms / 1000);
+// Abortable fetch (timeout safe)
+const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-// Helper to get headers with fresh timestamp
-const getHeaders = (token: string) => {
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            throw new Error('Timeout: O servidor demorou muito para responder.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
+};
+
+// Proxy-aware URL resolver
+const resolveUrl = async (path: string, params?: Record<string, string>) => {
+    const settings = await storage.getSettings();
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+
+    // Se houver proxy configurado, a URL base é passada no body do proxy, 
+    // mas aqui construímos a URL alvo final
+    const targetBase = BASE_URL; 
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    
+    // Se estiver usando Proxy do Firebase (customProxyUrl), a URL final é montada dentro da função getHeaders/fetch
+    // Aqui retornamos a URL Alvo Completa para o payload do Proxy
+    return `${targetBase}${cleanPath}${query}`;
+};
+
+// Headers factory
+// Doc: timestamp (long) -> Usually milliseconds in Java/C# backends
+const getHeaders = async () => {
+    const settings = await storage.getSettings();
     return {
         'Content-Type': 'application/json',
-        'api_token': token,
-        'timestamp': toUnixSeconds(Date.now()).toString(), // API requires String
+        'api_token': settings.traqcareToken || '',
+        'timestamp': Date.now().toString(), // Envia em Milissegundos (long)
     };
 };
 
+// Universal Response Parser
+const unwrapResponse = async <T>(response: Response): Promise<T | null> => {
+    try {
+        const text = await response.text();
+        if (!text) return null;
+
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch {
+            console.error('TraqCare Non-JSON Response:', text.substring(0, 100));
+            return null;
+        }
+
+        // Verifica formato padrão { statusCode, message, data }
+        if (json && typeof json === 'object') {
+            if ('statusCode' in json && json.statusCode !== 200) {
+                console.warn('TraqCare API Error:', json.message || json.problem || 'Unknown Error');
+                throw new Error(json.message || `Erro API: ${json.statusCode}`);
+            }
+            // Retorna 'data' se existir, ou o próprio json se não seguir o envelope padrão
+            return json.data !== undefined ? json.data : json;
+        }
+
+        return json as T;
+    } catch (err) {
+        console.error('TraqCare Parse Error:', err);
+        throw err;
+    }
+};
+
 /**
- * INTERFACES (Raw API Types from Documentation)
+ * SERVICE
  */
-interface TraqCareLocationDto {
-    id: number;
-    timestamp: number; // Unix Seconds
-    publishTime: number;
-    lat: number;
-    lng: number;
-    battery: number;
-    mac: string;
-    isActived: boolean;
-}
 
-interface TraqCareHistoryDto {
-    id: number;
-    timestamp: number;
-    publishTime: number;
-    lat: number;
-    lng: number;
-    distance: number;
-}
-
-interface TraqCareResponse<T> {
-    statusCode: number;
-    message: string;
-    data: T | null;
-    problem?: string;
-}
-
-/**
- * SERVICE IMPLEMENTATION
- */
 export const xadtagService = {
+
     /**
-     * Ativação do dispositivo
-     * PATCH /tag
-     * Body: [id] (Array de IDs)
+     * PATCH /tag — Activate device
+     * Body: List of IDs to activate
      */
     activate: async (tag: Tag): Promise<boolean> => {
-        if (!tag.traqcareId) {
-            console.warn(`[XADTAG] Ativação falhou: Tag ${tag.name} sem Traqcare ID.`);
-            return false;
-        }
+        if (!tag.traqcareId) return false;
 
         try {
             const settings = await storage.getSettings();
-            if (!settings.traqcareToken) throw new Error("Token da API Traqcare não configurado.");
-            if (!settings.customProxyUrl) throw new Error("Proxy não configurado.");
+            const targetUrl = await resolveUrl('/tag');
+            const headers = await getHeaders();
+            const body = JSON.stringify([tag.traqcareId]); // Array de IDs conforme padrão comum
 
-            // A API espera um array de IDs no corpo
-            // Importante: Enviar como string se a API esperar string, ou number se number.
-            // A doc mostra "7260100489" no query param example, geralmente strings em JSON.
-            // Vamos tentar enviar como numbers primeiro se for numérico.
-            const idToActivate = tag.traqcareId; 
-            const body = [idToActivate];
-            
-            const targetUrl = `${BASE_URL}/tag`;
+            let response;
 
-            const response = await fetch(settings.customProxyUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: targetUrl,
+            if (settings.customProxyUrl) {
+                // Via Proxy
+                response = await fetchWithTimeout(settings.customProxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        method: 'PATCH',
+                        headers,
+                        body
+                    })
+                });
+            } else {
+                // Direto (pode falhar por CORS)
+                response = await fetchWithTimeout(targetUrl, {
                     method: 'PATCH',
-                    headers: getHeaders(settings.traqcareToken),
-                    body: body
-                })
-            });
-
-            if (!response.ok) {
-                console.error('[XADTAG] Erro HTTP na ativação:', response.status);
-                return false;
+                    headers,
+                    body
+                });
             }
 
-            const json = await response.json();
-            
-            if (json && (json.statusCode === 200 || json.message === 'OK')) {
-                return true;
-            }
-            
-            return false;
-        } catch (e) {
-            console.error("[XADTAG] Activation Error:", e);
+            const result = await unwrapResponse<any>(response);
+            return !!result;
+        } catch (err) {
+            console.error('XADTAG Activation Error:', err);
             return false;
         }
     },
 
     /**
-     * Consulta de localização atual
-     * GET /tag
-     * Query: ids (separados por virgula)
+     * GET /tag — Get AirTag by ID
+     * Doc: Get AirTag by ID
      */
     fetchLocation: async (tag: Tag): Promise<KTagLocationResult[]> => {
-        if (!tag.traqcareId) throw new Error("ID Traqcare não definido no cadastro.");
-
-        const settings = await storage.getSettings();
-        if (!settings.traqcareToken) throw new Error("Token API Traqcare ausente nas configurações.");
-        if (!settings.customProxyUrl) throw new Error("Proxy URL ausente nas configurações.");
-
-        // Monta URL com Query Params
-        const url = new URL(`${BASE_URL}/tag`);
-        url.searchParams.append('ids', tag.traqcareId);
-        
-        // Adiciona timestamp na query também conforme alguns exemplos de Swagger, 
-        // mas a doc diz Header. Vamos manter Header principal.
-        
-        try {
-            const response = await fetch(settings.customProxyUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: url.toString(),
-                    method: 'GET',
-                    headers: getHeaders(settings.traqcareToken)
-                })
-            });
-
-            if (!response.ok) {
-                const errText = await response.text();
-                throw new Error(`Erro HTTP ${response.status}: ${errText}`);
-            }
-
-            const json: TraqCareResponse<TraqCareLocationDto[]> = await response.json();
-            
-            if (json.statusCode !== 200) {
-                throw new Error(json.message || "Erro na API Traqcare");
-            }
-
-            if (!json.data || !Array.isArray(json.data) || json.data.length === 0) {
-                // Sucesso mas sem dados = array vazio
-                return []; 
-            }
-
-            // Mapeamento para o formato interno do App
-            return json.data.map(loc => ({
-                lat: loc.lat,
-                lon: loc.lng, 
-                conf: 100,
-                status: loc.isActived ? 1 : 0,
-                battery: batteryToInfo(loc.battery),
-                timestamp: loc.timestamp * 1000, 
-                isodatetime: new Date(loc.timestamp * 1000).toISOString()
-            }));
-
-        } catch (e: any) {
-            console.error("[XADTAG] Fetch Error:", e);
-            throw e; // Propagate error for UI handling
-        }
-    },
-
-    /**
-     * Histórico de trajeto
-     * GET /tag/history
-     * Query Params: Id, TimeFrom, TimeTo (Case Sensitive!)
-     */
-    fetchHistory: async (tag: Tag, startTimeMs: number, endTimeMs: number): Promise<KTagLocationResult[]> => {
-        if (!tag.traqcareId) throw new Error("ID Traqcare não definido.");
-
-        const settings = await storage.getSettings();
-        if (!settings.traqcareToken || !settings.customProxyUrl) throw new Error("Configuração de API incompleta.");
-
-        const url = new URL(`${BASE_URL}/tag/history`);
-        
-        // Documentação especifica parâmetros sensíveis a maiúsculas/minúsculas
-        url.searchParams.append('Id', tag.traqcareId); 
-        url.searchParams.append('TimeFrom', toUnixSeconds(startTimeMs).toString());
-        url.searchParams.append('TimeTo', toUnixSeconds(endTimeMs).toString());
+        if (!tag.traqcareId) return [];
 
         try {
-            const response = await fetch(settings.customProxyUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: url.toString(),
-                    method: 'GET',
-                    headers: getHeaders(settings.traqcareToken)
-                })
-            });
+            const settings = await storage.getSettings();
+            // Tenta usar 'id' no singular primeiro
+            const targetUrl = await resolveUrl('/tag', { id: tag.traqcareId });
+            const headers = await getHeaders();
+
+            let response;
+
+            if (settings.customProxyUrl) {
+                response = await fetchWithTimeout(settings.customProxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        method: 'GET',
+                        headers
+                    })
+                });
+            } else {
+                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+            }
 
             if (!response.ok) {
-                throw new Error(`Erro Proxy: ${response.status}`);
-            }
-
-            const json: TraqCareResponse<TraqCareHistoryDto[]> = await response.json();
-            
-            if (json.statusCode !== 200) {
-                throw new Error(json.message || "Erro API History");
-            }
-
-            if (!json.data || !Array.isArray(json.data)) {
+                console.warn(`TraqCare Location HTTP Error: ${response.status}`);
                 return [];
             }
 
-            return json.data.map(p => ({
+            const data = await unwrapResponse<any>(response);
+            if (!data) return [];
+
+            const locations = Array.isArray(data) ? data : [data];
+
+            return locations.map((loc: any) => ({
+                lat: loc.lat || 0,
+                lon: loc.lng || 0,
+                conf: 100,
+                status: 1, // Assumindo ativo se retornou
+                battery: batteryToInfo(loc.battery),
+                timestamp: loc.timestamp ? (loc.timestamp.toString().length > 10 ? loc.timestamp : loc.timestamp * 1000) : Date.now(),
+                isodatetime: loc.timestamp 
+                    ? new Date(loc.timestamp.toString().length > 10 ? loc.timestamp : loc.timestamp * 1000).toISOString() 
+                    : new Date().toISOString()
+            }));
+
+        } catch (err) {
+            console.error('XADTAG Fetch Location Error:', err);
+            return [];
+        }
+    },
+
+    /**
+     * GET /tag/history — Get Tag trajectory
+     */
+    fetchHistory: async (
+        tag: Tag,
+        startTime: number,
+        endTime: number
+    ): Promise<KTagLocationResult[]> => {
+
+        if (!tag.traqcareId) return [];
+
+        try {
+            const settings = await storage.getSettings();
+            // Enviando timestamps em MS (long)
+            const targetUrl = await resolveUrl('/tag/history', {
+                id: tag.traqcareId,
+                timeFrom: startTime.toString(),
+                timeTo: endTime.toString()
+            });
+            
+            const headers = await getHeaders();
+            let response;
+
+            if (settings.customProxyUrl) {
+                response = await fetchWithTimeout(settings.customProxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        method: 'GET',
+                        headers
+                    })
+                });
+            } else {
+                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+            }
+
+            if (!response.ok) {
+                console.warn(`TraqCare History HTTP Error: ${response.status}`);
+                return [];
+            }
+
+            const points = await unwrapResponse<any[]>(response);
+            if (!points || !Array.isArray(points)) return [];
+
+            return points.map((p: any) => ({
                 lat: p.lat,
                 lon: p.lng,
                 conf: 100,
                 status: 1,
+                distance: p.distance || 0,
                 battery: { level: 0, label: 'Histórico', color: '#71717a' },
-                timestamp: p.timestamp * 1000,
-                isodatetime: new Date(p.timestamp * 1000).toISOString()
+                timestamp: p.timestamp ? (p.timestamp.toString().length > 10 ? p.timestamp : p.timestamp * 1000) : 0,
+                isodatetime: p.timestamp 
+                    ? new Date(p.timestamp.toString().length > 10 ? p.timestamp : p.timestamp * 1000).toISOString() 
+                    : ''
             }));
 
+        } catch (err) {
+            console.error('XADTAG History Error:', err);
+            return [];
+        }
+    },
+
+    /**
+     * Diagnostic / Ping
+     */
+    diagnose: async (tag: Tag): Promise<{ summary: string; raw: any }> => {
+        if (!tag.traqcareId) return { summary: 'ID Traqcare não configurado', raw: null };
+
+        try {
+            const settings = await storage.getSettings();
+            if (!settings.traqcareToken) return { summary: 'Token API não configurado', raw: null };
+
+            // Testa endpoint singular
+            const targetUrl = await resolveUrl('/tag', { id: tag.traqcareId });
+            const headers = await getHeaders();
+            
+            let response;
+            if (settings.customProxyUrl) {
+                response = await fetchWithTimeout(settings.customProxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        method: 'GET',
+                        headers
+                    })
+                });
+            } else {
+                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+            }
+            
+            const rawText = await response.text();
+            let raw;
+            try { raw = JSON.parse(rawText); } catch { raw = rawText; }
+            
+            if (!response.ok) return { summary: `Erro HTTP: ${response.status}`, raw };
+            
+            // Verifica estrutura de resposta
+            if (raw.statusCode && raw.statusCode !== 200) {
+                return { summary: `API Error: ${raw.message}`, raw };
+            }
+
+            const data = raw.data !== undefined ? raw.data : raw;
+            const item = Array.isArray(data) ? data[0] : data;
+            
+            if (!item) return { summary: 'Dispositivo não encontrado na base TraqCare', raw };
+            
+            const bat = batteryToInfo(item.battery);
+            // Verifica se tem lat/lng para confirmar que é um objeto de location válido
+            const hasLoc = item.lat !== undefined && item.lng !== undefined;
+
+            return {
+                summary: `Conectado | Bateria: ${bat.label} | ${hasLoc ? 'Localização OK' : 'Sem Localização'}`,
+                raw: item
+            };
         } catch (e: any) {
-            console.error("[XADTAG] History Error:", e);
-            throw e;
+            return { summary: `Falha Crítica: ${e.message}`, raw: { stack: e.stack } };
         }
     }
 };

@@ -24,6 +24,7 @@ import { HistoryOverlay } from './livemap/components/HistoryOverlay';
 const { useSearchParams } = ReactRouterDOM as any;
 
 type FleetFilter = 'all' | 'online' | 'offline';
+export type DisplayLimit = 10 | 30 | 50 | 100 | 200 | 'all';
 
 export const LiveMap = () => {
   const { user } = useAuth();
@@ -34,7 +35,7 @@ export const LiveMap = () => {
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filter, setFilter] = useState<FleetFilter>('all');
-  const [limit50, setLimit50] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState<DisplayLimit>(50); // Alterado de limit50 (bool) para displayLimit
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   
   // Export State
@@ -73,8 +74,8 @@ export const LiveMap = () => {
   [vehicles, fleetLocations, filter, tagSearchTerm, tags, clients, user]);
 
   const locationsToRender = useMemo(() => 
-      filterLocationsToRender(fleetLocations, selectedTagId, filter, limit50, vehicles),
-  [fleetLocations, selectedTagId, filter, limit50, vehicles]);
+      filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles),
+  [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
 
   // Selected Item Data
   const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
@@ -140,8 +141,8 @@ export const LiveMap = () => {
         stats={stats}
         filter={filter}
         setFilter={setFilter}
-        limit50={limit50}
-        setLimit50={setLimit50}
+        displayLimit={displayLimit}
+        setDisplayLimit={setDisplayLimit}
       />
 
       <div className="flex-1 relative z-0">

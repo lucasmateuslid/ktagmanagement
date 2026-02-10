@@ -1,5 +1,4 @@
 
-// ... existing imports ...
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
@@ -9,14 +8,14 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
-import { geocodingService } from '../services/geocoding'; // Import Geocoding
+import { geocodingService } from '../services/geocoding'; 
 import { 
   Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, 
   Wifi, Search, Car, Activity, BatteryCharging, 
   Check, Cpu, ListChecks, FileSpreadsheet, 
   Loader2, Terminal, RefreshCw, ChevronRight, FileText,
-  Signal, FileCheck, CheckCircle2, XCircle, Box, AlertTriangle,
-  Power, MapPin, Clock, History // Added icons
+  Signal, CheckCircle2, XCircle, Box, AlertTriangle,
+  Power, MapPin, Clock, History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -25,7 +24,6 @@ import { ktagBatteryStatus } from '../services/api';
 const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
-// --- TIPOS DO CONSOLE ---
 interface ConsoleLog {
   id: string;
   timestamp: number;
@@ -40,7 +38,6 @@ interface ConsoleLog {
 }
 
 export const Tags = () => {
-  // ... state declarations ...
   const [searchParams] = useSearchParams();
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -186,16 +183,16 @@ export const Tags = () => {
   const handleActivate = async (tag: Tag) => {
       const success = await xadtagService.activate(tag);
       if (success) {
-          addNotification('success', 'Ativação XADTAG', `Comando de ativação enviado para ${tag.name}.`);
+          addNotification('success', 'Ativação XADTAG', `Comando enviado.`);
           const updated = { ...tag, isActivated: true };
           await storage.saveTag(updated);
           loadData();
       } else {
-          addNotification('error', 'Erro na Ativação', `Falha ao ativar ${tag.name}. Verifique o ID Traqcare e configurações.`);
+          addNotification('error', 'Erro', `Falha na ativação.`);
       }
   };
 
-  // --- LÓGICA DO CONSOLE / TESTE ---
+  // --- CONSOLE LOGIC ---
 
   const addLog = (log: Omit<ConsoleLog, 'id' | 'timestamp'>) => {
       setConsoleLogs(prev => [...prev, { ...log, id: crypto.randomUUID(), timestamp: Date.now(), expanded: true }]);
@@ -207,14 +204,14 @@ export const Tags = () => {
 
   const clearConsole = () => setConsoleLogs([]);
 
-  // Função Específica para XADTAG (Localização e Histórico)
-  const handleXadCommand = async (command: 'location' | 'history') => {
+  // COMMAND HANDLER FOR XADTAG
+  const handleXadCommand = async (command: 'ping' | 'location' | 'history') => {
       if (!activeTestTag || activeTestTag.type !== 'XADTAG') return;
       setTesting(true);
 
-      const label = command === 'location' ? 'Localização Atual' : 'Histórico (24h)';
-      const endpoint = command === 'location' ? '/api/tag' : '/api/tag/history';
-
+      const label = command === 'ping' ? 'Teste de Conectividade (Ping)' : 
+                    command === 'location' ? 'Localização Atual' : 'Histórico (24h)';
+      
       addLog({
           type: 'info',
           method: 'CMD',
@@ -226,50 +223,53 @@ export const Tags = () => {
 
       try {
           let resultData: any;
-          let address = '';
-
-          if (command === 'location') {
+          
+          if (command === 'ping') {
+              const diagnosis = await xadtagService.diagnose(activeTestTag);
+              resultData = {
+                  summary: diagnosis.summary,
+                  rawResponse: diagnosis.raw
+              };
+          } 
+          else if (command === 'location') {
               const locations = await xadtagService.fetchLocation(activeTestTag);
               if (locations.length > 0) {
                   const loc = locations[0];
-                  // Tenta resolver o endereço para exibição amigável
-                  address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
-                  
+                  const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
                   resultData = {
-                      ...loc,
-                      _address_resolved: address,
-                      _battery_level: loc.battery?.label
+                      coords: `${loc.lat}, ${loc.lon}`,
+                      address: address,
+                      battery: `${loc.battery.level}% (${loc.battery.label})`,
+                      lastUpdate: loc.isodatetime,
+                      active: loc.status === 1
                   };
               } else {
-                  resultData = { error: "Sem sinal GPS recente." };
+                  resultData = { message: "Dispositivo não retornou localização recente." };
               }
-          } else {
-              // History
+          } 
+          else if (command === 'history') {
               const end = Date.now();
               const start = end - (24 * 60 * 60 * 1000);
               const history = await xadtagService.fetchHistory(activeTestTag, start, end);
               
               if (history.length > 0) {
-                  const lastPoint = history[0];
-                  address = await geocodingService.reverseGeocode(lastPoint.lat, lastPoint.lon);
+                  const first = history[0];
+                  const last = history[history.length - 1];
+                  const address = await geocodingService.reverseGeocode(first.lat, first.lon);
                   resultData = {
-                      totalPoints: history.length,
-                      lastPoint: {
-                          lat: lastPoint.lat,
-                          lon: lastPoint.lon,
-                          time: lastPoint.isodatetime,
-                          address: address
-                      }
+                      pointsFound: history.length,
+                      latestPoint: { time: first.isodatetime, coords: `${first.lat}, ${first.lon}`, address },
+                      oldestPoint: { time: last.isodatetime, coords: `${last.lat}, ${last.lon}` }
                   };
               } else {
-                  resultData = { message: "Nenhum histórico nas últimas 24h." };
+                  resultData = { message: "Nenhum histórico encontrado nas últimas 24h." };
               }
           }
 
           addLog({
               type: 'success',
               method: 'GET',
-              url: endpoint,
+              url: '/api/xadtag',
               status: 200,
               responseBody: resultData,
               duration: Date.now() - startTime
@@ -279,7 +279,7 @@ export const Tags = () => {
           addLog({
               type: 'error',
               method: 'ERROR',
-              url: endpoint,
+              url: 'System',
               responseBody: { error: e.message }
           });
       } finally {
@@ -289,113 +289,100 @@ export const Tags = () => {
 
   const handleTestConnection = async (tag: Tag | null = activeTestTag) => {
       if (!tag) return;
-      
       setActiveTestTag(tag);
       setIsConsoleOpen(true);
-      setTesting(true);
       
-      setTestResults(prev => ({ ...prev, [tag.id]: { status: 'loading', timestamp: Date.now() } }));
-
-      const startTime = Date.now();
-
-      // Se for XADTAG, executa diagnóstico via Proxy e pega status
+      // Se for XADTAG, executa o Ping
       if (tag.type === 'XADTAG') {
-          // Chama o mesmo comando de Location para o teste inicial
-          await handleXadCommand('location');
-          // Atualiza status visual do card baseado no log (simplificado aqui)
-          setTestResults(prev => ({ 
-                ...prev, 
-                [tag.id]: { status: 'success', code: 200, timestamp: Date.now() } 
-          }));
+          await handleXadCommand('ping');
           return;
       }
 
-      // K-TAG Logic
-      addLog({
-          type: 'info',
-          method: 'INFO',
-          url: 'Iniciando diagnóstico K-TAG...',
-          responseBody: { target: tag.name, type: tag.type, sn: tag.accessoryId }
-      });
-
+      // K-TAG Legacy Ping
+      setTesting(true);
+      addLog({ type: 'info', method: 'INFO', url: 'Ping K-TAG', responseBody: { sn: tag.accessoryId } });
       try {
           const settings = await storage.getSettings();
-          if (!settings.customProxyUrl) throw new Error("Proxy não configurado.");
-
-          const payload = {
-            accessoryId: tag.accessoryId,
-            hashed_keys: [tag.hashedAdvKey], 
-            priv_keys: [tag.privateKey],     
-          };
-
-          const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
-          
-          const response = await fetch(settings.customProxyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: settings.ktagUrl,
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-              body: payload
-            })
+          const auth = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
+          const res = await fetch(settings.customProxyUrl, {
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  url: settings.ktagUrl,
+                  method: 'POST',
+                  headers: { 'Authorization': auth },
+                  body: { accessoryId: tag.accessoryId, hashed_keys: [tag.hashedAdvKey], priv_keys: [tag.privateKey] }
+              })
           });
-
-          const text = await response.text();
-          let data;
-          try { data = JSON.parse(text); } catch { data = text; }
-          const duration = Date.now() - startTime;
-
-          let batteryInfo = null;
-          if (data && data.results && data.results.length > 0) {
-              const point = data.results[0];
-              if (point.status !== undefined) {
-                  batteryInfo = ktagBatteryStatus(point.status);
-              }
-          }
-
-          setTestResults(prev => ({ 
-              ...prev, 
-              [tag.id]: { 
-                  status: response.ok ? 'success' : 'error', 
-                  code: response.status,
-                  timestamp: Date.now(),
-                  battery: batteryInfo
-              } 
-          }));
-
-          addLog({
-              type: response.ok ? 'success' : 'error',
-              method: 'POST',
-              url: settings.ktagUrl, 
-              status: response.status,
-              responseBody: data,
-              duration
-          });
-
+          const json = await res.json();
+          addLog({ type: res.ok ? 'success' : 'error', status: res.status, responseBody: json });
       } catch (e: any) {
-          console.error("Diagnostic failed", e);
-          setTestResults(prev => ({ 
-              ...prev, 
-              [tag.id]: { 
-                  status: 'error', 
-                  code: 0,
-                  timestamp: Date.now()
-              } 
-          }));
-
-          addLog({
-              type: 'error',
-              method: 'ERROR',
-              url: 'System Error',
-              responseBody: { message: e.message || "Failed to fetch" }
-          });
+          addLog({ type: 'error', responseBody: e.message });
       } finally {
           setTesting(false);
       }
   };
 
-  // ... (Keep template download, handleFileChange, processImport, handleMassDelete, handleSave, handleDelete as is)
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+        const tag: Tag = {
+            id: formData.id || crypto.randomUUID(),
+            name: formData.name || '',
+            type: formData.type || 'K_TAG',
+            accessoryId: formData.accessoryId || '',
+            createdAt: formData.createdAt || Date.now(),
+            hashedAdvKey: formData.hashedAdvKey,
+            privateKey: formData.privateKey,
+            imei: formData.imei,
+            traqcareId: formData.traqcareId,
+            batteryWarrantyYears: formData.batteryWarrantyYears
+        };
+
+        if (!tag.name) throw new Error("Nome é obrigatório");
+        if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
+        if (tag.type === 'XADTAG' && !tag.traqcareId) throw new Error("ID Traqcare é obrigatório para XADTAG");
+
+        await storage.saveTag(tag);
+        addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
+        setIsModalOpen(false);
+        loadData();
+    } catch (error: any) {
+        addNotification('error', 'Erro', error.message);
+    }
+  };
+
+  const handleDelete = async (id: string, e?: React.MouseEvent) => {
+      if(e) e.stopPropagation();
+      if(confirm('Tem certeza que deseja excluir este equipamento?')) {
+          await storage.deleteTag(id);
+          addNotification('success', 'Sucesso', 'Equipamento removido.');
+          loadData();
+      }
+  };
+
+  const handleMassDelete = async () => {
+    const count = selectedTags.size;
+    if (count === 0) return;
+    if (!confirm(`ATENÇÃO: Você está prestes a excluir ${count} equipamentos.\n\nEquipamentos vinculados a veículos perderão a associação.\nDeseja continuar?`)) return;
+
+    try {
+        const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
+        await Promise.all(promises);
+        
+        const vehicleUpdates = vehicles
+            .filter(v => v.tagId && selectedTags.has(v.tagId))
+            .map(v => storage.saveVehicle({ ...v, tagId: undefined }));
+        await Promise.all(vehicleUpdates);
+
+        addNotification('success', 'Exclusão em Massa', `${count} equipamentos foram removidos do estoque.`);
+        setSelectedTags(new Set());
+        loadData();
+    } catch (error: unknown) {
+        addNotification('error', 'Erro', 'Falha ao processar exclusão.');
+    }
+  };
+
   const handleDownloadTemplate = () => {
     const headers = [
       { 
@@ -483,10 +470,6 @@ export const Tags = () => {
               };
 
               await storage.saveTag(newTag);
-              
-              if (newTag.type === 'XADTAG') {
-                 xadtagService.activate(newTag).catch(() => {});
-              }
               successCount++;
           }
 
@@ -494,7 +477,6 @@ export const Tags = () => {
           await new Promise(r => setTimeout(r, 20));
       }
       
-      storage.logAction(user, 'CREATE', 'Equipamento', `Importou ${successCount} equipamentos via planilha`);
       addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados.`);
       setIsImportModalOpen(false);
       loadData();
@@ -504,98 +486,6 @@ export const Tags = () => {
       setImporting(false);
       setImportStep('upload');
     }
-  };
-
-  const handleMassDelete = async () => {
-    const count = selectedTags.size;
-    if (count === 0) return;
-    if (!confirm(`ATENÇÃO: Você está prestes a excluir ${count} equipamentos.\n\nEquipamentos vinculados a veículos perderão a associação.\nDeseja continuar?`)) return;
-
-    try {
-        const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
-        await Promise.all(promises);
-        
-        const vehicleUpdates = vehicles
-            .filter(v => v.tagId && selectedTags.has(v.tagId))
-            .map(v => storage.saveVehicle({ ...v, tagId: undefined }));
-        await Promise.all(vehicleUpdates);
-
-        addNotification('success', 'Exclusão em Massa', `${count} equipamentos foram removidos do estoque.`);
-        setSelectedTags(new Set());
-        loadData();
-    } catch (error: unknown) {
-        addNotification('error', 'Erro', 'Falha ao processar exclusão.');
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const isEdit = !!formData.id;
-    const type = formData.type || 'K_TAG';
-
-    if (!formData.name) {
-        addNotification('error', 'Campos Obrigatórios', 'Informe o nome/identificação.');
-        return;
-    }
-    
-    let accessoryId = formData.accessoryId;
-    if (type === 'XADTAG') {
-        accessoryId = formData.imei || formData.accessoryId;
-    }
-    
-    if (!accessoryId) {
-        addNotification('error', 'Campos Obrigatórios', type === 'XADTAG' ? 'Informe o IMEI.' : 'Informe o Serial Number (SN).');
-        return;
-    }
-
-    const isDuplicate = tags.some(t => 
-        t.id !== (formData.id || '') && 
-        (
-            (t.accessoryId && t.accessoryId.toUpperCase() === accessoryId.toUpperCase()) ||
-            (t.imei && t.imei.toUpperCase() === accessoryId.toUpperCase())
-        )
-    );
-
-    if (isDuplicate) {
-        addNotification('error', 'Duplicidade Detectada', `O identificador ${accessoryId} já existe no sistema.`);
-        return;
-    }
-
-    const newTag: Tag = {
-      id: formData.id || crypto.randomUUID(),
-      name: formData.name,
-      type: type as TagType,
-      accessoryId: accessoryId,
-      hashedAdvKey: formData.hashedAdvKey,
-      privateKey: formData.privateKey,
-      imei: formData.imei,
-      traqcareId: formData.traqcareId,
-      batteryWarrantyYears: formData.batteryWarrantyYears || 1,
-      createdAt: formData.createdAt || Date.now(),
-    };
-
-    await storage.saveTag(newTag);
-
-    if (type === 'XADTAG' && !isEdit) {
-        const success = await xadtagService.activate(newTag);
-        if (success) {
-            addNotification('success', 'Ativado', `${newTag.name} integrado com sucesso.`);
-            await storage.saveTag({ ...newTag, isActivated: true });
-        }
-    }
-
-    storage.logAction(user, isEdit ? 'UPDATE' : 'CREATE', 'Equipamento', `${isEdit ? 'Atualizou' : 'Registrou'} equip. ${newTag.name}`, newTag.id);
-    await loadData();
-    setIsModalOpen(false);
-    setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' });
-    addNotification('success', 'Sucesso', 'Configurações de equipamento salvas.');
-  };
-
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('Excluir equipamento do estoque?')) return;
-    await storage.deleteTag(id);
-    loadData();
   };
 
   return (
@@ -635,7 +525,7 @@ export const Tags = () => {
 
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
 
-      {/* FILTER BAR - Unchanged */}
+      {/* FILTER BAR */}
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col xl:flex-row gap-3 items-center transition-all">
         <div className="relative flex-1 w-full">
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -700,113 +590,96 @@ export const Tags = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {filteredTags.map((tag) => {
           const isSelected = selectedTags.has(tag.id);
-          const vehicle = vehicles.find(v => v.tagId === tag.id);
           const testResult = testResults[tag.id];
 
           return (
             <MotionDiv 
-                layout
-                key={tag.id} 
-                onClick={() => toggleSelect(tag.id)} 
+                layout key={tag.id} 
+                onClick={() => toggleSelect(tag.id)}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ y: -5 }}
-                className={`bg-white dark:bg-zinc-900 p-10 rounded-[40px] border transition-all cursor-pointer group flex flex-col justify-between min-h-[360px] relative overflow-hidden ${isSelected ? 'border-primary-500 ring-4 ring-primary-500/10 shadow-2xl' : 'border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                className={`bg-white dark:bg-zinc-900 p-10 rounded-[40px] border transition-all cursor-pointer group flex flex-col justify-between min-h-[360px] relative overflow-hidden ${isSelected ? 'border-primary-500 ring-4 ring-primary-500/10 shadow-2xl' : 'border-zinc-200 dark:border-zinc-800 shadow-sm'}`}
             >
-              {isSelected && (
+                {isSelected && (
                   <div className="absolute top-0 right-0 p-6">
                       <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white shadow-lg animate-in zoom-in duration-200">
                           <Check size={16} strokeWidth={4} />
                       </div>
                   </div>
-              )}
+                )}
 
-              <div className="flex justify-between items-start">
-                <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
-                  {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
-                </div>
-                
-                <div className="flex flex-col items-end gap-2">
-                    {!isSelected && (
-                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {tag.type === 'XADTAG' && (
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleActivate(tag); }} 
-                                    className={`p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm ${tag.isActivated ? 'text-emerald-500 hover:text-emerald-600' : 'text-zinc-400 hover:text-cyan-500'}`}
-                                    title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
-                                >
-                                    <Power size={16}/>
-                                </button>
-                            )}
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); handleTestConnection(tag); }} 
-                                className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"
-                                title="Terminal de Diagnóstico"
-                            >
-                                <Activity size={16}/>
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"><Edit2 size={16}/></button>
-                            <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm"><Trash2 size={16}/></button>
-                        </div>
-                    )}
-
-                    {testResult && !isSelected && (
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
-                            testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
-                            testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                            'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
-                        }`}>
-                            {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-widest">
-                                    {testResult.status === 'loading' ? 'PING...' : 
-                                    testResult.status === 'success' ? `200 OK` : 
-                                    `ERR ${testResult.code || 'TIMEOUT'}`}
-                                </span>
-                                {testResult.battery && (
-                                    <span className="text-[8px] font-bold" style={{ color: testResult.battery.color }}>
-                                        Bat. {testResult.battery.label}
-                                    </span>
+                <div className="flex justify-between items-start">
+                    <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
+                        {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
+                    </div>
+                    
+                    <div className="flex flex-col items-end gap-2">
+                        {!isSelected && (
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                {tag.type === 'XADTAG' && (
+                                    <button 
+                                        onClick={() => handleActivate(tag)} 
+                                        className={`p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm ${tag.isActivated ? 'text-emerald-500 hover:text-emerald-600' : 'text-zinc-400 hover:text-cyan-500'}`}
+                                        title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
+                                    >
+                                        <Power size={16}/>
+                                    </button>
                                 )}
+                                <button onClick={() => handleTestConnection(tag)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                    <Activity size={16}/>
+                                </button>
+                                <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                    <Edit2 size={16}/>
+                                </button>
+                                <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                    <Trash2 size={16}/>
+                                </button>
                             </div>
+                        )}
+                        
+                        {testResult && !isSelected && (
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
+                                testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
+                                testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                            }`}>
+                                {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black uppercase tracking-widest">
+                                        {testResult.status === 'loading' ? 'PING...' : 
+                                        testResult.status === 'success' ? `200 OK` : 
+                                        `ERR ${testResult.code || 'TIMEOUT'}`}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="mt-8">
+                    <h3 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate">{tag.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' : 'bg-primary-500/10 text-primary-600 border-primary-500/20'}`}>{tag.type}</span>
+                        <span className="text-[10px] font-mono text-zinc-400 font-bold">{tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}</span>
+                    </div>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                     <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
+                        {vehicles.find(v => v.tagId === tag.id) ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
+                     </div>
+                     {vehicles.find(v => v.tagId === tag.id) ? (
+                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
+                            <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicles.find(v => v.tagId === tag.id)?.plate}</span>
                         </div>
-                    )}
+                     ) : (
+                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
+                            <span className="text-[10px] font-black text-zinc-300 uppercase flex items-center gap-2"><Box size={12}/> Livre</span>
+                        </div>
+                     )}
                 </div>
-              </div>
-
-              <div className="mt-8">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate">{tag.name}</h3>
-                  <span title="Criptografia Ativa">
-                    <CheckCircle2 size={18} className="text-emerald-500" />
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' : 'bg-primary-500/10 text-primary-600 border-primary-500/20'}`}>{tag.type}</span>
-                    <span className="text-[10px] font-mono text-zinc-400 font-bold">{tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}</span>
-                    {vehicles.find(v => v.tagId === tag.id)?.ownershipStatus && (
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${vehicles.find(v => v.tagId === tag.id)?.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-blue-500/10 text-blue-600 border-blue-500/20'}`}>
-                            {vehicles.find(v => v.tagId === tag.id)?.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
-                        </span>
-                    )}
-                </div>
-              </div>
-
-              <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
-                 <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
-                    {vehicles.find(v => v.tagId === tag.id) ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
-                 </div>
-                 {vehicles.find(v => v.tagId === tag.id) ? (
-                    <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
-                        <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicles.find(v => v.tagId === tag.id)?.plate}</span>
-                    </div>
-                 ) : (
-                    <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
-                        <span className="text-[10px] font-black text-zinc-300 uppercase flex items-center gap-2"><Box size={12}/> Livre</span>
-                    </div>
-                 )}
-              </div>
             </MotionDiv>
           );
         })}
@@ -815,129 +688,63 @@ export const Tags = () => {
       <AnimatePresence>
         {isConsoleOpen && (
             <MotionDiv
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed bottom-0 left-0 right-0 z-[5000] bg-zinc-950 border-t border-zinc-800 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[45vh] lg:h-[400px] flex flex-col font-mono text-xs rounded-t-[30px]"
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                className="fixed bottom-0 left-0 right-0 z-[5000] bg-zinc-950 border-t border-zinc-800 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-[50vh] lg:h-[450px] flex flex-col font-mono text-xs rounded-t-[30px]"
             >
                 <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-900/50 rounded-t-[30px]">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-zinc-800 rounded-lg text-emerald-500"><Terminal size={16}/></div>
                         <div>
-                            <h3 className="font-bold text-zinc-300 uppercase tracking-wider">Terminal de Diagnóstico</h3>
-                            <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${activeTestTag?.type === 'XADTAG' ? 'bg-cyan-900/30 text-cyan-400' : 'bg-primary-900/30 text-primary-400'}`}>{activeTestTag?.type}</span>
-                                <p className="text-[10px] text-zinc-500">{activeTestTag?.name || 'N/A'} ({activeTestTag?.accessoryId})</p>
-                            </div>
+                            <h3 className="font-bold text-zinc-300 uppercase tracking-wider">Terminal {activeTestTag?.type}</h3>
+                            <p className="text-[10px] text-zinc-500">{activeTestTag?.name} ({activeTestTag?.accessoryId})</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
                         {activeTestTag?.type === 'XADTAG' && (
                             <div className="flex items-center gap-1 mr-4 bg-zinc-800 rounded-lg p-1 border border-zinc-700">
-                                <button onClick={() => handleXadCommand('location')} disabled={testing} className="px-3 py-1.5 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                <button onClick={() => handleXadCommand('ping')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                    <Activity size={12}/> Ping
+                                </button>
+                                <button onClick={() => handleXadCommand('location')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
                                     <MapPin size={12}/> Localização
                                 </button>
-                                <button onClick={() => handleXadCommand('history')} disabled={testing} className="px-3 py-1.5 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
-                                    <History size={12}/> Histórico (24h)
+                                <button onClick={() => handleXadCommand('history')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                    <History size={12}/> Histórico
                                 </button>
                             </div>
                         )}
-
-                        <button onClick={() => handleTestConnection(activeTestTag)} disabled={testing} className="px-4 py-2 bg-zinc-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-zinc-400 rounded-lg flex items-center gap-2 transition-all font-bold uppercase tracking-wider disabled:opacity-50">
-                            {testing ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>} Ping Test
-                        </button>
                         <button onClick={clearConsole} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg transition-all font-bold uppercase tracking-wider">Limpar</button>
                         <button onClick={() => setIsConsoleOpen(false)} className="px-4 py-2 bg-zinc-800 hover:bg-red-500/20 hover:text-red-500 text-zinc-400 rounded-lg transition-all"><X size={16}/></button>
                     </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#0c0c0c] custom-scrollbar text-zinc-300">
-                    {consoleLogs.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-zinc-700 gap-4 opacity-50">
-                            <Terminal size={48} />
-                            <span className="uppercase font-bold tracking-widest">Aguardando comandos...</span>
-                        </div>
-                    ) : (
-                        consoleLogs.map(log => (
-                            <div key={log.id} className="border-b border-zinc-900 pb-2 mb-2 last:border-0">
-                                <div 
-                                    onClick={() => toggleLogExpand(log.id)}
-                                    className="flex items-center gap-3 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors"
-                                >
-                                    <span className="text-zinc-600 font-bold">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                                    
-                                    {log.method && (
-                                        <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                                            log.method === 'GET' ? 'bg-blue-900/30 text-blue-400' : 
-                                            log.method === 'POST' ? 'bg-emerald-900/30 text-emerald-400' : 
-                                            log.method === 'CMD' ? 'bg-purple-900/30 text-purple-400' : 
-                                            log.method === 'ERROR' ? 'bg-red-900/30 text-red-400' :
-                                            'bg-zinc-800 text-zinc-400'
-                                        }`}>
-                                            {log.method}
-                                        </span>
-                                    )}
-
-                                    <span className="flex-1 truncate font-medium text-zinc-400">{log.url}</span>
-                                    
-                                    {log.status && (
-                                        <span className={`font-bold ${log.status >= 200 && log.status < 300 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                            {log.status}
-                                        </span>
-                                    )}
-
-                                    {log.duration && <span className="text-zinc-600 text-[10px]">{log.duration}ms</span>}
-                                    
-                                    <ChevronRight size={14} className={`transform transition-transform ${log.expanded ? 'rotate-90' : ''} text-zinc-600`}/>
-                                </div>
-
-                                {log.expanded && (
-                                    <div className="mt-2 pl-4 border-l-2 border-zinc-800 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
-                                        {/* Display Address specifically if present in response body (Added Feature) */}
-                                        {log.responseBody && (log.responseBody._address_resolved || log.responseBody.lastPoint?.address) && (
-                                            <div className="mb-2 p-2 bg-emerald-900/10 border border-emerald-900/30 rounded text-emerald-400 text-[11px] font-bold flex items-center gap-2">
-                                                <MapPin size={12}/> 
-                                                {log.responseBody._address_resolved || log.responseBody.lastPoint.address}
-                                            </div>
-                                        )}
-
-                                        {/* Display Battery specifically (Added Feature) */}
-                                        {log.responseBody && (log.responseBody._battery_level) && (
-                                            <div className="mb-2 p-2 bg-blue-900/10 border border-blue-900/30 rounded text-blue-400 text-[11px] font-bold flex items-center gap-2 w-fit">
-                                                <BatteryCharging size={12}/> 
-                                                Bateria: {log.responseBody._battery_level}
-                                            </div>
-                                        )}
-
-                                        {log.requestBody && (
-                                            <div>
-                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1">Payload / Headers</span>
-                                                <pre className="bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] text-blue-300">
-                                                    {JSON.stringify(log.requestBody, null, 2)}
-                                                </pre>
-                                            </div>
-                                        )}
-                                        {log.responseBody && (
-                                            <div>
-                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1">Response Body</span>
-                                                <pre className={`bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] ${log.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
-                                                    {typeof log.responseBody === 'object' ? JSON.stringify(log.responseBody, null, 2) : log.responseBody}
-                                                </pre>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                    {consoleLogs.map(log => (
+                        <div key={log.id} className="border-b border-zinc-900 pb-2 mb-2 last:border-0">
+                            <div onClick={() => toggleLogExpand(log.id)} className="flex items-center gap-3 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors">
+                                <span className="text-zinc-600 font-bold">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                                <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${log.type === 'error' ? 'bg-red-900/30 text-red-400' : 'bg-zinc-800 text-zinc-400'}`}>{log.method || 'LOG'}</span>
+                                <span className="flex-1 truncate font-medium text-zinc-400">{log.url}</span>
+                                {log.status && <span className={`font-bold ${log.status === 200 ? 'text-emerald-500' : 'text-red-500'}`}>{log.status}</span>}
+                                <ChevronRight size={14} className={`transform transition-transform ${log.expanded ? 'rotate-90' : ''} text-zinc-600`}/>
                             </div>
-                        ))
-                    )}
+                            {log.expanded && (
+                                <div className="mt-2 pl-4 border-l-2 border-zinc-800 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
+                                    {log.responseBody && (
+                                        <pre className={`bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] ${log.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
+                                            {JSON.stringify(log.responseBody, null, 2)}
+                                        </pre>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ))}
                     <div ref={logsEndRef} />
                 </div>
             </MotionDiv>
         )}
       </AnimatePresence>
 
-      {/* MODAL ADD/EDIT */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
             <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto animate-in fade-in zoom-in-95">
@@ -1006,7 +813,6 @@ export const Tags = () => {
         </div>
       )}
 
-      {/* MODAL DE IMPORTAÇÃO COM VALIDAÇÃO */}
       {isImportModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
               <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto flex flex-col max-h-[90vh]">
@@ -1116,7 +922,7 @@ export const Tags = () => {
                           <>
                               <button onClick={() => { setImportStep('upload'); setImportData([]); }} className="px-6 py-3 rounded-xl font-bold text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>
                               <button onClick={processImport} disabled={validationSummary.valid === 0} className="px-8 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                                  <FileCheck size={16}/> Confirmar Importação
+                                  <ListChecks size={16}/> Confirmar Importação
                               </button>
                           </>
                       )}

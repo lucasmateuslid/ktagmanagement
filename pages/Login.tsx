@@ -5,22 +5,40 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import * as ReactRouterDOM from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Loader2, AlertCircle, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldCheck, ArrowRight, Loader2, Check } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { xssProtection } from '../services/xssProtection';
 
 const { useNavigate } = ReactRouterDOM as any;
-const MotionDiv = motion.div as any;
+
+const REMEMBER_KEY = 'ktag_remember_login';
 
 export const Login = () => {
   const { login, isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
-  
+
   const [emailOrCpf, setEmailOrCpf] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Carrega login salvo ao montar o componente
+  useEffect(() => {
+    try {
+        const savedLogin = localStorage.getItem(REMEMBER_KEY);
+        if (savedLogin) {
+          // Sanitiza ao carregar para evitar injeção vinda do storage
+          const cleanLogin = xssProtection.sanitizeText(savedLogin);
+          setEmailOrCpf(cleanLogin);
+          setRememberMe(true);
+        }
+    } catch (e) {
+        console.warn("Erro ao acessar LocalStorage (Lembrar Login)", e);
+    }
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
@@ -32,89 +50,168 @@ export const Login = () => {
     setLoading(true);
 
     try {
-        // Se for apenas números, tratamos como login de cliente
-        let loginIdentifier = emailOrCpf.trim();
-        if (/^\d+$/.test(loginIdentifier)) {
-          loginIdentifier = `${loginIdentifier}@client.ktag`;
-        }
+      // Sanitiza o input do usuário
+      let loginIdentifier = xssProtection.sanitizeText(emailOrCpf.trim());
+      const rawIdentifier = loginIdentifier; // Guarda a versão original sanitizada para salvar
+      
+      // Lógica de CPF (se for apenas números, transforma em e-mail virtual de cliente)
+      if (/^\d+$/.test(loginIdentifier)) {
+        loginIdentifier = `${loginIdentifier}@client.ktag`;
+      }
 
-        const err = await login(loginIdentifier, password);
-        if (err) {
-            setError(err);
-            addNotification('error', 'Falha no Login', err);
+      const err = await login(loginIdentifier, password);
+      
+      if (err) {
+        const safeError = xssProtection.sanitizeText(err);
+        setError(safeError);
+        addNotification('error', 'Falha no Login', safeError);
+      } else {
+        // Sucesso no login: Trata persistência do "Lembrar-me"
+        try {
+            if (rememberMe) {
+              localStorage.setItem(REMEMBER_KEY, rawIdentifier);
+            } else {
+              localStorage.removeItem(REMEMBER_KEY);
+            }
+        } catch (storageErr) {
+            console.warn("Falha ao salvar preferência de login", storageErr);
         }
-    } catch (e: any) {
-        setError(e.message);
+      }
+    } catch (e) {
+      const safeError = xssProtection.getSafeErrorMessage('SERVER_ERROR');
+      setError(safeError);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex font-sans overflow-hidden">
-      <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-16 lg:px-32 relative z-10 bg-black min-h-screen">
-         <div className="flex-1 flex flex-col justify-center py-12">
-            <MotionDiv initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-12">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-black font-display font-black text-xl mb-6 shadow-2xl">K</div>
-                <h1 className="text-4xl sm:text-5xl font-display font-bold tracking-tight mb-3">Portal de Acesso</h1>
-                <p className="text-zinc-500 font-medium">Empresas e Clientes: Gerencie sua segurança aqui.</p>
-            </MotionDiv>
-
-            {error && (
-                <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-sm">
-                    {error}
-                </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">E-mail ou CPF</label>
-                    <input type="text" required value={emailOrCpf} onChange={e => setEmailOrCpf(e.target.value)} 
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 text-white focus:border-primary-500 outline-none font-bold"
-                    placeholder="E-mail ou CPF (Só números)"
-                    />
-                </div>
-                <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Senha</label>
-                    <input type="password" required value={password} onChange={e => setPassword(e.target.value)} 
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 text-white focus:border-primary-500 outline-none font-bold"
-                    placeholder="••••••••"
-                    />
-                </div>
-                <button type="submit" disabled={loading}
-                    className="w-full bg-primary-500 hover:bg-primary-400 text-black font-black uppercase tracking-[0.2em] text-xs py-5 rounded-2xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
-                >
-                    {loading ? <Loader2 className="animate-spin" /> : <>Entrar no Console <ArrowRight size={18} strokeWidth={3} /></>}
-                </button>
-            </form>
-            
-            <div className="mt-12 text-center text-zinc-600 text-[10px] font-black uppercase tracking-widest leading-loose">
-                Clientes: Use seu CPF e os 6 primeiros dígitos para o primeiro acesso.<br/> 
-                Problemas com acesso? Contate sua central de rastreamento.
-            </div>
-         </div>
-
-         {/* Mobile Attribution Footer */}
-         <div className="pb-8 flex flex-col items-center gap-1 text-center lg:hidden opacity-40">
-            <p className="text-[9px] font-mono text-zinc-500 uppercase tracking-[0.2em]">
-              K-Tag Manager Secure. v3.0.2
-            </p>
-            <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">
-              developed by <a href="https://lucasmateus.tech/" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-primary-500/40 transition-colors">lucasmateus.tech</a>
-            </p>
-         </div>
-      </div>
-
-      <div className="hidden lg:flex w-1/2 bg-zinc-900 relative flex-col items-center justify-center gap-10">
-          <ShieldCheck size={140} className="text-primary-500 opacity-90 drop-shadow-[0_0_50px_rgba(245,158,11,0.4)]" />
-          <div className="flex flex-col items-center gap-1 text-center">
-            <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-[0.2em] opacity-60">
-              K-Tag Manager Secure. v3.0.2
-            </p>
-            <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-              developed by <a href="https://lucasmateus.tech/" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-primary-500/40 transition-colors">lucasmateus.tech</a>
-            </p>
+    <div className="min-h-screen bg-black flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md space-y-10"
+      >
+        {/* Header / Logo */}
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-amber-500/20 to-amber-600/10 rounded-2xl mb-6 border border-amber-500/30 shadow-2xl shadow-amber-500/10">
+            <span className="text-5xl font-black text-white tracking-tighter drop-shadow-lg">K</span>
           </div>
+          <h1 className="text-4xl font-extrabold text-white tracking-tight">
+            Portal de Acesso
+          </h1>
+          <p className="mt-3 text-zinc-400 text-lg font-medium">
+            Empresas e Clientes, faça seu login abaixo
+          </p>
+        </div>
+
+        {/* Mensagem de erro */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-950/60 border border-red-800/60 text-red-200 px-5 py-4 rounded-2xl text-center text-sm"
+          >
+            {error}
+          </motion.div>
+        )}
+
+        {/* Formulário */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-zinc-300 uppercase tracking-wider">
+              E-mail ou CPF
+            </label>
+            <input
+              type="text"
+              required
+              value={emailOrCpf}
+              onChange={(e) => setEmailOrCpf(e.target.value)}
+              className="w-full bg-zinc-900/70 border border-zinc-700 rounded-xl px-5 py-4 text-white placeholder-zinc-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30 outline-none transition-all text-base font-medium"
+              placeholder="exemplo@dominio.com ou 12345678901"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-zinc-300 uppercase tracking-wider">
+              Senha
+            </label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-zinc-900/70 border border-zinc-700 rounded-xl px-5 py-4 text-white placeholder-zinc-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30 outline-none transition-all text-base font-medium"
+              placeholder="••••••••••••"
+            />
+          </div>
+
+          {/* Salvar Login Checkbox */}
+          <div className="flex items-center justify-between px-1">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <div className="w-5 h-5 bg-zinc-900 border border-zinc-700 rounded-md transition-all peer-checked:bg-amber-500 peer-checked:border-amber-500 group-hover:border-zinc-500 flex items-center justify-center">
+                  <Check size={14} className={`text-black transition-opacity ${rememberMe ? 'opacity-100' : 'opacity-0'}`} strokeWidth={4} />
+                </div>
+              </div>
+              <span className="text-sm font-bold text-zinc-400 group-hover:text-zinc-300 transition-colors uppercase tracking-widest text-[10px]">Salvar meu acesso</span>
+            </label>
+            
+            <button type="button" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-amber-500 transition-colors">Esqueci a senha</button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className={`
+              w-full h-14 bg-gradient-to-r from-amber-500 to-amber-600 
+              hover:from-amber-400 hover:to-amber-500 
+              active:from-amber-600 active:to-amber-700
+              text-black font-black uppercase tracking-widest text-sm
+              rounded-xl shadow-xl shadow-amber-500/20 
+              flex items-center justify-center gap-3
+              transition-all duration-300
+              disabled:opacity-60 disabled:cursor-not-allowed
+              hover:scale-[1.02] active:scale-[0.98]
+            `}
+          >
+            {loading ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : (
+              <>
+                Entrar <ArrowRight className="h-5 w-5" strokeWidth={3} />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Rodapé */}
+        <div className="text-center text-sm text-zinc-400 pt-6 space-y-2">
+          <p className="font-medium">
+            Primeiro acesso? Use CPF + 6 primeiros dígitos
+          </p>
+          <p>
+            Problemas? Contate sua central de rastreamento
+          </p>
+          <p className="text-zinc-500 text-xs font-mono tracking-wide pt-4">
+            K-Tag Manager • v3.2.2
+          </p>
+           <p className="text-zinc-500 text-xs font-mono tracking-wide pt-4">
+            Developed by <a href="https://lucasmateus.tech" target="_blank" rel="noopener noreferrer">Lucasmateus.tech</a>
+          </p>
+        </div>
+      </motion.div>
+
+      {/* Escudo decorativo */}
+      <div className="hidden lg:block fixed bottom-12 right-12 opacity-30 pointer-events-none">
+        <ShieldCheck size={120} className="text-amber-500/40" />
       </div>
     </div>
   );

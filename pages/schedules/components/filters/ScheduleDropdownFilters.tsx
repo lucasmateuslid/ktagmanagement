@@ -10,13 +10,16 @@ interface ScheduleDropdownFiltersProps {
   setFilterService: (val: string) => void;
   filterStatusDropdown: string;
   setFilterStatusDropdown: (val: string) => void;
+  filterDevice: string;
+  setFilterDevice: (val: string) => void;
 }
 
 export const ScheduleDropdownFilters: React.FC<ScheduleDropdownFiltersProps> = ({
   technicians,
   filterTech, setFilterTech,
   filterService, setFilterService,
-  filterStatusDropdown, setFilterStatusDropdown
+  filterStatusDropdown, setFilterStatusDropdown,
+  filterDevice, setFilterDevice
 }) => {
   return (
     <div className="flex gap-3 overflow-x-auto pb-1">
@@ -31,6 +34,12 @@ export const ScheduleDropdownFilters: React.FC<ScheduleDropdownFiltersProps> = (
             <option>Manutenção</option>
             <option>Retirada</option>
             <option>Vistoria</option>
+        </select>
+        <select value={filterDevice} onChange={(e) => setFilterDevice(e.target.value)} className="px-6 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none shadow-sm min-w-[180px]">
+            <option>Todos Dispositivos</option>
+            <option>Tag</option>
+            <option>Rastreador</option>
+            <option>Rastreador + Tag</option>
         </select>
         <select value={filterStatusDropdown} onChange={(e) => setFilterStatusDropdown(e.target.value)} className="px-6 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none shadow-sm min-w-[180px]">
             <option>Todos Status</option>
