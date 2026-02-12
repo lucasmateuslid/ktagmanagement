@@ -67,12 +67,16 @@ export const UserScheduleCard: React.FC<UserScheduleCardProps> = ({ item, techni
   const assignedTech = technicians.find(t => t.id === item.technicianId);
   const styleConfig = getStatusStyle(item.status);
   
-  const isUnderAnalysis = ['Em análise', 'Em orçamento'].includes(item.status);
-  const analysisHistory = isUnderAnalysis 
-      ? [...item.history].reverse().find(h => h.action === 'Assumiu' || h.action === 'Verificando' || h.statusSnapshot === 'Em análise' || h.statusSnapshot === 'Em orçamento')
-      : null;
+  // Lógica atualizada para encontrar o responsável (quem verificou, assumiu ou confirmou)
+  const responsibleHistory = [...item.history].reverse().find(h => 
+      h.action === 'Assumiu' || 
+      h.action === 'Verificando' || 
+      h.action === 'Confirmou' ||
+      h.action === 'Reagendou' ||
+      (h.statusSnapshot === 'Em análise' && h.actionBy !== 'Sistema')
+  );
 
-  const analystName = analysisHistory?.actionBy;
+  const responsibleName = responsibleHistory?.actionBy;
   const timeElapsedStr = getTimeElapsedStr(item.createdAt);
   const displayDate = getDisplayDate(item);
   const displayTime = getDisplayTime(item);
@@ -118,9 +122,9 @@ export const UserScheduleCard: React.FC<UserScheduleCardProps> = ({ item, techni
                         <SearchCheck size={16} />
                     </div>
                     <div>
-                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Em Análise Por</p>
-                        <p className={`text-xs font-bold uppercase truncate ${!analystName ? 'text-zinc-400 italic' : 'text-zinc-900 dark:text-white'}`}>
-                            {analystName || '--'}
+                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Responsável pelo Agendamento</p>
+                        <p className={`text-xs font-bold uppercase truncate ${!responsibleName ? 'text-zinc-400 italic' : 'text-zinc-900 dark:text-white'}`}>
+                            {responsibleName || '--'}
                         </p>
                     </div>
                 </div>

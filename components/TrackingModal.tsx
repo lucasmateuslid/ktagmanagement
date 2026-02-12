@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Schedule, Technician, Company, DeviceType, User } from '../types';
@@ -5,7 +6,8 @@ import {
   X, User as UserIcon, Calendar, Clock, MapPin, 
   Phone, Building2, Tag, Milestone, Map as MapIcon, 
   DollarSign, Send, Copy, MessageCircle, ExternalLink,
-  Edit2, Trash2, Save, CheckCircle2, ShieldCheck
+  Edit2, Trash2, Save, CheckCircle2, ShieldCheck,
+  Activity, Wrench, FileText, Play, RotateCcw, AlertTriangle, Check
 } from 'lucide-react';
 import { useNotification } from '../contexts/NotificationContext';
 
@@ -74,6 +76,96 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
     const availableTechnicians = technicians.filter(t => t.active);
     const responsibleCompany = companies.find(c => c.id === schedule.companyId);
+    const assignedTech = technicians.find(t => t.id === schedule.technicianId);
+
+    // --- FLUXO DE AÇÕES DO ADMINISTRADOR ---
+    const handleWorkflowAction = (actionType: 'verify' | 'budget' | 'confirm' | 'reschedule' | 'onsite' | 'finish' | 'cancel' | 'delete') => {
+        let newStatus = schedule.status;
+        let historyAction = '';
+        let historyDetails = '';
+
+        const currentUserName = currentUser?.name || 'Admin';
+
+        switch (actionType) {
+            case 'verify':
+                newStatus = 'Em análise';
+                historyAction = 'Verificando';
+                historyDetails = `${currentUserName} iniciou a verificação.`;
+                break;
+            case 'budget':
+                newStatus = 'Em orçamento';
+                historyAction = 'Em Orçamento';
+                historyDetails = 'Enviado para análise de custos.';
+                break;
+            case 'confirm':
+                // Validação básica antes de confirmar
+                if (!formData.date || !formData.time || !formData.technicianId) {
+                    addNotification('error', 'Dados Incompletos', 'Defina Data, Hora e Técnico para confirmar.');
+                    return;
+                }
+                newStatus = 'Confirmada';
+                historyAction = 'Confirmada';
+                historyDetails = `Agendado para ${formatSafeDate(formData.date)} às ${formData.time}`;
+                break;
+            case 'onsite':
+                newStatus = 'Técnico no local';
+                historyAction = 'No Local';
+                historyDetails = 'Técnico informou chegada ao local.';
+                break;
+            case 'reschedule':
+                // Volta para "Em análise" (Pendente) conforme solicitado
+                newStatus = 'Em análise'; 
+                historyAction = 'Reagendar';
+                historyDetails = 'Solicitação retornada para pendente (Reagendamento necessário).';
+                break;
+            case 'finish':
+                newStatus = 'Concluída';
+                historyAction = 'Finalizada';
+                historyDetails = 'Serviço concluído com sucesso.';
+                break;
+            case 'cancel':
+                if (!confirm('Deseja realmente cancelar esta solicitação?')) return;
+                newStatus = 'Cancelada';
+                historyAction = 'Cancelada';
+                historyDetails = `Cancelado por ${currentUserName}`;
+                break;
+            case 'delete':
+                if (!onDelete) return;
+                if (!confirm('ATENÇÃO: Isso excluirá o registro permanentemente. Continuar?')) return;
+                onDelete(schedule.id);
+                return; // Sai da função pois deletou
+        }
+
+        const updatedSchedule: Schedule = {
+            ...schedule,
+            status: newStatus,
+            // Atualiza campos do form junto com a mudança de status
+            confirmedDate: formData.date,
+            confirmedTime: formData.time,
+            technicianId: formData.technicianId || undefined,
+            companyId: formData.companyId || undefined,
+            deviceType: formData.deviceType,
+            needsInspection: formData.needsInspection,
+            paymentOnSite: formData.paymentOnSite,
+            isRemoteLocation: formData.isRemoteLocation,
+            displacementKm: formData.displacementKm,
+            displacementValue: formData.displacementValue,
+            adhesionValue: formData.adhesionValue,
+            locationAddress: formData.locationAddress,
+            notes: formData.notes,
+            // Log de histórico
+            history: [...schedule.history, {
+                action: historyAction,
+                actionBy: currentUserName,
+                timestamp: Date.now(),
+                details: historyDetails,
+                statusSnapshot: newStatus
+            }]
+        };
+
+        onUpdate(updatedSchedule);
+        addNotification('success', historyAction, 'Status atualizado com sucesso.');
+    };
 
     const handleUserSave = () => {
         const updatedSchedule: Schedule = {
@@ -89,7 +181,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             deviceType: formData.deviceType,
             needsInspection: formData.needsInspection,
             paymentOnSite: formData.paymentOnSite,
-            
+            notes: formData.notes, 
             history: [...schedule.history, { 
                 action: 'Atualizou', 
                 actionBy: currentUser?.name || 'Usuário', 
@@ -102,7 +194,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         addNotification('success', 'Atualizado', 'Suas alterações foram salvas.');
     };
 
-    const handleAdminSave = () => {
+    // Salvar Apenas Dados (sem mudar status)
+    const handleAdminDataSave = () => {
         const updatedSchedule: Schedule = {
             ...schedule,
             confirmedDate: formData.date,
@@ -119,14 +212,14 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             locationAddress: formData.locationAddress,
             notes: formData.notes,
             history: [...schedule.history, {
-                action: 'Edição Admin',
+                action: 'Editou',
                 actionBy: currentUser?.name || 'Admin',
                 timestamp: Date.now(),
-                details: 'Atualizou dados do agendamento'
+                details: 'Atualizou dados de agendamento'
             }]
         };
         onUpdate(updatedSchedule);
-        addNotification('success', 'Atualizado', 'Dados atualizados com sucesso.');
+        addNotification('success', 'Atualizado', 'Dados salvos.');
     };
 
     const handleCopyClientMessage = () => {
@@ -190,6 +283,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         window.open(url, '_blank');
     };
 
+    // Lógica para determinar quem está verificando atualmente
+    const lastVerifier = [...schedule.history].reverse().find(h => h.action === 'Verificando' || h.action === 'Assumiu');
+    const isBeingVerifiedByMe = lastVerifier && lastVerifier.actionBy === currentUser?.name;
+    const isBeingVerifiedByOther = lastVerifier && lastVerifier.actionBy !== currentUser?.name;
+
     if (isPrivileged) {
         return (
             <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4">
@@ -207,7 +305,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col relative">
                             <div className="p-6 space-y-6">
-                                {/* Info Block */}
+                                
+                                {/* CARD INFO */}
                                 <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-3xl p-5 border border-zinc-200 dark:border-zinc-800">
                                     <div className="flex justify-between items-start mb-4">
                                         <div>
@@ -217,11 +316,6 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                 <div className="mt-1">
                                                     <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold">Cliente: {schedule.clientName}</p>
                                                     {schedule.clientPhone && <p className="text-[10px] text-zinc-400 flex items-center gap-1 font-mono"><Phone size={10}/> {schedule.clientPhone}</p>}
-                                                </div>
-                                            )}
-                                            {responsibleCompany && (
-                                                <div className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 w-fit">
-                                                    <Building2 size={10}/> {responsibleCompany.name}
                                                 </div>
                                             )}
                                         </div>
@@ -235,7 +329,13 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
                                     <div className="mb-2 flex justify-between items-center">
                                         <span className="text-[10px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest">Veículo</span>
-                                        <span className="bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[9px] px-2 py-0.5 rounded font-black uppercase">{schedule.serviceType}</span>
+                                        <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase ${
+                                            schedule.status === 'Concluída' ? 'bg-emerald-100 text-emerald-700' :
+                                            schedule.status === 'Cancelada' ? 'bg-red-100 text-red-700' :
+                                            'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+                                        }`}>
+                                            {schedule.serviceType} • {schedule.status}
+                                        </span>
                                     </div>
                                     <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1">{schedule.vehiclePlate}</h1>
                                     <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-2">
@@ -315,7 +415,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                     )}
                                 </div>
 
-                                {/* Inputs de Controle e FINANCEIRO (Se status for Orçamento) */}
+                                {/* Inputs de Controle e FINANCEIRO */}
                                 <div className="space-y-4">
                                     <div>
                                         <label className="text-[9px] font-black uppercase text-zinc-400 dark:text-zinc-500 tracking-widest mb-1.5 block">Atribuir Técnico</label>
@@ -345,15 +445,84 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         </div>
                                     </div>
                                     
-                                    <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                                        <button onClick={handleAdminSave} className="w-full py-4 bg-primary-500 text-black rounded-xl font-black uppercase text-xs tracking-widest hover:scale-[1.01] transition-all flex items-center justify-center gap-2">
-                                            <Save size={16}/> Salvar Alterações
-                                        </button>
-                                        {onDelete && (
-                                            <button onClick={() => onDelete(schedule.id)} className="w-full mt-2 py-3 bg-red-500/10 text-red-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-red-500/20 transition-all">
-                                                Excluir Solicitação
+                                    {/* --- WORKFLOW ACTIONS --- */}
+                                    <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+                                        <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest mb-2">Ações de Fluxo</p>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {/* 1. SE SOLICITADA -> VERIFICAR */}
+                                            {schedule.status === 'Solicitada' && (
+                                                <button onClick={() => handleWorkflowAction('verify')} className="py-4 bg-primary-500 text-black rounded-xl font-black uppercase text-xs tracking-widest hover:scale-[1.01] transition-all flex items-center justify-center gap-2 shadow-lg">
+                                                    <ShieldCheck size={16}/> Verificar & Assumir
+                                                </button>
+                                            )}
+
+                                            {/* 2. SE EM ANÁLISE -> CONFIRMAR OU ORÇAR */}
+                                            {['Solicitada', 'Em análise'].includes(schedule.status) && (
+                                                <>
+                                                    <button onClick={() => handleWorkflowAction('confirm')} className="py-4 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg">
+                                                        <CheckCircle2 size={16}/> Confirmar Agendamento
+                                                    </button>
+                                                    
+                                                    {schedule.status === 'Em análise' && isBeingVerifiedByOther && (
+                                                        <button onClick={() => handleWorkflowAction('verify')} className="py-4 bg-amber-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-sm">
+                                                            <Activity size={16}/> Assumir (De: {lastVerifier?.actionBy})
+                                                        </button>
+                                                    )}
+
+                                                    <button onClick={() => handleWorkflowAction('budget')} className="py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 border border-zinc-200 dark:border-zinc-700">
+                                                        <DollarSign size={16}/> Enviar p/ Orçamento
+                                                    </button>
+                                                </>
+                                            )}
+
+                                            {/* 3. SE ORÇAMENTO -> APROVAR (CONFIRMAR) */}
+                                            {schedule.status === 'Em orçamento' && (
+                                                <button onClick={() => handleWorkflowAction('confirm')} className="py-4 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg col-span-2">
+                                                    <CheckCircle2 size={16}/> Aprovar Orçamento
+                                                </button>
+                                            )}
+
+                                            {/* 4. SE AGENDADA OU TÉCNICO NO LOCAL -> AÇÕES DE CAMPO */}
+                                            {['Confirmada', 'Reagendada', 'Autorizada', 'Técnico no local'].includes(schedule.status) && (
+                                                <>
+                                                    {/* Botão Técnico no Local (apenas se ainda não estiver) */}
+                                                    {schedule.status !== 'Técnico no local' && (
+                                                        <button onClick={() => handleWorkflowAction('onsite')} className="py-4 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 shadow-lg">
+                                                            <MapPin size={16}/> Técnico no Local
+                                                        </button>
+                                                    )}
+
+                                                    {/* Botão Finalizar (Sempre visível nesta etapa agora) */}
+                                                    <button onClick={() => handleWorkflowAction('finish')} className="py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg">
+                                                        <Check size={16} strokeWidth={3}/> Finalizar Serviço
+                                                    </button>
+
+                                                    <button onClick={() => handleWorkflowAction('reschedule')} className="py-4 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all flex items-center justify-center gap-2 border border-amber-200 dark:border-amber-800">
+                                                        <RotateCcw size={16}/> Reagendar
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* AÇÕES DESTRUTIVAS E GERAIS */}
+                                        <div className="flex gap-2 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                                            <button onClick={handleAdminDataSave} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2">
+                                                <Save size={14}/> Salvar Dados
                                             </button>
-                                        )}
+                                            
+                                            {schedule.status !== 'Cancelada' && schedule.status !== 'Concluída' && (
+                                                <button onClick={() => handleWorkflowAction('cancel')} className="flex-1 py-3 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-200 dark:hover:bg-red-900/40 transition-all flex items-center justify-center gap-2">
+                                                    <AlertTriangle size={14}/> Cancelar Serviço
+                                                </button>
+                                            )}
+                                            
+                                            {onDelete && (
+                                                <button onClick={() => handleWorkflowAction('delete')} className="p-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all" title="Excluir Registro">
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -386,7 +555,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         );
     }
 
-    // Render User/Standard View (Simpler Modal)
+    // Render User/Standard View (Updated - Detailed & Merged)
     return (
         <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <MotionDiv 
@@ -403,32 +572,6 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Status Banner */}
-                    <div className={`p-4 rounded-2xl border flex items-center gap-3 ${
-                        schedule.status === 'Confirmada' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/20 text-emerald-600 dark:text-emerald-400' :
-                        schedule.status === 'Cancelada' ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/20 text-red-600 dark:text-red-400' :
-                        'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/20 text-blue-600 dark:text-blue-400'
-                    }`}>
-                        {schedule.status === 'Confirmada' ? <CheckCircle2 size={24}/> : schedule.status === 'Cancelada' ? <X size={24}/> : <Clock size={24}/>}
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Status Atual</p>
-                            <p className="text-sm font-black uppercase">{schedule.status}</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Veículo</p>
-                            <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">{schedule.vehiclePlate}</p>
-                            <p className="text-xs text-zinc-500 uppercase">{schedule.vehicleModel}</p>
-                        </div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Serviço</p>
-                            <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">{schedule.serviceType}</p>
-                            <p className="text-xs text-zinc-500 uppercase">{formData.deviceType}</p>
-                        </div>
-                    </div>
-
                     {/* User Edit Form */}
                     {isUserEditing ? (
                         <div className="space-y-4 bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
@@ -446,35 +589,120 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                     <input type="time" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none"/>
                                 </div>
                             </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider mb-1 block">Observações</label>
+                                <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none min-h-[80px]" placeholder="Informações adicionais..."/>
+                            </div>
                             <div className="flex gap-2 pt-2">
                                 <button onClick={() => setIsUserEditing(false)} className="flex-1 py-3 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-bold text-xs uppercase">Cancelar</button>
                                 <button onClick={handleUserSave} className="flex-1 py-3 bg-primary-500 text-black rounded-xl font-bold text-xs uppercase shadow-lg">Salvar</button>
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-4">
-                            <div>
-                                <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Localização</p>
-                                <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed">{schedule.locationAddress}</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-6">
+                            {/* 1. Status Banner */}
+                            <div className={`p-5 rounded-2xl border flex items-center gap-4 ${
+                                schedule.status === 'Confirmada' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/20 text-emerald-600 dark:text-emerald-400' :
+                                schedule.status === 'Cancelada' ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/20 text-red-600 dark:text-red-400' :
+                                'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/20 text-blue-600 dark:text-blue-400'
+                            }`}>
+                                {schedule.status === 'Confirmada' ? <CheckCircle2 size={32}/> : schedule.status === 'Cancelada' ? <X size={32}/> : <Clock size={32}/>}
                                 <div>
-                                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Data Agendada</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Status Atual</p>
+                                    <p className="text-xl font-black uppercase tracking-tight">{schedule.status}</p>
+                                </div>
+                            </div>
+
+                            {/* 2. Main Info Card */}
+                            <div className="bg-zinc-900 text-white p-6 rounded-3xl relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <h3 className="text-3xl font-display font-black uppercase tracking-tighter">{schedule.vehiclePlate}</h3>
+                                    <p className="text-zinc-400 text-xs font-bold uppercase mt-1">{schedule.vehicleModel}</p>
+                                    <div className="flex gap-2 mt-4">
+                                        <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase">{schedule.serviceType}</span>
+                                        <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase">{schedule.deviceType}</span>
+                                    </div>
+                                </div>
+                                <div className="absolute right-[-10px] bottom-[-10px] opacity-10"><Activity size={100}/></div>
+                            </div>
+
+                            {/* 3. Grid Details */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1">
+                                        <Calendar size={14}/>
+                                        <span className="text-[9px] font-black uppercase tracking-widest">Data</span>
+                                    </div>
                                     <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">
                                         {schedule.confirmedDate ? new Date(schedule.confirmedDate).toLocaleDateString() : (schedule.preferredDate ? new Date(schedule.preferredDate).toLocaleDateString() : 'A definir')}
                                     </p>
                                 </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Horário</p>
+                                <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1">
+                                        <Clock size={14}/>
+                                        <span className="text-[9px] font-black uppercase tracking-widest">Horário</span>
+                                    </div>
                                     <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">
                                         {schedule.confirmedTime || schedule.preferredTime || '--:--'}
                                     </p>
                                 </div>
+                                <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800 col-span-2 sm:col-span-1">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1">
+                                        <Wrench size={14}/>
+                                        <span className="text-[9px] font-black uppercase tracking-widest">Técnico</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {assignedTech && <div className="w-2 h-2 rounded-full" style={{backgroundColor: assignedTech.color}}/>}
+                                        <p className={`text-sm font-bold uppercase ${assignedTech ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 italic'}`}>
+                                            {assignedTech ? assignedTech.name : 'A definir'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800 col-span-2 sm:col-span-1">
+                                    <div className="flex items-center gap-2 text-zinc-400 mb-1">
+                                        <MapPin size={14}/>
+                                        <span className="text-[9px] font-black uppercase tracking-widest">Local</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-zinc-900 dark:text-white line-clamp-2" title={schedule.locationAddress}>
+                                        {schedule.locationAddress}
+                                    </p>
+                                </div>
                             </div>
-                            {/* Allow user to edit if status is pending */}
+
+                            {/* 4. Notes */}
+                            {schedule.notes && (
+                                <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-2xl">
+                                    <div className="flex items-center gap-2 text-blue-500 mb-2">
+                                        <FileText size={14}/>
+                                        <span className="text-[9px] font-black uppercase tracking-widest">Observações</span>
+                                    </div>
+                                    <p className="text-xs text-blue-900 dark:text-blue-100 font-medium">{schedule.notes}</p>
+                                </div>
+                            )}
+
+                            {/* 5. History Timeline (Merged Feature) */}
+                            <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                                <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-4">Histórico de Atividades</h4>
+                                <div className="space-y-4 pl-2">
+                                    {schedule.history.slice().reverse().map((h, i) => (
+                                        <div key={i} className="relative pl-6 border-l border-zinc-200 dark:border-zinc-800 last:border-0 pb-2">
+                                            <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700 border-2 border-white dark:border-zinc-900" />
+                                            <div className="flex flex-col gap-0.5">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-black uppercase text-zinc-900 dark:text-white">{h.action}</span>
+                                                    <span className="text-[9px] font-mono text-zinc-400">{new Date(h.timestamp).toLocaleDateString()}</span>
+                                                </div>
+                                                <span className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">Por: {h.actionBy}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Edit Button (Conditional) */}
                             {['Solicitada', 'Em análise'].includes(schedule.status) && (
-                                <button onClick={() => setIsUserEditing(true)} className="w-full py-3 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs font-black uppercase text-zinc-500 hover:text-primary-500 hover:border-primary-500 transition-all flex items-center justify-center gap-2">
-                                    <Edit2 size={14}/> Editar Informações
+                                <button onClick={() => setIsUserEditing(true)} className="w-full py-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-xs font-black uppercase text-zinc-500 hover:text-primary-500 hover:border-primary-500 transition-all flex items-center justify-center gap-2">
+                                    <Edit2 size={16}/> Editar Informações
                                 </button>
                             )}
                         </div>
