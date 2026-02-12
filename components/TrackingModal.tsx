@@ -248,13 +248,28 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         const dateDisplay = dateRaw ? formatSafeDate(dateRaw) : 'A definir';
         const timeDisplay = formData.time || '--:--';
         
-        const msg = `ORDEM DE SERVIÇO\n` +
-            `VEÍCULO: ${schedule.vehicleModel} (${schedule.vehiclePlate})\n` +
-            `SERVIÇO: ${schedule.serviceType}\n` +
-            `DATA: ${dateDisplay} - ${timeDisplay}\n` +
-            `CLIENTE: ${schedule.clientName || schedule.requesterName}\n` +
-            `LOCAL: ${formData.locationAddress}\n` +
-            `OBS: ${formData.notes || 'Sem observações'}`;
+        const regionalName = companies.find(c => c.id === formData.companyId)?.name || 'N/A';
+        const clientInfo = schedule.clientName 
+            ? `${schedule.clientName}${schedule.clientPhone ? ` (${schedule.clientPhone})` : ''}` 
+            : schedule.requesterName;
+
+        const mapLink = (schedule.locationLat && schedule.locationLng)
+            ? `https://www.google.com/maps?q=${schedule.locationLat},${schedule.locationLng}`
+            : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.locationAddress)}`;
+
+        const msg = `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
+            `🏢 *Regional:* ${regionalName}\n` +
+            `🚗 *Veículo:* ${schedule.vehicleModel}\n` +
+            `🪪 *Placa:* ${schedule.vehiclePlate}\n` +
+            `👤 *Cliente:* ${clientInfo}\n` +
+            `📡 *Equipamento:* ${formData.deviceType}\n` +
+            `🔧 *Serviço:* ${schedule.serviceType}\n` +
+            `📋 *Necessita de vistoria?* ${formData.needsInspection ? 'Sim' : 'Não'}\n` +
+            `💰 *Pagamento no local?* ${formData.paymentOnSite ? 'Sim' : 'Não'}\n` +
+            `📝 *Observações:* ${formData.notes || 'Nenhuma'}\n` +
+            `📅 *Data Pref:* ${dateDisplay} às ${timeDisplay}\n` +
+            `📍 *Local:* ${formData.locationAddress}\n` +
+            `🗺 *Google Maps:* ${mapLink}`;
 
         navigator.clipboard.writeText(msg);
         addNotification('success', 'Sucesso', 'Mensagem para técnico copiada');
@@ -271,13 +286,28 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         const dateDisplay = dateRaw ? formatSafeDate(dateRaw) : 'A definir';
         const timeDisplay = formData.time || '--:--';
 
-        const msg = `*NOVA OS - K-TAG*\n\n` +
-            `🚗 *${schedule.vehiclePlate}* - ${schedule.vehicleModel}\n` +
-            `🔧 *${schedule.serviceType}* (${formData.deviceType})\n` +
-            `📅 ${dateDisplay} às ${timeDisplay}\n` +
-            `👤 ${schedule.clientName || schedule.requesterName}\n` +
-            `📍 ${formData.locationAddress}\n` +
-            `📝 ${formData.notes || ''}`;
+        const regionalName = companies.find(c => c.id === formData.companyId)?.name || 'N/A';
+        const clientInfo = schedule.clientName 
+            ? `${schedule.clientName}${schedule.clientPhone ? ` (${schedule.clientPhone})` : ''}` 
+            : schedule.requesterName;
+
+        const mapLink = (schedule.locationLat && schedule.locationLng)
+            ? `https://www.google.com/maps?q=${schedule.locationLat},${schedule.locationLng}`
+            : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.locationAddress)}`;
+
+        const msg = `*NOVA SOLICITAÇÃO TÉCNICA*\n\n` +
+            `🏢 *Regional:* ${regionalName}\n` +
+            `🚗 *Veículo:* ${schedule.vehicleModel}\n` +
+            `🪪 *Placa:* ${schedule.vehiclePlate}\n` +
+            `👤 *Cliente:* ${clientInfo}\n` +
+            `📡 *Equipamento:* ${formData.deviceType}\n` +
+            `🔧 *Serviço:* ${schedule.serviceType}\n` +
+            `📋 *Necessita de vistoria?* ${formData.needsInspection ? 'Sim' : 'Não'}\n` +
+            `💰 *Pagamento no local?* ${formData.paymentOnSite ? 'Sim' : 'Não'}\n` +
+            `📝 *Observações:* ${formData.notes || 'Nenhuma'}\n` +
+            `📅 *Data Pref:* ${dateDisplay} às ${timeDisplay}\n` +
+            `📍 *Local:* ${formData.locationAddress}\n` +
+            `🗺 *Google Maps:* ${mapLink}`;
             
         const url = `https://wa.me/55${selectedTech.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');

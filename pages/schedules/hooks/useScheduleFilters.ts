@@ -43,7 +43,15 @@ export const useScheduleFilters = (
     if (isPrivileged) {
         // 2. Admin Logic
         if (showMyRequests) {
+            // Filtra por ID do usuário ou histórico de ação
             filtered = filtered.filter(s => s.requesterId === user?.id || s.history.some(h => h.actionBy === user?.name));
+            
+            // APLICA LÓGICA DE USUÁRIO (Abas: Em Andamento vs Histórico)
+            if (statusFilter === 'active') {
+                filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
+            } else if (statusFilter === 'completed') {
+                filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+            }
         } else {
             if (adminTab === 'pendentes') {
                 filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada'].includes(s.status));
@@ -86,22 +94,24 @@ export const useScheduleFilters = (
             }
         }
 
-        // 3. Dropdown Filters
-        if (filterService !== 'Todos Serviços') {
-            filtered = filtered.filter(s => s.serviceType === filterService);
-        }
-        if (filterStatusDropdown !== 'Todos Status') {
-            filtered = filtered.filter(s => s.status === filterStatusDropdown);
-        }
-        if (filterDevice !== 'Todos Dispositivos') {
-            filtered = filtered.filter(s => s.deviceType === filterDevice);
-        }
-        if (filterTech !== 'Todos Técnicos') {
-            if (filterTech === 'Sem Técnico') {
-                filtered = filtered.filter(s => !s.technicianId);
-            } else {
-                const techId = technicians.find(t => t.name === filterTech)?.id;
-                if (techId) filtered = filtered.filter(s => s.technicianId === techId);
+        // 3. Dropdown Filters (Apenas se não estiver vendo Minhas Solicitações)
+        if (!showMyRequests) {
+            if (filterService !== 'Todos Serviços') {
+                filtered = filtered.filter(s => s.serviceType === filterService);
+            }
+            if (filterStatusDropdown !== 'Todos Status') {
+                filtered = filtered.filter(s => s.status === filterStatusDropdown);
+            }
+            if (filterDevice !== 'Todos Dispositivos') {
+                filtered = filtered.filter(s => s.deviceType === filterDevice);
+            }
+            if (filterTech !== 'Todos Técnicos') {
+                if (filterTech === 'Sem Técnico') {
+                    filtered = filtered.filter(s => !s.technicianId);
+                } else {
+                    const techId = technicians.find(t => t.name === filterTech)?.id;
+                    if (techId) filtered = filtered.filter(s => s.technicianId === techId);
+                }
             }
         }
 

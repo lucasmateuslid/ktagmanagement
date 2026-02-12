@@ -170,7 +170,8 @@ export const SchedulesPage = () => {
 
                 <TechnicianAvailabilityAlert />
 
-                {stats && (
+                {/* Dashboard só aparece se for privilegiado E NÃO estiver no modo 'Minhas Solicitações' */}
+                {stats && !showMyRequests && (
                     <div className="space-y-6">
                         {/* KPI Boxes */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -230,7 +231,7 @@ export const SchedulesPage = () => {
         <div className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row gap-4 items-center">
                 <ScheduleTabs 
-                    isPrivileged={isPrivileged}
+                    isPrivileged={isPrivileged && !showMyRequests} // Simula usuário se showMyRequests for true
                     adminTab={adminTab}
                     setAdminTab={setAdminTab}
                     statusFilter={statusFilter}
@@ -241,7 +242,7 @@ export const SchedulesPage = () => {
                 <ScheduleSearchBar 
                     searchTerm={searchTerm}
                     setSearchTerm={setSearchTerm}
-                    isPrivileged={isPrivileged}
+                    isPrivileged={isPrivileged && !showMyRequests} // Oculta data filters se estiver em modo usuario
                     onExportPDF={handleExportPDF}
                     onExportExcel={handleExportExcel}
                     isExporting={isExporting}
@@ -250,7 +251,7 @@ export const SchedulesPage = () => {
                 />
             </div>
 
-            {isPrivileged && (
+            {isPrivileged && !showMyRequests && (
                 <ScheduleDropdownFilters 
                     technicians={technicians}
                     filterTech={filterTech} setFilterTech={setFilterTech}
@@ -262,11 +263,11 @@ export const SchedulesPage = () => {
         </div>
 
         {/* SCHEDULES GRID */}
-        <div className={`space-y-4 ${isPrivileged ? 'grid grid-cols-1 xl:grid-cols-2 gap-6 space-y-0' : ''}`}>
+        <div className={`space-y-4 ${isPrivileged && !showMyRequests ? 'grid grid-cols-1 xl:grid-cols-2 gap-6 space-y-0' : ''}`}>
             {filteredList.length === 0 ? (
                 <EmptyState />
             ) : (
-                filteredList.map(item => isPrivileged ? (
+                filteredList.map(item => (isPrivileged && !showMyRequests) ? (
                     <AdminScheduleCard 
                         key={item.id} 
                         item={item} 

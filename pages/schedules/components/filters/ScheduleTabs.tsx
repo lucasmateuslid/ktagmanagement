@@ -19,7 +19,7 @@ export const ScheduleTabs: React.FC<ScheduleTabsProps> = ({
   setStatusFilter,
   showMyRequests
 }) => {
-  if (showMyRequests) return null;
+  // Removido o retorno nulo para permitir que o admin veja as abas de usuário quando 'isPrivileged' for passado como falso pelo pai
 
   return (
     <div className={`flex p-1 rounded-2xl w-full md:w-auto overflow-x-auto ${isPrivileged ? 'gap-3' : 'bg-zinc-100 dark:bg-zinc-800'}`}>
