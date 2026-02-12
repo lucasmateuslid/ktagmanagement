@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../services/storage';
-import { Technician, Schedule } from '../types';
+import { Technician, Schedule, DeviceType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff } from 'lucide-react';
+import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff, Layers, Radio, Tag } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
 const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: Technician, schedules: Schedule[], onClose: () => void }) => {
@@ -162,7 +162,8 @@ export const Technicians = () => {
       active: true, 
       color: '#3b82f6',
       serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
-      unavailableDates: []
+      unavailableDates: [],
+      services: ['Tag', 'Rastreador', 'Rastreador + Tag'] // Default: Faz tudo
   });
   
   const [newUnavailabilityDate, setNewUnavailabilityDate] = useState('');
@@ -193,7 +194,8 @@ export const Technicians = () => {
         active: formData.active ?? true,
         color: formData.color,
         serviceRates: formData.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
-        unavailableDates: formData.unavailableDates || []
+        unavailableDates: formData.unavailableDates || [],
+        services: formData.services || []
     };
 
     await storage.saveTechnician(tech);
@@ -206,10 +208,20 @@ export const Technicians = () => {
       setFormData({
           ...tech,
           serviceRates: tech.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
-          unavailableDates: tech.unavailableDates || []
+          unavailableDates: tech.unavailableDates || [],
+          services: tech.services || ['Tag', 'Rastreador', 'Rastreador + Tag']
       });
       setNewUnavailabilityDate('');
       setIsModalOpen(true);
+  };
+
+  const handleDelete = async (techId: string, e: React.MouseEvent) => {
+      e.stopPropagation(); // Evita abrir o modal de detalhes
+      if (confirm('ATENÇÃO: Deseja realmente excluir este técnico? Esta ação não pode ser desfeita.')) {
+          await storage.deleteTechnician(techId);
+          addNotification('success', 'Excluído', 'Técnico removido da equipe.');
+          loadData();
+      }
   };
 
   const toggleStatus = async (tech: Technician) => {
@@ -253,6 +265,15 @@ export const Technicians = () => {
       }));
   };
 
+  const toggleService = (service: string) => {
+      const current = formData.services || [];
+      if (current.includes(service)) {
+          setFormData(prev => ({ ...prev, services: current.filter(s => s !== service) }));
+      } else {
+          setFormData(prev => ({ ...prev, services: [...current, service] }));
+      }
+  };
+
   if (user?.role !== 'admin') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
 
   return (
@@ -262,7 +283,7 @@ export const Technicians = () => {
             <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Equipe Técnica</h1>
             <p className="text-zinc-500 mt-1 font-medium text-xs">Gestão de instaladores, técnicos de campo e valores.</p>
         </div>
-        <button onClick={() => { setFormData({ active: true, color: '#3b82f6', serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 }, unavailableDates: [] }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
+        <button onClick={() => { setFormData({ active: true, color: '#3b82f6', serviceRates: { installation: 0, maintenance: 0, removal: 0, inspection: 0 }, unavailableDates: [], services: ['Tag', 'Rastreador', 'Rastreador + Tag'] }); setIsModalOpen(true); }} className="bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center gap-2 font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-xl">
             <Plus size={16} /> Novo Técnico
         </button>
       </div>
@@ -270,6 +291,7 @@ export const Technicians = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {technicians.map(tech => {
             const count = getActiveCount(tech.id);
+            const services = tech.services || ['Tag', 'Rastreador', 'Rastreador + Tag'];
             
             return (
                 <div 
@@ -297,13 +319,33 @@ export const Technicians = () => {
                             >
                                 <Edit2 size={16}/>
                             </button>
+                            <button 
+                                onClick={(e) => handleDelete(tech.id, e)} 
+                                className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 transition-colors"
+                                title="Excluir Técnico"
+                            >
+                                <Trash2 size={16}/>
+                            </button>
                             <button onClick={() => toggleStatus(tech)} className={`p-2 rounded-xl transition-all ${tech.active ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200'}`}>
                                 {tech.active ? <CheckCircle size={20} /> : <XCircle size={20} />}
                             </button>
                         </div>
                     </div>
 
-                    <div className="bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between relative z-10">
+                    {/* Exibição de Skills/Serviços */}
+                    <div className="flex flex-wrap gap-1.5 relative z-10">
+                        {services.includes('Rastreador') && (
+                            <span className="px-2 py-1 rounded-md bg-blue-500/10 text-blue-600 text-[9px] font-black uppercase flex items-center gap-1"><Radio size={10}/> Rastreador</span>
+                        )}
+                        {services.includes('Tag') && (
+                            <span className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 text-[9px] font-black uppercase flex items-center gap-1"><Tag size={10}/> Tag</span>
+                        )}
+                        {services.includes('Rastreador + Tag') && (
+                            <span className="px-2 py-1 rounded-md bg-purple-500/10 text-purple-600 text-[9px] font-black uppercase flex items-center gap-1"><Layers size={10}/> Combo</span>
+                        )}
+                    </div>
+
+                    <div className="bg-zinc-50 dark:bg-zinc-950/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between relative z-10 mt-auto">
                         <div className="flex items-center gap-2 text-zinc-500">
                             <Calendar size={16} />
                             <span className="text-[10px] font-black uppercase tracking-widest">Agendamentos Ativos</span>
@@ -330,6 +372,24 @@ export const Technicians = () => {
                     <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefone</label>
                         <input type="text" required value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="(00) 00000-0000" />
+                    </div>
+
+                    {/* SELEÇÃO DE SERVIÇOS */}
+                    <div>
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">Habilidades / Serviços</label>
+                        <div className="grid grid-cols-1 gap-2">
+                            {['Rastreador', 'Tag', 'Rastreador + Tag'].map((svc) => (
+                                <label key={svc} className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={formData.services?.includes(svc) || false} 
+                                        onChange={() => toggleService(svc)}
+                                        className="w-4 h-4 accent-primary-500 rounded"
+                                    />
+                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase">{svc}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
                     
                     {/* SEÇÃO DE TAXAS */}

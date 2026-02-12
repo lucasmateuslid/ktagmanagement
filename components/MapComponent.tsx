@@ -28,7 +28,15 @@ const VehicleIconComponent = ({ type, catName, size = 16, className = '', isUnli
   return <FaQuestion size={size} className={className} />;
 };
 
-const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryName?: string, color = '#f59e0b', isUnlinked = false) => {
+const createVehicleIcon = (
+    isSelected: boolean, 
+    categoryType?: string, 
+    categoryName?: string, 
+    color = '#f59e0b', 
+    isUnlinked = false,
+    showPlates = false,
+    plateText = ''
+) => {
   const size = isSelected ? 20 : 16;
   
   // Renderiza o componente React Icon para string HTML
@@ -42,24 +50,62 @@ const createVehicleIcon = (isSelected: boolean, categoryType?: string, categoryN
   const bg = isUnlinked ? (isSelected ? '#eab308' : '#ca8a04') : (isSelected ? color : '#ffffff');
   const textColor = isUnlinked ? '#ffffff' : (isSelected ? '#000000' : '#18181b');
 
+  // Badge HTML (condicional)
+  const badgeHtml = (showPlates && plateText && !isUnlinked) ? `
+    <div style="
+        position: absolute;
+        bottom: ${isSelected ? '54px' : '42px'};
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #09090b;
+        color: #ffffff;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Manrope', sans-serif;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        border: 1px solid #27272a;
+        z-index: 1000;
+    ">
+        ${plateText}
+        <div style="
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0; 
+            height: 0; 
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 4px solid #09090b;
+        "></div>
+    </div>
+  ` : '';
+
   return L.divIcon({
     className: 'custom-div-icon',
     html: `
-      <div style="
-          background: ${bg};
-          width: ${isSelected ? '48px' : '36px'};
-          height: ${isSelected ? '48px' : '36px'};
-          border: ${isSelected ? '4px' : '3px'} solid ${isSelected ? '#ffffff' : '#18181b'};
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-          transform: translate(-50%, -50%);
-          transition: all 0.3s ease;
-          color: ${textColor};
-      ">
-          ${iconHtml}
+      <div style="position: relative;">
+          ${badgeHtml}
+          <div style="
+              background: ${bg};
+              width: ${isSelected ? '48px' : '36px'};
+              height: ${isSelected ? '48px' : '36px'};
+              border: ${isSelected ? '4px' : '3px'} solid ${isSelected ? '#ffffff' : '#18181b'};
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+              transform: translate(-50%, -50%);
+              transition: all 0.3s ease;
+              color: ${textColor};
+          ">
+              ${iconHtml}
+          </div>
       </div>
     `,
     iconSize: [0, 0],
@@ -91,6 +137,7 @@ interface MapProps {
   tags?: Tag[];
   categories?: VehicleCategory[];
   highlightedTagId?: string;
+  showPlates?: boolean; // Nova prop
   onMarkerClick?: (tagId: string) => void;
 }
 
@@ -101,11 +148,11 @@ export const MapComponent: React.FC<MapProps> = ({
   tags = [],
   categories = [],
   highlightedTagId, 
+  showPlates = false, // Default false
   onMarkerClick 
 }) => {
   const { theme } = useTheme();
   
-  // Se houver um veículo selecionado, filtramos para mostrar APENAS ele no mapa
   const displayLocations = highlightedTagId 
     ? locations.filter(l => l.tagId === highlightedTagId) 
     : locations;
@@ -118,16 +165,22 @@ export const MapComponent: React.FC<MapProps> = ({
         const vehicle = vehicles.find(v => v.tagId === loc.tagId);
         const tag = tags.find(t => t.id === loc.tagId);
         
-        // Se não tem veículo, é uma tag solta (unlinked)
         const isUnlinked = !vehicle;
         const category = vehicle ? categories.find(c => c.id === vehicle.type) : undefined;
 
-        // Use stable loc.id here (which is now tag.id for live mode)
         return (
           <Marker 
               key={loc.id} 
               position={[loc.lat, loc.lon]} 
-              icon={createVehicleIcon(isSelected, category?.fipeType, category?.name, '#f59e0b', isUnlinked)}
+              icon={createVehicleIcon(
+                  isSelected, 
+                  category?.fipeType, 
+                  category?.name, 
+                  '#f59e0b', 
+                  isUnlinked, 
+                  showPlates, // Passa estado
+                  vehicle?.plate // Passa texto
+              )}
               eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
           >
               <Popup closeButton={false} className="custom-popup" offset={[0, -20]}>
@@ -151,7 +204,6 @@ export const MapComponent: React.FC<MapProps> = ({
                           </div>
                       </div>
 
-                      {/* Battery Indicator (K-Tag v1.2) */}
                       {loc.battery && (
                           <div className="flex items-center gap-2 mb-2 px-1.5">
                               <BatteryCharging size={12} style={{ color: loc.battery.color }} />
@@ -200,8 +252,6 @@ export const MapComponent: React.FC<MapProps> = ({
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
 
           {isFleetMode ? (
-              // Use standard MarkerClusterGroup. Stability is handled by stable keys in LiveMap.tsx
-              // If a specific tag is highlighted, render only that marker to avoid cluster UI interference
               highlightedTagId ? (
                   renderMarkers(displayLocations)
               ) : (
@@ -214,12 +264,11 @@ export const MapComponent: React.FC<MapProps> = ({
                   </MarkerClusterGroup>
               )
           ) : (
-              // Modo Histórico (Single Path)
               <>
                 {locations.length > 0 && (
                     <Marker 
                         position={[locations[0].lat, locations[0].lon]} 
-                        icon={createVehicleIcon(true)}
+                        icon={createVehicleIcon(true, undefined, undefined, '#f59e0b', false, showPlates, 'INÍCIO')}
                     />
                 )}
                 <Polyline 

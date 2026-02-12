@@ -35,8 +35,9 @@ export const LiveMap = () => {
   const [tagSearchTerm, setTagSearchTerm] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filter, setFilter] = useState<FleetFilter>('all');
-  const [displayLimit, setDisplayLimit] = useState<DisplayLimit>(50); // Alterado de limit50 (bool) para displayLimit
+  const [displayLimit, setDisplayLimit] = useState<DisplayLimit>(50);
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
+  const [showPlates, setShowPlates] = useState(false); // Novo Estado
   
   // Export State
   const [exporting, setExporting] = useState(false);
@@ -56,17 +57,14 @@ export const LiveMap = () => {
       historyItems, historyLoading, showHistoryList, 
       fetchHistory, closeHistory, setShowHistoryList 
   } = useTagHistory(selectedTagId, tags, fleetLocations, (items) => {
-      // Callback to resolve initial addresses for history items
       items.forEach(resolveAddress);
   });
 
-  // URL Param Handling
   useEffect(() => {
       const urlTagId = searchParams.get('tagId');
       if (urlTagId) handleSelection(urlTagId);
   }, [searchParams]);
 
-  // Derived State
   const stats = useMemo(() => calculateFleetStats(vehicles, fleetLocations), [vehicles, fleetLocations]);
   
   const filteredList = useMemo(() => 
@@ -77,19 +75,16 @@ export const LiveMap = () => {
       filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles),
   [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
 
-  // Selected Item Data
   const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
   const activeTag = useMemo(() => tags.find(t => t.id === selectedTagId), [tags, selectedTagId]);
   const activeCategory = useMemo(() => activeVehicle ? categories.find(c => c.id === activeVehicle.type) : undefined, [activeVehicle, categories]);
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
 
-  // Address Resolution for Selected Item
   useEffect(() => {
       if (lastLoc) resolveAddress(lastLoc);
   }, [lastLoc]);
 
-  // Handlers
   const handleSelection = (tagId: string) => {
     setSelectedTagId(tagId);
     setIsSheetExpanded(true); 
@@ -104,7 +99,6 @@ export const LiveMap = () => {
         const label = activeVehicle ? `${activeVehicle.plate} - ${activeVehicle.model}` : `Tag: ${activeTag?.name || 'Desconhecida'}`;
         const data = await processExportData(historyItems, resolvedAddresses, setExportProgress);
         
-        // Update local address cache with newly resolved ones
         data.forEach((d: any, idx: number) => {
              if (historyItems[idx]) addResolvedAddress(historyItems[idx].id, d.endereco);
         });
@@ -143,6 +137,8 @@ export const LiveMap = () => {
         setFilter={setFilter}
         displayLimit={displayLimit}
         setDisplayLimit={setDisplayLimit}
+        showPlates={showPlates} // Pass
+        setShowPlates={setShowPlates} // Pass
       />
 
       <div className="flex-1 relative z-0">
@@ -154,6 +150,7 @@ export const LiveMap = () => {
             categories={categories}
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleSelection} 
+            showPlates={showPlates} // Pass
         />
       </div>
 

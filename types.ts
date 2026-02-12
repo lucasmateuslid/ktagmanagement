@@ -176,6 +176,7 @@ export interface Technician {
   phone: string;
   active: boolean;
   color?: string; 
+  services?: string[]; // Lista de DeviceTypes que o técnico atende
   unavailableDates?: string[]; // Array de datas ISO (YYYY-MM-DD)
   serviceRates?: {
     installation: number;

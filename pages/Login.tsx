@@ -85,6 +85,14 @@ export const Login = () => {
     }
   };
 
+  const getErrorImage = (errorMsg: string) => {
+      const lowerMsg = errorMsg.toLowerCase();
+      if (lowerMsg.includes('muitas tentativas')) return 'limit_exceeded.png';
+      if (lowerMsg.includes('senha')) return 'wrong_password.png';
+      if (lowerMsg.includes('usuário') || lowerMsg.includes('encontrado')) return 'invalid_user.png';
+      return null;
+  };
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-6">
       <motion.div
@@ -106,14 +114,22 @@ export const Login = () => {
           </p>
         </div>
 
-        {/* Mensagem de erro */}
+        {/* Mensagem de erro com Imagem */}
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-red-950/60 border border-red-800/60 text-red-200 px-5 py-4 rounded-2xl text-center text-sm"
+            className="flex flex-col items-center gap-4 bg-red-950/60 border border-red-800/60 text-red-200 px-5 py-6 rounded-2xl text-center text-sm"
           >
-            {error}
+            {getErrorImage(error) && (
+                <img 
+                    src={`/${getErrorImage(error)}`} 
+                    alt="Error Status" 
+                    className="w-24 h-24 object-contain mb-2 opacity-90"
+                    onError={(e) => e.currentTarget.style.display = 'none'} // Esconde se imagem não existir
+                />
+            )}
+            <span className="font-bold">{error}</span>
           </motion.div>
         )}
 

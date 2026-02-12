@@ -384,6 +384,10 @@ export const storage = {
     if (db) await setDoc(doc(db, KEYS.TECHNICIANS, tech.id), cleanData(tech));
   },
 
+  deleteTechnician: async (id: string) => {
+    if (db) await deleteDoc(doc(db, KEYS.TECHNICIANS, id));
+  },
+
   getSchedules: async (role: string, userId: string): Promise<Schedule[]> => {
     if (!db) return [];
     let q;
