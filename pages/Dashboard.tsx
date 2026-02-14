@@ -54,7 +54,7 @@ export const Dashboard = () => {
   // 2. Redirect Client
   useEffect(() => {
     if (user?.role === 'client') {
-      navigate('/map', { replace: true });
+      navigate('/vehicles', { replace: true });
     }
   }, [user, navigate]);
 

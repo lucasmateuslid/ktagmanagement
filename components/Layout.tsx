@@ -12,7 +12,8 @@ import {
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
-  Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone
+  Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
+  Home
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -24,6 +25,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isClientMenuOpen, setIsClientMenuOpen] = useState(false); // Novo estado para menu do cliente
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false); // State for Changelog
@@ -37,6 +39,18 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   }, [user]);
 
   const isMapPage = location.pathname === '/map';
+  const isClient = user?.role === 'client';
+  
+  // Detecta se é mobile (largura < 768px)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+      const handleResize = () => setIsMobile(window.innerWidth < 768);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Define se deve mostrar o header do cliente (apenas se NÃO for a página de mapa no mobile)
+  const showClientHeader = isClient && isMobile && !isMapPage;
 
   const handleLogout = () => {
     logout();
@@ -58,14 +72,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const getMenuSections = () => {
     const role = user?.role || 'user';
     
-    if (role === 'client') {
-      return [
-        { title: 'MEU PAINEL', items: [
-            { label: 'MAPA TEMPO REAL', path: '/map', icon: Map },
-            { label: 'MINHA FROTA', path: '/vehicles', icon: CarFront }
-        ]}
-      ];
-    }
+    // O menu do cliente é tratado separadamente no render
+    if (role === 'client') return [];
 
     // Menu for Non-Clients (Admin, Moderator, User)
     return [
@@ -104,15 +112,16 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const menuSections = getMenuSections();
 
   return (
-    <div className="flex h-screen bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col">
+    <div className="flex h-screen bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col relative">
       
+      {/* GLOBAL ALERTS (TOASTS) - MOVIDO PARA O TOPO ABSOLUTO PARA EVITAR Z-INDEX ISSUES */}
       <AnimatePresence>
         {criticalAlerts.length > 0 && (
           <MotionDiv 
             initial={{ height: 0, opacity: 0 }} 
             animate={{ height: 'auto', opacity: 1 }} 
             exit={{ height: 0, opacity: 0 }}
-            className="bg-red-600 text-white z-[9999] flex flex-col items-center justify-center shadow-lg relative"
+            className="bg-red-600 text-white z-[9999] flex flex-col items-center justify-center shadow-lg relative shrink-0"
           >
              {criticalAlerts.map((msg, idx) => (
                 <div key={idx} className="flex items-center gap-2 py-2 px-4 text-[10px] md:text-xs font-black uppercase tracking-widest animate-pulse">
@@ -123,14 +132,13 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         )}
       </AnimatePresence>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        <AnimatePresence>
+      <AnimatePresence>
           {activeToast && (
             <MotionDiv 
               initial={{ opacity: 0, y: -50, x: '-50%' }} 
               animate={{ opacity: 1, y: 0, x: '-50%' }} 
               exit={{ opacity: 0, y: -50, x: '-50%' }}
-              className="fixed top-6 left-1/2 z-[9999] w-[90%] max-w-md"
+              className="fixed top-6 left-1/2 z-[9999] w-[90%] max-w-md pointer-events-auto"
             >
               <div className={`
                 p-4 rounded-2xl shadow-2xl border backdrop-blur-md flex items-start gap-4
@@ -146,8 +154,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               </div>
             </MotionDiv>
           )}
-        </AnimatePresence>
+      </AnimatePresence>
 
+      <div className="flex flex-1 overflow-hidden relative z-0">
+        
         {isSidebarOpen && (
           <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2999] lg:hidden"
@@ -155,186 +165,332 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           />
         )}
 
-        <aside className={`
-          fixed lg:static inset-y-0 left-0 z-[3000] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          ${isCollapsed ? 'w-24' : 'w-72'}
-        `}>
-          <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center px-0' : 'px-8'} border-b border-zinc-100 dark:border-zinc-800 transition-all`}>
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl">
-                <span className="font-display font-black text-white dark:text-black text-lg">K</span>
-              </div>
-              {!isCollapsed && (
-                <div className="flex flex-col">
-                  <span className="font-display font-black text-lg leading-none text-zinc-900 dark:text-white tracking-tight">K-TAG</span>
-                  <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.2em]">Manager Pro</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <nav className="flex-1 overflow-y-auto py-8 space-y-8 custom-scrollbar">
-            {menuSections.map((section, idx) => (
-              <div key={idx} className="px-4">
-                {!isCollapsed && (
-                  <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mb-3">{section.title}</h3>
-                )}
-                <div className="space-y-1">
-                  {section.items.map((item) => {
-                    const isActive = location.pathname === item.path;
-                    return (
-                      <Link 
-                        key={item.path} 
-                        to={item.path}
-                        onClick={() => setIsSidebarOpen(false)}
-                        className={`flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all group relative ${
-                          isActive 
-                            ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500' 
-                            : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
-                        } ${isCollapsed ? 'justify-center' : ''}`}
-                        title={isCollapsed ? item.label : ''}
-                      >
-                        <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-                        {!isCollapsed && (
-                          <span className="text-[11px] font-black uppercase tracking-widest">{item.label}</span>
-                        )}
-                        {isActive && !isCollapsed && (
-                          <div className="absolute right-4 w-1.5 h-1.5 rounded-full bg-primary-500" />
-                        )}
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </nav>
-
-          <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-            <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
-                <Settings size={20} />
-                {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Preferências</span>}
-            </Link>
-            
-            <button onClick={handleLogout} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
-                <LogOut size={20} />
-                {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Desconectar</span>}
-            </button>
-
-            <button 
-              onClick={() => setIsCollapsed(!isCollapsed)} 
-              className="w-full mt-2 py-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-primary-500 transition-colors"
-            >
-              {isCollapsed ? <ChevronRight size={16} /> : <div className="flex items-center gap-2"><ChevronLeft size={14} /><span className="text-[9px] font-black uppercase">Recolher</span></div>}
-            </button>
-          </div>
-        </aside>
-
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-100 dark:bg-black">
-          <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
-              >
-                <Menu size={24} />
-              </button>
-              
-              <div className="hidden md:flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-6 h-10 justify-center">
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Portal K-TAG</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>
+        {/* SIDEBAR PADRÃO - Escondida para Cliente Mobile */}
+        {!(isClient && isMobile) && (
+            <aside className={`
+              fixed lg:static inset-y-0 left-0 z-[3000] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col
+              ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+              ${isCollapsed ? 'w-24' : 'w-72'}
+            `}>
+              <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center px-0' : 'px-8'} border-b border-zinc-100 dark:border-zinc-800 transition-all`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl">
+                    <span className="font-display font-black text-white dark:text-black text-lg">K</span>
                   </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-                {/* Botão de Novidades */}
-                <button
-                    onClick={() => setIsChangelogOpen(true)}
-                    className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-blue-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-blue-500/30"
-                    title="Novidades do Sistema"
-                >
-                    <Megaphone size={20}/>
-                </button>
-
-                <button 
-                  onClick={() => setIsNotifOpen(!isNotifOpen)}
-                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all relative border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
-                >
-                  <Bell size={20} />
-                  {notifications.filter(n => !n.read).length > 0 && (
-                    <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-zinc-800" />
+                  {!isCollapsed && (
+                    <div className="flex flex-col">
+                      <span className="font-display font-black text-lg leading-none text-zinc-900 dark:text-white tracking-tight">K-TAG</span>
+                      <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.2em]">Manager Pro</span>
+                    </div>
                   )}
+                </div>
+              </div>
+
+              <nav className="flex-1 overflow-y-auto py-8 space-y-8 custom-scrollbar">
+                {menuSections.map((section, idx) => (
+                  <div key={idx} className="px-4">
+                    {!isCollapsed && (
+                      <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mb-3">{section.title}</h3>
+                    )}
+                    <div className="space-y-1">
+                      {section.items.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <Link 
+                            key={item.path} 
+                            to={item.path}
+                            onClick={() => setIsSidebarOpen(false)}
+                            className={`flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all group relative ${
+                              isActive 
+                                ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500' 
+                                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
+                            } ${isCollapsed ? 'justify-center' : ''}`}
+                            title={isCollapsed ? item.label : ''}
+                          >
+                            <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                            {!isCollapsed && (
+                              <span className="text-[11px] font-black uppercase tracking-widest">{item.label}</span>
+                            )}
+                            {isActive && !isCollapsed && (
+                              <div className="absolute right-4 w-1.5 h-1.5 rounded-full bg-primary-500" />
+                            )}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </nav>
+
+              <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+                <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
+                    <Settings size={20} />
+                    {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Preferências</span>}
+                </Link>
+                
+                <button onClick={handleLogout} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
+                    <LogOut size={20} />
+                    {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Desconectar</span>}
                 </button>
 
                 <button 
-                  onClick={toggleTheme}
-                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
+                  onClick={() => setIsCollapsed(!isCollapsed)} 
+                  className="w-full mt-2 py-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-primary-500 transition-colors"
                 >
-                  {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                  {isCollapsed ? <ChevronRight size={16} /> : <div className="flex items-center gap-2"><ChevronLeft size={14} /><span className="text-[9px] font-black uppercase">Recolher</span></div>}
                 </button>
-                
-                <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
+              </div>
+            </aside>
+        )}
 
-                <div className="flex items-center gap-3 pl-2 group cursor-default">
-                  <div className="flex flex-col items-end hidden sm:flex">
-                      <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight leading-none mb-1">{user?.name}</p>
-                      {roleStyle && (
-                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
-                            {RoleIcon && <RoleIcon size={8} className={roleStyle.color} strokeWidth={3} />}
-                            <span className={`text-[8px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
-                        </div>
-                      )}
-                  </div>
-                  <div className={`w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}>
-                      <span className="font-black text-lg text-zinc-700 dark:text-zinc-300">{user?.name?.charAt(0) || 'U'}</span>
+        <main className={`flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-100 dark:bg-black transition-all ${isClient && isMobile && isMapPage ? 'z-[100]' : ''}`}>
+          {/* HEADER PADRÃO - Visível para não clientes ou desktop */}
+          {!(isClient && isMobile) ? (
+              <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0">
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
+                  >
+                    <Menu size={24} />
+                  </button>
+                  
+                  <div className="hidden md:flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-6 h-10 justify-center">
+                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Portal K-TAG</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>
+                      </div>
                   </div>
                 </div>
 
-                {isNotifOpen && (
-                    <>
-                      <div className="fixed inset-0 z-[4000]" onClick={() => setIsNotifOpen(false)} />
-                      <div className="absolute right-8 top-20 mt-2 w-80 sm:w-96 bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl border border-zinc-200 dark:border-zinc-800 z-[5000] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/50">
-                            <h4 className="text-xs font-black uppercase tracking-widest">Notificações</h4>
-                            <button onClick={clearAll} className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-bold uppercase">Limpar tudo</button>
-                        </div>
-                        <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                            {notifications.length === 0 ? (
-                              <div className="p-10 text-center text-zinc-400 text-[10px] uppercase font-bold flex flex-col items-center gap-2">
-                                  <Bell size={24} className="opacity-20"/>
-                                  Nenhuma notificação
-                              </div>
-                            ) : (
-                              notifications.map(n => (
-                                <div key={n.id} className={`p-4 border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-950/50 transition-colors flex gap-3 ${!n.read ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}>
-                                  <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.type === 'error' ? 'bg-red-500' : n.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-                                  <div className="flex-1">
-                                      <p className="text-[11px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{n.title}</p>
-                                      <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed font-medium">{n.message}</p>
-                                      <span className="text-[9px] text-zinc-300 mt-2 block font-mono">{new Date(n.timestamp).toLocaleTimeString()}</span>
-                                  </div>
-                                  {!n.read && (
-                                    <button onClick={() => markAsRead(n.id)} className="text-zinc-300 hover:text-primary-500 self-start"><CheckCircle2 size={14}/></button>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                        </div>
-                      </div>
-                    </>
-                )}
-            </div>
-          </header>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsChangelogOpen(true)}
+                        className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-blue-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-blue-500/30"
+                        title="Novidades do Sistema"
+                    >
+                        <Megaphone size={20}/>
+                    </button>
 
-          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : 'p-6 lg:p-8'}`}>
+                    <button 
+                      onClick={() => setIsNotifOpen(!isNotifOpen)}
+                      className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all relative border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
+                    >
+                      <Bell size={20} />
+                      {notifications.filter(n => !n.read).length > 0 && (
+                        <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-zinc-800" />
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={toggleTheme}
+                      className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30"
+                    >
+                      {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
+                    
+                    <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
+
+                    <div className="flex items-center gap-3 pl-2 group cursor-default">
+                      <div className="flex flex-col items-end hidden sm:flex">
+                          <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight leading-none mb-1">{user?.name}</p>
+                          {roleStyle && (
+                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
+                                {RoleIcon && <RoleIcon size={8} className={roleStyle.color} strokeWidth={3} />}
+                                <span className={`text-[8px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
+                            </div>
+                          )}
+                      </div>
+                      <div className={`w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}>
+                          <span className="font-black text-lg text-zinc-700 dark:text-zinc-300">{user?.name?.charAt(0) || 'U'}</span>
+                      </div>
+                    </div>
+
+                    {isNotifOpen && (
+                        <>
+                          <div className="fixed inset-0 z-[4000]" onClick={() => setIsNotifOpen(false)} />
+                          <div className="absolute right-8 top-20 mt-2 w-80 sm:w-96 bg-white dark:bg-zinc-900 rounded-[24px] shadow-2xl border border-zinc-200 dark:border-zinc-800 z-[5000] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                            <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/50">
+                                <h4 className="text-xs font-black uppercase tracking-widest">Notificações</h4>
+                                <button onClick={clearAll} className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-bold uppercase">Limpar tudo</button>
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {notifications.length === 0 ? (
+                                  <div className="p-10 text-center text-zinc-400 text-[10px] uppercase font-bold flex flex-col items-center gap-2">
+                                      <Bell size={24} className="opacity-20"/>
+                                      Nenhuma notificação
+                                  </div>
+                                ) : (
+                                  notifications.map(n => (
+                                    <div key={n.id} className={`p-4 border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-950/50 transition-colors flex gap-3 ${!n.read ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}>
+                                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.type === 'error' ? 'bg-red-500' : n.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                                      <div className="flex-1">
+                                          <p className="text-[11px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">{n.title}</p>
+                                          <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed font-medium">{n.message}</p>
+                                          <span className="text-[9px] text-zinc-300 mt-2 block font-mono">{new Date(n.timestamp).toLocaleTimeString()}</span>
+                                      </div>
+                                      {!n.read && (
+                                        <button onClick={() => markAsRead(n.id)} className="text-zinc-300 hover:text-primary-500 self-start"><CheckCircle2 size={14}/></button>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                            </div>
+                          </div>
+                        </>
+                    )}
+                </div>
+              </header>
+          ) : showClientHeader && (
+              // HEADER CLIENTE MOBILE - Estilizado (Dark/Yellow) - SÓ APARECE SE NÃO FOR MAPA
+              <div className="bg-zinc-900 px-6 pt-10 pb-16 relative overflow-visible shrink-0 shadow-xl border-b border-zinc-800 z-[1000]">
+                  <div className="flex justify-between items-start relative z-10">
+                      <div>
+                          <h1 className="text-2xl font-display font-black text-white tracking-tight">
+                              Olá, {user?.name.split(' ')[0]}...
+                          </h1>
+                          <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+                              {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase()}
+                          </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                          <button 
+                              onClick={() => setIsNotifOpen(!isNotifOpen)}
+                              className="bg-zinc-800 backdrop-blur-sm p-3 rounded-2xl text-zinc-300 hover:text-white hover:bg-zinc-700 relative transition-colors border border-zinc-700/50"
+                          >
+                              <Bell size={20} />
+                              {notifications.filter(n => !n.read).length > 0 && (
+                                  <span className="absolute top-2 right-2 w-2 h-2 bg-primary-500 rounded-full border-2 border-zinc-900" />
+                              )}
+                          </button>
+                          <button 
+                              onClick={() => setIsClientMenuOpen(true)}
+                              className="bg-white text-black p-3 rounded-2xl shadow-lg active:scale-95 transition-transform border-2 border-transparent hover:border-primary-500"
+                          >
+                              <Menu size={20} strokeWidth={2.5}/>
+                          </button>
+                      </div>
+                  </div>
+                  
+                  {/* Pattern Decorativo Carbon */}
+                  <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-zinc-800/30 rounded-full blur-3xl pointer-events-none"></div>
+                  <div className="absolute top-0 right-0 w-full h-full opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#f59e0b 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+
+                  {/* NOTIFICAÇÕES MOBILE OVERLAY */}
+                  <AnimatePresence>
+                    {isNotifOpen && (
+                        <>
+                          <MotionDiv 
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[4000] bg-black/60 backdrop-blur-sm" 
+                            onClick={() => setIsNotifOpen(false)} 
+                          />
+                          <MotionDiv
+                            initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }}
+                            className="absolute right-4 top-24 mt-2 w-[calc(100%-32px)] bg-zinc-900 rounded-[24px] shadow-2xl border border-zinc-800 z-[5000] overflow-hidden"
+                          >
+                            <div className="p-5 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-white">Notificações</h4>
+                                <button onClick={clearAll} className="text-[10px] text-zinc-400 hover:text-red-500 transition-colors font-bold uppercase">Limpar</button>
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto custom-scrollbar bg-zinc-900">
+                                {notifications.length === 0 ? (
+                                  <div className="p-10 text-center text-zinc-500 text-[10px] uppercase font-bold flex flex-col items-center gap-2">
+                                      <Bell size={24} className="opacity-20"/>
+                                      Sem novidades
+                                  </div>
+                                ) : (
+                                  notifications.map(n => (
+                                    <div key={n.id} className={`p-4 border-b border-zinc-800 flex gap-3 ${!n.read ? 'bg-zinc-800/50' : ''}`}>
+                                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.type === 'error' ? 'bg-red-500' : n.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                                      <div className="flex-1">
+                                          <p className="text-[11px] font-black text-white uppercase tracking-tight">{n.title}</p>
+                                          <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed font-medium">{n.message}</p>
+                                      </div>
+                                      {!n.read && <button onClick={() => markAsRead(n.id)} className="text-zinc-500 hover:text-primary-500"><CheckCircle2 size={14}/></button>}
+                                    </div>
+                                  ))
+                                )}
+                            </div>
+                          </MotionDiv>
+                        </>
+                    )}
+                  </AnimatePresence>
+              </div>
+          )}
+
+          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : (isClient && isMobile ? 'px-4 pb-32 -mt-6' : 'p-6 lg:p-8')}`}>
               {children || <Outlet />}
           </div>
           
           {user?.role !== 'client' && <AiAssistant />}
           {isChangelogOpen && <ChangelogModal onClose={() => setIsChangelogOpen(false)} />}
+
+          {/* BOTTOM NAVIGATION (CLIENTE MOBILE) - Estilizado Carbon Glass */}
+          {isClient && isMobile && (
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-900/90 border border-zinc-800/50 backdrop-blur-xl rounded-full shadow-2xl px-10 py-3.5 flex items-center gap-12 z-[2000] ring-1 ring-white/10">
+                  <Link to="/vehicles" className={`relative p-2 transition-all group flex flex-col items-center gap-1`}>
+                      <CarFront size={22} className={`transition-colors duration-300 ${location.pathname === '/vehicles' ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname === '/vehicles' ? 2.5 : 2}/>
+                      {location.pathname === '/vehicles' && (
+                          <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>
+                      )}
+                  </Link>
+                  
+                  {/* Divisor */}
+                  <div className="w-px h-6 bg-zinc-800 opacity-50"></div>
+
+                  <Link to="/map" className={`relative p-2 transition-all group flex flex-col items-center gap-1`}>
+                      <MapPin size={22} className={`transition-colors duration-300 ${location.pathname === '/map' ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname === '/map' ? 2.5 : 2}/>
+                      {location.pathname === '/map' && (
+                          <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>
+                      )}
+                  </Link>
+              </div>
+          )}
+
+          {/* MENU LATERAL MOBILE CLIENTE (MOVIDO PARA AQUI PARA SOBREPOR O NAV BAR) */}
+          <AnimatePresence>
+            {isClientMenuOpen && (
+              <>
+                <MotionDiv 
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[5000]"
+                  onClick={() => setIsClientMenuOpen(false)}
+                />
+                <MotionDiv
+                  initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                  className="fixed inset-y-0 right-0 w-[80%] max-w-xs bg-zinc-900 border-l border-zinc-800 shadow-2xl z-[5001] flex flex-col p-6"
+                >
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-xl font-display font-black text-white uppercase tracking-tight">Menu</h3>
+                      <button onClick={() => setIsClientMenuOpen(false)} className="p-2 bg-zinc-800 rounded-xl text-zinc-400"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-2 flex-1">
+                      <Link to="/vehicles" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                        <CarFront size={18} className="text-primary-500"/> Minha Frota
+                      </Link>
+                      <Link to="/map" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                        <Map size={18} className="text-primary-500"/> Mapa Tempo Real
+                      </Link>
+                      <Link to="/settings" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                        <Settings size={18} className="text-zinc-400"/> Configurações
+                      </Link>
+                      {/* BOTÃO DE TEMA */}
+                      <button onClick={() => { toggleTheme(); setIsClientMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all text-left">
+                        {theme === 'dark' ? <Sun size={18} className="text-yellow-500"/> : <Moon size={18} className="text-blue-300"/>} 
+                        <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>
+                      </button>
+                  </div>
+
+                  <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 mt-auto hover:bg-red-500 hover:text-white transition-all">
+                      <LogOut size={16}/> Sair do App
+                  </button>
+                </MotionDiv>
+              </>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </div>

@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
-import { Plus } from 'lucide-react';
+import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { geocodingService } from '../../services/geocoding';
 
 // Hooks
 import { useVehiclesData } from './hooks/useVehiclesData';
@@ -19,11 +21,14 @@ import { VehicleTable } from './components/VehicleTable';
 import { VehicleFiltersBar } from './components/VehicleFiltersBar';
 import { VehicleModal } from './components/VehicleModal';
 import { FipeModal } from './components/FipeModal';
+import { Vehicle, LocationHistory } from '../../types';
 
-const { useSearchParams } = ReactRouterDOM as any;
+const { useSearchParams, useNavigate } = ReactRouterDOM as any;
+const MotionDiv = motion.div as any;
 
 export const VehiclesPage = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   
   // 1. Data Fetching
@@ -60,7 +65,12 @@ export const VehiclesPage = () => {
 
   // 7. Auto Open Modal from URL
   const isClientView = currentUser?.role === 'client';
+  const isMobile = window.innerWidth < 768; 
   const [isTagListOpen, setIsTagListOpen] = React.useState(false);
+
+  // UI State for Client Mobile
+  const [showSearch, setShowSearch] = React.useState(false);
+  const [isGridView, setIsGridView] = React.useState(true); // Toggle Grid/List
 
   React.useEffect(() => {
     if (searchParams.get('action') === 'new' && !isClientView) {
@@ -70,8 +80,6 @@ export const VehiclesPage = () => {
 
   // Derived state for plate validation visualization passed to modal
   const isPlateValid = React.useMemo(() => {
-      // Reuse logic or pass down validation function
-      // Simple check here as real validation is inside hook
       return !!formData.plate && formData.plate.length >= 7; 
   }, [formData.plate]);
 
@@ -82,6 +90,191 @@ export const VehiclesPage = () => {
       }
   };
 
+  // --- CLIENT MOBILE VIEW COMPONENTS ---
+
+  const ClientMobileHeader = () => (
+      <div className="bg-zinc-900 rounded-[32px] p-8 shadow-2xl border border-zinc-800 relative overflow-hidden mb-6">
+          <div className="relative z-10">
+              <h2 className="text-6xl font-display font-black text-primary-500 tracking-tighter leading-none">{vehicles.length}</h2>
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mt-2">Frota Monitorada</p>
+              
+              <div className="flex items-center gap-2 mt-6 text-[10px] font-mono text-zinc-500 bg-black/20 w-fit px-3 py-1 rounded-full border border-white/5">
+                  <Activity size={10} className="text-emerald-500" />
+                  <span>Sincronizado: {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+              </div>
+          </div>
+          <div className="absolute -right-6 -bottom-6 text-zinc-800/50 pointer-events-none transform rotate-[-10deg]">
+              <CarFront size={160} strokeWidth={1} />
+          </div>
+      </div>
+  );
+
+  const ClientVehicleCard: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
+      const category = categories.find(c => c.id === vehicle.type);
+      const isMoto = category?.fipeType === 'motos' || vehicle.model.toLowerCase().includes('moto');
+      
+      const lastPos = vehicle.lastPosition as LocationHistory | undefined;
+      const [address, setAddress] = useState<string>('Buscando localização...');
+
+      // Efeito para resolver endereço real
+      useEffect(() => {
+          let isMounted = true;
+          const resolve = async () => {
+              if (lastPos) {
+                  try {
+                      // Usa cache ou busca nova (geocodingService já trata cache interno se implementado)
+                      const addr = await geocodingService.reverseGeocode(lastPos.lat, lastPos.lon);
+                      if (isMounted) setAddress(addr);
+                  } catch (e) {
+                      if (isMounted) setAddress('Endereço indisponível');
+                  }
+              } else {
+                  if (isMounted) setAddress('Sem dados de localização');
+              }
+          };
+          resolve();
+          return () => { isMounted = false; };
+      }, [lastPos]);
+
+      if (isGridView) {
+          // LAYOUT EM GRADE (CARD PREMIUM)
+          return (
+              <div className="bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800 mb-4 relative">
+                  <div className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                          <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center shrink-0 text-zinc-400">
+                              {isMoto ? <Bike size={24} /> : <CarFront size={24} />}
+                          </div>
+                          {lastPos ? (
+                              <div className="px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1.5">
+                                  <Circle size={6} fill="currentColor" /> Online
+                              </div>
+                          ) : (
+                              <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-full text-[9px] font-black uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">
+                                  Offline
+                              </div>
+                          )}
+                      </div>
+
+                      <div className="mb-6">
+                          <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none mb-1">{vehicle.plate}</h3>
+                          <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide leading-tight line-clamp-1">{vehicle.model}</p>
+                      </div>
+
+                      <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                          <div className="flex items-start gap-3">
+                              <MapPin size={16} className="text-primary-500 shrink-0 mt-0.5" />
+                              <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 leading-tight line-clamp-2">
+                                  {address}
+                              </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-zinc-400 pl-0.5">
+                              <Clock size={12} />
+                              <span className="text-[10px] font-mono font-bold">
+                                  {lastPos ? new Date(lastPos.timestamp).toLocaleString() : '--/--/-- --:--'}
+                              </span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          );
+      } else {
+          // LAYOUT EM LISTA (COMPACTO)
+          return (
+              <div className="bg-white dark:bg-zinc-900 rounded-[20px] p-4 shadow-sm border border-zinc-200 dark:border-zinc-800 mb-3 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-xl flex items-center justify-center shrink-0 text-zinc-400">
+                      {isMoto ? <Bike size={20} /> : <CarFront size={20} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-0.5">
+                          <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">{vehicle.plate}</h3>
+                          <div className={`w-2 h-2 rounded-full ${lastPos ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-medium truncate mb-1">{vehicle.model}</p>
+                      <p className="text-[9px] text-zinc-400 truncate flex items-center gap-1"><MapPin size={10}/> {address}</p>
+                  </div>
+              </div>
+          );
+      }
+  };
+
+  // Ícone de Refresh simples para o componente
+  const RefreshCwIcon = ({size}: {size:number}) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+          <path d="M21 3v5h-5"></path>
+          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+          <path d="M8 16H3v5"></path>
+      </svg>
+  );
+
+  // --- RENDER ---
+
+  if (isClientView && isMobile) {
+      return (
+          <div className="space-y-6 pt-2">
+              <ClientMobileHeader />
+              
+              {/* Toolbar */}
+              <div className="flex justify-between items-center px-1 mb-2 sticky top-0 bg-zinc-100/90 dark:bg-black/90 backdrop-blur-md py-2 z-20 transition-all">
+                  <div onClick={() => setShowSearch(!showSearch)} className="flex items-center gap-3 cursor-pointer">
+                      <h2 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Meus veículos</h2>
+                      <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 text-zinc-400">
+                          {showSearch ? <X size={14}/> : <Search size={14}/>}
+                      </div>
+                  </div>
+                  <div className="flex bg-zinc-200 dark:bg-zinc-800 p-1 rounded-xl">
+                      <button 
+                          onClick={() => setIsGridView(true)}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isGridView ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-zinc-400'}`}
+                      >
+                          <LayoutGrid size={16}/>
+                      </button>
+                      <button 
+                          onClick={() => setIsGridView(false)}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${!isGridView ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-zinc-400'}`}
+                      >
+                          <List size={16}/> 
+                      </button>
+                  </div>
+              </div>
+
+              {/* Search Bar */}
+              <AnimatePresence>
+                  {showSearch && (
+                      <MotionDiv initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden mb-6 px-1">
+                          <input 
+                              type="text" 
+                              placeholder="Buscar placa ou modelo..." 
+                              value={searchTerm} 
+                              onChange={e => setSearchTerm(e.target.value)} 
+                              className="w-full h-14 rounded-2xl bg-white dark:bg-zinc-900 px-6 font-bold text-sm outline-none border border-zinc-200 dark:border-zinc-800 shadow-sm text-zinc-900 dark:text-white focus:border-primary-500 transition-colors"
+                              autoFocus
+                          />
+                      </MotionDiv>
+                  )}
+              </AnimatePresence>
+
+              {/* Cards List */}
+              <div className="space-y-1 pb-48">
+                  {filteredVehicles.map(v => (
+                      <ClientVehicleCard key={v.id} vehicle={v} />
+                  ))}
+                  {filteredVehicles.length === 0 && (
+                      <div className="py-20 text-center opacity-40 flex flex-col items-center justify-center gap-4">
+                          <div className="w-16 h-16 bg-zinc-200 dark:bg-zinc-800 rounded-full flex items-center justify-center">
+                             <CarFront size={32} className="text-zinc-400"/>
+                          </div>
+                          <p className="text-xs font-black uppercase text-zinc-500 tracking-widest">Nenhum veículo encontrado</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
+  }
+
+  // --- STANDARD VIEW (DESKTOP & NON-CLIENTS) ---
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">

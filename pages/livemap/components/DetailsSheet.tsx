@@ -40,7 +40,8 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
         <AnimatePresence>
             {selectedTagId && (
               <MotionDiv initial={{ y: '100%' }} animate={{ y: isExpanded ? 0 : 'calc(100% - 90px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-                className="fixed md:absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[32px] md:rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden max-h-[90vh] md:max-h-none"
+                // Aumentado z-index para 3000 (acima do Nav que é 2000)
+                className="fixed md:absolute bottom-0 left-0 right-0 z-[3000] bg-white dark:bg-zinc-900 rounded-t-[32px] md:rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden max-h-[90vh] md:max-h-none"
               >
                 <div className="h-[90px] md:h-[100px] px-6 md:px-8 flex items-center justify-between cursor-pointer group" onClick={toggleExpanded}>
                   <div className="flex items-center gap-4 md:gap-5">
