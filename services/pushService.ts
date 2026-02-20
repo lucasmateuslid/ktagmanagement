@@ -3,7 +3,6 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 // IMPORTANTE: Gere suas chaves rodando `npx web-push generate-vapid-keys` no terminal
-// Cole a CHAVE PÚBLICA abaixo. A Privada vai apenas no Backend (functions).
 const PUBLIC_VAPID_KEY = 'SUA_PUBLIC_KEY_AQUI'; 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -23,48 +22,44 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export const pushService = {
   register: async (userId: string) => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.warn('Push notifications não suportadas neste navegador.');
+    // Verificação de Segurança: Service Workers exigem contexto seguro (HTTPS)
+    // E não podem ser registrados em alguns ambientes de preview/iframe
+    if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('⚠️ Web Push ignorado: Ambiente não seguro ou navegador incompatível.');
       return;
     }
 
     try {
-      // 1. Registrar o Service Worker (arquivo deve estar em public/sw.js)
-      // Usamos path relativo que funciona melhor em ambientes de subdiretório
+      // 1. Registrar o Service Worker
       const registration = await navigator.serviceWorker.register('./sw.js');
 
-      // 2. Pedir permissão ao usuário (O navegador vai mostrar o popup nativo)
+      // 2. Pedir permissão ao usuário
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        console.warn('Permissão de notificação negada pelo usuário.');
         return;
       }
 
       // 3. Criar a assinatura (Subscription)
-      // Isso conecta o navegador ao serviço de push do vendor (Google/Mozilla/Apple)
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
       });
 
-      // 4. Salvar no Firestore para que o backend possa enviar mensagens
-      // Usamos um ID baseado no endpoint para evitar duplicatas do mesmo dispositivo
-      // O endpoint é único por navegador/perfil
+      // 4. Salvar no Firestore
       const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, ''); 
       
       await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
         userId: userId,
-        subscription: JSON.parse(JSON.stringify(subscription)), // Serializa o objeto
+        subscription: JSON.parse(JSON.stringify(subscription)),
         updatedAt: Date.now(),
         userAgent: navigator.userAgent
       });
 
-      console.log('✅ Web Push registrado com sucesso para:', userId);
+      console.log('✅ Web Push registrado.');
 
     } catch (error: any) {
-      // Filtra erro de origem comum em previews/iframes
-      if (error?.message?.includes('origin') || error?.name === 'SecurityError') {
-          console.warn('⚠️ Web Push desabilitado: Ambiente de preview com restrição de origem (Service Worker).');
+      if (error?.name === 'SecurityError' || error?.message?.includes('insecure')) {
+          console.warn('⚠️ Web Push desabilitado por restrições de segurança do navegador.');
       } else {
           console.error('❌ Falha ao registrar Web Push:', error);
       }
