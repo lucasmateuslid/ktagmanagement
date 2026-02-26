@@ -35,7 +35,9 @@ export const useScheduleNotifications = () => {
   
   // Refs para controlar notificações baseadas em tempo
   const pendingSchedulesRef = useRef<Schedule[]>([]);
+  const activeSchedulesRef = useRef<Schedule[]>([]);
   const notified5MinRef = useRef<Set<string>>(new Set()); // Para 'Solicitada' (apenas uma vez)
+  const notified24hRef = useRef<Set<string>>(new Set()); // Para alerta de 24h
   const notified30MinSoundRef = useRef<Set<string>>(new Set());
   
   // Novo Ref: Mapa para controlar o último lembrete recorrente de cada agendamento em análise
@@ -192,6 +194,15 @@ export const useScheduleNotifications = () => {
 
     // Escuta agendamentos recentes
     const q = query(collection(db, 'ktag_schedules'), orderBy('createdAt', 'desc'), limit(50));
+    
+    // Escuta agendamentos ativos para checagem de 24h
+    const qActive = query(collection(db, 'ktag_schedules'), where('status', 'in', ['Confirmada', 'Reagendada', 'Técnico no local']));
+
+    const unsubscribeActive = onSnapshot(qActive, (snapshot) => {
+        const active: Schedule[] = [];
+        snapshot.forEach(doc => active.push(doc.data() as Schedule));
+        activeSchedulesRef.current = active;
+    });
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const currentSchedules: Schedule[] = [];
@@ -284,12 +295,31 @@ export const useScheduleNotifications = () => {
             }
         });
 
+        // --- LÓGICA 4: Alerta de 24h para serviços agendados ---
+        activeSchedulesRef.current.forEach(s => {
+            const dateStr = s.confirmedDate;
+            const timeStr = s.confirmedTime || '00:00';
+            if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const [hours, mins] = timeStr.split(':').map(Number);
+                const scheduledTimeMs = new Date(year, month - 1, day, hours || 0, mins || 0).getTime();
+                const hoursPassed = (now - scheduledTimeMs) / 3600000;
+
+                if (hoursPassed >= 24 && !notified24hRef.current.has(s.id)) {
+                    playSound('admin');
+                    addNotification('error', 'Atenção Necessária', `O serviço ${s.vehiclePlate} passou de 24h do agendamento. Verifique se foi concluído ou cancelado.`, true);
+                    notified24hRef.current.add(s.id);
+                }
+            }
+        });
+
         setCriticalAlerts(criticalMsgs);
 
     }, 30000); // Verifica a cada 30 segundos
 
     return () => {
         unsubscribe();
+        unsubscribeActive();
         clearInterval(timerInterval);
     };
   }, [user, addNotification, setCriticalAlerts]);

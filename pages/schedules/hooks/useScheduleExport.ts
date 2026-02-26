@@ -15,6 +15,15 @@ export const useScheduleExport = (
   const { addNotification } = useNotification();
   const isPrivileged = user?.role === 'admin' || user?.role === 'moderator';
 
+  const formatDate = (dateStr?: string) => {
+      if (!dateStr) return '-';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          const [year, month, day] = dateStr.split('-');
+          return `${day}/${month}/${year}`;
+      }
+      return new Date(dateStr).toLocaleDateString();
+  };
+
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
@@ -113,7 +122,7 @@ export const useScheduleExport = (
         const detailedRows = sourceData.map((s: Schedule) => {
             const tech = technicians.find(t => t.id === s.technicianId);
             const techName = tech?.name || '-';
-            const date = s.confirmedDate ? new Date(s.confirmedDate).toLocaleDateString() : (s.preferredDate ? new Date(s.preferredDate).toLocaleDateString() : '-');
+            const date = s.confirmedDate ? formatDate(s.confirmedDate) : (s.preferredDate ? formatDate(s.preferredDate) : '-');
             
             let val = 0;
             if (['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local'].includes(s.status)) {
@@ -171,7 +180,7 @@ export const useScheduleExport = (
 
               return {
                   "ID": s.id.substring(0, 8),
-                  "Data": s.confirmedDate ? new Date(s.confirmedDate).toLocaleDateString() : (s.preferredDate ? new Date(s.preferredDate).toLocaleDateString() : '-'),
+                  "Data": s.confirmedDate ? formatDate(s.confirmedDate) : (s.preferredDate ? formatDate(s.preferredDate) : '-'),
                   "Hora": s.confirmedTime || s.preferredTime || '-',
                   "Placa": s.vehiclePlate,
                   "Modelo": s.vehicleModel,

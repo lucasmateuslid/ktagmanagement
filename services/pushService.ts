@@ -48,12 +48,16 @@ export const pushService = {
       // 4. Salvar no Firestore
       const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, ''); 
       
-      await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
-        userId: userId,
-        subscription: JSON.parse(JSON.stringify(subscription)),
-        updatedAt: Date.now(),
-        userAgent: navigator.userAgent
-      });
+      if (db) {
+        await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
+          userId: userId,
+          subscription: JSON.parse(JSON.stringify(subscription)),
+          updatedAt: Date.now(),
+          userAgent: navigator.userAgent
+        });
+      } else {
+        console.warn('Firestore não inicializado. Push subscription não salvo.');
+      }
 
       console.log('✅ Web Push registrado.');
 

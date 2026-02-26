@@ -11,13 +11,7 @@ import {
 } from 'lucide-react';
 import { useNotification } from '../contexts/NotificationContext';
 
-// Helper for date formatting
-const formatSafeDate = (dateStr?: string) => {
-    if (!dateStr) return 'Data não definida';
-    const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return new Date(dateStr).toLocaleDateString();
-};
+import { getDisplayDate } from '../pages/schedules/utils/scheduleTimeUtils';
 
 const MotionDiv = motion.div as any;
 
@@ -74,7 +68,16 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         });
     }, [schedule]);
 
-    const availableTechnicians = technicians.filter(t => t.active);
+    const availableTechnicians = technicians.filter(t => {
+        if (!t.active) return false;
+        // Se o técnico não tem serviços definidos, assume que faz tudo (ou podemos mudar isso)
+        if (!t.services || t.services.length === 0) return true;
+        
+        // "Não precisa" não filtra técnico
+        if (formData.deviceType === 'Não precisa') return true;
+
+        return t.services.includes(formData.deviceType);
+    });
     const responsibleCompany = companies.find(c => c.id === schedule.companyId);
     const assignedTech = technicians.find(t => t.id === schedule.technicianId);
 
@@ -105,7 +108,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 }
                 newStatus = 'Confirmada';
                 historyAction = 'Confirmada';
-                historyDetails = `Agendado para ${formatSafeDate(formData.date)} às ${formData.time}`;
+                historyDetails = `Agendado para ${getDisplayDate({ confirmedDate: formData.date } as Schedule)} às ${formData.time}`;
                 break;
             case 'onsite':
                 newStatus = 'Técnico no local';
@@ -224,7 +227,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
     const handleCopyClientMessage = () => {
         const dateRaw = formData.date;
-        const dateDisplay = dateRaw ? formatSafeDate(dateRaw) : 'A definir';
+        const dateDisplay = dateRaw ? getDisplayDate({ confirmedDate: dateRaw } as Schedule) : 'A definir';
         const timeDisplay = formData.time || '--:--';
         
         const selectedTech = technicians.find(t => t.id === formData.technicianId);
@@ -245,7 +248,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
     const handleCopyTechnicianMessage = () => {
         const dateRaw = formData.date;
-        const dateDisplay = dateRaw ? formatSafeDate(dateRaw) : 'A definir';
+        const dateDisplay = dateRaw ? getDisplayDate({ confirmedDate: dateRaw } as Schedule) : 'A definir';
         const timeDisplay = formData.time || '--:--';
         
         const regionalName = companies.find(c => c.id === formData.companyId)?.name || 'N/A';
@@ -283,7 +286,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         }
         
         const dateRaw = formData.date;
-        const dateDisplay = dateRaw ? formatSafeDate(dateRaw) : 'A definir';
+        const dateDisplay = dateRaw ? getDisplayDate({ confirmedDate: dateRaw } as Schedule) : 'A definir';
         const timeDisplay = formData.time || '--:--';
 
         const regionalName = companies.find(c => c.id === formData.companyId)?.name || 'N/A';
@@ -664,7 +667,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         <span className="text-[9px] font-black uppercase tracking-widest">Data</span>
                                     </div>
                                     <p className="text-sm font-bold text-zinc-900 dark:text-white uppercase">
-                                        {schedule.confirmedDate ? new Date(schedule.confirmedDate).toLocaleDateString() : (schedule.preferredDate ? new Date(schedule.preferredDate).toLocaleDateString() : 'A definir')}
+                                        {getDisplayDate(schedule)}
                                     </p>
                                 </div>
                                 <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">

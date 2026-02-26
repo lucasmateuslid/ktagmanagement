@@ -1,0 +1,54 @@
+pages/livemap/hooks/useTagHistory.ts:  const fetchHistory = useCallback(async () => {
+pages/livemap/hooks/useTagHistory.ts:            const rawResults = await xadtagService.fetchHistory(tag, startTime, endTime);
+pages/livemap/hooks/useTagHistory.ts:  return { historyItems, historyLoading, showHistoryList, fetchHistory, closeHistory, setShowHistoryList };
+pages/livemap/hooks/useFleetTracking.ts:import { fetchTagLocation } from '../../../services/api';
+pages/livemap/hooks/useFleetTracking.ts:  const fetchUpdate = async () => {
+pages/livemap/hooks/useFleetTracking.ts:           const res = await fetchTagLocation(tag);
+pages/livemap/hooks/useFleetTracking.ts:    fetchUpdate();
+pages/livemap/hooks/useFleetTracking.ts:    timerRef.current = window.setInterval(fetchUpdate, 30000);
+pages/livemap/hooks/useFleetTracking.ts:      if (selectedTagId) setTimeout(fetchUpdate, 100);
+pages/livemap/hooks/useFleetTracking.ts:  return { fleetLocations, loading, manualRefresh: fetchUpdate };
+pages/Tags.tsx:              const locations = await xadtagService.fetchLocation(activeTestTag);
+pages/Tags.tsx:              const history = await xadtagService.fetchHistory(activeTestTag, start, end);
+pages/Tags.tsx:          const res = await fetch(settings.customProxyUrl, {
+pages/LiveMap.tsx:      fetchHistory, closeHistory, setShowHistoryList 
+pages/LiveMap.tsx:        onFetchHistory={fetchHistory}
+services/hinova.ts:        const response = await fetch(settings.customProxyUrl, {
+services/hinova.ts:        const response = await fetch(settings.customProxyUrl, {
+services/geocoding.ts:        const res = await fetch(url);
+services/geocoding.ts:      const res = await fetch(url, {
+services/plateLookup.ts:        const response = await fetch(url, { method: 'GET', headers });
+services/api.ts:export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
+services/api.ts:      return xadtagService.fetchLocation(tag);
+services/api.ts:      const response = await fetch(settings.customProxyUrl, {
+services/xadtag.ts:// Abortable fetch (timeout safe)
+services/xadtag.ts:const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
+services/xadtag.ts:        return await fetch(url, { ...options, signal: controller.signal });
+services/xadtag.ts:    // Se estiver usando Proxy do Firebase (customProxyUrl), a URL final é montada dentro da função getHeaders/fetch
+services/xadtag.ts:                response = await fetchWithTimeout(settings.customProxyUrl, {
+services/xadtag.ts:                response = await fetchWithTimeout(targetUrl, {
+services/xadtag.ts:    fetchLocation: async (tag: Tag): Promise<KTagLocationResult[]> => {
+services/xadtag.ts:                response = await fetchWithTimeout(settings.customProxyUrl, {
+services/xadtag.ts:                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+services/xadtag.ts:    fetchHistory: async (
+services/xadtag.ts:                response = await fetchWithTimeout(settings.customProxyUrl, {
+services/xadtag.ts:                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+services/xadtag.ts:                response = await fetchWithTimeout(settings.customProxyUrl, {
+services/xadtag.ts:                response = await fetchWithTimeout(targetUrl, { method: 'GET', headers });
+services/storage.ts:const fetchResilient = async (colName: string) => {
+services/storage.ts:    const data = await fetchResilient(KEYS.USERS_DB) as User[];
+services/storage.ts:    const raw = await fetchResilient(KEYS.VEHICLES) as Vehicle[];
+services/storage.ts:    const raw = await fetchResilient(KEYS.CLIENTS) as Client[];
+services/storage.ts:    const raw = await fetchResilient(KEYS.TAGS) as Tag[];
+services/storage.ts:    const data = await fetchResilient(KEYS.COMPANIES) as Company[];
+services/storage.ts:    const data = await fetchResilient(KEYS.CATEGORIES) as VehicleCategory[];
+services/storage.ts:    const data = await fetchResilient(KEYS.STOLEN_RECORDS) as StolenRecord[];
+services/storage.ts:    const res = await fetchResilient(KEYS.TECHNICIANS);
+services/fipe.ts:      const response = await fetch(`${BASE_URL}/${vehicleType}/marcas`);
+services/fipe.ts:      if (!response.ok) throw new Error('Failed to fetch brands');
+services/fipe.ts:      const response = await fetch(`${BASE_URL}/${vehicleType}/marcas/${brandId}/modelos`);
+services/fipe.ts:      if (!response.ok) throw new Error('Failed to fetch models');
+services/fipe.ts:      const response = await fetch(`${BASE_URL}/${vehicleType}/marcas/${brandId}/modelos/${modelId}/anos`);
+services/fipe.ts:      if (!response.ok) throw new Error('Failed to fetch years');
+services/fipe.ts:      const response = await fetch(`${BASE_URL}/${vehicleType}/marcas/${brandId}/modelos/${modelId}/anos/${yearId}`);
+services/fipe.ts:      if (!response.ok) throw new Error('Failed to fetch details');

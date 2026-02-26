@@ -7,7 +7,12 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
-const cors = require("cors")({ origin: true });
+const cors = require("cors")({ 
+  origin: true, 
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'api_token', 'timestamp', 'Authorization', 'x-goog-api-key', 'x-goog-api-client', 'x-goog-user-project']
+});
 const webpush = require("web-push");
 
 // Inicializa o Admin SDK se ainda não estiver inicializado
@@ -52,17 +57,9 @@ setInterval(cleanupOldRecords, 300000);
  */
 exports.proxyApi = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
+    // The cors middleware already handles headers and preflight (OPTIONS) requests.
+    // If we reach this point, the request is allowed by CORS.
     
-    // Set CORS headers for all responses
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, api_token, timestamp, Authorization, x-goog-api-key, x-goog-api-client, x-goog-user-project');
-
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-
     // 1. RATE LIMIT CHECK
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     const now = Date.now();

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { LayoutGrid, Wifi, Eye, ChevronDown, Check, ScanText } from 'lucide-react';
-import { DisplayLimit } from '../LiveMap';
+import { DisplayLimit } from '../../LiveMap';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MotionDiv = motion.div as any;

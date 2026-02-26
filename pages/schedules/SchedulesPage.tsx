@@ -140,6 +140,14 @@ export const SchedulesPage = () => {
       }
   };
 
+    const userStats = React.useMemo(() => {
+        const total = schedules.length;
+        const completed = schedules.filter(s => s.status === 'Concluída').length;
+        const canceled = schedules.filter(s => s.status === 'Cancelada').length;
+        const pending = total - completed - canceled;
+        return { total, completed, canceled, pending };
+    }, [schedules]);
+
   return (
     <div className="space-y-8 pb-24 max-w-[1600px] mx-auto">
         {/* HEADER */}
@@ -211,19 +219,62 @@ export const SchedulesPage = () => {
                         <FinancialSummaryRow data={stats} />
                     </div>
                 )}
+                
+                {/* User Stats when in My Requests mode */}
+                {showMyRequests && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total</span>
+                            <p className="text-2xl font-black text-zinc-900 dark:text-white mt-1">{userStats.total}</p>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Pendentes</span>
+                            <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{userStats.pending}</p>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Concluídas</span>
+                            <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{userStats.completed}</p>
+                        </div>
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">Canceladas</span>
+                            <p className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">{userStats.canceled}</p>
+                        </div>
+                    </div>
+                )}
             </div>
         ) : (
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                <div>
-                    <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Minhas Solicitações</h1>
-                    <p className="text-zinc-500 mt-1 font-medium text-xs">Acompanhe o andamento dos serviços em sua frota.</p>
+            <div className="space-y-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                    <div>
+                        <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Minhas Solicitações</h1>
+                        <p className="text-zinc-500 mt-1 font-medium text-xs">Acompanhe o andamento dos serviços em sua frota.</p>
+                    </div>
+                    <button 
+                        onClick={() => navigate('/schedule/new')}
+                        className="flex-1 md:flex-none bg-primary-500 text-black px-6 py-3 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-500/20 hover:scale-105 transition-all"
+                    >
+                        <Plus size={18} strokeWidth={3} /> Nova Solicitação
+                    </button>
                 </div>
-                <button 
-                    onClick={() => navigate('/schedule/new')}
-                    className="flex-1 md:flex-none bg-primary-500 text-black px-6 py-3 rounded-2xl flex items-center justify-center gap-2 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary-500/20 hover:scale-105 transition-all"
-                >
-                    <Plus size={18} strokeWidth={3} /> Nova Solicitação
-                </button>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total</span>
+                        <p className="text-2xl font-black text-zinc-900 dark:text-white mt-1">{userStats.total}</p>
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Pendentes</span>
+                        <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{userStats.pending}</p>
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Concluídas</span>
+                        <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{userStats.completed}</p>
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">Canceladas</span>
+                        <p className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">{userStats.canceled}</p>
+                    </div>
+                </div>
             </div>
         )}
 

@@ -3,7 +3,7 @@ import React from 'react';
 import { Search, RefreshCw, X } from 'lucide-react';
 import { SearchDropdown } from './SearchDropdown';
 import { FleetStatusChips } from './FleetStatusChips';
-import { DisplayLimit } from '../LiveMap';
+import { DisplayLimit } from '../../LiveMap';
 
 interface TopHUDProps {
     searchTerm: string;

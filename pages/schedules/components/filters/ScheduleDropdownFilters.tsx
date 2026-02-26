@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Technician } from '../../../types';
+import { Technician } from '@/types';
 
 interface ScheduleDropdownFiltersProps {
   technicians: Technician[];
@@ -26,7 +26,9 @@ export const ScheduleDropdownFilters: React.FC<ScheduleDropdownFiltersProps> = (
         <select value={filterTech} onChange={(e) => setFilterTech(e.target.value)} className="px-6 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none shadow-sm min-w-[180px]">
             <option>Todos Técnicos</option>
             <option>Sem Técnico</option>
-            {technicians.map(t => <option key={t.id}>{t.name}</option>)}
+            {technicians
+                .filter(t => filterDevice === 'Todos Dispositivos' || !t.services || t.services.length === 0 || t.services.includes(filterDevice))
+                .map(t => <option key={t.id}>{t.name}</option>)}
         </select>
         <select value={filterService} onChange={(e) => setFilterService(e.target.value)} className="px-6 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none shadow-sm min-w-[180px]">
             <option>Todos Serviços</option>

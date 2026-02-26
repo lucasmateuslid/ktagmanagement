@@ -245,28 +245,29 @@ export const AiAssistant: React.FC = () => {
     setInput('');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const model = ai.getGenerativeModel({ 
-          model: 'gemini-2.5-flash-lite-latest', // Modelo rápido para comandos simples
-          tools: tools 
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-lite-latest',
+        contents: command,
+        config: {
+            tools: tools as any,
+        }
       });
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: command }] }]
-      });
-
-      const response = result.response;
-      const functionCalls = response.functionCalls();
+      const functionCalls = response.functionCalls;
 
       if (functionCalls && functionCalls.length > 0) {
           // Executa a primeira ferramenta encontrada
           const call = functionCalls[0];
-          const visualResult = await executeTool(call.name, call.args);
-          setResultContent(visualResult);
-          setStatus('Execução Finalizada');
+          if (call.name) {
+            const visualResult = await executeTool(call.name, call.args);
+            setResultContent(visualResult);
+            setStatus('Execução Finalizada');
+          }
       } else {
           // Se não chamou ferramenta, mostra o texto, mas tenta ser breve
-          const text = response.text();
+          const text = response.text;
           setResultContent(
               <div className="bg-zinc-800 p-3 rounded-xl border border-zinc-700 text-zinc-300 text-xs font-mono whitespace-pre-wrap">
                   {text || "Comando não reconhecido. Tente 'localizar placa ABC1234' ou 'status frota'."}

@@ -262,20 +262,20 @@ export const Calendar = () => {
                 key={d} 
                 ref={isToday ? todayRef : null}
                 className={`
-                    border-b border-r border-zinc-100 dark:border-zinc-800 p-2 min-h-[160px] flex flex-col relative group transition-colors
+                    border-b border-r border-zinc-100 dark:border-zinc-800 p-1 sm:p-2 min-h-[100px] sm:min-h-[160px] flex flex-col relative group transition-colors
                     ${isToday ? 'bg-white dark:bg-zinc-900 ring-2 ring-inset ring-primary-500 z-10' : 'bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
                 onClick={() => goToDayView(dateStr)}
             >
-                <div className="flex justify-between items-start mb-2">
+                <div className="flex justify-between items-start mb-1 sm:mb-2">
                     <span className={`
-                        text-xs font-black w-8 h-8 flex items-center justify-center rounded-xl transition-colors
+                        text-[10px] sm:text-xs font-black w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg sm:rounded-xl transition-colors
                         ${isToday ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30' : 'text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800'}
                     `}>
                         {d}
                     </span>
                     {dayEvents.length > 0 && (
-                        <span className="text-[9px] font-bold text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 rounded-lg border border-zinc-100 dark:border-zinc-700">
+                        <span className="text-[8px] sm:text-[9px] font-bold text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-zinc-100 dark:border-zinc-700">
                             {dayEvents.length}
                         </span>
                     )}
@@ -323,26 +323,26 @@ export const Calendar = () => {
 
       return (
           <div className="flex-1 overflow-auto custom-scrollbar">
-              <div className="grid grid-cols-7 min-w-[1200px] h-full">
+              <div className="grid grid-cols-7 min-w-[800px] lg:min-w-[1200px] h-full">
                   {weekDays.map((day, idx) => {
                       const dateStr = day.toISOString().split('T')[0];
                       const events = getEventsForDate(dateStr);
                       const isToday = new Date().toDateString() === day.toDateString();
                       
                       return (
-                          <div key={idx} className="flex flex-col border-r border-zinc-100 dark:border-zinc-800 last:border-r-0 min-h-[600px]">
+                          <div key={idx} className="flex flex-col border-r border-zinc-100 dark:border-zinc-800 last:border-r-0 min-h-[400px] sm:min-h-[600px]">
                               <div 
                                 onClick={() => goToDayView(dateStr)}
-                                className={`p-4 text-center border-b border-zinc-100 dark:border-zinc-800 cursor-pointer transition-colors sticky top-0 z-10 ${isToday ? 'bg-primary-500/5 backdrop-blur-md' : 'bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md'}`}
+                                className={`p-2 sm:p-4 text-center border-b border-zinc-100 dark:border-zinc-800 cursor-pointer transition-colors sticky top-0 z-10 ${isToday ? 'bg-primary-500/5 backdrop-blur-md' : 'bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md'}`}
                               >
-                                  <p className={`text-[10px] font-black uppercase tracking-widest ${isToday ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-400'}`}>
+                                  <p className={`text-[8px] sm:text-[10px] font-black uppercase tracking-widest ${isToday ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-400'}`}>
                                       {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'][idx]}
                                   </p>
-                                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mx-auto mt-2 text-lg ${isToday ? 'bg-primary-500 text-white font-black shadow-lg shadow-primary-500/30' : 'text-zinc-700 dark:text-white font-bold bg-zinc-100 dark:bg-zinc-800'}`}>
+                                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center mx-auto mt-1 sm:mt-2 text-sm sm:text-lg ${isToday ? 'bg-primary-500 text-white font-black shadow-lg shadow-primary-500/30' : 'text-zinc-700 dark:text-white font-bold bg-zinc-100 dark:bg-zinc-800'}`}>
                                       {day.getDate()}
                                   </div>
                               </div>
-                              <div className="flex-1 p-2 bg-zinc-50/50 dark:bg-zinc-950/50">
+                              <div className="flex-1 p-1 sm:p-2 bg-zinc-50/50 dark:bg-zinc-950/50">
                                   {events.map(ev => <EventCard key={ev.id} ev={ev} mode="week" technicians={technicians} onSelect={setSelectedSchedule} />)}
                               </div>
                           </div>

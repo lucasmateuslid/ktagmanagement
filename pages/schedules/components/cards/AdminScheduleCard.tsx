@@ -3,7 +3,7 @@ import React from 'react';
 import { Schedule, Technician } from '../../../../types';
 import { User, UserCircle2, Wrench, MapPin } from 'lucide-react';
 import { getStatusStyle } from '../../utils/scheduleStatusUtils';
-import { getTimeElapsedStr, getDisplayDate } from '../../utils/scheduleTimeUtils';
+import { getTimeElapsedStr, getDisplayDate, isScheduleOverdue } from '../../utils/scheduleTimeUtils';
 import { calculateServiceValue } from '../../utils/scheduleFinancialUtils';
 
 interface AdminScheduleCardProps {
@@ -27,18 +27,26 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
   
   const timeElapsedStr = getTimeElapsedStr(item.createdAt);
   const displayDate = getDisplayDate(item);
+  const isOverdue = isScheduleOverdue(item);
 
   const serviceVal = calculateServiceValue(item, assignedTech);
   const totalVal = serviceVal + (item.displacementValue || 0);
 
   return (
-    <div onClick={() => onClick(item)} className="bg-white dark:bg-zinc-900 p-6 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-xl transition-all cursor-pointer relative group border-l-[6px] flex flex-col h-full min-h-[340px]" style={{ borderLeftColor: styleConfig.color }}>
+    <div onClick={() => onClick(item)} className={`bg-white dark:bg-zinc-900 p-6 rounded-[24px] border shadow-sm hover:shadow-xl transition-all cursor-pointer relative group border-l-[6px] flex flex-col h-full min-h-[340px] ${isOverdue ? 'border-red-500/50 dark:border-red-500/50 ring-1 ring-red-500/20' : 'border-zinc-200 dark:border-zinc-800'}`} style={{ borderLeftColor: isOverdue ? '#ef4444' : styleConfig.color }}>
         {/* Header: Badge Status + Date/Time */}
         <div className="flex justify-between items-start mb-2">
             <div className="flex flex-col gap-2">
-                <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit ${styleConfig.badgeBg} ${styleConfig.badgeText}`}>
-                    {item.status}
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit ${styleConfig.badgeBg} ${styleConfig.badgeText}`}>
+                        {item.status}
+                    </span>
+                    {isOverdue && (
+                        <span className="px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 flex items-center gap-1 border border-red-200 dark:border-red-800 animate-pulse">
+                            Atenção: +24h
+                        </span>
+                    )}
+                </div>
             </div>
             <div className="text-right">
                 <div className="text-[10px] font-bold text-zinc-400">{displayDate}</div>
@@ -55,28 +63,28 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
             )}
         </div>
 
-        <h2 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1">{item.vehiclePlate}</h2>
-        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mb-6">{item.vehicleModel}</p>
+        <h2 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1 truncate" title={item.vehiclePlate}>{item.vehiclePlate}</h2>
+        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mb-6 truncate" title={item.vehicleModel}>{item.vehicleModel}</p>
 
         <div className="space-y-4 mb-6 flex-1">
             <div className="flex items-start gap-3">
                 <div className="mt-0.5"><User size={14} className="text-zinc-300"/></div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">SOLICITANTE:</span>
-                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase">{item.requesterName}</span>
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase truncate" title={item.requesterName}>{item.requesterName}</span>
                 </div>
             </div>
             <div className="flex items-start gap-3">
                 <div className="mt-0.5"><UserCircle2 size={14} className="text-zinc-300"/></div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">CLIENTE:</span>
-                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase truncate">{item.clientName || 'N/A'}</span>
-                    {item.clientPhone && <span className="text-[9px] font-mono text-zinc-400">{item.clientPhone}</span>}
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase truncate" title={item.clientName || 'N/A'}>{item.clientName || 'N/A'}</span>
+                    {item.clientPhone && <span className="text-[9px] font-mono text-zinc-400 truncate">{item.clientPhone}</span>}
                 </div>
             </div>
             <div className="flex items-start gap-3">
                 <div className="mt-0.5"><Wrench size={14} className="text-zinc-300"/></div>
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">SERVIÇO:</span>
                     <span className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase">{item.serviceType}</span>
                 </div>

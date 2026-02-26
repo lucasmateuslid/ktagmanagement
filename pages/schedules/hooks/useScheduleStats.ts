@@ -9,8 +9,6 @@ export const useScheduleStats = (
   isPrivileged: boolean
 ) => {
   return useMemo(() => {
-    if (!isPrivileged) return null;
-
     const currentMonth = viewDate.getMonth();
     const currentYear = viewDate.getFullYear();
 

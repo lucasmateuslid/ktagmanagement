@@ -3,7 +3,7 @@ import React from 'react';
 import { Schedule, Technician } from '../../../../types';
 import { Copy, Maximize2, User, SearchCheck, Wrench, Calendar, MapPin, Clock, XCircle, Check, Wallet } from 'lucide-react';
 import { getStatusStyle } from '../../utils/scheduleStatusUtils';
-import { getTimeElapsedStr, getDisplayDate, getDisplayTime } from '../../utils/scheduleTimeUtils';
+import { getTimeElapsedStr, getDisplayDate, getDisplayTime, isScheduleOverdue } from '../../utils/scheduleTimeUtils';
 
 // --- SUBCOMPONENT: USER STEPPER ---
 const UserStepper = ({ status }: { status: string }) => {
@@ -80,15 +80,21 @@ export const UserScheduleCard: React.FC<UserScheduleCardProps> = ({ item, techni
   const timeElapsedStr = getTimeElapsedStr(item.createdAt);
   const displayDate = getDisplayDate(item);
   const displayTime = getDisplayTime(item);
+  const isOverdue = isScheduleOverdue(item);
 
   return (
-    <div onClick={() => onClick(item)} className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 p-8 shadow-sm hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-all relative overflow-hidden group">
+    <div onClick={() => onClick(item)} className={`bg-white dark:bg-zinc-900 rounded-[32px] border p-8 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group ${isOverdue ? 'border-red-500/50 dark:border-red-500/50 ring-1 ring-red-500/20' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}>
         <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
             <div className="flex flex-wrap gap-2 items-center">
                 <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${styleConfig.badgeBg} ${styleConfig.badgeText}`}>{item.status}</span>
                 <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
                     <Clock size={12}/> {timeElapsedStr}
                 </span>
+                {isOverdue && (
+                    <span className="px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 flex items-center gap-1 border border-red-200 dark:border-red-800 animate-pulse">
+                        Atenção: +24h
+                    </span>
+                )}
             </div>
             <div className="flex gap-2">
                 <button onClick={(e) => onCopy(e, item)} className="p-2.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all border border-emerald-200 dark:border-emerald-500/30" title="Copiar confirmação"><Copy size={16} /></button>
