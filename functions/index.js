@@ -4,7 +4,8 @@
  * Inclui Proxy API, Rate Limiting e Triggers de Notificação Push
  */
 
-const functions = require("firebase-functions");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const axios = require("axios");
 const cors = require("cors")({ 
@@ -22,8 +23,8 @@ if (admin.apps.length === 0) {
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
 const vapidKeys = {
-  publicKey: "SUA_PUBLIC_KEY_AQUI", 
-  privateKey: "SUA_PRIVATE_KEY_AQUI"
+  publicKey: "BPeLenAfveHRZomoae7lEJgkVXoV40wiqGYiaDg6itNL6t-0HzhyVS_LkP13BDgy-UVUB0ctKde-e3aPdT3xn9o", 
+  privateKey: "7U_Yyn_NkWjIt8IyjjydcwkcNOP5p6a9b1YqBAwqEEY"
 };
 
 try {
@@ -55,7 +56,7 @@ setInterval(cleanupOldRecords, 300000);
 /**
  * PROXY API: Contorna CORS e protege credenciais
  */
-exports.proxyApi = functions.https.onRequest((req, res) => {
+exports.proxyApi = onRequest((req, res) => {
   return cors(req, res, async () => {
     // The cors middleware already handles headers and preflight (OPTIONS) requests.
     // If we reach this point, the request is allowed by CORS.
@@ -140,11 +141,11 @@ exports.proxyApi = functions.https.onRequest((req, res) => {
 /**
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
  */
-exports.onScheduleUpdate = functions.firestore
-  .document('ktag_schedules/{scheduleId}')
-  .onUpdate(async (change, context) => {
-    const newData = change.after.data();
-    const previousData = change.before.data();
+exports.onScheduleUpdate = onDocumentUpdated(
+  'ktag_schedules/{scheduleId}',
+  async (event) => {
+    const newData = event.data.after.data();
+    const previousData = event.data.before.data();
 
     if (newData.status === previousData.status) return null;
 
@@ -223,12 +224,20 @@ exports.onScheduleUpdate = functions.firestore
     }
 });
 
-exports.sendPushNotification = functions.https.onCall(async (data, context) => {
-  const { userId, title, body, url } = data;
+exports.sendPushNotification = onCall(
+  async (request) => {
 
-  if (!userId || !title || !body) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing userId, title, or body');
-  }
+    webpush.setVapidDetails(
+      "mailto:monitoramento@lockprotecao.com.br",
+      vapidKeys.publicKey,
+      vapidKeys.privateKey
+    );
+
+    const { userId, title, body, url } = request.data;
+
+    if (!userId || !title || !body) {
+      throw new HttpsError("invalid-argument", "Missing userId, title or body");
+    }
 
   try {
     const subscriptionsSnapshot = await admin.firestore()
@@ -264,6 +273,6 @@ exports.sendPushNotification = functions.https.onCall(async (data, context) => {
 
   } catch (error) {
     console.error('Error in sendPushNotification:', error);
-    throw new functions.https.HttpsError('internal', 'Error sending notifications');
+    throw new HttpsError('internal', 'Error sending notifications');
   }
 });

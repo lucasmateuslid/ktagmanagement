@@ -2,11 +2,12 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '../services/storage';
-import { Vehicle, VehicleCategory } from '../types';
+import { xadtagService } from '../services/xadtag';
+import { Vehicle, VehicleCategory, Tag, KTagLocationResult } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, Filter, FileSpreadsheet, Download, TrendingUp } from 'lucide-react';
-import { ResponsiveContainer, XAxis, Tooltip, AreaChart, Area } from 'recharts';
+import { FileText, Filter, FileSpreadsheet, Download, TrendingUp, Activity, Battery, Signal, MapPin } from 'lucide-react';
+import { ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 
 export const Reports = () => {
   const { t } = useLanguage();
@@ -30,13 +31,58 @@ export const Reports = () => {
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
+  // --- TELEMETRY STATE ---
+  const [activeTab, setActiveTab] = useState<'vehicles' | 'telemetry'>('vehicles');
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState<string>('');
+  const [historyData, setHistoryData] = useState<KTagLocationResult[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [telemetryStats, setTelemetryStats] = useState({ totalPings: 0, avgBattery: 0, distance: 0 });
+
   useEffect(() => {
     const load = async () => {
-        const [v, c] = await Promise.all([storage.getVehicles(), storage.getCategories()]);
-        setVehicles(v); setCategories(c);
+        const [v, c, t] = await Promise.all([storage.getVehicles(), storage.getCategories(), storage.getTags()]);
+        setVehicles(v); setCategories(c); setTags(t);
     };
     load();
   }, []);
+
+  // --- TELEMETRY LOGIC ---
+  const fetchTelemetry = useCallback(async () => {
+      if (!selectedTagId || !appliedStartDate || !appliedEndDate) return;
+      
+      const tag = tags.find(t => t.id === selectedTagId);
+      if (!tag) return;
+
+      setIsLoadingHistory(true);
+      try {
+          const start = new Date(`${appliedStartDate}T00:00:00`).getTime();
+          const end = new Date(`${appliedEndDate}T23:59:59`).getTime();
+          
+          const history = await xadtagService.fetchHistory(tag, start, end);
+          setHistoryData(history);
+
+          // Calculate Stats
+          const totalPings = history.length;
+          const avgBattery = totalPings > 0 
+              ? history.reduce((acc, curr) => acc + (curr.battery?.level || 0), 0) / totalPings 
+              : 0;
+          const distance = history.reduce((acc, curr) => acc + (curr.distance || 0), 0); // Assuming distance is in meters/km from API
+
+          setTelemetryStats({ totalPings, avgBattery, distance });
+
+      } catch (error) {
+          console.error("Erro ao buscar telemetria:", error);
+      } finally {
+          setIsLoadingHistory(false);
+      }
+  }, [selectedTagId, appliedStartDate, appliedEndDate, tags]);
+
+  useEffect(() => {
+      if (activeTab === 'telemetry') {
+          fetchTelemetry();
+      }
+  }, [fetchTelemetry, activeTab]);
 
   const filterData = useCallback(() => {
       if (!appliedStartDate || !appliedEndDate) return;
@@ -260,22 +306,59 @@ export const Reports = () => {
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-2 w-full xl:w-auto">
-                 <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Início</label>
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
-                 </div>
-                 <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
-                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Fim</label>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
-                 </div>
-                 <button onClick={() => { setAppliedStartDate(startDate); setAppliedEndDate(endDate); }} className="bg-primary-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">
-                     <Filter size={18} /> Filtrar
-                 </button>
+            <div className="flex flex-col gap-4 w-full xl:w-auto">
+                {/* TABS */}
+                <div className="flex bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-2xl self-start xl:self-end">
+                    <button 
+                        onClick={() => setActiveTab('vehicles')}
+                        className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'vehicles' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                    >
+                        Veículos
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('telemetry')}
+                        className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'telemetry' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                    >
+                        Telemetria K-Tag
+                    </button>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-2 w-full xl:w-auto">
+                     {activeTab === 'telemetry' && (
+                        <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-64">
+                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Tag / Dispositivo</label>
+                            <select 
+                                value={selectedTagId} 
+                                onChange={e => setSelectedTagId(e.target.value)}
+                                className="bg-transparent border-none p-0 text-sm font-bold outline-none cursor-pointer dark:text-white w-full appearance-none"
+                            >
+                                <option value="">Selecione uma Tag...</option>
+                                {tags.map(t => (
+                                    <option key={t.id} value={t.id}>{t.name} ({t.accessoryId})</option>
+                                ))}
+                            </select>
+                        </div>
+                     )}
+                     
+                     <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
+                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Início</label>
+                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
+                     </div>
+                     <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-auto">
+                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Fim</label>
+                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent border-none p-0 text-sm font-black outline-none cursor-pointer dark:text-white" />
+                     </div>
+                     <button onClick={() => { setAppliedStartDate(startDate); setAppliedEndDate(endDate); if(activeTab === 'telemetry') fetchTelemetry(); else filterData(); }} className="bg-primary-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">
+                         <Filter size={18} /> Filtrar
+                     </button>
+                </div>
             </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {activeTab === 'vehicles' ? (
+            /* --- VEHICLES REPORT --- */
+            <>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
              <div className="bg-zinc-900 text-white p-10 rounded-[40px] flex flex-col justify-between border border-zinc-800">
                  <div>
                      <p className="text-xs text-zinc-400 font-black uppercase tracking-[0.2em] mb-4">Total Ativações</p>
@@ -357,6 +440,154 @@ export const Reports = () => {
                 </table>
             </div>
         </div>
+            </>
+        ) : (
+            /* --- TELEMETRY REPORT --- */
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {!selectedTagId ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-zinc-400">
+                            <Activity size={32} />
+                        </div>
+                        <h3 className="text-xl font-bold text-zinc-900 dark:text-white">Selecione uma Tag</h3>
+                        <p className="text-zinc-500 max-w-md mt-2">Escolha um dispositivo K-Tag acima para visualizar o histórico de telemetria, bateria e sinal.</p>
+                    </div>
+                ) : isLoadingHistory ? (
+                    <div className="flex items-center justify-center py-40">
+                        <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                ) : (
+                    <>
+                        {/* KPI CARDS */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                                    <Activity size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total Pings</p>
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white">{telemetryStats.totalPings}</h3>
+                                </div>
+                            </div>
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                                    <Battery size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Bateria Média</p>
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white">{telemetryStats.avgBattery.toFixed(1)}%</h3>
+                                </div>
+                            </div>
+                            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
+                                    <MapPin size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Distância (Est.)</p>
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white">{telemetryStats.distance.toFixed(2)} km</h3>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CHARTS */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            {/* Battery History */}
+                            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800">
+                                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Battery size={18} className="text-emerald-500"/> Histórico de Bateria</h3>
+                                <div className="h-64 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={historyData}>
+                                            <defs>
+                                                <linearGradient id="colorBattery" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} opacity={0.1} />
+                                            <XAxis 
+                                                dataKey="timestamp" 
+                                                tickFormatter={(unix) => new Date(unix).toLocaleDateString()} 
+                                                tick={{ fontSize: 10, fill: '#71717a' }} 
+                                                minTickGap={30}
+                                            />
+                                            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#71717a' }} />
+                                            <Tooltip 
+                                                contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }}
+                                                labelFormatter={(unix) => new Date(unix).toLocaleString()}
+                                            />
+                                            <Area type="monotone" dataKey="battery.level" stroke="#10b981" strokeWidth={2} fill="url(#colorBattery)" name="Bateria %" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            {/* Ping Frequency (Points per Day) */}
+                            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[40px] border border-zinc-200 dark:border-zinc-800">
+                                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Signal size={18} className="text-blue-500"/> Frequência de Comunicação</h3>
+                                <div className="h-64 w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={historyData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} opacity={0.1} />
+                                            <XAxis 
+                                                dataKey="timestamp" 
+                                                tickFormatter={(unix) => new Date(unix).toLocaleDateString()} 
+                                                tick={{ fontSize: 10, fill: '#71717a' }} 
+                                                minTickGap={30}
+                                            />
+                                            <Tooltip 
+                                                contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }}
+                                                labelFormatter={(unix) => new Date(unix).toLocaleString()}
+                                            />
+                                            <Bar dataKey="conf" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Confiança" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* DATA TABLE */}
+                        <div className="bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800">
+                                <h3 className="text-lg font-bold">Registros Brutos</h3>
+                            </div>
+                            <div className="overflow-x-auto max-h-[400px] custom-scrollbar">
+                                <table className="w-full text-left">
+                                    <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/20 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="px-6 py-4">Data/Hora</th>
+                                            <th className="px-6 py-4">Bateria</th>
+                                            <th className="px-6 py-4">Lat/Lon</th>
+                                            <th className="px-6 py-4">Precisão</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                                        {historyData.map((point, idx) => (
+                                            <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors">
+                                                <td className="px-6 py-4 text-zinc-500 font-mono text-xs">
+                                                    {new Date(point.timestamp).toLocaleString()}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: point.battery?.color || '#71717a' }}></div>
+                                                        {point.battery?.level}%
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-xs font-mono text-zinc-500">
+                                                    {point.lat.toFixed(5)}, {point.lon.toFixed(5)}
+                                                </td>
+                                                <td className="px-6 py-4 text-xs text-zinc-500">
+                                                    {point.conf}%
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+        )}
     </div>
   );
 };

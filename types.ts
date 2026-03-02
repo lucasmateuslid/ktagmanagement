@@ -108,6 +108,7 @@ export interface KTagLocationResult {
   battery: KTagBatteryInfo;
   timestamp: number;
   isodatetime: string;
+  distance?: number;
 }
 
 // Record for vehicle theft/robbery incidents
