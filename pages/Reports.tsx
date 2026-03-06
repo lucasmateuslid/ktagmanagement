@@ -275,21 +275,59 @@ export const Reports = () => {
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-        const XLSX = await import('xlsx');
-        const dataToExport = filteredVehicles.map(v => ({
-            Data: v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-',
-            Placa: v.plate,
-            Modelo: v.model,
-            Categoria: categories.find(c => c.id === v.type)?.name || '-',
-            Instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
-            Contrato: v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
-        }));
+        const ExcelJS = await import('exceljs');
+        const { saveAs } = await import('file-saver');
+        
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = user?.name || 'K-TAG System';
+        workbook.created = new Date();
+        
+        const worksheet = workbook.addWorksheet('Veículos');
+        
+        worksheet.columns = [
+            { header: 'Data Inclusão', key: 'data', width: 15 },
+            { header: 'Placa', key: 'placa', width: 15 },
+            { header: 'Modelo', key: 'modelo', width: 25 },
+            { header: 'Categoria', key: 'categoria', width: 20 },
+            { header: 'Instalação', key: 'instalacao', width: 20 },
+            { header: 'Contrato', key: 'contrato', width: 15 }
+        ];
+        
+        // Estilo do cabeçalho
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF3F3F46' } // zinc-700
+        };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Veículos");
+        filteredVehicles.forEach(v => {
+            worksheet.addRow({
+                data: v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-',
+                placa: v.plate,
+                modelo: v.model,
+                categoria: categories.find(c => c.id === v.type)?.name || '-',
+                instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
+                contrato: v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
+            });
+        });
+        
+        // Estilo das linhas
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 1) {
+                row.alignment = { vertical: 'middle', horizontal: 'left' };
+            }
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `relatorio_${appliedStartDate}.xlsx`);
+        
         storage.logAction(user, 'REPORT', 'Vehicle', `Exportou Excel: ${appliedStartDate} a ${appliedEndDate}`);
-        XLSX.writeFile(workbook, `relatorio_${appliedStartDate}.xlsx`);
+    } catch (e) {
+        console.error("Erro ao exportar Excel:", e);
+        alert('Erro ao gerar Excel. Verifique o console.');
     } finally {
         setIsExporting(false);
     }

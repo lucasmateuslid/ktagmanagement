@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { fetchTagLocation } from '../../../services/api';
+import { fetchTagsLocationBatch } from '../../../services/api';
 import { Tag, Vehicle, LocationHistory } from '../../../types';
 import { storage } from '../../../services/storage';
 
@@ -17,11 +17,10 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       if (vehicles.length > 0) {
           const persistedLocations = vehicles
               .filter(v => v.lastPosition && v.tagId)
-              .map(v => ({ ...v.lastPosition!, tagId: v.tagId! }));
+              .map(v => ({ ...v.lastPosition!, tagId: v.tagId!, id: v.tagId! }));
           
           if (persistedLocations.length > 0) {
               setFleetLocations(prev => {
-                  // Merge inicial para não sobrescrever nada que já tenha vindo da API
                   const newMap = new Map(persistedLocations.map(i => [i.tagId, i]));
                   prev.forEach(v => newMap.set(v.tagId, v));
                   return Array.from(newMap.values());
@@ -30,6 +29,33 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       }
   }, [vehicles]);
 
+  const refreshTag = async (tagId: string) => {
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+    
+    setLoading(true);
+    try {
+      const results = await fetchTagsLocationBatch([tag], 1);
+      if (results.length > 0) {
+        const loc = results[0];
+        setFleetLocations(prev => {
+          const newMap = new Map(prev.map(i => [i.tagId, i]));
+          newMap.set(tagId, { ...loc, id: tagId } as any);
+          return Array.from(newMap.values());
+        });
+
+        // Persiste se for veículo
+        const vehicle = vehicles.find(v => v.tagId === tagId);
+        if (vehicle) {
+          storage.updateVehiclePosition(vehicle.id, loc as any);
+          lastSaveRef.current[tagId] = Date.now();
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchUpdate = async () => {
     if (tags.length === 0) return;
     setLoading(true);
@@ -37,46 +63,36 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
     try {
       // Filtra quais tags devem ser consultadas
       const tagsToTrack = tags.filter(t => {
-          // 1. Sempre rastrear tags vinculadas a veículos
           const isLinked = vehicles.some(v => v.tagId === t.id);
-          // 2. Rastrear tag solta APENAS se ela estiver selecionada no momento
           const isSelected = t.id === selectedTagId;
-          
           return isLinked || isSelected;
       });
 
-      const results = await Promise.all(tagsToTrack.map(async (tag) => {
-         try {
-           const res = await fetchTagLocation(tag);
-           // FIX: Use tag.id as the stable key for the map marker
-           return res.length > 0 ? { ...res[0], tagId: tag.id, id: tag.id } as LocationHistory : null;
-         } catch(e) { return null; }
-      }));
-      
-      const valid = results.filter((r): r is LocationHistory => r !== null);
+      // BUSCA EM LOTE (BATCHING)
+      // chunkSize de 10 é mais seguro para evitar erros 429 (Rate Limit)
+      const valid = await fetchTagsLocationBatch(tagsToTrack, 10);
       
       // PERSISTÊNCIA INTELIGENTE (Smart Save)
-      // Só salva no banco se: 
-      // 1. Veículo vinculado
-      // 2. Passou 10 minutos desde o último save OU
-      // 3. Moveu significativamente (Opcional, aqui faremos por tempo para simplificar)
       const now = Date.now();
       valid.forEach(loc => {
           const vehicle = vehicles.find(v => v.tagId === loc.tagId);
           if (vehicle) {
-              const lastSaveTime = lastSaveRef.current[loc.tagId] || 0;
-              // Salva a cada 10 minutos (600000ms) para não estourar cota do Firestore
+              const lastSaveTime = lastSaveRef.current[loc.tagId!] || 0;
               if ((now - lastSaveTime) > 600000) {
-                  storage.updateVehiclePosition(vehicle.id, loc);
-                  lastSaveRef.current[loc.tagId] = now;
+                  storage.updateVehiclePosition(vehicle.id, loc as any);
+                  lastSaveRef.current[loc.tagId!] = now;
               }
           }
       });
 
-      // Merge com localizações existentes para não piscar e manter os offline visíveis
+      // Merge com localizações existentes
       setFleetLocations(prev => {
           const newMap = new Map(prev.map(i => [i.tagId, i]));
-          valid.forEach(v => newMap.set(v.tagId, v));
+          valid.forEach(v => {
+              if (v.tagId) {
+                  newMap.set(v.tagId, { ...v, id: v.tagId } as any);
+              }
+          });
           return Array.from(newMap.values());
       });
       
@@ -94,5 +110,5 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       if (selectedTagId) setTimeout(fetchUpdate, 100);
   }, [selectedTagId]);
 
-  return { fleetLocations, loading, manualRefresh: fetchUpdate };
+  return { fleetLocations, loading, manualRefresh: fetchUpdate, refreshTag };
 };

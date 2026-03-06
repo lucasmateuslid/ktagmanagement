@@ -168,15 +168,30 @@ export const MapComponent: React.FC<MapProps> = ({
         const isUnlinked = !vehicle;
         const category = vehicle ? categories.find(c => c.id === vehicle.type) : undefined;
 
+        // Lógica de cor por tempo de comunicação
+        const getCommColor = () => {
+            if (!loc.timestamp) return '#71717a'; // Cinza se sem tempo
+            const now = Date.now();
+            const diffMin = (now - loc.timestamp) / 60000;
+            const diffHours = diffMin / 60;
+
+            if (diffMin <= 30) return '#10b981'; // Verde Claro
+            if (diffHours <= 3) return '#f59e0b'; // Amarelo
+            if (diffHours <= 12) return '#f97316'; // Laranja
+            return '#ef4444'; // Vermelho
+        };
+
+        const statusColor = getCommColor();
+
         return (
           <Marker 
-              key={loc.id} 
+              key={loc.tagId} 
               position={[loc.lat, loc.lon]} 
               icon={createVehicleIcon(
                   isSelected, 
                   category?.fipeType, 
                   category?.name, 
-                  '#f59e0b', 
+                  statusColor, 
                   isUnlinked, 
                   showPlates, // Passa estado
                   vehicle?.plate // Passa texto

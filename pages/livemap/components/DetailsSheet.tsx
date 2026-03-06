@@ -3,7 +3,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ChevronDown, ChevronUp, User, Tag as TagIcon, 
-    BatteryCharging, MapPin, Navigation, History, X, Box, Clock
+    BatteryCharging, MapPin, Navigation, History, X, Box, Clock, RefreshCw
 } from 'lucide-react';
 import { FaMotorcycle, FaTruck, FaCar } from 'react-icons/fa';
 import { Vehicle, Tag, VehicleCategory, Client, LocationHistory } from '../../../types';
@@ -22,11 +22,12 @@ interface DetailsSheetProps {
     resolvedAddress?: string;
     userRole?: string;
     onFetchHistory: () => void;
+    onRefreshTag: (tagId: string) => void;
     onClose: () => void;
 }
 
 export const DetailsSheet: React.FC<DetailsSheetProps> = ({
-    selectedTagId, isExpanded, toggleExpanded, vehicle, tag, category, client, lastLoc, resolvedAddress, userRole, onFetchHistory, onClose
+    selectedTagId, isExpanded, toggleExpanded, vehicle, tag, category, client, lastLoc, resolvedAddress, userRole, onFetchHistory, onRefreshTag, onClose
 }) => {
     const getModalIcon = (fipeType?: string) => {
         switch (fipeType) {
@@ -60,8 +61,19 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
                       </div>
                     </div>
                   </div>
-                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors">
-                    {isExpanded ? <ChevronDown size={20} className="md:w-[22px] md:h-[22px]" /> : <ChevronUp size={20} className="md:w-[22px] md:h-[22px]" />}
+                  <div className="flex items-center gap-2">
+                    {userRole !== 'client' && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onRefreshTag(selectedTagId); }}
+                            className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-primary-500 transition-colors"
+                            title="Atualizar Localização Agora"
+                        >
+                            <RefreshCw size={16} className="md:w-[18px] md:h-[18px]" />
+                        </button>
+                    )}
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors">
+                        {isExpanded ? <ChevronDown size={20} className="md:w-[22px] md:h-[22px]" /> : <ChevronUp size={20} className="md:w-[22px] md:h-[22px]" />}
+                    </div>
                   </div>
                 </div>
 

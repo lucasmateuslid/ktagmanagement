@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tag as TagIcon, Car, Search, ChevronRight } from 'lucide-react';
-import { Vehicle } from '../../../types';
+import { Tag as TagIcon, Car, Search, ChevronRight, Bike, Truck } from 'lucide-react';
+import { Vehicle, VehicleCategory } from '../../../types';
 
 const MotionDiv = motion.div as any;
 
@@ -11,11 +11,48 @@ interface SearchDropdownProps {
     items: any[];
     fleetLocations: any[];
     clients: any[];
+    categories: VehicleCategory[];
     userRole?: string;
     onSelect: (tagId: string) => void;
 }
 
-export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items, fleetLocations, clients, userRole, onSelect }) => {
+export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items, fleetLocations, clients, categories, userRole, onSelect }) => {
+    
+    const getVehicleIcon = (typeId: string) => {
+        const cat = categories.find(c => c.id === typeId);
+        if (!cat) return <Car size={20} />;
+        
+        switch (cat.fipeType) {
+            case 'motos': return <Bike size={20} />;
+            case 'caminhoes': return <Truck size={20} />;
+            default: return <Car size={20} />;
+        }
+    };
+
+    const getStatusColor = (tagId: string) => {
+        const loc = fleetLocations.find(l => l.tagId === tagId);
+        if (!loc || !loc.timestamp) return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700';
+        
+        const now = Date.now();
+        const diffMs = now - loc.timestamp;
+        const diffMin = diffMs / 60000;
+        const diffHours = diffMin / 60;
+
+        if (diffMin <= 30) {
+            // Verde Claro (Online recente)
+            return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
+        } else if (diffHours <= 3) {
+            // Amarelo (30min a 3h)
+            return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+        } else if (diffHours <= 12) {
+            // Laranja (3h a 12h)
+            return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+        } else {
+            // Vermelho (+12h)
+            return 'bg-red-500/10 text-red-500 border-red-500/20';
+        }
+    };
+
     return (
         <AnimatePresence>
             {isVisible && (
@@ -50,8 +87,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                          return (
                             <button key={v.id} onClick={() => onSelect(v.tagId!)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
                                 <div className="flex items-center gap-4 min-w-0">
-                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${fleetLocations.some(l => l.tagId === v.tagId) ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
-                                        <Car size={20} />
+                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${getStatusColor(v.tagId!)}`}>
+                                        {getVehicleIcon(v.type)}
                                     </div>
                                     <div className="min-w-0">
                                         <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{v.plate}</div>

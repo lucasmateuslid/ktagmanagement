@@ -306,8 +306,6 @@ export const Settings = () => {
         {/* COLUNA DIREITA (APIs E SISTEMA) */}
         <div className="lg:col-span-8 space-y-6 md:space-y-10">
           
-          {isAdmin && (
-            <>
               {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
@@ -321,9 +319,10 @@ export const Settings = () => {
                             <AlertTriangle className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={16} />
                             <input 
                                 type="number" 
+                                disabled={!isAdmin}
                                 value={settings.minStockLevel || 80} 
                                 onChange={e => setSettings({...settings, minStockLevel: parseInt(e.target.value)})} 
-                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500"
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500 disabled:opacity-50"
                             />
                         </div>
                         <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível alerta compra.</p>
@@ -334,9 +333,10 @@ export const Settings = () => {
                             <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
                             <input 
                                 type="number" 
+                                disabled={!isAdmin}
                                 value={settings.criticalStockLevel || 40} 
                                 onChange={e => setSettings({...settings, criticalStockLevel: parseInt(e.target.value)})} 
-                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500"
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500 disabled:opacity-50"
                             />
                         </div>
                         <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível de risco de ruptura.</p>
@@ -347,9 +347,10 @@ export const Settings = () => {
                             <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
                             <input 
                                 type="number" 
+                                disabled={!isAdmin}
                                 value={settings.budgetMarginThreshold || 25} 
                                 onChange={e => setSettings({...settings, budgetMarginThreshold: parseFloat(e.target.value)})} 
-                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500"
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
                             />
                         </div>
                         <p className="text-[9px] text-zinc-400 mt-1 ml-1">Limite mín. para aprovação (Default: 25%).</p>
@@ -369,12 +370,13 @@ export const Settings = () => {
                     <div className="relative">
                       <input 
                         type={showGoogleKey ? 'text' : 'password'} 
-                        value={settings.googleMapsKey} 
+                        disabled={!isAdmin}
+                        value={isAdmin ? settings.googleMapsKey : '••••••••••••••••'} 
                         onChange={e => setSettings({...settings, googleMapsKey: e.target.value})} 
-                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-red-500 pr-12" 
+                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-red-500 pr-12 disabled:opacity-50" 
                         placeholder="AIza..."
                       />
-                      <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showGoogleKey ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                      {isAdmin && <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showGoogleKey ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
                     </div>
                     <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-tight">Necessário habilitar: Maps JavaScript API, Places API, Geocoding API.</p>
                   </div>
@@ -392,19 +394,19 @@ export const Settings = () => {
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
                     <div className="relative">
                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300" size={16} />
-                      <input type="text" value={settings.ktagUrl} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" placeholder="https://api.ktag.example.com" />
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" placeholder="https://api.ktag.example.com" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
-                        <input type="text" value={settings.ktagUser} onChange={e => setSettings({...settings, ktagUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" />
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUser : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
                         <div className="relative">
-                           <input type={showKTagPass ? 'text' : 'password'} value={settings.ktagPass} onChange={e => setSettings({...settings, ktagPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" />
-                           <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                           <input type={showKTagPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.ktagPass : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12 disabled:opacity-50" />
+                           {isAdmin && <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
                         </div>
                       </div>
                   </div>
@@ -420,25 +422,25 @@ export const Settings = () => {
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint SGA</label>
-                    <input type="text" value={settings.hinovaUrl} onChange={e => setSettings({...settings, hinovaUrl: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" placeholder="https://api.hinova.com.br/api/sga/v2" />
+                    <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaUrl: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="https://api.hinova.com.br/api/sga/v2" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token SGA (Master / SGA Token)</label>
                     <div className="relative">
-                      <input type={showHinovaToken ? 'text' : 'password'} value={settings.hinovaToken} onChange={e => setSettings({...settings, hinovaToken: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-emerald-500 pr-12" />
-                      <button type="button" onClick={() => setShowHinovaToken(!showHinovaToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                      <input type={showHinovaToken ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaToken : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaToken: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-emerald-500 pr-12 disabled:opacity-50" />
+                      {isAdmin && <button type="button" onClick={() => setShowHinovaToken(!showHinovaToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário de Autenticação</label>
-                        <input type="text" value={settings.hinovaUser} onChange={e => setSettings({...settings, hinovaUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUser : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha de Autenticação</label>
                         <div className="relative">
-                           <input type={showHinovaPass ? 'text' : 'password'} value={settings.hinovaPass} onChange={e => setSettings({...settings, hinovaPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs" />
-                           <button type="button" onClick={() => setShowHinovaPass(!showHinovaPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                           <input type={showHinovaPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaPass : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
+                           {isAdmin && <button type="button" onClick={() => setShowHinovaPass(!showHinovaPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
                         </div>
                       </div>
                   </div>
@@ -456,7 +458,7 @@ export const Settings = () => {
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Proxy Cloud Function URL</label>
                     <div className="relative">
                       <Terminal className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
-                      <input type="text" value={settings.customProxyUrl} onChange={e => setSettings({...settings, customProxyUrl: e.target.value})} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none" />
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? settings.customProxyUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, customProxyUrl: e.target.value})} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none disabled:opacity-50" />
                     </div>
                     <p className="text-[9px] text-zinc-400 font-bold uppercase mt-2">Necessário para contornar bloqueios de CORS em navegadores ao acessar o servidor K-Tag diretamente.</p>
                   </div>
@@ -473,26 +475,30 @@ export const Settings = () => {
                    {/* Regionais */}
                    <div className="space-y-6">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14}/> Regionais</h4>
-                      <div className="flex gap-2">
-                         <div className="flex-1 flex gap-2">
-                             <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                             <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
-                         </div>
-                         <div className="flex gap-1">
-                             {editingCompanyId && (
-                                <button onClick={handleCancelEdit} className="p-3.5 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><X size={18} strokeWidth={3}/></button>
-                             )}
-                             <button onClick={handleSaveCompany} className={`p-3.5 ${editingCompanyId ? 'bg-emerald-500 text-white' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black'} rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0`}>
-                                {editingCompanyId ? <Check size={18} strokeWidth={3}/> : <Plus size={18} strokeWidth={3}/>}
-                             </button>
-                         </div>
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                          <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 cursor-pointer">
-                              <input type="checkbox" checked={newCompany.hasSgaIntegration} onChange={e => setNewCompany({...newCompany, hasSgaIntegration: e.target.checked})} className="accent-emerald-500 w-4 h-4 rounded" />
-                              Integração com SGA Ativa
-                          </label>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                           <div className="flex-1 flex gap-2">
+                               <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                               <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
+                           </div>
+                           <div className="flex gap-1">
+                               {editingCompanyId && (
+                                  <button onClick={handleCancelEdit} className="p-3.5 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><X size={18} strokeWidth={3}/></button>
+                               )}
+                               <button onClick={handleSaveCompany} className={`p-3.5 ${editingCompanyId ? 'bg-emerald-500 text-white' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black'} rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0`}>
+                                  {editingCompanyId ? <Check size={18} strokeWidth={3}/> : <Plus size={18} strokeWidth={3}/>}
+                               </button>
+                           </div>
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <div className="flex items-center gap-2 mb-2">
+                            <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 cursor-pointer">
+                                <input type="checkbox" checked={newCompany.hasSgaIntegration} onChange={e => setNewCompany({...newCompany, hasSgaIntegration: e.target.checked})} className="accent-emerald-500 w-4 h-4 rounded" />
+                                Integração com SGA Ativa
+                            </label>
+                        </div>
+                      )}
                       
                       <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                          {companies.map(c => (
@@ -501,10 +507,12 @@ export const Settings = () => {
                                    <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
                                    <span className={`text-[9px] font-bold ${c.hasSgaIntegration === false ? 'text-amber-500' : 'text-emerald-500'}`}>{c.hasSgaIntegration === false ? 'Sem Integração SGA' : 'Integrado ao SGA'}</span>
                                </div>
-                               <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
-                                   <button onClick={() => handleStartEditCompany(c)} className="p-1.5 text-zinc-300 hover:text-primary-500"><Edit2 size={14}/></button>
-                                   <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500"><Trash2 size={14}/></button>
-                               </div>
+                               {isAdmin && (
+                                 <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
+                                     <button onClick={() => handleStartEditCompany(c)} className="p-1.5 text-zinc-300 hover:text-primary-500"><Edit2 size={14}/></button>
+                                     <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500"><Trash2 size={14}/></button>
+                                 </div>
+                               )}
                             </div>
                          ))}
                       </div>
@@ -513,15 +521,17 @@ export const Settings = () => {
                    {/* Categorias */}
                    <div className="space-y-6">
                       <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Server size={14}/> Categorias</h4>
-                      <div className="flex gap-2">
-                         <input type="text" placeholder="Veículo" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                         <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                           <input type="text" placeholder="Veículo" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                           <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
+                        </div>
+                      )}
                       <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
                          {categories.map(cat => (
                             <div key={cat.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
                                <span className="text-[10px] font-black uppercase tracking-tight truncate">{cat.name}</span>
-                               <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>
+                               {isAdmin && <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>}
                             </div>
                          ))}
                       </div>
@@ -541,18 +551,17 @@ export const Settings = () => {
                     <div className="relative">
                       <input 
                         type={showTraqToken ? 'text' : 'password'} 
-                        value={settings.traqcareToken} 
+                        disabled={!isAdmin}
+                        value={isAdmin ? settings.traqcareToken : '••••••••••••••••'} 
                         onChange={e => setSettings({...settings, traqcareToken: e.target.value})} 
-                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-primary-500 pr-12" 
+                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-primary-500 pr-12 disabled:opacity-50" 
                       />
-                      <button type="button" onClick={() => setShowTraqToken(!showTraqToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showTraqToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                      {isAdmin && <button type="button" onClick={() => setShowTraqToken(!showTraqToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showTraqToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
                     </div>
                     <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-tight">Token de ambiente necessário para comunicação com dispositivos XADTAG.</p>
                   </div>
                 </div>
               </div>
-            </>
-          )}
         </div>
       </div>
     </div>

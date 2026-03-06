@@ -143,7 +143,7 @@ export const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* CARD 1: TOTAL EQUIPAMENTOS (Area Chart Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between relative overflow-hidden h-[340px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between relative overflow-hidden h-[300px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="relative z-10">
                       <div className="flex justify-between items-start">
                           <div>
@@ -169,26 +169,26 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 2: VEÍCULOS E CATEGORIAS (ALWAYS DARK) */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-lg shadow-zinc-900/20 min-h-[340px] relative overflow-hidden group">
-                  <div className="flex justify-between items-start mb-8 relative z-10">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-lg shadow-zinc-900/20 h-[300px] relative overflow-hidden group">
+                  <div className="flex justify-between items-start mb-6 relative z-10">
                       <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total de Veículos</p>
-                          <h3 className="text-7xl font-display font-black text-white mt-1 tracking-tighter">{vehicles.length}</h3>
+                          <h3 className="text-6xl font-display font-black text-white mt-1 tracking-tighter">{vehicles.length}</h3>
                       </div>
                       <div className="w-12 h-12 rounded-2xl border border-primary-500/30 text-primary-500 flex items-center justify-center bg-primary-500/5">
                           <CarFront size={24} />
                       </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-3 flex-1 relative z-10">
-                      {categoryStats.map((cat, idx) => (
-                          <div key={idx} className="bg-zinc-800/50 border border-zinc-800/80 rounded-2xl p-4 flex items-center gap-4 transition-all hover:bg-zinc-800 hover:border-zinc-700">
-                              <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 shrink-0">
-                                  <cat.icon size={18} />
+                  <div className="grid grid-cols-2 gap-3 flex-1 relative z-10 content-start">
+                      {categoryStats.slice(0, 4).map((cat, idx) => (
+                          <div key={idx} className="bg-zinc-800/50 border border-zinc-800/80 rounded-2xl p-3 flex items-center gap-3 transition-all hover:bg-zinc-800 hover:border-zinc-700">
+                              <div className="w-8 h-8 rounded-xl bg-zinc-900 flex items-center justify-center text-zinc-400 shrink-0">
+                                  <cat.icon size={14} />
                               </div>
                               <div className="min-w-0">
-                                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest truncate">{cat.name}</p>
-                                  <p className="text-xl font-black text-white leading-none mt-0.5">{cat.count}</p>
+                                  <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate">{cat.name}</p>
+                                  <p className="text-lg font-black text-white leading-none mt-0.5">{cat.count}</p>
                               </div>
                           </div>
                       ))}
@@ -196,15 +196,15 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 3: ESTOQUE (REESTILIZADO CONFORME PEDIDO) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[340px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[300px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-start">
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">Estoque</p>
                       <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-zinc-400"><ShoppingCart size={20}/></div>
                   </div>
                   
                   <div className="flex flex-col gap-1">
-                      <h3 className="text-[80px] font-display font-black text-zinc-900 dark:text-white tracking-tighter leading-none">{unlinkedCount}</h3>
-                      <p className={`text-[11px] font-black uppercase tracking-widest ${stockInfo.status === 'critical' ? 'text-red-500' : stockInfo.status === 'low' ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                      <h3 className="text-6xl font-display font-black text-zinc-900 dark:text-white tracking-tighter leading-none">{unlinkedCount}</h3>
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${stockInfo.status === 'critical' ? 'text-red-500' : stockInfo.status === 'low' ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-500'}`}>
                           {stockInfo.status === 'critical' ? 'ESTOQUE CRÍTICO' : stockInfo.status === 'low' ? 'NÍVEL BAIXO' : 'ESTOQUE CONFORTÁVEL'}
                       </p>
                   </div>
@@ -230,7 +230,7 @@ export const Dashboard = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* CARD 4: MODELO DE CONTRATO (Pie Bicolor) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[300px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Modelo de Contrato</p>
                       <HandCoins size={16} className="text-zinc-400"/>
@@ -274,7 +274,7 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 5: CRESCIMENTO OPERACIONAL (Area Gradient) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] lg:col-span-2 flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[300px] lg:col-span-2 flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Crescimento Operacional (6 Meses)</p>
                       <TrendingUp size={16} className="text-zinc-400"/>
@@ -304,16 +304,16 @@ export const Dashboard = () => {
           </div>
 
           {/* CARD 6: VEÍCULOS POR REGIONAL (Bar Horizontal) */}
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors h-[300px] flex flex-col">
               <div className="flex justify-between items-center mb-6">
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Veículos por Regional (Top 5)</p>
                   <Building2 size={16} className="text-zinc-400"/>
               </div>
-              <div className="h-[200px]">
+              <div className="flex-1 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={companyChartData} layout="vertical" margin={{ left: 0, right: 30 }}>
                           <XAxis type="number" hide />
-                          <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                          <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                           <Tooltip 
                             cursor={{fill: 'transparent'}} 
                             contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
@@ -341,13 +341,13 @@ export const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* CARD 7: TOP SOLICITANTES (Lista Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors h-[300px] flex flex-col">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Top Solicitantes</p>
                       <Users size={16} className="text-zinc-400"/>
                   </div>
-                  <div className="space-y-3">
-                      {topRequestersData.map((req, idx) => (
+                  <div className="space-y-3 flex-1 overflow-hidden">
+                      {topRequestersData.slice(0, 4).map((req, idx) => (
                           <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                               <div className="flex items-center gap-3">
                                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-primary-500 text-black' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
@@ -363,13 +363,13 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 8: TOP INSTALADORES (Lista Clean) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors h-[300px] flex flex-col">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Top Instaladores</p>
                       <Wrench size={16} className="text-zinc-400"/>
                   </div>
-                  <div className="space-y-3">
-                      {topTechsData.map((tech, idx) => (
+                  <div className="space-y-3 flex-1 overflow-hidden">
+                      {topTechsData.slice(0, 4).map((tech, idx) => (
                           <div key={idx} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-950/50 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                               <div className="flex items-center gap-3">
                                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-primary-500 text-black' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'}`}>
@@ -387,7 +387,7 @@ export const Dashboard = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* CARD 9: TIPOS DE SERVIÇO (Pie Bicolor/Tricolor) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 h-[300px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Tipos de Serviço</p>
                       <Activity size={16} className="text-zinc-400"/>
@@ -418,7 +418,7 @@ export const Dashboard = () => {
               </div>
 
               {/* CARD 10: DEMANDA POR SERVIÇOS (Area - Tempo) */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 lg:col-span-2 h-[340px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 lg:col-span-2 h-[300px] flex flex-col shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-center mb-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Demanda (Últimos 10 Dias)</p>
                       <Calendar size={16} className="text-zinc-400"/>

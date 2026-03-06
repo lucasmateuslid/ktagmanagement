@@ -61,18 +61,20 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   }, [tags, tagSearch, occupiedTagIds]);
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-zinc-950 rounded-[32px] w-full max-w-4xl shadow-2xl relative my-auto animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-hidden">
+      <div className="bg-white dark:bg-zinc-950 rounded-[32px] w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
         
-        <div className="p-6 md:p-8 flex-1 overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
-                    {formData.id ? 'EDITAR VEÍCULO' : 'NOVO VEÍCULO'}
-                </h2>
-                <button onClick={onClose} className="p-1.5 text-zinc-300 hover:text-zinc-600 transition-colors"><X size={24}/></button>
-            </div>
+        {/* HEADER FIXED */}
+        <div className="flex justify-between items-center p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-900 shrink-0">
+            <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
+                {formData.id ? 'EDITAR VEÍCULO' : 'NOVO VEÍCULO'}
+            </h2>
+            <button type="button" onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={24}/></button>
+        </div>
 
-            <form onSubmit={onSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-10">
+        {/* CONTENT SCROLLABLE */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+            <form id="vehicle-form" onSubmit={onSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-10">
                 {/* COLUNA 1: DADOS DO VEÍCULO */}
                 <div className="space-y-5">
                     <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">DADOS DO VEÍCULO</h3>
@@ -247,17 +249,22 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                             </div>
                         </div>
                     </div>
-
-                    <button 
-                      type="submit" 
-                      disabled={!isPlateValid}
-                      className="mt-8 w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
-                    >
-                        <Save size={20} /> SALVAR VEÍCULO
-                    </button>
                 </div>
             </form>
         </div>
+
+        {/* FOOTER FIXED */}
+        <div className="p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-900 shrink-0 bg-zinc-50/50 dark:bg-zinc-950 rounded-b-[32px]">
+            <button 
+              form="vehicle-form"
+              type="submit" 
+              disabled={!isPlateValid}
+              className="w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
+            >
+                <Save size={20} /> SALVAR VEÍCULO
+            </button>
+        </div>
+
       </div>
     </div>
   );

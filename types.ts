@@ -109,6 +109,7 @@ export interface KTagLocationResult {
   timestamp: number;
   isodatetime: string;
   distance?: number;
+  tagId?: string;
 }
 
 // Record for vehicle theft/robbery incidents

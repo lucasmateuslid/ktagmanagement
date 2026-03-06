@@ -413,23 +413,23 @@ export const Clients = () => {
 
       {/* MODAL RESET SENHA */}
       {isResetModalOpen && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <MotionDiv initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl">
-             <div className="flex justify-between items-center mb-8">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <MotionDiv initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-900 rounded-[30px] md:rounded-[40px] w-full max-w-md p-6 md:p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl max-h-[95vh] overflow-y-auto custom-scrollbar flex flex-col">
+             <div className="flex justify-between items-center mb-8 shrink-0">
                 <div className="flex items-center gap-3 text-primary-500">
-                   <KeyRound size={32} />
-                   <h2 className="text-2xl font-display font-black uppercase tracking-tight">Reset de Senha</h2>
+                   <KeyRound size={28} className="md:w-8 md:h-8" />
+                   <h2 className="text-xl md:text-2xl font-display font-black uppercase tracking-tight">Reset de Senha</h2>
                 </div>
                 <button onClick={() => setIsResetModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X /></button>
              </div>
 
-             <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800 mb-8">
+             <div className="p-6 bg-zinc-50 dark:bg-zinc-950 rounded-3xl border border-zinc-100 dark:border-zinc-800 mb-8 shrink-0">
                 <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Cliente Selecionado</p>
                 <h4 className="text-lg font-black text-zinc-900 dark:text-white uppercase leading-tight">{selectedClient.name}</h4>
                 <p className="text-xs font-mono text-zinc-500 mt-1">{selectedClient.cpf}</p>
              </div>
 
-             <div className="grid grid-cols-1 gap-4">
+             <div className="grid grid-cols-1 gap-4 shrink-0">
                 <button 
                   onClick={() => handleResetPassword('default')}
                   className="w-full py-5 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
@@ -445,7 +445,7 @@ export const Clients = () => {
                 </button>
              </div>
 
-             <p className="mt-8 text-center text-[9px] font-bold text-zinc-400 uppercase leading-relaxed px-4">
+             <p className="mt-8 text-center text-[9px] font-bold text-zinc-400 uppercase leading-relaxed px-4 shrink-0">
                 * A alteração é imediata. O cliente deverá usar a nova credencial no próximo acesso.
              </p>
           </MotionDiv>
@@ -454,98 +454,108 @@ export const Clients = () => {
 
       {/* MODAL FICHA CLIENTE */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 md:p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-zinc-900 rounded-[30px] md:rounded-[40px] w-full max-w-5xl p-6 md:p-12 shadow-2xl relative border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-8 md:mb-12">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 md:p-4 overflow-hidden">
+          <div className="bg-white dark:bg-zinc-900 rounded-[30px] md:rounded-[40px] w-full max-w-5xl shadow-2xl relative border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* HEADER FIXED */}
+            <div className="flex justify-between items-center p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
                <h2 className="text-2xl md:text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Ficha do Cliente</h2>
                <button onClick={() => setIsModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 transition-colors"><X size={24}/></button>
             </div>
             
-            <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-16">
-                <div className="space-y-6 md:space-y-8">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
-                        <UserIcon size={14}/> Informações Cadastrais
-                    </h3>
-                    <div className="space-y-5">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome Completo</label>
-                            <input type="text" required value={selectedClient.name || ''} onChange={e => setSelectedClient({...selectedClient, name: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500 transition-all" />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* CONTENT SCROLLABLE */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+                <form id="client-form" onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-16">
+                    <div className="space-y-6 md:space-y-8">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
+                            <UserIcon size={14}/> Informações Cadastrais
+                        </h3>
+                        <div className="space-y-5">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF (Somente Números)</label>
-                                <input type="text" required value={selectedClient.cpf || ''} onChange={e => setSelectedClient({...selectedClient, cpf: e.target.value.replace(/\D/g, '')})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome Completo</label>
+                                <input type="text" required value={selectedClient.name || ''} onChange={e => setSelectedClient({...selectedClient, name: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500 transition-all" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF (Somente Números)</label>
+                                    <input type="text" required value={selectedClient.cpf || ''} onChange={e => setSelectedClient({...selectedClient, cpf: e.target.value.replace(/\D/g, '')})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
+                                    <input type="text" value={selectedClient.phone || ''} onChange={e => setSelectedClient({...selectedClient, phone: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
+                                </div>
                             </div>
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
-                                <input type="text" value={selectedClient.phone || ''} onChange={e => setSelectedClient({...selectedClient, phone: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
+                                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">E-mail</label>
+                                <input type="email" value={selectedClient.email || ''} onChange={e => setSelectedClient({...selectedClient, email: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@provedor.com" />
                             </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">E-mail</label>
-                            <input type="email" value={selectedClient.email || ''} onChange={e => setSelectedClient({...selectedClient, email: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@provedor.com" />
-                        </div>
-                        <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                           <label className="flex items-center gap-4 cursor-pointer group bg-zinc-100/50 dark:bg-zinc-950 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800">
-                              <div className="relative shrink-0">
-                                <input type="checkbox" className="sr-only peer" checked={selectedClient.hasAccess || false} onChange={e => setSelectedClient({...selectedClient, hasAccess: e.target.checked})}/>
-                                <div className="w-12 h-7 bg-zinc-300 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
-                                <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full peer-checked:translate-x-5 transition-all shadow-sm"></div>
-                              </div>
-                              <div className="flex flex-col">
-                                 <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-white tracking-tight">Liberar Portal do Cliente</span>
-                                 <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-tighter">Acesso via CPF e senha inicial</span>
-                              </div>
-                           </label>
+                            <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                               <label className="flex items-center gap-4 cursor-pointer group bg-zinc-100/50 dark:bg-zinc-950 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800">
+                                  <div className="relative shrink-0">
+                                    <input type="checkbox" className="sr-only peer" checked={selectedClient.hasAccess || false} onChange={e => setSelectedClient({...selectedClient, hasAccess: e.target.checked})}/>
+                                    <div className="w-12 h-7 bg-zinc-300 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
+                                    <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full peer-checked:translate-x-5 transition-all shadow-sm"></div>
+                                  </div>
+                                  <div className="flex flex-col">
+                                     <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-white tracking-tight">Liberar Portal do Cliente</span>
+                                     <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-tighter">Acesso via CPF e senha inicial</span>
+                                  </div>
+                               </label>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="space-y-6 md:space-y-8">
-                   <div className="flex justify-between items-center">
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
-                          <Car size={14}/> Gestão de Acesso (Placas)
-                      </h3>
-                      <span className="bg-primary-500/10 text-primary-600 text-[10px] font-black px-2 py-0.5 rounded-lg uppercase">{selectedVehicleIds.size} Selecionados</span>
-                   </div>
-                   <div className="bg-white dark:bg-zinc-950 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-inner">
-                      <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-                        <div className="relative">
-                          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
-                          <input type="text" placeholder="Buscar placa para vincular..." value={vehicleSearchTerm} onChange={e => setVehicleSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none focus:border-primary-500 transition-all"/>
-                        </div>
-                      </div>
-                      <div className="max-h-[350px] overflow-y-auto custom-scrollbar p-2 space-y-1">
-                          {filteredModalVehicles.length === 0 ? (
-                            <div className="py-12 text-center opacity-30 flex flex-col items-center gap-2">
-                                <Car size={32} />
-                                <span className="text-[10px] font-black uppercase">Nenhum veículo disponível</span>
+                    <div className="space-y-6 md:space-y-8">
+                       <div className="flex justify-between items-center">
+                          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 flex items-center gap-2">
+                              <Car size={14}/> Gestão de Acesso (Placas)
+                          </h3>
+                          <span className="bg-primary-500/10 text-primary-600 text-[10px] font-black px-2 py-0.5 rounded-lg uppercase">{selectedVehicleIds.size} Selecionados</span>
+                       </div>
+                       <div className="bg-white dark:bg-zinc-950 rounded-[32px] border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-inner">
+                          <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                              <input type="text" placeholder="Buscar placa para vincular..." value={vehicleSearchTerm} onChange={e => setVehicleSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none focus:border-primary-500 transition-all"/>
                             </div>
-                          ) : (
-                            filteredModalVehicles.map(v => {
-                              const isSelected = selectedVehicleIds.has(v.id);
-                              const belongsToOther = v.clientId && v.clientId !== selectedClient.id;
-                              return (
-                                <button key={v.id} type="button" onClick={() => toggleVehicleSelection(v.id)} className={`w-full p-4 rounded-2xl text-left transition-all border flex items-center justify-between group ${isSelected ? 'bg-primary-500 border-primary-600 shadow-md' : 'bg-transparent border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-zinc-100 dark:hover:bg-zinc-800'}`}>
-                                  <div className="flex items-center gap-4">
-                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isSelected ? 'bg-black/10 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-primary-500'}`}><Car size={18} /></div>
-                                     <div className="flex flex-col">
-                                        <span className={`text-sm font-black uppercase leading-none ${isSelected ? 'text-black' : 'text-zinc-900 dark:text-white'}`}>{v.plate}</span>
-                                        <span className={`text-[9px] font-bold uppercase mt-1 tracking-tight ${isSelected ? 'text-black/60' : 'text-zinc-500'}`}>{v.model} {belongsToOther && <span className="ml-2 text-red-500">• Outro Cliente</span>}</span>
-                                     </div>
-                                  </div>
-                                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all ${isSelected ? 'bg-black border-black text-primary-500' : 'border-zinc-200 dark:border-zinc-800 text-transparent'}`}><Check size={14} strokeWidth={4} /></div>
-                                </button>
-                              );
-                            })
-                          )}
-                      </div>
-                   </div>
-                   <button type="submit" className="w-full py-5 md:py-6 bg-primary-500 text-black rounded-[24px] md:rounded-[32px] font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary-500/30 active:scale-95 transition-all flex items-center justify-center gap-4">
-                      <Save size={24} /> SALVAR ALTERAÇÕES
-                   </button>
-                </div>
-            </form>
+                          </div>
+                          <div className="max-h-[350px] overflow-y-auto custom-scrollbar p-2 space-y-1">
+                              {filteredModalVehicles.length === 0 ? (
+                                <div className="py-12 text-center opacity-30 flex flex-col items-center gap-2">
+                                    <Car size={32} />
+                                    <span className="text-[10px] font-black uppercase">Nenhum veículo disponível</span>
+                                </div>
+                              ) : (
+                                filteredModalVehicles.map(v => {
+                                  const isSelected = selectedVehicleIds.has(v.id);
+                                  const belongsToOther = v.clientId && v.clientId !== selectedClient.id;
+                                  return (
+                                    <button key={v.id} type="button" onClick={() => toggleVehicleSelection(v.id)} className={`w-full p-4 rounded-2xl text-left transition-all border flex items-center justify-between group ${isSelected ? 'bg-primary-500 border-primary-600 shadow-md' : 'bg-transparent border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-zinc-100 dark:hover:bg-zinc-800'}`}>
+                                      <div className="flex items-center gap-4">
+                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isSelected ? 'bg-black/10 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-primary-500'}`}><Car size={18} /></div>
+                                         <div className="flex flex-col">
+                                            <span className={`text-sm font-black uppercase leading-none ${isSelected ? 'text-black' : 'text-zinc-900 dark:text-white'}`}>{v.plate}</span>
+                                            <span className={`text-[9px] font-bold uppercase mt-1 tracking-tight ${isSelected ? 'text-black/60' : 'text-zinc-500'}`}>{v.model} {belongsToOther && <span className="ml-2 text-red-500">• Outro Cliente</span>}</span>
+                                         </div>
+                                      </div>
+                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all ${isSelected ? 'bg-black border-black text-primary-500' : 'border-zinc-200 dark:border-zinc-800 text-transparent'}`}><Check size={14} strokeWidth={4} /></div>
+                                    </button>
+                                  );
+                                })
+                              )}
+                          </div>
+                       </div>
+                    </div>
+                </form>
+            </div>
+
+            {/* FOOTER FIXED */}
+            <div className="p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950 rounded-b-[30px] md:rounded-b-[40px]">
+               <button form="client-form" type="submit" className="w-full py-5 md:py-6 bg-primary-500 text-black rounded-[24px] md:rounded-[32px] font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary-500/30 active:scale-95 transition-all flex items-center justify-center gap-4">
+                  <Save size={24} /> SALVAR ALTERAÇÕES
+               </button>
+            </div>
+
           </div>
         </div>
       )}

@@ -47,7 +47,7 @@ export const LiveMap = () => {
   const { tags, vehicles, categories, clients } = useFleetData(user);
 
   // 2. Tracking Layer
-  const { fleetLocations, loading, manualRefresh } = useFleetTracking(tags, vehicles, selectedTagId);
+  const { fleetLocations, loading, manualRefresh, refreshTag } = useFleetTracking(tags, vehicles, selectedTagId);
 
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
@@ -130,6 +130,7 @@ export const LiveMap = () => {
         filteredList={filteredList}
         fleetLocations={fleetLocations}
         clients={clients}
+        categories={categories}
         userRole={user?.role}
         onSelect={handleSelection}
         stats={stats}
@@ -166,6 +167,7 @@ export const LiveMap = () => {
         resolvedAddress={lastLoc ? resolvedAddresses[lastLoc.id] : undefined}
         userRole={user?.role}
         onFetchHistory={fetchHistory}
+        onRefreshTag={refreshTag}
         onClose={() => setSelectedTagId('')}
       />
 

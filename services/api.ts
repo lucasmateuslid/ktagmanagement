@@ -21,6 +21,50 @@ export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
   }
 };
 
+/**
+ * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
+ */
+export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 10): Promise<KTagLocationResult[]> => {
+  const allResults: KTagLocationResult[] = [];
+  
+  for (let i = 0; i < tags.length; i += chunkSize) {
+    const chunk = tags.slice(i, i + chunkSize);
+    
+    const chunkResults = await Promise.all(chunk.map(async (tag) => {
+      // Tenta buscar a localização com até 2 retentativas em caso de 429
+      let attempts = 0;
+      const maxAttempts = 2;
+      
+      while (attempts <= maxAttempts) {
+        try {
+          const res = await fetchTagLocation(tag);
+          return res.length > 0 ? { ...res[0], tagId: tag.id } : null;
+        } catch (e: any) {
+          if (e.message.includes('429') && attempts < maxAttempts) {
+            attempts++;
+            // Espera exponencial: 1s, 2s...
+            await new Promise(resolve => setTimeout(resolve, attempts * 1000));
+            continue;
+          }
+          console.error(`Erro ao rastrear tag ${tag.accessoryId}:`, e.message);
+          return null;
+        }
+      }
+      return null;
+    }));
+
+    const validResults = chunkResults.filter((r): r is any => r !== null);
+    allResults.push(...validResults);
+
+    // Aumenta o delay entre chunks para 500ms para respeitar os limites do Proxy
+    if (tags.length > chunkSize) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  return allResults;
+};
+
 export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
   // Dispatcher Baseado no Tipo de Dispositivo
   if (tag.type === 'XADTAG') {
@@ -53,6 +97,7 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
       if (!response.ok) {
         if (response.status === 401) throw new Error("Acesso Negado (401): Credenciais K-Tag inválidas.");
         if (response.status === 404) throw new Error("Endpoint K-Tag não encontrado (404).");
+        if (response.status === 429) throw new Error("Erro 429: Muitas requisições. O servidor está limitando o acesso.");
         throw new Error(`Erro ${response.status}: Falha no Proxy K-Tag.`);
       }
       

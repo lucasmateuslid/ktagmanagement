@@ -16,6 +16,7 @@ interface TopHUDProps {
     filteredList: any[];
     fleetLocations: any[];
     clients: any[];
+    categories: any[];
     userRole?: string;
     onSelect: (id: string) => void;
     stats: any;
@@ -29,7 +30,7 @@ interface TopHUDProps {
 
 export const TopHUD: React.FC<TopHUDProps> = ({ 
     searchTerm, setSearchTerm, isFocused, setIsFocused, loading, onRefresh, searchPlaceholder,
-    filteredList, fleetLocations, clients, userRole, onSelect,
+    filteredList, fleetLocations, clients, categories, userRole, onSelect,
     stats, filter, setFilter, displayLimit, setDisplayLimit,
     showPlates, setShowPlates
 }) => {
@@ -97,6 +98,7 @@ export const TopHUD: React.FC<TopHUDProps> = ({
                 items={filteredList}
                 fleetLocations={fleetLocations}
                 clients={clients}
+                categories={categories}
                 userRole={userRole}
                 onSelect={(id) => { onSelect(id); setIsFocused(false); }}
               />
