@@ -51,7 +51,7 @@ export const pushService = {
       if (db) {
         await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
           userId: userId,
-          subscription: JSON.parse(JSON.stringify(subscription)),
+          subscription: subscription.toJSON(),
           updatedAt: Date.now(),
           userAgent: navigator.userAgent
         });

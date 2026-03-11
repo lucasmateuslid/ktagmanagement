@@ -13,7 +13,8 @@ import {
   Lock, Edit2, Building2, Server, Eye, EyeOff, 
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
-  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X
+  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X, Bell,
+  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -39,6 +40,16 @@ export const Settings = () => {
   const [showTraqToken, setShowTraqToken] = useState(false);
   const [showGoogleKey, setShowGoogleKey] = useState(false);
   
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    newTechnicalRequest: true,
+    serviceCompleted: true,
+    theftRegistered: true,
+    newComment: true,
+    schedulingNeedsConfirmation: true,
+    schedulingNeedsCompletion: true
+  });
+  const [notifLoading, setNotifLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotification();
   const { setLanguage, t, language } = useLanguage();
@@ -54,6 +65,16 @@ export const Settings = () => {
           name: currentUser.name, 
           avatarInitial: currentUser.avatarInitial || currentUser.name.charAt(0) 
         });
+        if (currentUser.notificationPreferences) {
+          setNotificationPrefs({
+            newTechnicalRequest: currentUser.notificationPreferences.newTechnicalRequest ?? true,
+            serviceCompleted: currentUser.notificationPreferences.serviceCompleted ?? true,
+            theftRegistered: currentUser.notificationPreferences.theftRegistered ?? true,
+            newComment: currentUser.notificationPreferences.newComment ?? true,
+            schedulingNeedsConfirmation: currentUser.notificationPreferences.schedulingNeedsConfirmation ?? true,
+            schedulingNeedsCompletion: currentUser.notificationPreferences.schedulingNeedsCompletion ?? true,
+          });
+        }
     }
 
     const [allCompanies, allCategories] = await Promise.all([
@@ -108,6 +129,19 @@ export const Settings = () => {
         storage.logAction(currentUser, 'UPDATE', 'User', 'Atualizou dados do perfil');
         addNotification('success', 'Perfil Atualizado', 'Seus dados foram salvos.');
     } finally { setProfileLoading(false); }
+  };
+
+  const handleSaveNotificationPrefs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setNotifLoading(true);
+    try {
+        await updateProfile({ notificationPreferences: notificationPrefs });
+        storage.logAction(currentUser, 'UPDATE', 'User', 'Atualizou preferências de notificação');
+        addNotification('success', 'Preferências Atualizadas', 'Suas preferências de notificação foram salvas.');
+    } catch (err) {
+        addNotification('error', 'Erro', 'Falha ao salvar preferências de notificação.');
+    } finally { setNotifLoading(false); }
   };
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -300,6 +334,126 @@ export const Settings = () => {
                 <option value="pt">Português (Brasil)</option>
                 <option value="en">English (US)</option>
              </select>
+          </div>
+
+          {/* PREFERÊNCIAS DE NOTIFICAÇÃO */}
+          <div className="bg-white dark:bg-[#141414] p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-200 dark:border-zinc-800/80 shadow-sm">
+             <div className="mb-8">
+                 <h3 className="text-xl font-display font-medium tracking-tight text-zinc-900 dark:text-white">Notificações</h3>
+                 <p className="text-sm text-zinc-500 mt-1">Escolha quais alertas você deseja receber no seu dispositivo.</p>
+             </div>
+             
+             <form onSubmit={handleSaveNotificationPrefs}>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800/60 border-t border-b border-zinc-100 dark:border-zinc-800/60">
+                    {/* Item 1 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <Wrench size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Nova Solicitação</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Avisar quando um novo serviço for solicitado</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.newTechnicalRequest ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.newTechnicalRequest ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.newTechnicalRequest} onChange={e => setNotificationPrefs({...notificationPrefs, newTechnicalRequest: e.target.checked})} className="sr-only" />
+                    </label>
+
+                    {/* Item 2 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <CheckCircle2 size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Serviço Concluído</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Avisar quando um técnico finalizar um serviço</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.serviceCompleted ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.serviceCompleted ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.serviceCompleted} onChange={e => setNotificationPrefs({...notificationPrefs, serviceCompleted: e.target.checked})} className="sr-only" />
+                    </label>
+
+                    {/* Item 3 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <AlertTriangle size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Roubo Cadastrado</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Alerta imediato de veículo roubado</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.theftRegistered ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.theftRegistered ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.theftRegistered} onChange={e => setNotificationPrefs({...notificationPrefs, theftRegistered: e.target.checked})} className="sr-only" />
+                    </label>
+
+                    {/* Item 4 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <MessageSquare size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Novo Comentário</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Avisar sobre mensagens em serviços</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.newComment ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.newComment ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.newComment} onChange={e => setNotificationPrefs({...notificationPrefs, newComment: e.target.checked})} className="sr-only" />
+                    </label>
+
+                    {/* Item 5 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <CalendarClock size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Agendamento Pendente</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Serviços aguardando confirmação</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.schedulingNeedsConfirmation ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.schedulingNeedsConfirmation ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.schedulingNeedsConfirmation} onChange={e => setNotificationPrefs({...notificationPrefs, schedulingNeedsConfirmation: e.target.checked})} className="sr-only" />
+                    </label>
+
+                    {/* Item 6 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <CalendarCheck size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Agendamento a Concluir</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Lembrete de serviços agendados para hoje</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.schedulingNeedsCompletion ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.schedulingNeedsCompletion ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.schedulingNeedsCompletion} onChange={e => setNotificationPrefs({...notificationPrefs, schedulingNeedsCompletion: e.target.checked})} className="sr-only" />
+                    </label>
+                </div>
+
+                <div className="mt-8">
+                    <button type="submit" disabled={notifLoading} className="w-full py-4 bg-primary-500 text-black hover:bg-primary-400 rounded-2xl font-medium text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
+                        {notifLoading ? <RefreshCw className="animate-spin" size={18}/> : 'Salvar preferências'}
+                    </button>
+                </div>
+             </form>
           </div>
         </div>
 

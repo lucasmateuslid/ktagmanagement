@@ -732,7 +732,13 @@ export const Tags = () => {
                                 <div className="mt-2 pl-4 border-l-2 border-zinc-800 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
                                     {log.responseBody && (
                                         <pre className={`bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] ${log.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
-                                            {JSON.stringify(log.responseBody, null, 2)}
+                                            {(() => {
+                                                try {
+                                                    return JSON.stringify(log.responseBody, null, 2);
+                                                } catch (e) {
+                                                    return String(log.responseBody);
+                                                }
+                                            })()}
                                         </pre>
                                     )}
                                 </div>

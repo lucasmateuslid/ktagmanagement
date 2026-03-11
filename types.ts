@@ -1,4 +1,13 @@
 
+export interface UserNotificationPreferences {
+  newTechnicalRequest: boolean;
+  serviceCompleted: boolean;
+  theftRegistered: boolean;
+  newComment: boolean;
+  schedulingNeedsConfirmation: boolean;
+  schedulingNeedsCompletion: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -11,6 +20,7 @@ export interface User {
   createdAt?: number;
   cpf?: string; 
   avatarInitial?: string;
+  notificationPreferences?: UserNotificationPreferences;
 }
 
 export interface Company {

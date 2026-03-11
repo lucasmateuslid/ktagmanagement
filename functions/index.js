@@ -5,7 +5,7 @@
  */
 
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const axios = require("axios");
 const cors = require("cors")({ 
@@ -35,6 +35,90 @@ try {
   );
 } catch (e) {
   console.warn("VAPID Keys not configured properly.");
+}
+
+// --- HELPERS PARA NOTIFICAÇÕES PUSH ---
+
+async function sendNotificationToUser(userId, payload) {
+  try {
+    const subscriptionsSnapshot = await admin.firestore()
+      .collection('ktag_push_subscriptions')
+      .where('userId', '==', userId)
+      .get();
+
+    if (subscriptionsSnapshot.empty) return;
+
+    const notifications = [];
+    const pushPayload = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.url || '/',
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
+    });
+
+    subscriptionsSnapshot.forEach(doc => {
+      const subscription = doc.data().subscription;
+      const pushPromise = webpush.sendNotification(subscription, pushPayload)
+        .catch(err => {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            return doc.ref.delete();
+          }
+        });
+      notifications.push(pushPromise);
+    });
+
+    await Promise.all(notifications);
+  } catch (error) {
+    console.error(`Error sending notification to user ${userId}:`, error);
+  }
+}
+
+async function sendNotificationToPref(prefKey, payload, excludeUserId = null) {
+  try {
+    const usersSnapshot = await admin.firestore().collection('ktag_users').get();
+    const targetUserIds = [];
+    
+    usersSnapshot.forEach(doc => {
+      const user = doc.data();
+      if (user.id === excludeUserId) return;
+      
+      const prefs = user.notificationPreferences || {};
+      // Se não estiver definido, assume true como padrão
+      if (prefs[prefKey] !== false) {
+        targetUserIds.push(user.id);
+      }
+    });
+
+    if (targetUserIds.length === 0) return;
+
+    // Busca inscrições em lotes de 30 (limite do 'in' no firestore) ou busca todas e filtra
+    const subscriptionsSnapshot = await admin.firestore().collection('ktag_push_subscriptions').get();
+    
+    const notifications = [];
+    const pushPayload = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.url || '/',
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
+    });
+
+    subscriptionsSnapshot.forEach(doc => {
+      const sub = doc.data();
+      if (targetUserIds.includes(sub.userId)) {
+        const pushPromise = webpush.sendNotification(sub.subscription, pushPayload)
+          .catch(err => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              return doc.ref.delete();
+            }
+          });
+        notifications.push(pushPromise);
+      }
+    });
+
+    await Promise.all(notifications);
+  } catch (error) {
+    console.error(`Error sending notification for pref ${prefKey}:`, error);
+  }
 }
 
 // --- RATE LIMIT MEMORY STORE (Instance-level) ---
@@ -130,13 +214,44 @@ exports.proxyApi = onRequest((req, res) => {
       const status = error.response ? error.response.status : 500;
       const message = error.response ? error.response.data : error.message;
       
+      let errorMsg = message;
+      if (typeof message === 'object') {
+        try {
+          errorMsg = JSON.stringify(message);
+        } catch (e) {
+          errorMsg = String(message);
+        }
+      }
       res.status(status).json({ 
-          error: typeof message === 'object' ? JSON.stringify(message) : message,
+          error: errorMsg,
           proxyError: true 
       });
     }
   });
 });
+
+/**
+ * TRIGGER AUTOMÁTICO: Criação de Agendamento
+ */
+exports.onScheduleCreate = onDocumentCreated(
+  'ktag_schedules/{scheduleId}',
+  async (event) => {
+    const schedule = event.data.data();
+    if (!schedule) return null;
+
+    try {
+      await sendNotificationToPref('newTechnicalRequest', {
+        title: 'Nova Solicitação Técnica 🛠️',
+        body: `Placa ${schedule.vehiclePlate} (${schedule.serviceType}) solicitada por ${schedule.requesterName}`,
+        url: '/schedules'
+      }, schedule.requesterId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error in onScheduleCreate trigger:', error);
+      return null;
+    }
+  }
+);
 
 /**
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
@@ -152,77 +267,114 @@ exports.onScheduleUpdate = onDocumentUpdated(
     const requesterId = newData.requesterId;
     if (!requesterId) return null;
 
-    let title = '';
-    let body = '';
     const status = newData.status;
     const plate = newData.vehiclePlate;
 
-    switch (status) {
-      case 'Confirmada':
-        title = 'Agendamento Confirmado! ✅';
-        body = `Sua solicitação para a placa ${plate} foi agendada.`;
-        break;
-      case 'Reagendada':
-        title = 'Agendamento Alterado 🕒';
-        body = `Nova data/hora definida para o veículo ${plate}.`;
-        break;
-      case 'Técnico no local':
-        title = 'Técnico no Local 📍';
-        body = `O técnico chegou para atender o veículo ${plate}.`;
-        break;
-      case 'Concluída':
-        title = 'Serviço Concluído 🎉';
-        body = `O serviço no veículo ${plate} foi finalizado com sucesso.`;
-        break;
-      case 'Cancelada':
-        title = 'Solicitação Cancelada ❌';
-        body = `O serviço para ${plate} foi cancelado. Verifique os detalhes.`;
-        break;
-      case 'Em análise':
-        title = 'Em Análise 🔍';
-        body = `Estamos analisando sua solicitação para ${plate}.`;
-        break;
-      default:
-        return null;
-    }
-
     try {
-      const subscriptionsSnapshot = await admin.firestore()
-        .collection('ktag_push_subscriptions')
-        .where('userId', '==', requesterId)
-        .get();
-
-      if (subscriptionsSnapshot.empty) {
-        return null;
+      if (status === 'Concluída') {
+        await sendNotificationToUser(requesterId, {
+          title: 'Serviço Concluído 🎉',
+          body: `O serviço no veículo ${plate} foi finalizado.`,
+          url: '/schedules'
+        });
+        await sendNotificationToPref('serviceCompleted', {
+          title: 'Serviço Concluído 🎉',
+          body: `O serviço no veículo ${plate} foi finalizado.`,
+          url: '/schedules'
+        }, requesterId);
+      } else if (status === 'Autorizada' || status === 'Em orçamento') {
+        await sendNotificationToPref('schedulingNeedsConfirmation', {
+          title: 'Aguardando Confirmação ⏳',
+          body: `O agendamento para ${plate} precisa ser confirmado.`,
+          url: '/schedules'
+        });
+      } else if (status === 'Técnico no local') {
+        await sendNotificationToPref('schedulingNeedsCompletion', {
+          title: 'Técnico no Local 📍',
+          body: `O técnico chegou para atender o veículo ${plate}.`,
+          url: '/schedules'
+        });
+      } else if (status === 'Cancelada') {
+        await sendNotificationToUser(requesterId, {
+          title: 'Solicitação Cancelada ❌',
+          body: `O serviço para ${plate} foi cancelado.`,
+          url: '/schedules'
+        });
+      } else if (status === 'Confirmada') {
+        await sendNotificationToUser(requesterId, {
+          title: 'Agendamento Confirmado! ✅',
+          body: `Sua solicitação para a placa ${plate} foi agendada.`,
+          url: '/schedules'
+        });
+      } else if (status === 'Reagendada') {
+        await sendNotificationToUser(requesterId, {
+          title: 'Agendamento Alterado 🕒',
+          body: `Nova data/hora definida para o veículo ${plate}.`,
+          url: '/schedules'
+        });
+      } else if (status === 'Em análise') {
+        await sendNotificationToUser(requesterId, {
+          title: 'Em Análise 🔍',
+          body: `Estamos analisando sua solicitação para ${plate}.`,
+          url: '/schedules'
+        });
       }
 
-      const notifications = [];
-      const payload = JSON.stringify({
-        title: title,
-        body: body,
-        url: '/',
-        icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
-      });
-
-      subscriptionsSnapshot.forEach(doc => {
-        const subscription = doc.data().subscription;
-        const pushPromise = webpush.sendNotification(subscription, payload)
-          .catch(err => {
-            if (err.statusCode === 410 || err.statusCode === 404) {
-              return doc.ref.delete();
-            }
-          });
-        notifications.push(pushPromise);
-      });
-
-      await Promise.all(notifications);
       return { success: true };
-
     } catch (error) {
       console.error('Error in onScheduleUpdate trigger:', error);
       return null;
     }
 });
+
+/**
+ * TRIGGER AUTOMÁTICO: Atualização de Veículo (Roubo)
+ */
+exports.onVehicleUpdate = onDocumentUpdated(
+  'ktag_vehicles/{vehicleId}',
+  async (event) => {
+    const newData = event.data.after.data();
+    const previousData = event.data.before.data();
+
+    if (newData.status === 'stolen' && previousData.status !== 'stolen') {
+      try {
+        await sendNotificationToPref('theftRegistered', {
+          title: '🚨 Roubo Cadastrado',
+          body: `O veículo ${newData.plate} foi marcado como roubado!`,
+          url: '/security'
+        });
+        return { success: true };
+      } catch (error) {
+        console.error('Error in onVehicleUpdate trigger:', error);
+        return null;
+      }
+    }
+    return null;
+  }
+);
+
+/**
+ * TRIGGER AUTOMÁTICO: Criação de Feedback/Comentário
+ */
+exports.onFeedbackCreate = onDocumentCreated(
+  'ktag_feedbacks/{feedbackId}',
+  async (event) => {
+    const feedback = event.data.data();
+    if (!feedback) return null;
+
+    try {
+      await sendNotificationToPref('newComment', {
+        title: 'Novo Comentário/Feedback 💬',
+        body: `${feedback.userName} enviou um novo comentário.`,
+        url: '/feedback'
+      }, feedback.userId);
+      return { success: true };
+    } catch (error) {
+      console.error('Error in onFeedbackCreate trigger:', error);
+      return null;
+    }
+  }
+);
 
 exports.sendPushNotification = onCall(
   async (request) => {
