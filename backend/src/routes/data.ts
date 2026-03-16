@@ -71,6 +71,16 @@ dataRouter.put('/users/:id', async (req: Request, res: Response, next: NextFunct
   }
 });
 
+dataRouter.delete('/users/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = firstParam(req.params.id);
+    await firestore.collection(usersCollection).doc(id).delete();
+    return res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 dataRouter.patch('/users/:id/status', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = firstParam(req.params.id);
@@ -101,6 +111,16 @@ dataRouter.put('/vehicles/:id', async (req: Request, res: Response, next: NextFu
   }
 });
 
+dataRouter.delete('/vehicles/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = firstParam(req.params.id);
+    await firestore.collection(vehiclesCollection).doc(id).delete();
+    return res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 dataRouter.patch('/vehicles/:id/position', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = firstParam(req.params.id);
@@ -124,6 +144,16 @@ dataRouter.put('/clients/:id', async (req: Request, res: Response, next: NextFun
   try {
     const id = firstParam(req.params.id);
     await firestore.collection(clientsCollection).doc(id).set(req.body || {}, { merge: true });
+    return res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+dataRouter.delete('/clients/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = firstParam(req.params.id);
+    await firestore.collection(clientsCollection).doc(id).delete();
     return res.json({ ok: true });
   } catch (error) {
     next(error);

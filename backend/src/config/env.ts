@@ -44,6 +44,11 @@ export const env = {
     token: process.env.HINOVA_TOKEN ?? '',
     user: process.env.HINOVA_USER ?? '',
     pass: process.env.HINOVA_PASS ?? ''
+  },
+  traccar: {
+    url:  process.env.TRACCAR_URL  ?? 'http://localhost:8082',
+    user: process.env.TRACCAR_USER ?? 'admin',
+    pass: process.env.TRACCAR_PASS ?? ''
   }
 };
 

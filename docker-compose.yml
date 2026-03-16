@@ -1,0 +1,133 @@
+version: "3.9"
+
+services:
+
+  # ─────────────────────────────────────────
+  # PostgreSQL — banco relacional principal
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ktag_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ktag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ktag_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-ktagmanagement}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ktag_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ktag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Redis — cache distribuído
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ktag_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ktag_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Traccar Server — rastreamento GPS
+  # ─────────────────────────────────────────
+  traccar:
+    image: traccar/traccar:latest
+    container_name: ktag_traccar
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./traccar/config/traccar.xml:/opt/traccar/conf/traccar.xml:ro
+      - traccar_logs:/opt/traccar/logs
+    ports:
+      - "8082:8082"   # API REST + painel web do Traccar
+      - "5055:5055"   # Protocolo OsmAnd
+      - "5001:5001"   # Protocolo Teltonika (TCP)
+      - "5013:5013"   # Protocolo Queclink (TCP)
+      - "5023:5023"   # Protocolo Coban (TCP)
+      - "5093:5093"   # Protocolo Wialon (TCP)
+    networks:
+      - ktag_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/api/server || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─────────────────────────────────────────
+  # BFF Backend — API Node.js/Express
+  # ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ktag_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      traccar:
+        condition: service_started
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ktag}:${POSTGRES_PASSWORD:-ktag_secret}@postgres:5432/${POSTGRES_DB:-ktagmanagement}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      TRACCAR_URL: http://traccar:8082
+    ports:
+      - "8080:8080"
+    networks:
+      - ktag_net
+
+  # ─────────────────────────────────────────
+  # Frontend SPA — React + Vite
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ktag_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - ktag_net
+
+# ─────────────────────────────────────────
+# Volumes persistentes
+# ─────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  traccar_logs:
+
+# ─────────────────────────────────────────
+# Rede interna isolada
+# ─────────────────────────────────────────
+networks:
+  ktag_net:
+    driver: bridge

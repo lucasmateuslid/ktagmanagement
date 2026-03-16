@@ -9,6 +9,7 @@
     "dev:backend": "npm --prefix ../backend run dev",
     "dev:traccar": "npm --prefix ../backend/traccar-gateway run dev",
     "lint": "tsc --noEmit",
+    "check": "npm run lint",
     "build": "tsc && vite build",
     "build:backend": "npm --prefix ../backend run build",
     "build:traccar": "npm --prefix ../backend/traccar-gateway run build",

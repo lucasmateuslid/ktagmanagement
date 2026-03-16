@@ -67,6 +67,12 @@ const fetchResilient = async (colName: string) => {
   }
 };
 
+const requireBackendDataApi = () => {
+  if (!backendApi.isConfigured()) {
+    throw new Error('Backend API não configurada para operações seguras de dados. Defina VITE_BACKEND_API_URL.');
+  }
+};
+
 export const storage = {
   // ... existing methods ...
   initEncryption: async (user: User) => {
@@ -107,60 +113,24 @@ export const storage = {
   // --- GESTÃO DE USUÁRIOS ---
   findUserByEmail: async (email: string, decrypt = true): Promise<User | null> => {
     const cleanEmail = email.toLowerCase().trim();
+    requireBackendDataApi();
+    const userData = await backendApi.get<User | null>('/data/users/find', {
+      query: { email: cleanEmail }
+    });
 
-    if (backendApi.isConfigured()) {
-      try {
-        const userData = await backendApi.get<User | null>('/data/users/find', {
-          query: { email: cleanEmail }
-        });
+    if (!userData) return null;
+    if (!decrypt) return userData;
 
-        if (!userData) return null;
-        if (!decrypt) return userData;
-
-        return {
-          ...userData,
-          name: await encryption.decrypt(userData.name),
-          cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
-        };
-      } catch (error) {
-        console.warn('Backend user lookup unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) {
-      try {
-        const q = query(collection(db, KEYS.USERS_DB), where("email", "==", cleanEmail));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const userData = { ...snap.docs[0].data(), id: snap.docs[0].id } as User;
-          if (decrypt) {
-             return {
-                ...userData,
-                name: await encryption.decrypt(userData.name),
-                cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
-             };
-          }
-          return userData;
-        }
-      } catch (e) { console.error("DB User Lookup Error", e); }
-    }
-    return null;
+    return {
+      ...userData,
+      name: await encryption.decrypt(userData.name),
+      cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
+    };
   },
 
   getAllUsers: async (): Promise<User[]> => {
-    let data: User[] = [];
-
-    if (backendApi.isConfigured()) {
-      try {
-        data = await backendApi.get<User[]>('/data/users');
-      } catch (error) {
-        console.warn('Backend users list unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!data.length) {
-      data = await fetchResilient(KEYS.USERS_DB) as User[];
-    }
+    requireBackendDataApi();
+    const data = await backendApi.get<User[]>('/data/users');
 
     return Promise.all(data.map(async u => ({
       ...u,
@@ -170,75 +140,32 @@ export const storage = {
   },
 
   registerUserRequest: async (user: User) => {
+    requireBackendDataApi();
     const encryptedUser = {
       ...user,
       name: await encryption.encrypt(user.name),
       cpf: user.cpf ? await encryption.encrypt(user.cpf) : undefined
     };
-
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.put(`/data/users/${user.id}`, encryptedUser);
-        return;
-      } catch (error) {
-        console.warn('Backend user save unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(encryptedUser));
+    await backendApi.put(`/data/users/${user.id}`, encryptedUser);
   },
 
   updateUserProfile: async (id: string, data: Partial<User>) => {
+    requireBackendDataApi();
     const encryptedData = { ...data };
     if (data.name) encryptedData.name = await encryption.encrypt(data.name);
     if (data.cpf) encryptedData.cpf = await encryption.encrypt(data.cpf);
-
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.put(`/data/users/${id}`, cleanData(encryptedData));
-        return;
-      } catch (error) {
-        console.warn('Backend user update unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) {
-      const userRef = doc(db, KEYS.USERS_DB, id);
-      await updateDoc(userRef, cleanData(encryptedData));
-    }
+    await backendApi.put(`/data/users/${id}`, cleanData(encryptedData));
   },
 
   updateUserStatus: async (id: string, status: User['status']) => {
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.patch(`/data/users/${id}/status`, { status });
-        return;
-      } catch (error) {
-        console.warn('Backend user status update unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) {
-      const userRef = doc(db, KEYS.USERS_DB, id);
-      await updateDoc(userRef, { status });
-    }
+    requireBackendDataApi();
+    await backendApi.patch(`/data/users/${id}/status`, { status });
   },
 
   // ... Vehicle & Client methods ...
   getVehicles: async (): Promise<Vehicle[]> => {
-    let raw: Vehicle[] = [];
-
-    if (backendApi.isConfigured()) {
-      try {
-        raw = await backendApi.get<Vehicle[]>('/data/vehicles');
-      } catch (error) {
-        console.warn('Backend vehicles list unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!raw.length) {
-      raw = await fetchResilient(KEYS.VEHICLES) as Vehicle[];
-    }
+    requireBackendDataApi();
+    const raw = await backendApi.get<Vehicle[]>('/data/vehicles');
 
     if (raw.length > 0) cache.set(KEYS.VEHICLES, raw);
     
@@ -251,6 +178,7 @@ export const storage = {
   },
 
   saveVehicle: async (v: Vehicle) => {
+    requireBackendDataApi();
     await encryption.waitReady();
     const encryptedVehicle = { 
       ...v, 
@@ -259,16 +187,7 @@ export const storage = {
       plateHash: await securityService.generateSearchIndex(v.plate) // Blind Index
     };
     
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.put(`/data/vehicles/${v.id}`, cleanData(encryptedVehicle));
-      } catch (error) {
-        console.warn('Backend vehicle save unavailable, using Firestore fallback.', error);
-        if (db) await setDoc(doc(db, KEYS.VEHICLES, v.id), cleanData(encryptedVehicle));
-      }
-    } else if (db) {
-      await setDoc(doc(db, KEYS.VEHICLES, v.id), cleanData(encryptedVehicle));
-    }
+    await backendApi.put(`/data/vehicles/${v.id}`, cleanData(encryptedVehicle));
     
     const list = cache.get<Vehicle[]>(KEYS.VEHICLES, []);
     const idx = list.findIndex(item => item.id === v.id);
@@ -278,38 +197,13 @@ export const storage = {
 
   // Novo método para atualização leve de posição
   updateVehiclePosition: async (vehicleId: string, location: LocationHistory) => {
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.patch(`/data/vehicles/${vehicleId}/position`, { location });
-        return;
-      } catch (error) {
-        console.warn('Backend vehicle position update unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!db) return;
-    try {
-        const vehicleRef = doc(db, KEYS.VEHICLES, vehicleId);
-        await updateDoc(vehicleRef, { lastPosition: location });
-    } catch (e) {
-        console.warn("Falha ao persistir localização (offline ou erro):", e);
-    }
+    requireBackendDataApi();
+    await backendApi.patch(`/data/vehicles/${vehicleId}/position`, { location });
   },
 
   getClients: async (): Promise<Client[]> => {
-    let raw: Client[] = [];
-
-    if (backendApi.isConfigured()) {
-      try {
-        raw = await backendApi.get<Client[]>('/data/clients');
-      } catch (error) {
-        console.warn('Backend clients list unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!raw.length) {
-      raw = await fetchResilient(KEYS.CLIENTS) as Client[];
-    }
+    requireBackendDataApi();
+    const raw = await backendApi.get<Client[]>('/data/clients');
 
     if (raw.length > 0) cache.set(KEYS.CLIENTS, raw);
 
@@ -325,6 +219,7 @@ export const storage = {
   },
 
   saveClient: async (c: Client) => {
+    requireBackendDataApi();
     await encryption.waitReady();
     const encryptedClient = {
       ...c,
@@ -336,16 +231,7 @@ export const storage = {
       cpfHash: await securityService.generateSearchIndex(c.cpf) // Blind Index
     };
     
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.put(`/data/clients/${c.id}`, cleanData(encryptedClient));
-      } catch (error) {
-        console.warn('Backend client save unavailable, using Firestore fallback.', error);
-        if (db) await setDoc(doc(db, KEYS.CLIENTS, c.id), cleanData(encryptedClient));
-      }
-    } else if (db) {
-      await setDoc(doc(db, KEYS.CLIENTS, c.id), cleanData(encryptedClient));
-    }
+    await backendApi.put(`/data/clients/${c.id}`, cleanData(encryptedClient));
 
     const list = cache.get<Client[]>(KEYS.CLIENTS, []);
     const idx = list.findIndex(item => item.id === c.id);
@@ -466,51 +352,23 @@ export const storage = {
 
   logAction: async (user: User | null, action: AuditLog['action'], entity: string, details: string, entityId?: string) => {
     if (!user) return;
+    requireBackendDataApi();
     await encryption.waitReady();
     const logEntry: AuditLog = {
       id: crypto.randomUUID(), userId: user.id, userName: user.name, userEmail: user.email,
       action, entity, entityId, details: await encryption.encrypt(details), timestamp: Date.now()
     };
-
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.post('/data/audit-logs', cleanData(logEntry));
-        return;
-      } catch (error) {
-        console.warn('Backend audit log unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) await addDoc(collection(db, KEYS.AUDIT_LOGS), cleanData(logEntry));
+    await backendApi.post('/data/audit-logs', cleanData(logEntry));
   },
 
   getAuditLogs: async (count = 100): Promise<AuditLog[]> => {
-    if (backendApi.isConfigured()) {
-      try {
-        const data = await backendApi.get<AuditLog[]>('/data/audit-logs', { query: { count } });
-        await encryption.waitReady();
-        return Promise.all(data.map(async log => ({
-          ...log,
-          details: await encryption.decrypt(log.details)
-        })));
-      } catch (error) {
-        console.warn('Backend audit logs unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!db) return [];
-    try {
-      const q = query(collection(db, KEYS.AUDIT_LOGS), orderBy('timestamp', 'desc'), limit(count));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(d => d.data() as AuditLog);
-      await encryption.waitReady();
-      return Promise.all(data.map(async log => ({
-        ...log,
-        details: await encryption.decrypt(log.details)
-      })));
-    } catch (e) {
-      return [];
-    }
+    requireBackendDataApi();
+    const data = await backendApi.get<AuditLog[]>('/data/audit-logs', { query: { count } });
+    await encryption.waitReady();
+    return Promise.all(data.map(async log => ({
+      ...log,
+      details: await encryption.decrypt(log.details)
+    })));
   },
 
   // ... Schedule & Tech methods ...
@@ -529,65 +387,47 @@ export const storage = {
   },
 
   getSchedules: async (role: string, userId: string): Promise<Schedule[]> => {
-    if (backendApi.isConfigured()) {
-      try {
-        return await backendApi.get<Schedule[]>('/data/schedules', {
-          query: { role, userId }
-        });
-      } catch (error) {
-        console.warn('Backend schedules list unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (!db) return [];
-    let q;
-    if (role === 'user') {
-      q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
-    } else {
-      q = query(collection(db, KEYS.SCHEDULES)); 
-    }
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as Schedule);
+    requireBackendDataApi();
+    return await backendApi.get<Schedule[]>('/data/schedules', {
+      query: { role, userId }
+    });
   },
 
   saveSchedule: async (s: Schedule) => {
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.put(`/data/schedules/${s.id}`, cleanData(s));
-        return;
-      } catch (error) {
-        console.warn('Backend schedule save unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) await setDoc(doc(db, KEYS.SCHEDULES, s.id), cleanData(s));
+    requireBackendDataApi();
+    await backendApi.put(`/data/schedules/${s.id}`, cleanData(s));
   },
 
   deleteSchedule: async (id: string) => {
-    if (backendApi.isConfigured()) {
-      try {
-        await backendApi.delete(`/data/schedules/${id}`);
-        return;
-      } catch (error) {
-        console.warn('Backend schedule delete unavailable, using Firestore fallback.', error);
-      }
-    }
-
-    if (db) await deleteDoc(doc(db, KEYS.SCHEDULES, id));
+    requireBackendDataApi();
+    await backendApi.delete(`/data/schedules/${id}`);
   },
 
   subscribeToSchedules: (role: string, userId: string, onUpdate: (schedules: Schedule[]) => void) => {
-    if (!db) return () => {};
-    let q;
-    if (role === 'user') {
-      q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
-    } else {
-      q = query(collection(db, KEYS.SCHEDULES));
-    }
-    return onSnapshot(q, (snap) => {
-        const schedules = snap.docs.map(d => d.data() as Schedule);
-        onUpdate(schedules);
-    });
+    requireBackendDataApi();
+    let active = true;
+
+    const fetchSchedules = async () => {
+      try {
+        const schedules = await backendApi.get<Schedule[]>('/data/schedules', {
+          query: { role, userId }
+        });
+
+        if (active) {
+          onUpdate(schedules);
+        }
+      } catch (error) {
+        console.error('Falha ao sincronizar agendamentos via backend:', error);
+      }
+    };
+
+    fetchSchedules();
+    const intervalId = window.setInterval(fetchSchedules, 15000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
   },
 
   // --- FEEDBACK & SUGGESTIONS ---
@@ -619,9 +459,18 @@ export const storage = {
   },
 
   deleteTag: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.TAGS, id)); },
-  deleteVehicle: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.VEHICLES, id)); },
-  deleteClient: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.CLIENTS, id)); },
-  deleteUser: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.USERS_DB, id)); },
+  deleteVehicle: async (id: string) => {
+    requireBackendDataApi();
+    await backendApi.delete(`/data/vehicles/${id}`);
+  },
+  deleteClient: async (id: string) => {
+    requireBackendDataApi();
+    await backendApi.delete(`/data/clients/${id}`);
+  },
+  deleteUser: async (id: string) => {
+    requireBackendDataApi();
+    await backendApi.delete(`/data/users/${id}`);
+  },
   
   getTheme: () => localStorage.getItem('ktag_theme') || 'light',
   setTheme: (t: string) => localStorage.setItem('ktag_theme', t),

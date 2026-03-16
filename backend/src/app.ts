@@ -9,6 +9,7 @@ import { healthRouter } from './routes/health.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { publicRouter } from './routes/public.js';
 import { trackingRouter } from './routes/tracking.js';
+import { traccarRouter } from './routes/traccar.routes.js';
 import { sessionTokenService } from './services/sessionToken.js';
 
 export const createApp = () => {
@@ -51,6 +52,7 @@ export const createApp = () => {
   app.use('/api/tracking', trackingRouter);
   app.use('/api/integrations', integrationsRouter);
   app.use('/api/data', dataRouter);
+  app.use('/api/traccar', traccarRouter);
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (error instanceof ZodError) {
