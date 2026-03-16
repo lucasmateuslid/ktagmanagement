@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  moderator
+  user
+  client
+}
+
+enum UserStatus {
+  pending
+  approved
+  rejected
+}
+
+enum VehicleStatus {
+  active
+  stolen
+  maintenance
+}
+
+enum ScheduleStatus {
+  solicitada
+  em_analise
+  em_orcamento
+  autorizada
+  confirmada
+  reagendada
+  tecnico_no_local
+  cancelada
+  concluida
+}
+
+enum ServiceType {
+  instalacao
+  manutencao
+  retirada
+  vistoria
+}
+
+enum DeviceType {
+  rastreador
+  rastreador_tag
+  tag
+  nao_precisa
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  REPORT
+  LOGIN
+  CONFIG
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  name           String
+  passwordHash   String?
+  role           UserRole      @default(user)
+  status         UserStatus    @default(pending)
+  companySlug    String?
+  avatarInitial  String?
+  cpfEncrypted   String?
+  ip             String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  schedules      Schedule[]    @relation("RequesterSchedules")
+  auditLogs      AuditLog[]
+}
+
+model Company {
+  id                String      @id @default(uuid())
+  name              String
+  prefix            String      @unique
+  hasSgaIntegration Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  vehicles          Vehicle[]
+}
+
+model Client {
+  id             String      @id @default(uuid())
+  nameEncrypted  String
+  cpfEncrypted   String
+  cpfHash        String?     @unique
+  phoneEncrypted String
+  emailEncrypted String?
+  addressEncrypted String?
+  city           String?
+  state          String?
+  hasAccess      Boolean?    @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  vehicles       Vehicle[]
+}
+
+model Tag {
+  id                   String      @id @default(uuid())
+  name                 String
+  type                 String
+  accessoryId          String
+  hashedAdvKeyEncrypted String?
+  privateKeyEncrypted  String?
+  imeiEncrypted        String?
+  traqcareId           String?
+  isActivated          Boolean?    @default(false)
+  lastBattery          Int?
+  batteryWarrantyYears Int?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  vehicle              Vehicle?
+}
+
+model Vehicle {
+  id                String        @id @default(uuid())
+  type              String
+  plateEncrypted    String
+  plateHash         String?       @unique
+  model             String
+  year              String?
+  color             String?
+  status            VehicleStatus @default(active)
+  installationType  String?
+  ownershipStatus   String?
+  chassisEncrypted  String?
+  fipeCode          String?
+  hinovaId          String?
+  lastPositionJson  Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  companyId         String?
+  clientId          String?
+  tagId             String?       @unique
+  company           Company?      @relation(fields: [companyId], references: [id])
+  client            Client?       @relation(fields: [clientId], references: [id])
+  tag               Tag?          @relation(fields: [tagId], references: [id])
+}
+
+model Schedule {
+  id                String          @id @default(uuid())
+  requesterId       String
+  requesterName     String
+  clientName        String?
+  clientPhone       String?
+  vehiclePlate      String
+  vehicleModel      String
+  fipeValue         String
+  deviceType        DeviceType
+  serviceType       ServiceType
+  preferredDate     String
+  preferredTime     String
+  locationAddress   String
+  locationLat       Float
+  locationLng       Float
+  status            ScheduleStatus
+  notes             String?
+  cancellationReason String?
+  needsInspection   Boolean?
+  paymentOnSite     Boolean?
+  installedImei     String?
+  isRemoteLocation  Boolean?
+  displacementKm    Float?
+  displacementValue Decimal?        @db.Decimal(10, 2)
+  adhesionValue     Decimal?        @db.Decimal(10, 2)
+  companyId         String?
+  technicianId      String?
+  confirmedDate     String?
+  confirmedTime     String?
+  historyJson       Json
+  analysisStartedAt DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  requester         User            @relation("RequesterSchedules", fields: [requesterId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([requesterId, createdAt])
+}
+
+model AuditLog {
+  id          String       @id @default(uuid())
+  userId       String
+  userName     String
+  userEmail    String
+  action       AuditAction
+  entity       String
+  entityId     String?
+  detailsEncrypted String
+  createdAt    DateTime     @default(now())
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([entity, createdAt])
+}

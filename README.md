@@ -70,28 +70,107 @@ O arquivo `firebase.ts` habilita `enableMultiTabIndexedDbPersistence`. Isso perm
 
 ### Instalação
 ```bash
-# 1. Instalar dependências
-npm install
+# 1. Instalar frontend
+npm --prefix frontend install
+
+# 1.1 Instalar backend dedicado (BFF/API)
+npm --prefix backend install
+
+# 1.2 Instalar gateway Traccar
+npm --prefix backend/traccar-gateway install
 
 # 2. Rodar em desenvolvimento
-npm run dev
+npm --prefix frontend run dev
+
+# 2.1 Rodar backend em paralelo (novo fluxo seguro)
+npm run dev:backend
+
+# 2.2 Rodar gateway TCP/UDP do Traccar
+npm run dev:traccar
 
 # 3. Build para produção
-npm run build
+npm --prefix frontend run build
+
+# 3.1 Build do backend
+npm run build:backend
 ```
 
 ### Variáveis de Ambiente (.env)
-Crie um arquivo `.env` na raiz:
+Crie um arquivo `.env` em `frontend/.env`:
 ```env
 # Chave para o Gemini AI (Obrigatório para o Chatbot funcionar)
 API_KEY=sua_chave_gemini_aqui
+
+# URL da nova API backend (BFF)
+VITE_BACKEND_API_URL=http://localhost:8080
 ```
 
+### Backend (.env)
+Crie `backend/.env` a partir de `backend/.env.example` e configure os segredos no backend (não no frontend):
+
+```env
+PORT=8080
+ALLOWED_ORIGINS=http://localhost:5173
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ktagmanagement
+API_BEARER_TOKEN=defina-um-token-forte
+SESSION_TOKEN_SECRET=defina-um-secret-forte
+AUTH_PASSWORD_PEPPER=KTAG_SECURE_SALT_V3_2025
+ADMIN_EMAIL=lucasmateus.lima@outlook.com
+K_TAG_API_URL=...
+K_TAG_API_USER=...
+K_TAG_API_PASS=...
+XADTAG_API_TOKEN=...
+GOOGLE_MAPS_SERVER_KEY=...
+HINOVA_TOKEN=...
+HINOVA_USER=...
+HINOVA_PASS=...
+```
+
+### Base relacional (PostgreSQL + Prisma)
+- Schema inicial criado em `backend/prisma/schema.prisma`.
+- Scripts disponíveis no backend:
+  - `npm --prefix backend run prisma:generate`
+  - `npm --prefix backend run prisma:migrate`
+  - `npm --prefix backend run prisma:deploy`
+- Objetivo: mover dados sensíveis/transacionais gradualmente para PostgreSQL mantendo Firestore apenas no que for tempo real.
+
+### Cache distribuído (Redis)
+- Cliente base criado em `backend/src/services/cache.ts`.
+- Variável esperada: `REDIS_URL`.
+- Próximo uso natural: rate limit distribuído, cache de token Hinova, cache de plate lookup e deduplicação de requests.
+
+### Listener dedicado Traccar
+- Serviço separado criado em `backend/traccar-gateway/`.
+- Expõe listener TCP, listener UDP e endpoint HTTP de health.
+- Esse serviço é a base correta para futura abertura de porta em LB de rede, sem depender de Firebase Functions/HTTP.
+
+### CI/CD inicial
+O repositório agora inclui pipeline em `.github/workflows/ci-cd.yml` com:
+- Typecheck + build do frontend
+- Typecheck + build do backend
+- Sanidade do entrypoint de Firebase Functions (`backend/functions`)
+
+### Deploy backend (Cloud Run)
+Foi adicionado `backend/cloudrun.yaml` como base para deploy com:
+- `minScale: 2` (MVP robusto com duas instâncias)
+- Segredos via Secret Manager (`valueFrom.secretKeyRef`)
+
+### Autenticação backend (Fase 2)
+- Novo endpoint `POST /api/auth/login` no backend valida usuário/senha em `ktag_users_db`.
+- Senha em formato legado (texto plano) é migrada automaticamente para hash SHA-256+pepper no login.
+- Backend emite token de sessão assinado (`SESSION_TOKEN_SECRET`) e o frontend usa esse token nas rotas `/api/*`.
+
+### Integrações backend (Fase 3 em andamento)
+- `POST /api/integrations/hinova/search`: consulta SGA/Hinova no backend, sem expor token/usuário/senha no navegador.
+- `GET /api/integrations/plate/:plate`: consulta API de placas no backend, sem expor token no frontend.
+- O frontend já usa essas rotas com fallback legado temporário em caso de ambiente sem backend.
+
 ### Configuração do Sistema (Runtime)
-A maioria das configurações (URLs de API, Tokens de terceiros) **NÃO** fica no `.env`, mas sim no banco de dados, configurável via UI:
+Com a nova arquitetura híbrida, segredos e credenciais sensíveis passam para o backend (env/Secret Manager).
+A UI de configurações permanece para parâmetros não sensíveis e controle operacional:
 1. Acesse **Configurações** no menu lateral.
-2. Configure as URLs da API K-Tag, Tokens Hinova/SGA e URL do Proxy.
-3. Essas configurações são salvas na coleção `ktag_settings_v3`.
+2. Em ambientes com `VITE_BACKEND_API_URL`, campos sensíveis ficam bloqueados para evitar vazamento em Firestore/UI.
+3. Essas configurações operacionais continuam em `ktag_settings_v3`; segredos ficam no backend.
 
 ---
 
@@ -124,18 +203,21 @@ O componente `AiAssistant.tsx` usa "Function Calling". Se adicionar novas funcio
 ## 📜 Estrutura de Pastas
 
 ```
-src/
-├── components/      # Componentes UI reutilizáveis (Modais, Cards, Mapas)
-├── contexts/        # Estado Global (Auth, Theme, Notification)
-├── pages/           # Telas da aplicação (Dashboard, Vehicles, etc.)
-├── services/        # Lógica de negócios e APIs
-│   ├── api.ts       # K-Tag Legacy API
-│   ├── storage.ts   # Camada de abstração do Firestore
-│   ├── encryption.ts# Motor de segurança
-│   ├── hinova.ts    # Integração SGA
-│   └── ...
-├── types.ts         # Definições de Tipos TypeScript (Interfaces)
-└── App.tsx          # Rotas e Lazy Loading
+frontend/
+├── components/
+├── contexts/
+├── pages/
+├── services/
+├── types.ts
+└── App.tsx
+
+backend/
+├── src/                 # API/BFF e serviços
+├── prisma/              # Modelo relacional PostgreSQL
+├── functions/           # Firebase Functions
+├── traccar-gateway/     # Listener TCP/UDP dedicado
+├── cloudrun.yaml
+└── .env.example
 ```
 
 ---

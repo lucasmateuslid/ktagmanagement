@@ -1,0 +1,96 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ktagmanagement-backend
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "2"
+        autoscaling.knative.dev/maxScale: "20"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 30
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/REPO/ktagmanagement-backend:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: ALLOWED_ORIGINS
+              value: https://your-frontend-domain
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: API_BEARER_TOKEN
+                  key: latest
+            - name: SESSION_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: SESSION_TOKEN_SECRET
+                  key: latest
+            - name: AUTH_PASSWORD_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: AUTH_PASSWORD_PEPPER
+                  key: latest
+            - name: ADMIN_EMAIL
+              value: lucasmateus.lima@outlook.com
+            - name: K_TAG_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: K_TAG_API_URL
+                  key: latest
+            - name: K_TAG_API_USER
+              valueFrom:
+                secretKeyRef:
+                  name: K_TAG_API_USER
+                  key: latest
+            - name: K_TAG_API_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: K_TAG_API_PASS
+                  key: latest
+            - name: XADTAG_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: XADTAG_API_TOKEN
+                  key: latest
+            - name: GOOGLE_MAPS_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: GOOGLE_MAPS_SERVER_KEY
+                  key: latest
+            - name: PLATE_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: PLATE_API_URL
+                  key: latest
+            - name: PLATE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: PLATE_API_TOKEN
+                  key: latest
+            - name: HINOVA_BASE_URL
+              value: https://api.hinova.com.br/api/sga/v2
+            - name: HINOVA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: HINOVA_TOKEN
+                  key: latest
+            - name: HINOVA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: HINOVA_USER
+                  key: latest
+            - name: HINOVA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: HINOVA_PASS
+                  key: latest
