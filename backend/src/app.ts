@@ -21,7 +21,9 @@ export const createApp = () => {
   app.use(express.json({ limit: '1mb' }));
   app.use(cors({
     origin: corsOrigin,
-    credentials: false
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
   app.use('/health', healthRouter);

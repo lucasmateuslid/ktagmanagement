@@ -8,11 +8,14 @@ const requiredInProduction = (value: string | undefined, key: string) => {
   return value ?? '';
 };
 
-const parseOrigins = (value: string | undefined) =>
-  (value ?? '')
-    .split(',')
+const parseOrigins = (value: string | undefined) => {
+  const parsed = (value ?? '')
+    .split(/[,;&]/)
     .map((item) => item.trim())
     .filter(Boolean);
+
+  return Array.from(new Set(parsed));
+};
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',

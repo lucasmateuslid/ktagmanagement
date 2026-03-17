@@ -9,11 +9,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 const API = import.meta.env.VITE_BACKEND_API_URL ?? '';
-const TOKEN = localStorage.getItem('session_token') ?? '';
+const BACKEND_SESSION_KEY = 'ktag_backend_session_token';
 
-const headers = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
+const getHeaders = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem(BACKEND_SESSION_KEY) ?? '' : '';
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
 };
 
 // ─────────────────────────────────────────
@@ -66,8 +69,8 @@ export function useTraccar(intervalMs = 30_000) {
   const fetchAll = useCallback(async () => {
     try {
       const [devRes, posRes] = await Promise.all([
-        fetch(`${API}/api/traccar/devices`,   { headers }),
-        fetch(`${API}/api/traccar/positions`, { headers }),
+        fetch(`${API}/api/traccar/devices`, { headers: getHeaders() }),
+        fetch(`${API}/api/traccar/positions`, { headers: getHeaders() }),
       ]);
 
       if (!devRes.ok || !posRes.ok) throw new Error('Erro ao buscar dados do Traccar');
@@ -115,7 +118,7 @@ export function useTraccarHistory(
       to: to.toISOString(),
     });
 
-    fetch(`${API}/api/traccar/positions/history?${params}`, { headers })
+    fetch(`${API}/api/traccar/positions/history?${params}`, { headers: getHeaders() })
       .then(r => { if (!r.ok) throw new Error('Erro ao buscar histórico'); return r.json(); })
       .then(data => { setHistory(data); setError(null); })
       .catch(err => setError(err.message))
