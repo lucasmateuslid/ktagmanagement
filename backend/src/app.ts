@@ -48,6 +48,8 @@ export const createApp = () => {
       return res.status(401).json({ error: 'Invalid or expired session token.' });
     }
 
+    req.authSession = session;
+
     next();
   });
 

@@ -2,6 +2,8 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { requestJson } from '../services/http.js';
+import { createTraccarApi } from '../services/traccar.js';
+import { traccarInstancesService } from '../services/traccarInstances.js';
 
 const searchVehicleSchema = z.object({
   query: z.string().min(7)
@@ -9,6 +11,19 @@ const searchVehicleSchema = z.object({
 
 const plateLookupSchema = z.object({
   plate: z.string().min(7).max(8)
+});
+
+const traccarInstanceSchema = z.object({
+  name: z.string().min(1),
+  companySlug: z.string().min(1),
+  url: z.string().url(),
+  user: z.string().min(1),
+  pass: z.string().min(1).optional(),
+  active: z.boolean().optional()
+});
+
+const traccarInstanceUpdateSchema = traccarInstanceSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: 'Nenhum campo enviado para atualização.'
 });
 
 let cachedHinovaUserToken: string | null = null;
@@ -26,6 +41,19 @@ const normalizeVehicleType = (rawType: string) => {
   if (normalized.includes('CAMIN') || normalized.includes('TRUCK')) return 'caminhoes';
   return 'carros';
 };
+
+const adminRoles = new Set(['admin', 'moderator']);
+
+const ensureAdmin = (req: Request, res: Response) => {
+  if (!adminRoles.has(req.authSession?.role ?? '')) {
+    res.status(403).json({ error: 'Acesso restrito a administradores.' });
+    return false;
+  }
+  return true;
+};
+
+const firstParam = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : (value || '');
 
 const authenticateHinova = async (): Promise<string> => {
   if (!env.hinova.token || !env.hinova.user || !env.hinova.pass) {
@@ -73,6 +101,85 @@ const getHinovaUserToken = async () => {
 };
 
 export const integrationsRouter = Router();
+
+integrationsRouter.get('/traccar/instances', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+    const data = await traccarInstancesService.listSafe();
+    return res.json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/traccar/instances', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+    const payload = traccarInstanceSchema.parse(req.body);
+    const created = await traccarInstancesService.upsert(null, payload);
+    return res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.patch('/traccar/instances/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+    const id = firstParam(req.params.id);
+    const payload = traccarInstanceUpdateSchema.parse(req.body);
+
+    const existing = await traccarInstancesService.getSafeById(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Instância não encontrada.' });
+    }
+
+    const updated = await traccarInstancesService.upsert(id, {
+      name: payload.name ?? existing.name,
+      companySlug: payload.companySlug ?? existing.companySlug,
+      url: payload.url ?? existing.url,
+      user: payload.user ?? existing.user,
+      pass: payload.pass,
+      active: payload.active ?? existing.active,
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.delete('/traccar/instances/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+    const id = firstParam(req.params.id);
+    await traccarInstancesService.delete(id);
+    return res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/traccar/instances/:id/test', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!ensureAdmin(req, res)) return;
+
+    const id = firstParam(req.params.id);
+
+    const instance = await traccarInstancesService.getSafeById(id);
+    if (!instance) {
+      return res.status(404).json({ error: 'Instância não encontrada.' });
+    }
+
+    const config = await traccarInstancesService.resolveConnectionConfigById(id);
+    const api = createTraccarApi(config);
+    const info = await api.getServerInfo();
+
+    return res.json({ ok: true, server: info });
+  } catch (error: any) {
+    return res.status(502).json({ ok: false, error: error?.message ?? 'Falha ao testar instância.' });
+  }
+});
 
 integrationsRouter.post('/hinova/search', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -7,8 +7,14 @@
 
 import { env } from '../config/env.js';
 
-const getHeaders = () => {
-  const basicAuth = Buffer.from(`${env.traccar.user}:${env.traccar.pass}`).toString('base64');
+export interface TraccarConnectionConfig {
+  url: string;
+  user: string;
+  pass: string;
+}
+
+const getHeaders = (config: TraccarConnectionConfig) => {
+  const basicAuth = Buffer.from(`${config.user}:${config.pass}`).toString('base64');
   return {
     'Authorization': `Basic ${basicAuth}`,
     'Content-Type': 'application/json',
@@ -77,10 +83,10 @@ export interface TraccarEvent {
 // Helper de fetch com tratamento de erro
 // ─────────────────────────────────────────
 
-async function traccarFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${env.traccar.url}${path}`, {
+async function traccarFetch<T>(config: TraccarConnectionConfig, path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${config.url}${path}`, {
     ...options,
-    headers: { ...getHeaders(), ...(options?.headers ?? {}) },
+    headers: { ...getHeaders(config), ...(options?.headers ?? {}) },
   });
 
   if (!res.ok) {
@@ -91,17 +97,88 @@ async function traccarFetch<T>(path: string, options?: RequestInit): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+const normalizeConfig = (config: TraccarConnectionConfig): TraccarConnectionConfig => ({
+  ...config,
+  url: config.url.replace(/\/$/, ''),
+});
+
+const getEnvConfig = (): TraccarConnectionConfig => normalizeConfig({
+  url: env.traccar.url,
+  user: env.traccar.user,
+  pass: env.traccar.pass,
+});
+
+export const createTraccarApi = (rawConfig?: TraccarConnectionConfig) => {
+  const config = normalizeConfig(rawConfig ?? getEnvConfig());
+
+  return {
+    getDevices: (): Promise<TraccarDevice[]> =>
+      traccarFetch<TraccarDevice[]>(config, '/api/devices'),
+
+    getDeviceByUniqueId: (uniqueId: string): Promise<TraccarDevice[]> =>
+      traccarFetch<TraccarDevice[]>(config, `/api/devices?uniqueId=${uniqueId}`),
+
+    getPositions: (deviceId?: number): Promise<TraccarPosition[]> => {
+      const qs = deviceId ? `?deviceId=${deviceId}` : '';
+      return traccarFetch<TraccarPosition[]>(config, `/api/positions${qs}`);
+    },
+
+    getPositionHistory: (
+      deviceId: number,
+      from: Date,
+      to: Date,
+    ): Promise<TraccarPosition[]> => {
+      const params = new URLSearchParams({
+        deviceId: String(deviceId),
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+      return traccarFetch<TraccarPosition[]>(config, `/api/reports/route?${params}`);
+    },
+
+    getGeofences: (): Promise<TraccarGeofence[]> =>
+      traccarFetch<TraccarGeofence[]>(config, '/api/geofences'),
+
+    createGeofence: (data: Partial<TraccarGeofence>): Promise<TraccarGeofence> =>
+      traccarFetch<TraccarGeofence>(config, '/api/geofences', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    deleteGeofence: (id: number): Promise<void> =>
+      traccarFetch<void>(config, `/api/geofences/${id}`, { method: 'DELETE' }),
+
+    getEvents: (
+      deviceId: number,
+      from: Date,
+      to: Date,
+    ): Promise<TraccarEvent[]> => {
+      const params = new URLSearchParams({
+        deviceId: String(deviceId),
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+      return traccarFetch<TraccarEvent[]>(config, `/api/reports/events?${params}`);
+    },
+
+    getServerInfo: (): Promise<Record<string, unknown>> =>
+      traccarFetch<Record<string, unknown>>(config, '/api/server'),
+  };
+};
+
+const defaultApi = createTraccarApi();
+
 // ─────────────────────────────────────────
 // Dispositivos
 // ─────────────────────────────────────────
 
 /** Lista todos os dispositivos cadastrados no Traccar */
 export const getDevices = (): Promise<TraccarDevice[]> =>
-  traccarFetch<TraccarDevice[]>('/api/devices');
+  defaultApi.getDevices();
 
 /** Busca um dispositivo pelo uniqueId (IMEI/serial do hardware) */
 export const getDeviceByUniqueId = (uniqueId: string): Promise<TraccarDevice[]> =>
-  traccarFetch<TraccarDevice[]>(`/api/devices?uniqueId=${uniqueId}`);
+  defaultApi.getDeviceByUniqueId(uniqueId);
 
 // ─────────────────────────────────────────
 // Posições
@@ -109,8 +186,7 @@ export const getDeviceByUniqueId = (uniqueId: string): Promise<TraccarDevice[]> 
 
 /** Posição atual de todos os dispositivos (ou de um específico) */
 export const getPositions = (deviceId?: number): Promise<TraccarPosition[]> => {
-  const qs = deviceId ? `?deviceId=${deviceId}` : '';
-  return traccarFetch<TraccarPosition[]>(`/api/positions${qs}`);
+  return defaultApi.getPositions(deviceId);
 };
 
 /** Histórico de posições de um dispositivo num intervalo de tempo */
@@ -119,12 +195,7 @@ export const getPositionHistory = (
   from: Date,
   to: Date,
 ): Promise<TraccarPosition[]> => {
-  const params = new URLSearchParams({
-    deviceId: String(deviceId),
-    from: from.toISOString(),
-    to: to.toISOString(),
-  });
-  return traccarFetch<TraccarPosition[]>(`/api/reports/route?${params}`);
+  return defaultApi.getPositionHistory(deviceId, from, to);
 };
 
 // ─────────────────────────────────────────
@@ -132,16 +203,13 @@ export const getPositionHistory = (
 // ─────────────────────────────────────────
 
 export const getGeofences = (): Promise<TraccarGeofence[]> =>
-  traccarFetch<TraccarGeofence[]>('/api/geofences');
+  defaultApi.getGeofences();
 
 export const createGeofence = (data: Partial<TraccarGeofence>): Promise<TraccarGeofence> =>
-  traccarFetch<TraccarGeofence>('/api/geofences', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  defaultApi.createGeofence(data);
 
 export const deleteGeofence = (id: number): Promise<void> =>
-  traccarFetch<void>(`/api/geofences/${id}`, { method: 'DELETE' });
+  defaultApi.deleteGeofence(id);
 
 // ─────────────────────────────────────────
 // Eventos
@@ -152,12 +220,7 @@ export const getEvents = (
   from: Date,
   to: Date,
 ): Promise<TraccarEvent[]> => {
-  const params = new URLSearchParams({
-    deviceId: String(deviceId),
-    from: from.toISOString(),
-    to: to.toISOString(),
-  });
-  return traccarFetch<TraccarEvent[]>(`/api/reports/events?${params}`);
+  return defaultApi.getEvents(deviceId, from, to);
 };
 
 // ─────────────────────────────────────────
@@ -165,4 +228,4 @@ export const getEvents = (
 // ─────────────────────────────────────────
 
 export const getServerInfo = (): Promise<Record<string, unknown>> =>
-  traccarFetch<Record<string, unknown>>('/api/server');
+  defaultApi.getServerInfo();

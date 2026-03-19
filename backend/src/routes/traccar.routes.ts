@@ -5,12 +5,34 @@
  * O frontend usa VITE_BACKEND_API_URL + /api/traccar/...
  */
 
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import * as traccar from '../services/traccar.js';
+import { traccarInstancesService } from '../services/traccarInstances.js';
 
 // Auth is handled centrally in app.ts for all /api/* routes.
 const router = Router();
 export { router as traccarRouter };
+
+const adminRoles = new Set(['admin', 'moderator']);
+
+const getCompanySlugFromRequest = (req: Request) => {
+  const querySlug = typeof req.query?.companySlug === 'string' ? req.query.companySlug.trim().toLowerCase() : '';
+  const sessionSlug = req.authSession?.companySlug?.trim().toLowerCase() ?? '';
+
+  if (querySlug && querySlug !== sessionSlug && !adminRoles.has(req.authSession?.role ?? '')) {
+    const error = new Error('Sem permissão para consultar outra empresa.');
+    (error as any).statusCode = 403;
+    throw error;
+  }
+
+  return querySlug || sessionSlug;
+};
+
+const resolveApi = async (req: Request) => {
+  const companySlug = getCompanySlugFromRequest(req);
+  const connection = await traccarInstancesService.resolveConnectionConfig(companySlug);
+  return traccar.createTraccarApi(connection);
+};
 
 // ─────────────────────────────────────────
 // GET /api/traccar/server
@@ -18,10 +40,11 @@ export { router as traccarRouter };
 // ─────────────────────────────────────────
 router.get('/server', async (_req, res) => {
   try {
-    const info = await traccar.getServerInfo();
+    const api = await resolveApi(_req);
+    const info = await api.getServerInfo();
     res.json(info);
   } catch (err: any) {
-    res.status(502).json({ error: 'Traccar indisponível', detail: err.message });
+    res.status(err?.statusCode || 502).json({ error: 'Traccar indisponível', detail: err.message });
   }
 });
 
@@ -31,10 +54,11 @@ router.get('/server', async (_req, res) => {
 // ─────────────────────────────────────────
 router.get('/devices', async (_req, res) => {
   try {
-    const devices = await traccar.getDevices();
+    const api = await resolveApi(_req);
+    const devices = await api.getDevices();
     res.json(devices);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -45,11 +69,12 @@ router.get('/devices', async (_req, res) => {
 // ─────────────────────────────────────────
 router.get('/positions', async (req, res) => {
   try {
+    const api = await resolveApi(req);
     const deviceId = req.query.deviceId ? Number(req.query.deviceId) : undefined;
-    const positions = await traccar.getPositions(deviceId);
+    const positions = await api.getPositions(deviceId);
     res.json(positions);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -66,14 +91,15 @@ router.get('/positions/history', async (req, res) => {
   }
 
   try {
-    const history = await traccar.getPositionHistory(
+    const api = await resolveApi(req);
+    const history = await api.getPositionHistory(
       Number(deviceId),
       new Date(from),
       new Date(to),
     );
     res.json(history);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -83,10 +109,11 @@ router.get('/positions/history', async (req, res) => {
 // ─────────────────────────────────────────
 router.get('/geofences', async (_req, res) => {
   try {
-    const geofences = await traccar.getGeofences();
+    const api = await resolveApi(_req);
+    const geofences = await api.getGeofences();
     res.json(geofences);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -97,10 +124,11 @@ router.get('/geofences', async (_req, res) => {
 // ─────────────────────────────────────────
 router.post('/geofences', async (req, res) => {
   try {
-    const geofence = await traccar.createGeofence(req.body);
+    const api = await resolveApi(req);
+    const geofence = await api.createGeofence(req.body);
     res.status(201).json(geofence);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -109,10 +137,11 @@ router.post('/geofences', async (req, res) => {
 // ─────────────────────────────────────────
 router.delete('/geofences/:id', async (req, res) => {
   try {
-    await traccar.deleteGeofence(Number(req.params.id));
+    const api = await resolveApi(req);
+    await api.deleteGeofence(Number(req.params.id));
     res.status(204).send();
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
@@ -129,14 +158,15 @@ router.get('/events', async (req, res) => {
   }
 
   try {
-    const events = await traccar.getEvents(
+    const api = await resolveApi(req);
+    const events = await api.getEvents(
       Number(deviceId),
       new Date(from),
       new Date(to),
     );
     res.json(events);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    res.status(err?.statusCode || 502).json({ error: err.message });
   }
 });
 
