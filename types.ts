@@ -6,6 +6,7 @@ export interface UserNotificationPreferences {
   newComment: boolean;
   schedulingNeedsConfirmation: boolean;
   schedulingNeedsCompletion: boolean;
+  schedulingUpdates: boolean;
 }
 
 export interface User {
@@ -13,13 +14,14 @@ export interface User {
   name: string;
   email: string;
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client';
+  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico';
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
   companySlug?: string;
   createdAt?: number;
   cpf?: string; 
   avatarInitial?: string;
+  pixKey?: string;
   notificationPreferences?: UserNotificationPreferences;
 }
 
@@ -50,7 +52,73 @@ export interface Tag {
   isActivated?: boolean;
   lastBattery?: number;
   batteryWarrantyYears?: number;
+  status?: 'disponível' | 'enviada' | 'em_uso' | 'manutencao';
+  shipmentId?: string;
   createdAt: number;
+}
+
+export interface Tracker {
+  id: string;
+  imei: string;
+  model: string;
+  status: 'disponível' | 'enviado' | 'em_uso' | 'manutencao';
+  shipmentId?: string;
+  createdAt: number;
+}
+
+export type ShipmentStatus = 'rascunho' | 'ativo' | 'enviado' | 'entregue' | 'cancelado';
+export type ShipmentItemType = 'tag' | 'rastreador' | 'outro';
+
+export interface ShipmentItem {
+  id: string;
+  shipmentId: string;
+  tipo: ShipmentItemType;
+  tagId?: string;
+  rastreadorId?: string;
+  placa?: string;
+  veiculoInfo?: {
+    placa: string;
+    modelo: string;
+    cor: string;
+    proprietario: string;
+  };
+  quantidade: number;
+  observacoes?: string;
+}
+
+export interface Shipment {
+  id: string;
+  titulo: string;
+  codigoRemessa?: string;
+  status: ShipmentStatus;
+  consultorId: string;
+  consultorNome: string;
+  destinatario: {
+    nome: string;
+    enderecoCompleto: string;
+    lat: number;
+    lng: number;
+    placeId?: string;
+  };
+  codigoRastreio?: string;
+  transportadora?: string;
+  dataCriacao: number;
+  dataEnvio?: number;
+  dataEntrega?: number;
+  observacoes?: string;
+  itens: ShipmentItem[];
+  createdBy: string;
+  updatedAt: number;
+}
+
+export interface ShippingAddress {
+  id: string;
+  consultorId: string;
+  apelido: string;
+  enderecoCompleto: string;
+  lat: number;
+  lng: number;
+  placeId?: string;
 }
 
 export interface Client {
@@ -103,6 +171,7 @@ export interface Vehicle {
   updatedBy?: string;
   chassis?: string;
   fipeCode?: string;
+  fipeValue?: number;
   hinovaId?: string;
   plateHash?: string;
   // New Field for Offline Persistence
@@ -130,11 +199,15 @@ export interface StolenRecord {
   vehicleModel: string;
   type: 'theft' | 'robbery';
   timestamp: number;
-  status: 'open' | 'recovered';
+  status: 'open' | 'recovered' | 'lost';
   location: { lat: number; lon: number; address: string };
   policeReport?: string;
   notes?: string;
+  stolenValue?: number;
+  recoveredValue?: number;
   recoveredAt?: number;
+  lostAt?: number;
+  trackingToken?: string;
 }
 
 export interface AppNotification {
@@ -176,18 +249,34 @@ export interface AppSettings {
   minStockLevel?: number;
   criticalStockLevel?: number;
   budgetMarginThreshold?: number; 
+  siteRastreioApiKey?: string;
 }
 
-export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cancelada' | 'Concluída';
+export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrado';
 export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag' | 'Não precisa';
 export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada' | 'Vistoria';
+
+export interface TechnicianPayment {
+  id: string;
+  technicianId: string;
+  amount: number;
+  date: number;
+  proofUrl?: string;
+  type: 'salary_deduction' | 'return';
+  status: 'pending' | 'paid';
+  scheduleIds: string[]; // Services covered by this payment
+}
 
 export interface Technician {
   id: string;
   name: string;
+  email?: string;
   phone: string;
+  cpf?: string;
+  pixKey?: string;
   active: boolean;
   color?: string; 
+  serviceLocationType?: 'Ponto Fixo' | 'Domicílio';
   services?: string[]; // Lista de DeviceTypes que o técnico atende
   unavailableDates?: string[]; // Array de datas ISO (YYYY-MM-DD)
   serviceRates?: {
@@ -195,7 +284,11 @@ export interface Technician {
     maintenance: number;
     removal: number;
     inspection: number;
+    tagInstallation?: number;
+    tagRemoval?: number;
+    tagExchange?: number;
   };
+  balanceInHand?: number; // Added for financial tracking
 }
 
 export interface ScheduleHistory {
@@ -225,10 +318,15 @@ export interface Schedule {
   needsInspection?: boolean; 
   paymentOnSite?: boolean; 
   installedImei?: string; 
+  installedTagImei?: string;
   isRemoteLocation?: boolean; 
   displacementKm?: number; 
   displacementValue?: number; 
   adhesionValue?: number; 
+  technicianPaid?: boolean;
+  technicianPaymentAmount?: number;
+  technicianPaymentDate?: string;
+  amountReceivedByTechnician?: number; // Dinheiro em mãos (recebido do cliente)
   locationAddress: string;
   locationLat: number;
   locationLng: number;

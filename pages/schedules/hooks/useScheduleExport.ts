@@ -125,7 +125,7 @@ export const useScheduleExport = (
             const date = s.confirmedDate ? formatDate(s.confirmedDate) : (s.preferredDate ? formatDate(s.preferredDate) : '-');
             
             let val = 0;
-            if (['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local'].includes(s.status)) {
+            if (['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local', 'Cliente no local'].includes(s.status)) {
                  val = calculateServiceValue(s, tech);
             }
             const disp = s.displacementValue || 0;
@@ -137,20 +137,23 @@ export const useScheduleExport = (
                 s.status,
                 techName,
                 disp > 0 ? `R$ ${disp.toFixed(2)}` : '-',
-                `R$ ${(val + disp).toFixed(2)}`
+                `R$ ${(val + disp).toFixed(2)}`,
+                s.technicianPaid ? `R$ ${(s.technicianPaymentAmount || 0).toFixed(2)}` : '-',
+                s.technicianPaymentDate && s.technicianPaid ? formatDate(s.technicianPaymentDate) : '-'
             ];
         });
 
         autoTable(doc, {
             startY: 25,
-            head: [['Data', 'Placa', 'Tipo', 'Status', 'Técnico', 'Desloc.', 'Valor Total']],
+            head: [['Data', 'Placa', 'Tipo', 'Status', 'Técnico', 'Desloc.', 'Valor Total', 'Pago Tec.', 'Data Pag.']],
             body: detailedRows,
             theme: 'striped',
             headStyles: { fillColor: [24, 24, 27] },
             styles: { fontSize: 7, cellPadding: 2 },
             columnStyles: {
                 5: { halign: 'right' },
-                6: { halign: 'right', fontStyle: 'bold' }
+                6: { halign: 'right', fontStyle: 'bold' },
+                7: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] }
             }
         });
 
@@ -174,7 +177,7 @@ export const useScheduleExport = (
               const tech = technicians.find(t => t.id === s.technicianId);
               
               let val = 0;
-              if (['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local'].includes(s.status)) {
+              if (['Confirmada', 'Reagendada', 'Concluída', 'Técnico no local', 'Cliente no local'].includes(s.status)) {
                    val = calculateServiceValue(s, tech);
               }
 
@@ -188,13 +191,18 @@ export const useScheduleExport = (
                   "Serviço": s.serviceType,
                   "Status": s.status,
                   "Técnico": tech?.name || '-',
+                  "Técnico Pago?": s.technicianPaid ? 'SIM' : 'NÃO',
+                  "Valor Pago Técnico": s.technicianPaymentAmount || 0,
+                  "Data Pag. Técnico": s.technicianPaymentDate ? formatDate(s.technicianPaymentDate) : '-',
                   "Endereço": s.locationAddress,
                   "Distante?": s.isRemoteLocation ? 'SIM' : 'NÃO',
                   "KM Desloc.": s.displacementKm || 0,
                   "Valor Desloc.": s.displacementValue || 0,
                   "Valor Serviço": val,
                   "Valor Total": val + (s.displacementValue || 0),
-                  "Solicitante": s.requesterName
+                  "Solicitante": s.requesterName,
+                  "IMEI Rastreador": s.installedImei || '-',
+                  "IMEI/ID Tag": s.installedTagImei || '-'
               };
           });
 

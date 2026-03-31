@@ -6,8 +6,9 @@ import { xadtagService } from '../services/xadtag';
 import { Vehicle, VehicleCategory, Tag, KTagLocationResult } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, Filter, FileSpreadsheet, Download, TrendingUp, Activity, Battery, Signal, MapPin } from 'lucide-react';
+import { FileText, Filter, FileSpreadsheet, Download, TrendingUp, Activity, Battery, Signal, MapPin, Search, ChevronDown, Check, Link as LinkIcon, Unlink } from 'lucide-react';
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar, LineChart, Line, CartesianGrid, Legend } from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const Reports = () => {
   const { t } = useLanguage();
@@ -35,6 +36,8 @@ export const Reports = () => {
   const [activeTab, setActiveTab] = useState<'vehicles' | 'telemetry'>('vehicles');
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagId, setSelectedTagId] = useState<string>('');
+  const [tagSearch, setTagSearch] = useState('');
+  const [isTagSelectorOpen, setIsTagSelectorOpen] = useState(false);
   const [historyData, setHistoryData] = useState<KTagLocationResult[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [telemetryStats, setTelemetryStats] = useState({ totalPings: 0, avgBattery: 0, distance: 0 });
@@ -141,6 +144,25 @@ export const Reports = () => {
   }, [vehicles, appliedStartDate, appliedEndDate, categories]);
 
   useEffect(() => { filterData(); }, [filterData]);
+
+  // --- TAG LINKAGE INFO ---
+  const tagLinkageMap = React.useMemo(() => {
+    const map: Record<string, Vehicle> = {};
+    vehicles.forEach(v => {
+      if (v.tagId) map[v.tagId] = v;
+    });
+    return map;
+  }, [vehicles]);
+
+  const filteredTags = React.useMemo(() => {
+    const term = tagSearch.toLowerCase();
+    return tags.filter(t => 
+      t.name.toLowerCase().includes(term) || 
+      t.accessoryId.toLowerCase().includes(term)
+    );
+  }, [tags, tagSearch]);
+
+  const selectedTag = tags.find(t => t.id === selectedTagId);
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -363,18 +385,91 @@ export const Reports = () => {
 
                 <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-2 w-full xl:w-auto">
                      {activeTab === 'telemetry' && (
-                        <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all w-full md:w-64">
-                            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Tag / Dispositivo</label>
-                            <select 
-                                value={selectedTagId} 
-                                onChange={e => setSelectedTagId(e.target.value)}
-                                className="bg-transparent border-none p-0 text-sm font-bold outline-none cursor-pointer dark:text-white w-full appearance-none"
-                            >
-                                <option value="">Selecione uma Tag...</option>
-                                {tags.map(t => (
-                                    <option key={t.id} value={t.id}>{t.name} ({t.accessoryId})</option>
-                                ))}
-                            </select>
+                        <div className="relative w-full md:w-72">
+                            <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setIsTagSelectorOpen(!isTagSelectorOpen)}>
+                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Tag / Dispositivo</label>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-bold dark:text-white truncate">
+                                        {selectedTag ? `${selectedTag.name} (${selectedTag.accessoryId})` : 'Selecione uma Tag...'}
+                                    </span>
+                                    <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isTagSelectorOpen ? 'rotate-180' : ''}`} />
+                                </div>
+                            </div>
+
+                            <AnimatePresence>
+                                {isTagSelectorOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[100]" onClick={() => setIsTagSelectorOpen(false)} />
+                                        <motion.div 
+                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                            className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl z-[101] overflow-hidden flex flex-col max-h-[400px]"
+                                        >
+                                            <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                                <div className="relative">
+                                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Buscar por nome ou ID..." 
+                                                        value={tagSearch}
+                                                        onChange={e => setTagSearch(e.target.value)}
+                                                        className="w-full pl-9 pr-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 ring-primary-500/20"
+                                                        autoFocus
+                                                        onClick={e => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="overflow-y-auto custom-scrollbar p-1">
+                                                {filteredTags.length === 0 ? (
+                                                    <div className="p-8 text-center">
+                                                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhuma tag encontrada</p>
+                                                    </div>
+                                                ) : (
+                                                    filteredTags.map(t => {
+                                                        const linkedVehicle = tagLinkageMap[t.id];
+                                                        const isSelected = selectedTagId === t.id;
+                                                        return (
+                                                            <button 
+                                                                key={t.id}
+                                                                onClick={() => {
+                                                                    setSelectedTagId(t.id);
+                                                                    setIsTagSelectorOpen(false);
+                                                                }}
+                                                                className={`w-full p-3 rounded-2xl flex items-center justify-between transition-all group ${isSelected ? 'bg-primary-500/10 text-primary-500' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+                                                            >
+                                                                <div className="flex items-center gap-3 text-left">
+                                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:bg-zinc-200 dark:group-hover:bg-zinc-700'}`}>
+                                                                        <Activity size={18} />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-xs font-black uppercase truncate">{t.name}</p>
+                                                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{t.accessoryId}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-col items-end gap-1">
+                                                                    {linkedVehicle ? (
+                                                                        <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded-full border border-emerald-500/20">
+                                                                            <LinkIcon size={8} />
+                                                                            <span className="text-[8px] font-black uppercase tracking-widest">{linkedVehicle.plate}</span>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-full border border-zinc-200 dark:border-zinc-700">
+                                                                            <Unlink size={8} />
+                                                                            <span className="text-[8px] font-black uppercase tracking-widest">Livre</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {isSelected && <Check size={14} className="text-primary-500" />}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    </>
+                                )}
+                            </AnimatePresence>
                         </div>
                      )}
                      

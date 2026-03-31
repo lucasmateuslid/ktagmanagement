@@ -12,6 +12,7 @@ import {
   KeyRound, RotateCcw, ShieldQuestion, Fingerprint, Lock, CheckSquare, Square, FileSpreadsheet, FileText, ListChecks
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -25,6 +26,8 @@ export const Clients = () => {
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<Partial<Client>>({});
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set());
   
@@ -185,6 +188,7 @@ export const Clients = () => {
     e.preventDefault();
     if (!selectedClient.name || !selectedClient.cpf) return;
 
+    const isNew = !selectedClient.id;
     const clientId = selectedClient.id || crypto.randomUUID();
     const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
     
@@ -198,6 +202,15 @@ export const Clients = () => {
     };
 
     await storage.saveClient(clientData);
+    
+    // Auditoria
+    storage.logAction(
+        currentUser, 
+        isNew ? 'CREATE' : 'UPDATE', 
+        'Client', 
+        `${isNew ? 'Cadastrou' : 'Editou'} cliente: ${clientData.name}`, 
+        clientId
+    );
 
     // Se o acesso for habilitado, garante que existe um usuário no USERS_DB
     if (clientData.hasAccess) {
@@ -233,11 +246,16 @@ export const Clients = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja excluir este cliente? Os veículos vinculados CONTINUARÃO no sistema.')) return;
+    const c = clients.find(client => client.id === id);
     const linkedVehicles = allVehicles.filter(v => v.clientId === id);
     const unlinkPromises = linkedVehicles.map(v => storage.saveVehicle({ ...v, clientId: undefined }));
     await Promise.all(unlinkPromises);
     await storage.deleteClient(id);
+    
+    if (currentUser && c) {
+        storage.logAction(currentUser, 'DELETE', 'Client', `Removeu cliente: ${c.name}`, id);
+    }
+
     addNotification('info', 'Cliente Removido', 'Cadastro excluído e frota desvinculada.');
     loadData();
   };
@@ -559,6 +577,17 @@ export const Clients = () => {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => setIsConfirmDeleteOpen(false)}
+          onConfirm={() => clientToDelete && handleDelete(clientToDelete)}
+          title="Excluir Cliente"
+          message="Deseja excluir este cliente? Os veículos vinculados CONTINUARÃO no sistema?"
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
     </div>
   );
 };

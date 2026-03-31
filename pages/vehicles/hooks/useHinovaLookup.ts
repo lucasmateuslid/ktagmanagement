@@ -13,6 +13,8 @@ export const useHinovaLookup = (
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const lookupPlate = async (plate: string) => {
+    if (status === 'loading') return;
+    
     if (!plate || plate.length < 7) {
         addNotification('info', 'SGA/Hinova', 'Digite uma placa válida.');
         return;
@@ -22,11 +24,22 @@ export const useHinovaLookup = (
     try {
         const result = await hinovaService.searchVehicle(plate);
         if (result) {
-            setFormData(prev => ({ ...prev, ...result.vehicle }));
+            const vehicleData: Partial<Vehicle> = { ...result.vehicle };
+            
+            // Se a Hinova retornou um valor FIPE, converte para número e salva
+            if (result.price) {
+                const cleanPrice = String(result.price).replace(/[^\d,]/g, '').replace(',', '.');
+                const priceNum = parseFloat(cleanPrice);
+                if (!isNaN(priceNum)) {
+                    vehicleData.fipeValue = priceNum;
+                }
+            }
+
+            setFormData(prev => ({ ...prev, ...vehicleData }));
             setStatus('success');
             
-            const hinovaCpf = result.client.cpf?.replace(/\D/g, '') || '';
-            const existingClient = clients.find(c => c.cpf.replace(/\D/g, '') === hinovaCpf);
+            const hinovaCpf = String(result.client.cpf || '').replace(/\D/g, '');
+            const existingClient = clients.find(c => String(c.cpf || '').replace(/\D/g, '') === hinovaCpf);
             
             if (existingClient) {
                 setClientData(existingClient);

@@ -1,6 +1,6 @@
 
 // ... keep imports ...
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory, Feedback, SystemUpdate } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory, Feedback, SystemUpdate, Shipment, ShippingAddress } from '../types';
 import { db } from './firebase';
 import { 
   collection, getDocs, addDoc, doc, updateDoc, deleteDoc, 
@@ -14,6 +14,7 @@ const KEYS = {
   USER_SESSION: 'ktag_auth_token', 
   USERS_DB: 'ktag_users_db',
   TAGS: 'ktag_tags',
+  TRACKERS: 'ktag_trackers',
   VEHICLES: 'ktag_vehicles',
   CLIENTS: 'ktag_clients',
   SETTINGS: 'ktag_settings_v3',
@@ -26,6 +27,9 @@ const KEYS = {
   TECHNICIANS: 'ktag_technicians',
   FEEDBACKS: 'ktag_feedbacks',
   SYSTEM_UPDATES: 'ktag_system_updates',
+  SHIPMENTS: 'ktag_shipments',
+  SHIPPING_ADDRESSES: 'ktag_shipping_addresses',
+  TECHNICIAN_PAYMENTS: 'ktag_technician_payments',
 };
 
 // ... keep cache and cleanData ...
@@ -142,6 +146,7 @@ export const storage = {
       cpf: user.cpf ? await encryption.encrypt(user.cpf) : undefined
     };
     if (db) await setDoc(doc(db, KEYS.USERS_DB, user.id), cleanData(encryptedUser));
+    await storage.logAction(null, 'CREATE', 'User', `Solicitação de cadastro: ${user.name} (${user.email})`, user.id);
   },
 
   updateUserProfile: async (id: string, data: Partial<User>) => {
@@ -151,6 +156,7 @@ export const storage = {
       if (data.name) encryptedData.name = await encryption.encrypt(data.name);
       if (data.cpf) encryptedData.cpf = await encryption.encrypt(data.cpf);
       await updateDoc(userRef, cleanData(encryptedData));
+      await storage.logAction(null, 'UPDATE', 'User', `Perfil atualizado: ${id}`, id);
     }
   },
 
@@ -158,6 +164,7 @@ export const storage = {
     if (db) {
       const userRef = doc(db, KEYS.USERS_DB, id);
       await updateDoc(userRef, { status });
+      await storage.logAction(null, 'UPDATE', 'User', `Status alterado para ${status}`, id);
     }
   },
 
@@ -187,8 +194,11 @@ export const storage = {
     
     const list = cache.get<Vehicle[]>(KEYS.VEHICLES, []);
     const idx = list.findIndex(item => item.id === v.id);
+    const isNew = idx < 0;
     if (idx >= 0) list[idx] = encryptedVehicle; else list.push(encryptedVehicle);
     cache.set(KEYS.VEHICLES, list);
+
+    await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Vehicle', `${isNew ? 'Cadastro' : 'Atualização'} de veículo: ${v.plate}`, v.id);
   },
 
   // Novo método para atualização leve de posição
@@ -200,6 +210,20 @@ export const storage = {
     } catch (e) {
         console.warn("Falha ao persistir localização (offline ou erro):", e);
     }
+  },
+
+  subscribeVehicles: (callback: (vehicles: Vehicle[]) => void) => {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, KEYS.VEHICLES), async (snap) => {
+      const raw = snap.docs.map(d => ({ ...d.data(), id: d.id })) as Vehicle[];
+      await encryption.waitReady();
+      const decrypted = await Promise.all(raw.map(async v => ({
+        ...v,
+        plate: await encryption.decrypt(v.plate),
+        chassis: v.chassis ? await encryption.decrypt(v.chassis) : undefined
+      })));
+      callback(decrypted);
+    });
   },
 
   getClients: async (): Promise<Client[]> => {
@@ -232,8 +256,11 @@ export const storage = {
     if (db) await setDoc(doc(db, KEYS.CLIENTS, c.id), cleanData(encryptedClient));
     const list = cache.get<Client[]>(KEYS.CLIENTS, []);
     const idx = list.findIndex(item => item.id === c.id);
+    const isNew = idx < 0;
     if (idx >= 0) list[idx] = encryptedClient; else list.push(encryptedClient);
     cache.set(KEYS.CLIENTS, list);
+
+    await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Client', `${isNew ? 'Cadastro' : 'Atualização'} de cliente: ${c.name}`, c.id);
   },
 
   // ... Tags, Companies, Categories methods ...
@@ -242,27 +269,63 @@ export const storage = {
     if (raw.length > 0) cache.set(KEYS.TAGS, raw);
 
     await encryption.waitReady();
-    return Promise.all(raw.map(async t => ({
-      ...t,
-      hashedAdvKey: t.hashedAdvKey ? await encryption.decrypt(t.hashedAdvKey) : undefined,
-      privateKey: t.privateKey ? await encryption.decrypt(t.privateKey) : undefined,
-      imei: t.imei ? await encryption.decrypt(t.imei) : undefined
-    })));
+    return Promise.all(raw.map(async t => {
+      let imei = t.imei;
+      // Tentativa de descriptografar caso ainda esteja criptografado no banco
+      if (imei && imei.length > 30) {
+        try {
+          imei = await encryption.decrypt(imei);
+        } catch (e) {
+          // Se falhar, assume que não estava criptografado
+        }
+      }
+      return {
+        ...t,
+        imei,
+        hashedAdvKey: t.hashedAdvKey ? await encryption.decrypt(t.hashedAdvKey) : undefined,
+        privateKey: t.privateKey ? await encryption.decrypt(t.privateKey) : undefined
+      };
+    }));
+  },
+
+  subscribeTags: (callback: (tags: Tag[]) => void) => {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, KEYS.TAGS), async (snap) => {
+      const raw = snap.docs.map(d => ({ ...d.data(), id: d.id })) as Tag[];
+      await encryption.waitReady();
+      const decrypted = await Promise.all(raw.map(async t => {
+        let imei = t.imei;
+        if (imei && imei.length > 30) {
+          try { imei = await encryption.decrypt(imei); } catch (e) {}
+        }
+        return {
+          ...t,
+          imei,
+          hashedAdvKey: t.hashedAdvKey ? await encryption.decrypt(t.hashedAdvKey) : undefined,
+          privateKey: t.privateKey ? await encryption.decrypt(t.privateKey) : undefined
+        };
+      }));
+      callback(decrypted);
+    });
   },
 
   saveTag: async (t: Tag) => {
     await encryption.waitReady();
     const encryptedTag = {
       ...t,
+      // IMEI não é mais criptografado conforme solicitado
+      imei: t.imei,
       hashedAdvKey: t.hashedAdvKey ? await encryption.encrypt(t.hashedAdvKey) : undefined,
-      privateKey: t.privateKey ? await encryption.encrypt(t.privateKey) : undefined,
-      imei: t.imei ? await encryption.encrypt(t.imei) : undefined
+      privateKey: t.privateKey ? await encryption.encrypt(t.privateKey) : undefined
     };
     if (db) await setDoc(doc(db, KEYS.TAGS, t.id), cleanData(encryptedTag));
     const tags = cache.get<Tag[]>(KEYS.TAGS, []);
     const idx = tags.findIndex(item => item.id === t.id);
+    const isNew = idx < 0;
     if (idx >= 0) tags[idx] = encryptedTag; else tags.push(encryptedTag);
     cache.set(KEYS.TAGS, tags);
+
+    await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Tag', `${isNew ? 'Cadastro' : 'Atualização'} de tag: ${t.id}`, t.id);
   },
 
   getCompanies: async (): Promise<Company[]> => {
@@ -272,7 +335,11 @@ export const storage = {
   },
 
   saveCompany: async (c: Company) => {
-    if (db) await setDoc(doc(db, KEYS.COMPANIES, c.id), cleanData(c));
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.COMPANIES, c.id))).exists();
+      await setDoc(doc(db, KEYS.COMPANIES, c.id), cleanData(c));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Company', `${isNew ? 'Cadastro' : 'Atualização'} de regional: ${c.name}`, c.id);
+    }
     const list = cache.get<Company[]>(KEYS.COMPANIES, []);
     const idx = list.findIndex(item => item.id === c.id);
     if (idx >= 0) list[idx] = c; else list.push(c);
@@ -280,7 +347,10 @@ export const storage = {
   },
 
   deleteCompany: async (id: string) => {
-    if (db) await deleteDoc(doc(db, KEYS.COMPANIES, id));
+    if (db) {
+      await deleteDoc(doc(db, KEYS.COMPANIES, id));
+      await storage.logAction(null, 'DELETE', 'Company', `Regional removida: ${id}`, id);
+    }
     const list = cache.get<Company[]>(KEYS.COMPANIES, []);
     cache.set(KEYS.COMPANIES, list.filter(c => c.id !== id));
   },
@@ -292,7 +362,11 @@ export const storage = {
   },
 
   saveCategory: async (cat: VehicleCategory) => {
-    if (db) await setDoc(doc(db, KEYS.CATEGORIES, cat.id), cleanData(cat));
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.CATEGORIES, cat.id))).exists();
+      await setDoc(doc(db, KEYS.CATEGORIES, cat.id), cleanData(cat));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Category', `${isNew ? 'Cadastro' : 'Atualização'} de categoria: ${cat.name}`, cat.id);
+    }
     const list = cache.get<VehicleCategory[]>(KEYS.CATEGORIES, []);
     const idx = list.findIndex(item => item.id === cat.id);
     if (idx >= 0) list[idx] = cat; else list.push(cat);
@@ -300,7 +374,10 @@ export const storage = {
   },
 
   deleteCategory: async (id: string) => {
-    if (db) await deleteDoc(doc(db, KEYS.CATEGORIES, id));
+    if (db) {
+      await deleteDoc(doc(db, KEYS.CATEGORIES, id));
+      await storage.logAction(null, 'DELETE', 'Category', `Categoria removida: ${id}`, id);
+    }
     const list = cache.get<VehicleCategory[]>(KEYS.CATEGORIES, []);
     cache.set(KEYS.CATEGORIES, list.filter(c => c.id !== id));
   },
@@ -320,6 +397,66 @@ export const storage = {
     const list = cache.get<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
     list.push(record);
     cache.set(KEYS.STOLEN_RECORDS, list);
+  },
+
+  recoverTheft: async (recordId: string, recoveredValue: number) => {
+    if (db) {
+      const recordRef = doc(db, KEYS.STOLEN_RECORDS, recordId);
+      const recordSnap = await getDoc(recordRef);
+      if (recordSnap.exists()) {
+        const record = recordSnap.data() as StolenRecord;
+        await updateDoc(recordRef, { 
+          status: 'recovered', 
+          recoveredAt: Date.now(),
+          recoveredValue 
+        });
+        const vehicleRef = doc(db, KEYS.VEHICLES, record.vehicleId);
+        await updateDoc(vehicleRef, { status: 'active' });
+      }
+    }
+    const list = cache.get<StolenRecord[]>(KEYS.STOLEN_RECORDS, []);
+    const idx = list.findIndex(r => r.id === recordId);
+    if (idx >= 0) {
+      list[idx].status = 'recovered';
+      list[idx].recoveredAt = Date.now();
+      list[idx].recoveredValue = recoveredValue;
+      cache.set(KEYS.STOLEN_RECORDS, list);
+    }
+  },
+
+  getStolenRecordByToken: async (token: string): Promise<StolenRecord | null> => {
+    if (!db) return null;
+    const q = query(collection(db, KEYS.STOLEN_RECORDS), where("trackingToken", "==", token), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return { ...snap.docs[0].data(), id: snap.docs[0].id } as StolenRecord;
+  },
+
+  markAsLost: async (recordId: string, vehicleId: string) => {
+    if (db) {
+      const recordRef = doc(db, KEYS.STOLEN_RECORDS, recordId);
+      const vehicleRef = doc(db, KEYS.VEHICLES, vehicleId);
+      
+      await updateDoc(recordRef, { 
+        status: 'lost',
+        lostAt: Date.now()
+      });
+      
+      await updateDoc(vehicleRef, { 
+        status: 'inactive' // Ou outro status que indique perda total
+      });
+    }
+  },
+
+  getPublicVehicleLocation: async (vehicleId: string): Promise<LocationHistory | null> => {
+    if (!db) return null;
+    const vehicleRef = doc(db, KEYS.VEHICLES, vehicleId);
+    const snap = await getDoc(vehicleRef);
+    if (snap.exists()) {
+      const data = snap.data() as Vehicle;
+      return data.lastPosition || null;
+    }
+    return null;
   },
 
   getLocations: async (tagId: string): Promise<LocationHistory[]> => {
@@ -348,11 +485,23 @@ export const storage = {
   },
 
   logAction: async (user: User | null, action: AuditLog['action'], entity: string, details: string, entityId?: string) => {
-    if (!user) return;
+    let currentUser = user;
+    if (!currentUser) {
+      currentUser = await storage.getSessionUser();
+    }
+    if (!currentUser) return;
+    
     await encryption.waitReady();
     const logEntry: AuditLog = {
-      id: crypto.randomUUID(), userId: user.id, userName: user.name, userEmail: user.email,
-      action, entity, entityId, details: await encryption.encrypt(details), timestamp: Date.now()
+      id: crypto.randomUUID(), 
+      userId: currentUser.id, 
+      userName: currentUser.name, 
+      userEmail: currentUser.email,
+      action, 
+      entity, 
+      entityId, 
+      details: await encryption.encrypt(details), 
+      timestamp: Date.now()
     };
     if (db) await addDoc(collection(db, KEYS.AUDIT_LOGS), cleanData(logEntry));
   },
@@ -393,6 +542,8 @@ export const storage = {
     let q;
     if (role === 'user') {
       q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    } else if (role === 'technician') {
+      q = query(collection(db, KEYS.SCHEDULES), where('technicianId', '==', userId));
     } else {
       q = query(collection(db, KEYS.SCHEDULES)); 
     }
@@ -401,11 +552,18 @@ export const storage = {
   },
 
   saveSchedule: async (s: Schedule) => {
-    if (db) await setDoc(doc(db, KEYS.SCHEDULES, s.id), cleanData(s));
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.SCHEDULES, s.id))).exists();
+      await setDoc(doc(db, KEYS.SCHEDULES, s.id), cleanData(s));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Schedule', `${isNew ? 'Nova solicitação' : 'Atualização'} de agendamento: ${s.vehiclePlate}`, s.id);
+    }
   },
 
   deleteSchedule: async (id: string) => {
-    if (db) await deleteDoc(doc(db, KEYS.SCHEDULES, id));
+    if (db) {
+      await deleteDoc(doc(db, KEYS.SCHEDULES, id));
+      await storage.logAction(null, 'DELETE', 'Schedule', `Agendamento removido: ${id}`, id);
+    }
   },
 
   subscribeToSchedules: (role: string, userId: string, onUpdate: (schedules: Schedule[]) => void) => {
@@ -413,6 +571,8 @@ export const storage = {
     let q;
     if (role === 'user') {
       q = query(collection(db, KEYS.SCHEDULES), where('requesterId', '==', userId));
+    } else if (role === 'technician') {
+      q = query(collection(db, KEYS.SCHEDULES), where('technicianId', '==', userId));
     } else {
       q = query(collection(db, KEYS.SCHEDULES));
     }
@@ -424,7 +584,10 @@ export const storage = {
 
   // --- FEEDBACK & SUGGESTIONS ---
   saveFeedback: async (feedback: Feedback) => {
-    if (db) await setDoc(doc(db, KEYS.FEEDBACKS, feedback.id), cleanData(feedback));
+    if (db) {
+      await setDoc(doc(db, KEYS.FEEDBACKS, feedback.id), cleanData(feedback));
+      await storage.logAction(null, 'CREATE', 'Feedback', `Novo feedback enviado: ${feedback.type}`, feedback.id);
+    }
   },
 
   getFeedbacks: async (): Promise<Feedback[]> => {
@@ -436,7 +599,11 @@ export const storage = {
 
   // --- SYSTEM UPDATES (NOVIDADES) ---
   saveSystemUpdate: async (update: SystemUpdate) => {
-    if (db) await setDoc(doc(db, KEYS.SYSTEM_UPDATES, update.id), cleanData(update));
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.SYSTEM_UPDATES, update.id))).exists();
+      await setDoc(doc(db, KEYS.SYSTEM_UPDATES, update.id), cleanData(update));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'SystemUpdate', `${isNew ? 'Nova atualização' : 'Edição'} de sistema: ${update.title}`, update.id);
+    }
   },
 
   getSystemUpdates: async (): Promise<SystemUpdate[]> => {
@@ -447,14 +614,160 @@ export const storage = {
   },
 
   deleteSystemUpdate: async (id: string) => {
-    if (db) await deleteDoc(doc(db, KEYS.SYSTEM_UPDATES, id));
+    if (db) {
+      await deleteDoc(doc(db, KEYS.SYSTEM_UPDATES, id));
+      await storage.logAction(null, 'DELETE', 'SystemUpdate', `Atualização removida: ${id}`, id);
+    }
   },
 
-  deleteTag: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.TAGS, id)); },
-  deleteVehicle: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.VEHICLES, id)); },
-  deleteClient: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.CLIENTS, id)); },
-  deleteUser: async (id: string) => { if (db) await deleteDoc(doc(db, KEYS.USERS_DB, id)); },
+  deleteTag: async (id: string) => { 
+    if (db) {
+      await deleteDoc(doc(db, KEYS.TAGS, id));
+      await storage.logAction(null, 'DELETE', 'Tag', `Tag removida: ${id}`, id);
+    }
+  },
+  deleteVehicle: async (id: string) => { 
+    if (db) {
+      await deleteDoc(doc(db, KEYS.VEHICLES, id));
+      await storage.logAction(null, 'DELETE', 'Vehicle', `Veículo removido: ${id}`, id);
+    }
+  },
+  deleteClient: async (id: string) => { 
+    if (db) {
+      await deleteDoc(doc(db, KEYS.CLIENTS, id));
+      await storage.logAction(null, 'DELETE', 'Client', `Cliente removido: ${id}`, id);
+    }
+  },
+  deleteUser: async (id: string) => { 
+    if (db) {
+      await deleteDoc(doc(db, KEYS.USERS_DB, id));
+      await storage.logAction(null, 'DELETE', 'User', `Usuário removido: ${id}`, id);
+    }
+  },
   
+  // --- SHIPMENTS ---
+  subscribeShipments: (callback: (shipments: Shipment[]) => void) => {
+    if (!db) return () => {};
+    const q = query(collection(db, KEYS.SHIPMENTS), orderBy('dataCriacao', 'desc'));
+    return onSnapshot(q, async (snap) => {
+      const raw = snap.docs.map(d => ({ ...d.data(), id: d.id })) as Shipment[];
+      await encryption.waitReady();
+      const decrypted = await Promise.all(raw.map(async s => ({
+        ...s,
+        destinatario: {
+          ...s.destinatario,
+          nome: await encryption.decrypt(s.destinatario.nome),
+          enderecoCompleto: await encryption.decrypt(s.destinatario.enderecoCompleto)
+        }
+      })));
+      callback(decrypted);
+    });
+  },
+
+  saveShipment: async (s: Shipment) => {
+    await encryption.waitReady();
+    const encryptedShipment = {
+      ...s,
+      destinatario: {
+        ...s.destinatario,
+        nome: await encryption.encrypt(s.destinatario.nome),
+        enderecoCompleto: await encryption.encrypt(s.destinatario.enderecoCompleto)
+      }
+    };
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.SHIPMENTS, s.id))).exists();
+      await setDoc(doc(db, KEYS.SHIPMENTS, s.id), cleanData(encryptedShipment));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Shipment', `${isNew ? 'Nova remessa' : 'Atualização de remessa'}: ${s.titulo}`, s.id);
+    }
+  },
+
+  updateShipmentStatus: async (id: string, status: Shipment['status'], trackingCode?: string) => {
+    if (db) {
+      const docRef = doc(db, KEYS.SHIPMENTS, id);
+      const updates: Partial<Shipment> = { status, updatedAt: Date.now() };
+      if (trackingCode !== undefined) updates.codigoRastreio = trackingCode;
+      if (status === 'enviado') updates.dataEnvio = Date.now();
+      if (status === 'entregue') updates.dataEntrega = Date.now();
+      await updateDoc(docRef, updates);
+      await storage.logAction(null, 'UPDATE', 'Shipment', `Status da remessa alterado para ${status}`, id);
+    }
+  },
+
+  deleteShipment: async (id: string) => {
+    if (db) {
+      await deleteDoc(doc(db, KEYS.SHIPMENTS, id));
+      await storage.logAction(null, 'DELETE', 'Shipment', `Remessa removida: ${id}`, id);
+    }
+  },
+
+  // --- SHIPPING ADDRESSES ---
+  subscribeShippingAddresses: (consultorId: string | undefined, callback: (addresses: ShippingAddress[]) => void) => {
+    if (!db) return () => {};
+    const q = collection(db, KEYS.SHIPPING_ADDRESSES);
+    return onSnapshot(q, async (snap) => {
+      let raw = snap.docs.map(d => ({ ...d.data(), id: d.id })) as ShippingAddress[];
+      if (consultorId) {
+        raw = raw.filter(a => a.consultorId === consultorId);
+      }
+      await encryption.waitReady();
+      const decrypted = await Promise.all(raw.map(async a => ({
+        ...a,
+        enderecoCompleto: await encryption.decrypt(a.enderecoCompleto)
+      })));
+      callback(decrypted);
+    });
+  },
+
+  saveShippingAddress: async (a: ShippingAddress) => {
+    await encryption.waitReady();
+    const encryptedAddress = {
+      ...a,
+      enderecoCompleto: await encryption.encrypt(a.enderecoCompleto)
+    };
+    if (db) {
+      const isNew = !(await getDoc(doc(db, KEYS.SHIPPING_ADDRESSES, a.id))).exists();
+      await setDoc(doc(db, KEYS.SHIPPING_ADDRESSES, a.id), cleanData(encryptedAddress));
+      await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'ShippingAddress', `${isNew ? 'Novo endereço' : 'Atualização de endereço'}: ${a.apelido}`, a.id);
+    }
+  },
+
+  deleteShippingAddress: async (id: string) => {
+    if (db) {
+      await deleteDoc(doc(db, KEYS.SHIPPING_ADDRESSES, id));
+      await storage.logAction(null, 'DELETE', 'ShippingAddress', `Endereço removido: ${id}`, id);
+    }
+  },
+
+  // --- TECHNICIAN PAYMENTS ---
+  getTechnicianPayments: async (technicianId?: string): Promise<any[]> => {
+    if (!db) return [];
+    try {
+      let q: any = collection(db, KEYS.TECHNICIAN_PAYMENTS);
+      if (technicianId) {
+        q = query(q, where('technicianId', '==', technicianId));
+      }
+      const snap = await getDocs(q);
+      return snap.docs.map(d => d.data());
+    } catch (e) {
+      console.error("Error fetching technician payments", e);
+      return [];
+    }
+  },
+
+  saveTechnicianPayment: async (payment: any) => {
+    if (db) {
+      await setDoc(doc(db, KEYS.TECHNICIAN_PAYMENTS, payment.id), cleanData(payment));
+      await storage.logAction(null, 'CREATE', 'TechnicianPayment', `Pagamento registrado: ${payment.id}`, payment.id);
+    }
+  },
+
+  deleteTechnicianPayment: async (id: string) => {
+    if (db) {
+      await deleteDoc(doc(db, KEYS.TECHNICIAN_PAYMENTS, id));
+      await storage.logAction(null, 'DELETE', 'TechnicianPayment', `Pagamento removido: ${id}`, id);
+    }
+  },
+
   getTheme: () => localStorage.getItem('ktag_theme') || 'light',
   setTheme: (t: string) => localStorage.setItem('ktag_theme', t),
   getNotifications: () => cache.get<AppNotification[]>(KEYS.NOTIFICATIONS, []),

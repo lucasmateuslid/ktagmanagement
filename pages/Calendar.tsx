@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { storage } from '../services/storage';
 import { Schedule, Technician, Company } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { ChevronLeft, ChevronRight, User, MapPin, CalendarDays, Clock, MoreHorizontal, Wrench, Activity, RotateCcw, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, User, MapPin, CalendarDays, Clock, MoreHorizontal, Wrench, Activity, RotateCcw, Filter, FileText, DollarSign, SearchCheck } from 'lucide-react';
 import { TrackingModal } from '../components/TrackingModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
@@ -144,7 +144,41 @@ const EventCard: React.FC<EventCardProps> = ({ ev, mode, technicians, onSelect }
                         {ev.serviceType}
                     </div>
                     <h4 className={`text-2xl font-display font-black uppercase tracking-tighter leading-none ${style.text}`}>{ev.vehiclePlate}</h4>
-                    <p className={`text-[10px] font-bold uppercase truncate opacity-80 ${style.text}`}>{ev.vehicleModel}</p>
+                    <div className="flex items-center justify-between gap-2">
+                        <p className={`text-[10px] font-bold uppercase truncate opacity-80 ${style.text}`}>{ev.vehicleModel}</p>
+                        {ev.fipeValue && (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-white/40 dark:bg-black/10 rounded border border-white/20">
+                                <DollarSign size={8} className={style.subtext} />
+                                <span className={`text-[8px] font-black ${style.subtext}`}>{ev.fipeValue}</span>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Novos Detalhes: Cliente e Notas */}
+                    <div className="mt-2 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                            <User size={10} className="text-zinc-400" />
+                            <span className={`text-[10px] font-bold truncate ${style.text}`}>
+                                {ev.clientName || ev.requesterName}
+                            </span>
+                        </div>
+                        {ev.notes && (
+                            <div className="flex items-start gap-1.5">
+                                <FileText size={10} className="text-zinc-400 mt-0.5 shrink-0" />
+                                <span className={`text-[9px] font-medium line-clamp-2 italic opacity-70 ${style.text}`}>
+                                    {ev.notes}
+                                </span>
+                            </div>
+                        )}
+                        {ev.status === 'Em análise' && (
+                            <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-white/20">
+                                <SearchCheck size={10} className="text-amber-600 dark:text-amber-400" />
+                                <span className={`text-[9px] font-black uppercase tracking-widest ${style.subtext}`}>
+                                    Análise: {ev.history.slice().reverse().find(h => h.action === 'Verificando' || h.action === 'Assumiu' || h.statusSnapshot === 'Em análise')?.actionBy || '--'}
+                                </span>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
             
@@ -179,9 +213,16 @@ export const Calendar = () => {
 
   const loadData = async () => {
     if (!user) return;
-    const [sch, techs, comps] = await Promise.all([
-        storage.getSchedules('admin', user.id), 
-        storage.getTechnicians(),
+    
+    const techs = await storage.getTechnicians();
+    let queryId = user.id;
+    if (user.role === 'technician' || user.role === 'admin_tecnico') {
+        const tech = techs.find(t => t.email?.toLowerCase() === user.email.toLowerCase());
+        if (tech) queryId = tech.id;
+    }
+
+    const [sch, comps] = await Promise.all([
+        storage.getSchedules((user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico') ? 'admin' : user.role || 'user', queryId), 
         storage.getCompanies()
     ]);
     setSchedules(sch.filter(s => ['Confirmada', 'Reagendada', 'Concluída'].includes(s.status)));
@@ -197,6 +238,17 @@ export const Calendar = () => {
           setSelectedSchedule(updated);
       } catch (e) {
           addNotification('error', 'Erro', 'Falha ao salvar agendamento.');
+      }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+      try {
+          await storage.deleteSchedule(id);
+          addNotification('success', 'Excluído', 'Agendamento removido com sucesso.');
+          loadData();
+          setSelectedSchedule(null);
+      } catch (e) {
+          addNotification('error', 'Erro', 'Falha ao excluir agendamento.');
       }
   };
 
@@ -420,6 +472,7 @@ export const Calendar = () => {
                 companies={companies}
                 onClose={() => setSelectedSchedule(null)} 
                 onUpdate={handleUpdateSchedule}
+                onDelete={handleDeleteSchedule}
                 currentUser={user}
             />
         )}

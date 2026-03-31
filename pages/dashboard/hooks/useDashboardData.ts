@@ -22,22 +22,28 @@ export const useDashboardData = () => {
     const loadData = async () => {
       setLoading(true);
       try {
+        const loadedTechs = await storage.getTechnicians();
+        
+        let queryId = user.id;
+        if (user.role === 'technician' || user.role === 'admin_tecnico') {
+            const tech = loadedTechs.find(t => t.email?.toLowerCase() === user.email.toLowerCase());
+            if (tech) queryId = tech.id;
+        }
+
         const [
           loadedTags, 
           loadedVehicles, 
           loadedCompanies, 
           loadedCategories, 
           loadedSettings, 
-          loadedSchedules, 
-          loadedTechs
+          loadedSchedules
         ] = await Promise.all([
           storage.getTags(),
           storage.getVehicles(),
           storage.getCompanies(),
           storage.getCategories(),
           storage.getSettings(),
-          storage.getSchedules('admin', user.id),
-          storage.getTechnicians()
+          storage.getSchedules((user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico' ? 'admin' : user.role) || 'user', queryId)
         ]);
 
         setTags(loadedTags);

@@ -8,7 +8,7 @@ export const useScheduleFilters = (
   user: User | null,
   viewDate: Date
 ) => {
-  const isPrivileged = user?.role === 'admin' || user?.role === 'moderator';
+  const isPrivileged = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
 
   // State
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,7 +60,7 @@ export const useScheduleFilters = (
                     filtered = filtered.filter(s => s.preferredDate === filterDate);
                 }
             } else if (adminTab === 'agendados') {
-                filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local'].includes(s.status));
+                filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(s.status));
                 
                 // DATE FILTER LOGIC
                 if (filterDate) {
@@ -115,8 +115,18 @@ export const useScheduleFilters = (
             }
         }
 
+    } else if (user?.role === 'technician') {
+        // 4. Technician Logic
+        const techId = technicians.find(t => t.email?.toLowerCase() === user?.email.toLowerCase())?.id || user?.id;
+        filtered = filtered.filter(s => s.technicianId === techId);
+        
+        if (statusFilter === 'active') {
+            filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
+        } else if (statusFilter === 'completed') {
+            filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+        }
     } else {
-        // 4. User Logic
+        // 5. User Logic
         if (statusFilter === 'active') {
             filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
         } else if (statusFilter === 'completed') {

@@ -50,6 +50,7 @@ export const useVehicleForm = (
     await storage.saveClient(clientToSave);
 
     const vehicleId = formData.id || crypto.randomUUID();
+    const isNew = !formData.id;
     const vehicleToSave: Vehicle = {
         ...formData as Vehicle, 
         id: vehicleId, 
@@ -60,6 +61,16 @@ export const useVehicleForm = (
         ownershipStatus: formData.ownershipStatus || 'leased'
     };
     await storage.saveVehicle(vehicleToSave);
+    
+    // Auditoria
+    storage.logAction(
+        currentUser, 
+        isNew ? 'CREATE' : 'UPDATE', 
+        'Vehicle', 
+        `${isNew ? 'Cadastrou' : 'Editou'} veículo: ${vehicleToSave.plate}`, 
+        vehicleId
+    );
+
     addNotification('success', 'Sucesso', 'Veículo gravado no sistema.');
     setIsModalOpen(false); 
     onSuccess();

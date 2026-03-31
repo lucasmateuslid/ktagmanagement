@@ -1,7 +1,9 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
-import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square } from 'lucide-react';
+import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock } from 'lucide-react';
+import { fetchTagLocation } from '../../../services/api';
+import { storage } from '../../../services/storage';
 
 interface VehicleRowProps {
   vehicle: Vehicle;
@@ -20,6 +22,56 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
   
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [timeAgo, setTimeAgo] = useState<string>('');
+
+  const updateTimeAgo = () => {
+    if (vehicle.lastPosition?.timestamp) {
+      const diff = Date.now() - vehicle.lastPosition.timestamp;
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) setTimeAgo('agora mesmo');
+      else if (minutes < 60) setTimeAgo(`há ${minutes} min`);
+      else {
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) setTimeAgo(`há ${hours} h`);
+        else {
+          const days = Math.floor(hours / 24);
+          setTimeAgo(`há ${days} d`);
+        }
+      }
+    } else {
+      setTimeAgo('Sem localização');
+    }
+  };
+
+  useEffect(() => {
+    updateTimeAgo();
+    const interval = setInterval(updateTimeAgo, 60000);
+    return () => clearInterval(interval);
+  }, [vehicle.lastPosition?.timestamp]);
+
+  const handleUpdateLocation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!tag || isUpdating) return;
+    
+    setIsUpdating(true);
+    setUpdateSuccess(false);
+    try {
+      const results = await fetchTagLocation(tag);
+      if (results && results.length > 0) {
+        const location = { ...results[0], tagId: tag.id, id: tag.id };
+        await storage.updateVehiclePosition(vehicle.id, location as any);
+        setUpdateSuccess(true);
+        setTimeout(() => setUpdateSuccess(false), 3000);
+      }
+    } catch (error) {
+      console.error("Failed to update location", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
   const getIcon = (size = 16) => {
     if (cat?.fipeType === 'caminhoes') return <Truck size={size} />;
     if (cat?.fipeType === 'motos') return <Bike size={size} />;
@@ -29,7 +81,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
   return (
     <div 
         onClick={() => !isReadOnly && toggleSelect && toggleSelect(vehicle.id)}
-        className={`flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-3 md:gap-0 cursor-pointer ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
+        className={`flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-3 md:gap-0 ${isReadOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
     >
       {/* PLACA & STATUS */}
       <div className="w-full md:w-[20%] shrink-0 flex items-center justify-between md:justify-start gap-4">
@@ -80,14 +132,42 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
         </div>
       </div>
 
-      {/* CLIENTE */}
-      <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
-        <div className="flex items-center gap-2 md:hidden mb-1">
-            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cliente:</span>
-        </div>
-        <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
-        {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
-      </div>
+      {/* CLIENTE (Apenas Operadores) */}
+      {!isReadOnly && (
+          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
+            <div className="flex items-center gap-2 md:hidden mb-1">
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cliente:</span>
+            </div>
+            <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
+            {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
+          </div>
+      )}
+
+      {/* DISPOSITIVO (Apenas Cliente) */}
+      {isReadOnly && (
+          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
+            <div className="flex items-center gap-2 md:hidden mb-1">
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dispositivo:</span>
+            </div>
+            {tag ? (
+                <>
+                    <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
+                        TAG: {tag.accessoryId || tag.imei || tag.name}
+                    </p>
+                    {vehicle.lastPosition?.battery && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Bateria:</span>
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                                {vehicle.lastPosition.battery.label}
+                            </span>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <p className="text-xs md:text-[10px] font-black text-zinc-400 uppercase truncate">Sem Dispositivo</p>
+            )}
+          </div>
+      )}
 
       {/* RESPONSÁVEL E DATA - Visível só para operadores */}
       {!isReadOnly && (
@@ -106,6 +186,35 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
           <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+          </div>
+      )}
+
+      {/* AÇÕES CLIENTE */}
+      {isReadOnly && (
+          <div className="w-full md:w-[25%] flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800 gap-2">
+             <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 font-medium">
+                 <Clock size={12} /> {timeAgo}
+             </span>
+             {tag && (
+                 <button 
+                     onClick={handleUpdateLocation}
+                     disabled={isUpdating}
+                     className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                         updateSuccess 
+                             ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' 
+                             : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'
+                     }`}
+                 >
+                     {isUpdating ? (
+                         <RefreshCw size={12} className="animate-spin" />
+                     ) : updateSuccess ? (
+                         <CheckCircle2 size={12} />
+                     ) : (
+                         <RefreshCw size={12} />
+                     )}
+                     {isUpdating ? 'Atualizando...' : updateSuccess ? 'Atualizado' : 'Atualizar Tag'}
+                 </button>
+             )}
           </div>
       )}
     </div>

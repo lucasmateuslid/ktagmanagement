@@ -25,7 +25,7 @@ export const useScheduleStats = (
     });
 
     const total = monthSchedules.length;
-    const scheduled = monthSchedules.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Autorizada'].includes(s.status)).length;
+    const scheduled = monthSchedules.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local', 'Autorizada'].includes(s.status)).length;
     const completed = monthSchedules.filter(s => s.status === 'Concluída').length;
     const canceled = monthSchedules.filter(s => s.status === 'Cancelada').length;
 
@@ -45,7 +45,7 @@ export const useScheduleStats = (
     const byService: Record<string, number> = {};
 
     monthSchedules.forEach(s => {
-        if (['Concluída', 'Confirmada', 'Reagendada', 'Técnico no local'].includes(s.status)) {
+        if (['Concluída', 'Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(s.status)) {
             const tech = technicians.find(t => t.id === s.technicianId);
             let serviceCost = 0;
             

@@ -6,6 +6,9 @@ export const getStatusStyle = (status: string) => {
       case 'Em análise': return { color: '#f59e0b', badgeBg: 'bg-amber-50 dark:bg-amber-900/10', badgeText: 'text-amber-600 dark:text-amber-400' };
       case 'Solicitada': return { color: '#a1a1aa', badgeBg: 'bg-zinc-100 dark:bg-zinc-800', badgeText: 'text-zinc-600 dark:text-zinc-400' };
       case 'Confirmada': return { color: '#06b6d4', badgeBg: 'bg-cyan-100 dark:bg-cyan-900/30', badgeText: 'text-cyan-700 dark:text-cyan-300' };
+      case 'Técnico no local': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
+      case 'Cliente no local': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
+      case 'Em andamento': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
       case 'Concluída': return { color: '#14b8a6', badgeBg: 'bg-teal-100 dark:bg-teal-900/30', badgeText: 'text-teal-700 dark:text-teal-300' };
       case 'Cancelada': return { color: '#ef4444', badgeBg: 'bg-red-100 dark:bg-red-900/30', badgeText: 'text-red-700 dark:text-red-300' };
       default: return { color: '#a1a1aa', badgeBg: 'bg-zinc-100 dark:bg-zinc-800', badgeText: 'text-zinc-600' };

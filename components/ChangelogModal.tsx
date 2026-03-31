@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sparkles, Plus, Save, Megaphone, CheckCircle2, Wrench, AlertTriangle, RefreshCw, Edit2, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { storage } from '../services/storage';
+import { ConfirmModal } from './ConfirmModal';
 import { SystemUpdate } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import { useNotification } from '../contexts/NotificationContext';
@@ -75,15 +76,26 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({ onClose }) => {
       setIsAdding(true);
   };
 
-  const handleDelete = async (id: string) => {
-      if (!confirm('Tem certeza que deseja remover esta novidade?')) return;
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+      setItemToDelete(id);
+      setIsConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+      if (!itemToDelete) return;
       
       try {
-          await storage.deleteSystemUpdate(id);
-          setUpdates(prev => prev.filter(u => u.id !== id));
+          await storage.deleteSystemUpdate(itemToDelete);
+          setUpdates(prev => prev.filter(u => u.id !== itemToDelete));
           addNotification('info', 'Removido', 'Item excluído do mural.');
       } catch (e) {
           addNotification('error', 'Erro', 'Falha ao excluir.');
+      } finally {
+          setIsConfirmDeleteOpen(false);
+          setItemToDelete(null);
       }
   };
 
@@ -244,6 +256,15 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({ onClose }) => {
             </div>
         </div>
       </MotionDiv>
+
+      <ConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={confirmDelete}
+        title="Remover Novidade"
+        message="Tem certeza que deseja remover esta novidade? Esta ação não pode ser desfeita."
+        type="danger"
+      />
     </div>
   );
 };

@@ -18,6 +18,7 @@ import {
   Power, MapPin, Clock, History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ConfirmModal } from '../components/ConfirmModal';
 import * as XLSX from 'xlsx';
 import { ktagBatteryStatus } from '../services/api';
 
@@ -43,6 +44,9 @@ export const Tags = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isConfirmMassDeleteOpen, setIsConfirmMassDeleteOpen] = useState(false);
+  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -326,6 +330,7 @@ export const Tags = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+        const isNew = !formData.id;
         const tag: Tag = {
             id: formData.id || crypto.randomUUID(),
             name: formData.name || '',
@@ -344,6 +349,7 @@ export const Tags = () => {
         if (tag.type === 'XADTAG' && !tag.traqcareId) throw new Error("ID Traqcare é obrigatório para XADTAG");
 
         await storage.saveTag(tag);
+        
         addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
         setIsModalOpen(false);
         loadData();
@@ -354,17 +360,14 @@ export const Tags = () => {
 
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
       if(e) e.stopPropagation();
-      if(confirm('Tem certeza que deseja excluir este equipamento?')) {
-          await storage.deleteTag(id);
-          addNotification('success', 'Sucesso', 'Equipamento removido.');
-          loadData();
-      }
+      await storage.deleteTag(id);
+      addNotification('success', 'Sucesso', 'Equipamento removido.');
+      loadData();
   };
 
   const handleMassDelete = async () => {
     const count = selectedTags.size;
     if (count === 0) return;
-    if (!confirm(`ATENÇÃO: Você está prestes a excluir ${count} equipamentos.\n\nEquipamentos vinculados a veículos perderão a associação.\nDeseja continuar?`)) return;
 
     try {
         const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
@@ -387,9 +390,9 @@ export const Tags = () => {
     const headers = [
       { 
         "Identificacao": "Tag Exemplo 01", 
-        "Serial/IMEI": "ABC12345", 
-        "Chave Publica (Opcional K-Tag)": "key_hash...", 
-        "Chave Privada (Opcional K-Tag)": "priv_key..." 
+        "Serial/IMEI": "ABC12345",
+        "Chave Publica (Opcional K-Tag)": "key_hash...",
+        "Chave Privada (Opcional K-Tag)": "priv_key..."
       }
     ];
     const ws = XLSX.utils.json_to_sheet(headers);
@@ -463,8 +466,8 @@ export const Tags = () => {
                 type: importConfig.type,
                 accessoryId: serial,
                 imei: importConfig.type === 'XADTAG' ? serial : undefined,
-                hashedAdvKey: pubKey,
-                privateKey: privKey,
+                hashedAdvKey: importConfig.type === 'K_TAG' ? pubKey : undefined,
+                privateKey: importConfig.type === 'K_TAG' ? privKey : undefined,
                 batteryWarrantyYears: importConfig.warranty,
                 createdAt: Date.now()
               };
@@ -572,7 +575,7 @@ export const Tags = () => {
                             <FileText size={14} /> CSV
                         </button>
 
-                        <button onClick={handleMassDelete} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95">
+                        <button onClick={() => { setSelectedTags(new Set(filteredTags.map(t => t.id))); setIsConfirmMassDeleteOpen(true); }} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95">
                             <Trash2 size={14} />
                         </button>
                         <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
@@ -586,6 +589,17 @@ export const Tags = () => {
             </button>
         </div>
       </div>
+
+      <ConfirmModal 
+          isOpen={isConfirmMassDeleteOpen}
+          onClose={() => setIsConfirmMassDeleteOpen(false)}
+          onConfirm={handleMassDelete}
+          title="Excluir em Massa"
+          message={`ATENÇÃO: Você está prestes a excluir ${selectedTags.size} equipamentos. Equipamentos vinculados a veículos perderão a associação. Deseja continuar?`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {filteredTags.map((tag) => {
@@ -632,7 +646,7 @@ export const Tags = () => {
                                 <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
                                     <Edit2 size={16}/>
                                 </button>
-                                <button onClick={(e) => handleDelete(tag.id, e)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
                                     <Trash2 size={16}/>
                                 </button>
                             </div>

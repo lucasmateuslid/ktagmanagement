@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
-import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity } from 'lucide-react';
+import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { geocodingService } from '../../services/geocoding';
 
@@ -21,7 +21,10 @@ import { VehicleTable } from './components/VehicleTable';
 import { VehicleFiltersBar } from './components/VehicleFiltersBar';
 import { VehicleModal } from './components/VehicleModal';
 import { FipeModal } from './components/FipeModal';
+import { VehicleKPIModal } from './components/VehicleKPIModal';
 import { Vehicle, LocationHistory } from '../../types';
+
+import { ConfirmModal } from '../../components/ConfirmModal';
 
 const { useSearchParams, useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
@@ -35,7 +38,14 @@ export const VehiclesPage = () => {
   const { vehicles, tags, companies, categories, clients, loading, reload } = useVehiclesData(currentUser);
   
   // 2. Filters
-  const { searchTerm, setSearchTerm, filteredVehicles } = useVehicleFilters(vehicles, clients);
+  const { 
+    searchTerm, setSearchTerm, 
+    statusFilter, setStatusFilter,
+    companyFilter, setCompanyFilter,
+    ownershipFilter, setOwnershipFilter,
+    installationFilter, setInstallationFilter,
+    filteredVehicles 
+  } = useVehicleFilters(vehicles, clients);
   
   // 3. Selection
   const { selectedVehicles, toggleSelect, handleSelectAll, clearSelection } = useVehicleSelection(filteredVehicles);
@@ -67,6 +77,9 @@ export const VehiclesPage = () => {
   const isClientView = currentUser?.role === 'client';
   const isMobile = window.innerWidth < 768; 
   const [isTagListOpen, setIsTagListOpen] = React.useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [vehicleToDelete, setVehicleToDelete] = useState<string | null>(null);
+  const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
 
   // UI State for Client Mobile
   const [showSearch, setShowSearch] = React.useState(false);
@@ -84,10 +97,12 @@ export const VehiclesPage = () => {
   }, [formData.plate]);
 
   const handleDelete = async (id: string) => {
-      if(confirm('Excluir?')) { 
-          await storage.deleteVehicle(id); 
-          reload(); 
+      const v = vehicles.find(v => v.id === id);
+      await storage.deleteVehicle(id); 
+      if (currentUser && v) {
+          storage.logAction(currentUser, 'DELETE', 'Vehicle', `Removeu veículo: ${v.plate}`, id);
       }
+      reload(); 
   };
 
   // --- CLIENT MOBILE VIEW COMPONENTS ---
@@ -112,9 +127,61 @@ export const VehiclesPage = () => {
   const ClientVehicleCard: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
       const category = categories.find(c => c.id === vehicle.type);
       const isMoto = category?.fipeType === 'motos' || vehicle.model.toLowerCase().includes('moto');
+      const tag = tags.find((t: any) => t.id === vehicle.tagId);
       
       const lastPos = vehicle.lastPosition as LocationHistory | undefined;
       const [address, setAddress] = useState<string>('Buscando localização...');
+      const [isUpdating, setIsUpdating] = useState(false);
+      const [updateSuccess, setUpdateSuccess] = useState(false);
+      const [timeAgo, setTimeAgo] = useState<string>('');
+
+      const updateTimeAgo = () => {
+        if (vehicle.lastPosition?.timestamp) {
+          const diff = Date.now() - vehicle.lastPosition.timestamp;
+          const minutes = Math.floor(diff / 60000);
+          if (minutes < 1) setTimeAgo('agora mesmo');
+          else if (minutes < 60) setTimeAgo(`há ${minutes} min`);
+          else {
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) setTimeAgo(`há ${hours} h`);
+            else {
+              const days = Math.floor(hours / 24);
+              setTimeAgo(`há ${days} d`);
+            }
+          }
+        } else {
+          setTimeAgo('Sem localização');
+        }
+      };
+
+      useEffect(() => {
+        updateTimeAgo();
+        const interval = setInterval(updateTimeAgo, 60000);
+        return () => clearInterval(interval);
+      }, [vehicle.lastPosition?.timestamp]);
+
+      const handleUpdateLocation = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!tag || isUpdating) return;
+        
+        setIsUpdating(true);
+        setUpdateSuccess(false);
+        try {
+          const { fetchTagLocation } = await import('../../services/api');
+          const results = await fetchTagLocation(tag);
+          if (results && results.length > 0) {
+            const location = { ...results[0], tagId: tag.id, id: tag.id };
+            await storage.updateVehiclePosition(vehicle.id, location as any);
+            setUpdateSuccess(true);
+            setTimeout(() => setUpdateSuccess(false), 3000);
+            reload(); // Reload vehicles to get updated position
+          }
+        } catch (error) {
+          console.error("Failed to update location", error);
+        } finally {
+          setIsUpdating(false);
+        }
+      };
 
       // Efeito para resolver endereço real
       useEffect(() => {
@@ -169,11 +236,35 @@ export const VehiclesPage = () => {
                               </p>
                           </div>
                           
-                          <div className="flex items-center gap-2 text-zinc-400 pl-0.5">
-                              <Clock size={12} />
-                              <span className="text-[10px] font-mono font-bold">
-                                  {lastPos ? new Date(lastPos.timestamp).toLocaleString() : '--/--/-- --:--'}
-                              </span>
+                          <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-zinc-400 pl-0.5">
+                                  <Clock size={12} />
+                                  <span className="text-[10px] font-mono font-bold">
+                                      {timeAgo}
+                                  </span>
+                              </div>
+                              
+                              {tag && (
+                                  <button
+                                      onClick={handleUpdateLocation}
+                                      disabled={isUpdating}
+                                      className={`p-2 rounded-xl transition-all flex items-center gap-2 ${
+                                          updateSuccess 
+                                              ? 'bg-emerald-500/10 text-emerald-500' 
+                                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 hover:bg-primary-500/10'
+                                      }`}
+                                      title="Atualizar Localização"
+                                  >
+                                      {updateSuccess ? (
+                                          <CheckCircle2 size={14} />
+                                      ) : (
+                                          <RefreshCwIcon size={14} className={isUpdating ? 'animate-spin' : ''} />
+                                      )}
+                                      <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">
+                                          {updateSuccess ? 'Atualizado' : 'Atualizar'}
+                                      </span>
+                                  </button>
+                              )}
                           </div>
                       </div>
                   </div>
@@ -192,7 +283,30 @@ export const VehiclesPage = () => {
                           <div className={`w-2 h-2 rounded-full ${lastPos ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
                       </div>
                       <p className="text-[10px] text-zinc-500 font-medium truncate mb-1">{vehicle.model}</p>
-                      <p className="text-[9px] text-zinc-400 truncate flex items-center gap-1"><MapPin size={10}/> {address}</p>
+                      <div className="flex items-center justify-between">
+                          <p className="text-[9px] text-zinc-400 truncate flex items-center gap-1"><MapPin size={10}/> {address}</p>
+                          <div className="flex items-center gap-2">
+                              <span className="text-[9px] text-zinc-400 font-mono">{timeAgo}</span>
+                              {tag && (
+                                  <button
+                                      onClick={handleUpdateLocation}
+                                      disabled={isUpdating}
+                                      className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${
+                                          updateSuccess 
+                                              ? 'bg-emerald-500/10 text-emerald-500' 
+                                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 hover:bg-primary-500/10'
+                                      }`}
+                                      title="Atualizar Localização"
+                                  >
+                                      {updateSuccess ? (
+                                          <CheckCircle2 size={12} />
+                                      ) : (
+                                          <RefreshCwIcon size={12} className={isUpdating ? 'animate-spin' : ''} />
+                                      )}
+                                  </button>
+                              )}
+                          </div>
+                      </div>
                   </div>
               </div>
           );
@@ -200,8 +314,8 @@ export const VehiclesPage = () => {
   };
 
   // Ícone de Refresh simples para o componente
-  const RefreshCwIcon = ({size}: {size:number}) => (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  const RefreshCwIcon = ({size, className}: {size:number, className?: string}) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
           <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
           <path d="M21 3v5h-5"></path>
           <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
@@ -284,12 +398,20 @@ export const VehiclesPage = () => {
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {!isClientView && (
+            <>
+              <button
+                onClick={() => setIsKPIModalOpen(true)}
+                className="flex-1 md:flex-none bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
+              >
+                <Activity size={16} strokeWidth={3} /> RELATÓRIO KPI
+              </button>
               <button
                 onClick={openNew}
                 className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
               >
                 <Plus size={16} strokeWidth={3} /> ADICIONAR VEÍCULO
               </button>
+            </>
           )}
         </div>
       </div>
@@ -297,6 +419,15 @@ export const VehiclesPage = () => {
       <VehicleFiltersBar 
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        companyFilter={companyFilter}
+        setCompanyFilter={setCompanyFilter}
+        ownershipFilter={ownershipFilter}
+        setOwnershipFilter={setOwnershipFilter}
+        installationFilter={installationFilter}
+        setInstallationFilter={setInstallationFilter}
+        companies={companies}
         isClientView={isClientView}
         selectedCount={selectedVehicles.size}
         totalCount={filteredVehicles.length}
@@ -316,8 +447,19 @@ export const VehiclesPage = () => {
         selectedVehicles={selectedVehicles}
         toggleSelect={toggleSelect}
         onEdit={(v) => openEdit(v, tags)}
-        onDelete={handleDelete}
+        onDelete={(id) => { setVehicleToDelete(id); setIsConfirmDeleteOpen(true); }}
       />
+
+      {isKPIModalOpen && (
+        <VehicleKPIModal 
+          onClose={() => setIsKPIModalOpen(false)}
+          vehicles={filteredVehicles}
+          companies={companies}
+          tags={tags}
+          categories={categories}
+          clients={clients}
+        />
+      )}
 
       {isModalOpen && (
         <VehicleModal 
@@ -344,20 +486,33 @@ export const VehiclesPage = () => {
       )}
 
       {isFipeOpen && (
-        <FipeModal 
-            onClose={() => setIsFipeOpen(false)}
-            step={step}
-            loading={fipeLoading}
-            searchTerm={fipeSearchTerm}
-            setSearchTerm={setFipeSearchTerm}
-            currentType={currentType}
-            selectedBrand={selectedBrand}
-            selectedModel={selectedModel}
-            filteredList={fipeList}
-            handleSelection={(item) => handleFipeSelection(item, (model, year) => setFormData(prev => ({...prev, model, year})))}
-            handleBack={handleFipeBack}
-        />
+        <div className="fixed inset-0 z-[10000]">
+          <FipeModal 
+              onClose={() => setIsFipeOpen(false)}
+              step={step}
+              loading={fipeLoading}
+              searchTerm={fipeSearchTerm}
+              setSearchTerm={setFipeSearchTerm}
+              currentType={currentType}
+              selectedBrand={selectedBrand}
+              selectedModel={selectedModel}
+              filteredList={fipeList}
+              handleSelection={(item) => handleFipeSelection(item, (model, year, price) => setFormData(prev => ({...prev, model, year, fipeValue: price})))}
+              handleBack={handleFipeBack}
+          />
+        </div>
       )}
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => setIsConfirmDeleteOpen(false)}
+          onConfirm={() => vehicleToDelete && handleDelete(vehicleToDelete)}
+          title="Excluir Veículo"
+          message={`Tem certeza que deseja excluir o veículo ${vehicles.find(v => v.id === vehicleToDelete)?.plate}? Esta ação não pode ser desfeita.`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
     </div>
   );
 };

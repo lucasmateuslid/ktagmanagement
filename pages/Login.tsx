@@ -222,6 +222,9 @@ export const Login = () => {
            <p className="text-zinc-500 text-xs font-mono tracking-wide pt-4">
             Developed by <a href="https://lucasmateus.tech" target="_blank" rel="noopener noreferrer">Lucasmateus.tech</a>
           </p>
+          <p className="text-zinc-500 text-xs font-mono tracking-wide pt-4">
+            <a href="https://www.siterastreio.com.br/" target="_blank">Rastreamento</a>
+          </p>
         </div>
       </motion.div>
 

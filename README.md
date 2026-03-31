@@ -48,7 +48,7 @@ Toda a interação com o banco de dados é abstraída no arquivo `services/stora
 
 ### 2. Central de Agendamentos (Schedules)
 O módulo mais complexo do sistema.
-- **Fluxo de Status**: `Solicitada` -> `Em análise` -> `Confirmada` -> `Técnico no local` -> `Concluída`.
+- **Fluxo de Status**: `Solicitada` -> `Em análise` -> `Confirmada` -> `Técnico no local` / `Cliente no local` -> `Concluída`.
 - **Lógica Financeira**: O sistema calcula automaticamente a margem de lucro baseada no custo do técnico, deslocamento e valor de adesão. Se a margem for baixa, o card fica vermelho/amarelo.
 - **SLA**: O hook `useScheduleNotifications` monitora agendamentos parados há mais de 30 minutos e emite alertas sonoros e visuais para administradores.
 

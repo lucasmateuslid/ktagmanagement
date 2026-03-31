@@ -24,41 +24,47 @@ export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
 /**
  * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
  */
-export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 10): Promise<KTagLocationResult[]> => {
+export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1): Promise<KTagLocationResult[]> => {
   const allResults: KTagLocationResult[] = [];
   
   for (let i = 0; i < tags.length; i += chunkSize) {
     const chunk = tags.slice(i, i + chunkSize);
     
-    const chunkResults = await Promise.all(chunk.map(async (tag) => {
-      // Tenta buscar a localização com até 2 retentativas em caso de 429
+    const chunkResults = [];
+    for (const tag of chunk) {
+      // Tenta buscar a localização com até 5 retentativas em caso de 429
       let attempts = 0;
-      const maxAttempts = 2;
+      const maxAttempts = 5;
+      let result = null;
       
       while (attempts <= maxAttempts) {
         try {
           const res = await fetchTagLocation(tag);
-          return res.length > 0 ? { ...res[0], tagId: tag.id } : null;
+          result = res.length > 0 ? { ...res[0], tagId: tag.id } : null;
+          break; // Sucesso, sai do loop de tentativas
         } catch (e: any) {
           if (e.message.includes('429') && attempts < maxAttempts) {
             attempts++;
-            // Espera exponencial: 1s, 2s...
-            await new Promise(resolve => setTimeout(resolve, attempts * 1000));
+            // Espera exponencial: 3s, 6s, 9s...
+            await new Promise(resolve => setTimeout(resolve, attempts * 3000));
             continue;
           }
           console.error(`Erro ao rastrear tag ${tag.accessoryId}:`, e.message);
-          return null;
+          break; // Outro erro ou limite de tentativas atingido
         }
       }
-      return null;
-    }));
+      chunkResults.push(result);
+      
+      // Delay entre requisições individuais para evitar sobrecarga (1s)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
     const validResults = chunkResults.filter((r): r is any => r !== null);
     allResults.push(...validResults);
 
-    // Aumenta o delay entre chunks para 500ms para respeitar os limites do Proxy
-    if (tags.length > chunkSize) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+    // Delay maior entre os chunks
+    if (i + chunkSize < tags.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
@@ -73,10 +79,10 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
 
   // Lógica Legada K-TAG
   const settings = await storage.getSettings();
-  const payload = {
+  const payload: any = {
     accessoryId: tag.accessoryId,
-    hashed_keys: [tag.hashedAdvKey], 
-    priv_keys: [tag.privateKey],     
+    hashed_keys: [tag.hashedAdvKey],
+    priv_keys: [tag.privateKey]
   };
 
   const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;

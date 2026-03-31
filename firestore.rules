@@ -55,10 +55,11 @@ service cloud.firestore {
 
     // 2. VEÍCULOS (ktag_vehicles)
     // - Leitura: Qualquer usuário autenticado (Operação básica)
+    // - Leitura Pública: Permitida se o veículo estiver marcado como ROUBADO (para rastreamento policial)
     // - Escrita: Apenas Moderadores ou Admins
     // - Validação: Deve ter placa e modelo
     match /ktag_vehicles/{vehicleId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() || resource.data.status == 'stolen';
       allow create, update: if isModerator() && hasFields(['plate', 'model', 'status']);
       allow delete: if isModerator();
     }
@@ -80,11 +81,11 @@ service cloud.firestore {
     }
 
     // 5. REGISTROS DE ROUBO (ktag_stolen_records)
-    // - Leitura: Autenticado
+    // - Leitura: Autenticado ou se possuir um trackingToken (Acesso Policial)
     // - Criação: Qualquer usuário autenticado (Reportar)
     // - Atualização/Delete: Apenas Admin (para evitar adulteração de histórico)
     match /ktag_stolen_records/{recordId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() || (resource.data.trackingToken != null);
       allow create: if isAuthenticated() && hasFields(['vehicleId', 'type', 'timestamp']);
       allow update, delete: if isAdmin();
     }

@@ -43,54 +43,78 @@ export const TopHUD: React.FC<TopHUDProps> = ({
     return (
         <div className="absolute top-4 left-0 right-0 z-[400] px-4 pointer-events-none flex flex-col items-center gap-3">
             
+            {/* OVERLAY PARA FECHAR AO CLICAR FORA */}
+            {isFocused && (
+                <div 
+                    className="fixed inset-0 z-20 pointer-events-auto" 
+                    onClick={() => setIsFocused(false)}
+                />
+            )}
+
             {/* BARRA DE PESQUISA REATORADA */}
             <div className="w-full max-w-lg pointer-events-auto relative z-30">
-              <div className={`
-                  flex items-center gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl 
-                  border transition-all duration-300
-                  ${isFocused 
-                    ? 'rounded-[24px] border-primary-500 ring-4 ring-primary-500/10 shadow-xl' 
-                    : 'rounded-full border-zinc-200 dark:border-zinc-800 shadow-lg hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700'}
-                  p-1.5
-              `}>
-                <div className="pl-3 flex items-center justify-center text-zinc-400">
-                    <Search size={18} strokeWidth={2.5} className={isFocused ? 'text-primary-500' : ''} />
+              <div className="flex items-center gap-2">
+                <div className={`
+                    flex-1 flex items-center gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl 
+                    border transition-all duration-300
+                    ${isFocused 
+                      ? 'rounded-[24px] border-primary-500 ring-4 ring-primary-500/10 shadow-xl' 
+                      : 'rounded-full border-zinc-200 dark:border-zinc-800 shadow-lg hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700'}
+                    p-1.5
+                `}>
+                  <div className="pl-3 flex items-center justify-center text-zinc-400 shrink-0">
+                      <Search size={18} strokeWidth={2.5} className={isFocused ? 'text-primary-500' : ''} />
+                  </div>
+
+                  <input 
+                      type="text" 
+                      placeholder={searchPlaceholder}
+                      value={searchTerm}
+                      onFocus={() => setIsFocused(true)}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] font-bold text-zinc-800 dark:text-white placeholder:text-zinc-400 placeholder:font-medium h-10 px-1"
+                  />
+
+                  <div className="flex items-center gap-1 pr-1 shrink-0">
+                      {searchTerm && (
+                          <button 
+                              onClick={handleClearSearch}
+                              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-red-500 transition-colors"
+                              title="Limpar busca"
+                          >
+                              <X size={14} strokeWidth={3} />
+                          </button>
+                      )}
+                      
+                      {!isFocused && (
+                          <>
+                              <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                              <button 
+                                  onClick={onRefresh} 
+                                  className={`
+                                      p-2 rounded-full transition-all active:scale-90
+                                      ${loading 
+                                          ? 'bg-primary-500/10 text-primary-500 rotate-180' 
+                                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-primary-500'}
+                                  `}
+                                  title="Atualizar Localizações"
+                              >
+                                  <RefreshCw size={16} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
+                              </button>
+                          </>
+                      )}
+                  </div>
                 </div>
 
-                <input 
-                    type="text" 
-                    placeholder={searchPlaceholder}
-                    value={searchTerm}
-                    onFocus={() => setIsFocused(true)}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="flex-1 bg-transparent border-none outline-none text-[13px] font-bold text-zinc-800 dark:text-white placeholder:text-zinc-400 placeholder:font-medium h-10 px-1"
-                />
-
-                <div className="flex items-center gap-1 pr-1">
-                    {searchTerm && (
-                        <button 
-                            onClick={handleClearSearch}
-                            className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-red-500 transition-colors"
-                        >
-                            <X size={14} strokeWidth={3} />
-                        </button>
-                    )}
-                    
-                    <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
-
-                    <button 
-                        onClick={onRefresh} 
-                        className={`
-                            p-2 rounded-full transition-all active:scale-90
-                            ${loading 
-                                ? 'bg-primary-500/10 text-primary-500 rotate-180' 
-                                : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-primary-500'}
-                        `}
-                        title="Atualizar Localizações"
+                {/* Cancel Button */}
+                {isFocused && (
+                    <button
+                        onClick={() => setIsFocused(false)}
+                        className="px-3 py-2 text-sm font-bold text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors shrink-0"
                     >
-                        <RefreshCw size={16} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
+                        Cancelar
                     </button>
-                </div>
+                )}
               </div>
 
               <SearchDropdown 

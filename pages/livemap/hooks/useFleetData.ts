@@ -10,30 +10,42 @@ export const useFleetData = (user: User | null) => {
   const [clients, setClients] = useState<Client[]>([]);
 
   useEffect(() => {
-    const loadData = async () => {
-        let [allTags, allVehicles, allCategories, allClients] = await Promise.all([
-          storage.getTags(), 
-          storage.getVehicles(),
+    let unsubscribe = () => {};
+
+    const loadInitialData = async () => {
+        const [allTags, allCategories, allClients] = await Promise.all([
+          storage.getTags(),
           storage.getCategories(),
           storage.getClients()
         ]);
         
-        // Regra de Cliente: Filtra apenas os próprios veículos
-        if (user?.role === 'client' && user?.cpf) {
-          const myClientData = allClients.find(c => c.cpf.replace(/\D/g, '') === user.cpf);
-          if (myClientData) {
-            allVehicles = allVehicles.filter(v => v.clientId === myClientData.id);
-            allTags = allTags.filter(t => allVehicles.some(v => v.tagId === t.id));
-          }
-        }
-        
         setTags(allTags);
-        setVehicles(allVehicles);
         setCategories(allCategories);
         setClients(allClients);
+
+        // Inscrição em tempo real para veículos (recebe atualizações do Cloud Function)
+        unsubscribe = storage.subscribeVehicles((allVehicles) => {
+          let filteredVehicles = allVehicles;
+          
+          if (user?.role === 'client' && user?.cpf) {
+            const myClientData = allClients.find(c => c.cpf.replace(/\D/g, '') === user.cpf);
+            if (myClientData) {
+              filteredVehicles = allVehicles.filter(v => v.clientId === myClientData.id);
+              setVehicles(filteredVehicles);
+            } else {
+              setVehicles([]);
+            }
+          } else {
+            setVehicles(allVehicles);
+          }
+        });
     };
     
-    if (user) loadData();
+    if (user) {
+      loadInitialData();
+    }
+
+    return () => unsubscribe();
   }, [user]);
 
   return { tags, vehicles, categories, clients };

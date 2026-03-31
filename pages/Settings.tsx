@@ -3,6 +3,7 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { storage } from '../services/storage';
 import { AppSettings, User, Company, VehicleCategory } from '../types';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,7 +15,7 @@ import {
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
   MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X, Bell,
-  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck
+  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck, Box
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -46,7 +47,8 @@ export const Settings = () => {
     theftRegistered: true,
     newComment: true,
     schedulingNeedsConfirmation: true,
-    schedulingNeedsCompletion: true
+    schedulingNeedsCompletion: true,
+    schedulingUpdates: true
   });
   const [notifLoading, setNotifLoading] = useState(false);
 
@@ -73,6 +75,7 @@ export const Settings = () => {
             newComment: currentUser.notificationPreferences.newComment ?? true,
             schedulingNeedsConfirmation: currentUser.notificationPreferences.schedulingNeedsConfirmation ?? true,
             schedulingNeedsCompletion: currentUser.notificationPreferences.schedulingNeedsCompletion ?? true,
+            schedulingUpdates: currentUser.notificationPreferences.schedulingUpdates ?? true,
           });
         }
     }
@@ -94,6 +97,7 @@ export const Settings = () => {
   const getRoleStyle = (role?: string) => {
     switch (role) {
       case 'admin': return { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: null, label: 'Administrador' };
+      case 'admin_tecnico': return { color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20', icon: null, label: 'Admin Técnico' };
       case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
       case 'client': return null;
       default: return { color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-200 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
@@ -211,11 +215,24 @@ export const Settings = () => {
       setEditingCompanyId(null);
   };
 
-  const handleDeleteCompany = async (id: string) => {
-    if (!confirm('Excluir regional?')) return;
-    await storage.deleteCompany(id);
-    setCompanies(companies.filter(c => c.id !== id));
-    if (editingCompanyId === id) handleCancelEdit();
+  const [isConfirmDeleteCompanyOpen, setIsConfirmDeleteCompanyOpen] = useState(false);
+  const [companyToDelete, setCompanyToDelete] = useState<string | null>(null);
+  const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+
+  const handleDeleteCompany = (id: string) => {
+    setCompanyToDelete(id);
+    setIsConfirmDeleteCompanyOpen(true);
+  };
+
+  const confirmDeleteCompany = async () => {
+    if (!companyToDelete) return;
+    await storage.deleteCompany(companyToDelete);
+    setCompanies(companies.filter(c => c.id !== companyToDelete));
+    if (editingCompanyId === companyToDelete) handleCancelEdit();
+    setIsConfirmDeleteCompanyOpen(false);
+    setCompanyToDelete(null);
+    addNotification('success', 'Sucesso', 'Regional excluída.');
   };
 
   const handleAddCategory = async () => {
@@ -227,10 +244,18 @@ export const Settings = () => {
     addNotification('success', 'Categoria Criada', 'Nova categoria adicionada.');
   };
 
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Excluir categoria?')) return;
-    await storage.deleteCategory(id);
-    setCategories(categories.filter(c => c.id !== id));
+  const handleDeleteCategory = (id: string) => {
+    setCategoryToDelete(id);
+    setIsConfirmDeleteCategoryOpen(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    await storage.deleteCategory(categoryToDelete);
+    setCategories(categories.filter(c => c.id !== categoryToDelete));
+    setIsConfirmDeleteCategoryOpen(false);
+    setCategoryToDelete(null);
+    addNotification('success', 'Sucesso', 'Categoria excluída.');
   };
 
   if (loading || !settings) return <div className="flex items-center justify-center h-full"><Cpu className="animate-spin text-primary-500" size={48} /></div>;
@@ -258,7 +283,7 @@ export const Settings = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
         
         {/* COLUNA ESQUERDA (PERFIL E SEGURANÇA) */}
-        <div className="lg:col-span-4 space-y-6 md:space-y-10">
+        <div className={`space-y-6 md:space-y-10 ${currentUser?.role === 'client' ? 'lg:col-span-12 max-w-2xl mx-auto w-full' : 'lg:col-span-4'}`}>
           
           {/* MEU PERFIL - Redesenhado */}
           <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
@@ -446,6 +471,23 @@ export const Settings = () => {
                         </div>
                         <input type="checkbox" checked={notificationPrefs.schedulingNeedsCompletion} onChange={e => setNotificationPrefs({...notificationPrefs, schedulingNeedsCompletion: e.target.checked})} className="sr-only" />
                     </label>
+
+                    {/* Item 7 */}
+                    <label className="flex items-center justify-between py-5 cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-[#1A1A1A] flex items-center justify-center text-zinc-900 dark:text-white group-hover:scale-105 transition-transform">
+                                <RefreshCw size={18} strokeWidth={1.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-white">Atualizações de Status</span>
+                                <span className="text-xs text-zinc-500 mt-0.5">Avisar sobre mudanças de status em agendamentos</span>
+                            </div>
+                        </div>
+                        <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${notificationPrefs.schedulingUpdates ? 'bg-primary-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${notificationPrefs.schedulingUpdates ? 'translate-x-5 bg-black' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
+                        </div>
+                        <input type="checkbox" checked={notificationPrefs.schedulingUpdates} onChange={e => setNotificationPrefs({...notificationPrefs, schedulingUpdates: e.target.checked})} className="sr-only" />
+                    </label>
                 </div>
 
                 <div className="mt-8">
@@ -458,7 +500,8 @@ export const Settings = () => {
         </div>
 
         {/* COLUNA DIREITA (APIs E SISTEMA) */}
-        <div className="lg:col-span-8 space-y-6 md:space-y-10">
+        {currentUser?.role !== 'client' && (
+          <div className="lg:col-span-8 space-y-6 md:space-y-10">
           
               {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
@@ -619,6 +662,23 @@ export const Settings = () => {
                 </div>
               </div>
 
+              {/* SITE RASTREIO API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-orange-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Box size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">SITE RASTREIO API</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">API Key (siterastreio.com.br)</label>
+                    <div className="relative">
+                      <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.siteRastreioApiKey || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, siteRastreioApiKey: e.target.value})} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none disabled:opacity-50" placeholder="Sua API Key" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* REGIONAIS E CATEGORIAS */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
@@ -716,8 +776,27 @@ export const Settings = () => {
                   </div>
                 </div>
               </div>
-        </div>
+            </div>
+          )}
       </div>
+      {/* Modais de Confirmação */}
+      <ConfirmModal
+        isOpen={isConfirmDeleteCompanyOpen}
+        onClose={() => setIsConfirmDeleteCompanyOpen(false)}
+        onConfirm={confirmDeleteCompany}
+        title="Excluir Regional"
+        message="Tem certeza que deseja excluir esta regional? Esta ação não pode ser desfeita."
+        type="danger"
+      />
+
+      <ConfirmModal
+        isOpen={isConfirmDeleteCategoryOpen}
+        onClose={() => setIsConfirmDeleteCategoryOpen(false)}
+        onConfirm={confirmDeleteCategory}
+        title="Excluir Categoria"
+        message="Tem certeza que deseja excluir esta categoria? Esta ação não pode ser desfeita."
+        type="danger"
+      />
     </div>
   );
 };

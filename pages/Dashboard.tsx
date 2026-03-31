@@ -28,6 +28,8 @@ import {
   calculateCategoryStats 
 } from './dashboard/utils/dashboardCalculations';
 
+import { TechnicianDashboard } from './TechnicianDashboard';
+
 const { Link, useNavigate } = ReactRouterDOM as any;
 
 // --- CORES PREMIUM (C6 STYLE) ---
@@ -86,6 +88,7 @@ export const Dashboard = () => {
   const leasedCount = ownershipData.find(d => d.name === 'Comodato')?.value || 0;
 
   if (user?.role === 'client') return null;
+  if (user?.role === 'technician' || user?.role === 'admin_tecnico') return <TechnicianDashboard />;
   if (loading && tags.length === 0) return <div className="p-10 flex justify-center"><div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
@@ -120,13 +123,13 @@ export const Dashboard = () => {
                   { to: "/schedule/new", icon: Calendar, label: "Agendar Serviço", sub: "Agenda" },
                   { to: "/map", icon: MapIcon, label: "Monitoramento", sub: "Tempo Real" }
               ].map((item, idx) => (
-                  <Link key={idx} to={item.to} className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50 dark:hover:border-primary-500/50 p-5 rounded-[24px] transition-all duration-300 flex items-center gap-4 shadow-sm hover:shadow-lg hover:-translate-y-1">
-                      <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors">
-                          <item.icon size={18} />
+                  <Link key={idx} to={item.to} className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-primary-500/50 dark:hover:border-primary-500/50 p-4 sm:p-5 rounded-[24px] transition-all duration-300 flex items-center gap-3 sm:gap-4 shadow-sm hover:shadow-lg hover:-translate-y-1 min-w-0">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors shrink-0">
+                          <item.icon size={16} className="sm:w-[18px] sm:h-[18px]" />
                       </div>
-                      <div>
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{item.sub}</p>
-                          <p className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">{item.label}</p>
+                      <div className="min-w-0 flex-1">
+                          <p className="text-[8px] sm:text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">{item.sub}</p>
+                          <p className="text-[10px] sm:text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-tight break-words">{item.label}</p>
                       </div>
                   </Link>
               ))}
@@ -148,7 +151,7 @@ export const Dashboard = () => {
                       <div className="flex justify-between items-start">
                           <div>
                               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Total Equipamentos</p>
-                              <h3 className="text-6xl font-display font-black text-zinc-900 dark:text-white mt-2 tracking-tighter">{tags.length}</h3>
+                              <h3 className="text-4xl sm:text-6xl font-display font-black text-zinc-900 dark:text-white mt-2 tracking-tighter">{tags.length}</h3>
                           </div>
                           <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-primary-500"><TagIcon size={20}/></div>
                       </div>
@@ -173,7 +176,7 @@ export const Dashboard = () => {
                   <div className="flex justify-between items-start mb-6 relative z-10">
                       <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total de Veículos</p>
-                          <h3 className="text-6xl font-display font-black text-white mt-1 tracking-tighter">{vehicles.length}</h3>
+                          <h3 className="text-4xl sm:text-6xl font-display font-black text-white mt-1 tracking-tighter">{vehicles.length}</h3>
                       </div>
                       <div className="w-12 h-12 rounded-2xl border border-primary-500/30 text-primary-500 flex items-center justify-center bg-primary-500/5">
                           <CarFront size={24} />
@@ -203,7 +206,7 @@ export const Dashboard = () => {
                   </div>
                   
                   <div className="flex flex-col gap-1">
-                      <h3 className="text-6xl font-display font-black text-zinc-900 dark:text-white tracking-tighter leading-none">{unlinkedCount}</h3>
+                      <h3 className="text-4xl sm:text-6xl font-display font-black text-zinc-900 dark:text-white tracking-tighter leading-none">{unlinkedCount}</h3>
                       <p className={`text-[10px] font-black uppercase tracking-widest ${stockInfo.status === 'critical' ? 'text-red-500' : stockInfo.status === 'low' ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-500'}`}>
                           {stockInfo.status === 'critical' ? 'ESTOQUE CRÍTICO' : stockInfo.status === 'low' ? 'NÍVEL BAIXO' : 'ESTOQUE CONFORTÁVEL'}
                       </p>

@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../services/storage';
-import { Technician, Schedule, DeviceType } from '../types';
+import { Technician, Schedule, DeviceType, User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { securityService } from '../services/security';
 import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff, Layers, Radio, Tag } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
@@ -167,6 +169,8 @@ export const Technicians = () => {
   });
   
   const [newUnavailabilityDate, setNewUnavailabilityDate] = useState('');
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [techToDelete, setTechToDelete] = useState<string | null>(null);
   
   // State para o Modal de Detalhes
   const [selectedTechForDetail, setSelectedTechForDetail] = useState<Technician | null>(null);
@@ -185,20 +189,45 @@ export const Technicians = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.phone) return;
+    if (!formData.name || !formData.phone || !formData.email) return;
+
+    const techId = formData.id || crypto.randomUUID();
 
     const tech: Technician = {
-        id: formData.id || crypto.randomUUID(),
+        id: techId,
         name: formData.name,
+        email: formData.email,
         phone: formData.phone,
         active: formData.active ?? true,
         color: formData.color,
+        serviceLocationType: formData.serviceLocationType,
         serviceRates: formData.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 },
         unavailableDates: formData.unavailableDates || [],
         services: formData.services || []
     };
 
     await storage.saveTechnician(tech);
+
+    // Create user if new technician
+    if (!formData.id) {
+        const users = await storage.getAllUsers();
+        const existingUser = users.find(u => u.email.toLowerCase() === (tech.email || '').toLowerCase().trim());
+        
+        if (!existingUser) {
+            const hashedPassword = await securityService.hashPassword('123456'); // Default password
+            const newUser: User = {
+                id: techId,
+                name: tech.name,
+                email: (tech.email || '').toLowerCase().trim(),
+                password: hashedPassword,
+                role: 'technician',
+                status: 'approved',
+                createdAt: Date.now()
+            };
+            await storage.registerUserRequest(newUser);
+        }
+    }
+
     addNotification('success', 'Sucesso', 'Técnico salvo com sucesso.');
     setIsModalOpen(false);
     loadData();
@@ -215,13 +244,10 @@ export const Technicians = () => {
       setIsModalOpen(true);
   };
 
-  const handleDelete = async (techId: string, e: React.MouseEvent) => {
-      e.stopPropagation(); // Evita abrir o modal de detalhes
-      if (confirm('ATENÇÃO: Deseja realmente excluir este técnico? Esta ação não pode ser desfeita.')) {
-          await storage.deleteTechnician(techId);
-          addNotification('success', 'Excluído', 'Técnico removido da equipe.');
-          loadData();
-      }
+  const handleDelete = async (techId: string) => {
+      await storage.deleteTechnician(techId);
+      addNotification('success', 'Excluído', 'Técnico removido da equipe.');
+      loadData();
   };
 
   const toggleStatus = async (tech: Technician) => {
@@ -274,7 +300,7 @@ export const Technicians = () => {
       }
   };
 
-  if (user?.role !== 'admin') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
+  if (user?.role !== 'admin' && user?.role !== 'admin_tecnico') return <div className="p-10 text-center text-zinc-500 uppercase font-black">Acesso Restrito</div>;
 
   return (
     <div className="space-y-8 pb-20">
@@ -320,7 +346,7 @@ export const Technicians = () => {
                                 <Edit2 size={16}/>
                             </button>
                             <button 
-                                onClick={(e) => handleDelete(tech.id, e)} 
+                                onClick={(e) => { e.stopPropagation(); setTechToDelete(tech.id); setIsConfirmDeleteOpen(true); }} 
                                 className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-red-500 transition-colors"
                                 title="Excluir Técnico"
                             >
@@ -370,8 +396,24 @@ export const Technicians = () => {
                         <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" />
                     </div>
                     <div>
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">E-mail</label>
+                        <input type="email" required value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="tecnico@exemplo.com" />
+                    </div>
+                    <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefone</label>
                         <input type="text" required value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="(00) 00000-0000" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tipo de Atendimento</label>
+                        <select 
+                            value={formData.serviceLocationType || ''} 
+                            onChange={e => setFormData({...formData, serviceLocationType: e.target.value as 'Ponto Fixo' | 'Domicílio'})} 
+                            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none"
+                        >
+                            <option value="">Selecione o tipo</option>
+                            <option value="Ponto Fixo">Ponto Fixo</option>
+                            <option value="Domicílio">Domicílio</option>
+                        </select>
                     </div>
 
                     {/* SELEÇÃO DE SERVIÇOS */}
@@ -411,6 +453,18 @@ export const Technicians = () => {
                             <div>
                                 <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Vistoria</label>
                                 <input type="number" step="0.01" value={formData.serviceRates?.inspection || 0} onChange={e => updateRate('inspection', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Inst. Tag</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.tagInstallation || 0} onChange={e => updateRate('tagInstallation', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Retirada Tag</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.tagRemoval || 0} onChange={e => updateRate('tagRemoval', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-bold text-zinc-400 mb-1 block">Troca Tag</label>
+                                <input type="number" step="0.01" value={formData.serviceRates?.tagExchange || 0} onChange={e => updateRate('tagExchange', e.target.value)} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none text-zinc-900 dark:text-white" />
                             </div>
                         </div>
                     </div>
@@ -456,6 +510,36 @@ export const Technicians = () => {
                             ))}
                         </div>
                     </div>
+                    {formData.id && (
+                        <button 
+                            type="button" 
+                            onClick={async () => {
+                                const users = await storage.getAllUsers();
+                                const existingUser = users.find(u => u.email.toLowerCase() === (formData.email || '').toLowerCase().trim());
+                                if (!existingUser) {
+                                    const hashedPassword = await securityService.hashPassword('123456');
+                                    const newUser: User = {
+                                        id: formData.id!,
+                                        name: formData.name!,
+                                        email: (formData.email || '').toLowerCase().trim(),
+                                        password: hashedPassword,
+                                        role: 'technician',
+                                        status: 'approved',
+                                        createdAt: Date.now()
+                                    };
+                                    await storage.registerUserRequest(newUser);
+                                    addNotification('success', 'Sucesso', 'Usuário criado para o técnico.');
+                                    setIsModalOpen(false);
+                                    loadData();
+                                } else {
+                                    addNotification('error', 'Erro', 'Técnico já possui usuário.');
+                                }
+                            }}
+                            className="w-full py-3 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl font-black uppercase text-[10px] tracking-widest hover:scale-105 transition-all"
+                        >
+                            Registrar Usuário
+                        </button>
+                    )}
                     <div className="flex gap-3 pt-4">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-black uppercase text-[10px] text-zinc-500 hover:text-zinc-900">Cancelar</button>
                         <button type="submit" className="flex-1 py-3 bg-primary-500 text-black rounded-xl font-black uppercase text-[10px] shadow-lg hover:scale-105 transition-all">Salvar</button>
@@ -472,6 +556,17 @@ export const Technicians = () => {
             onClose={() => setSelectedTechForDetail(null)} 
           />
       )}
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => setIsConfirmDeleteOpen(false)}
+          onConfirm={() => techToDelete && handleDelete(techToDelete)}
+          title="Excluir Técnico"
+          message={`Tem certeza que deseja excluir o técnico ${technicians.find(t => t.id === techToDelete)?.name}? Esta ação não pode ser desfeita.`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
     </div>
   );
 };

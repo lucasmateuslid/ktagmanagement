@@ -17,7 +17,7 @@ const UserStepper = ({ status }: { status: string }) => {
   let activeIndex = 0;
   if (status === 'Solicitada') activeIndex = 0;
   else if (['Em análise', 'Em orçamento'].includes(status)) activeIndex = 1;
-  else if (['Autorizada', 'Confirmada', 'Reagendada', 'Técnico no local'].includes(status)) activeIndex = 2;
+  else if (['Autorizada', 'Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(status)) activeIndex = 2;
   else if (status === 'Concluída') activeIndex = 3;
   else if (status === 'Cancelada') activeIndex = -1;
 
@@ -123,13 +123,13 @@ export const UserScheduleCard: React.FC<UserScheduleCardProps> = ({ item, techni
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-900 flex items-center justify-center text-zinc-400 shadow-sm border border-zinc-100 dark:border-zinc-800">
+                <div className={`flex items-center gap-3 p-2 rounded-xl transition-all ${['Em análise', 'Em orçamento'].includes(item.status) ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20' : ''}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border ${['Em análise', 'Em orçamento'].includes(item.status) ? 'bg-white dark:bg-zinc-900 text-amber-500 border-amber-100 dark:border-amber-900/30' : 'bg-white dark:bg-zinc-900 text-zinc-400 border-zinc-100 dark:border-zinc-800'}`}>
                         <SearchCheck size={16} />
                     </div>
                     <div>
-                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Responsável pelo Agendamento</p>
-                        <p className={`text-xs font-bold uppercase truncate ${!responsibleName ? 'text-zinc-400 italic' : 'text-zinc-900 dark:text-white'}`}>
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${['Em análise', 'Em orçamento'].includes(item.status) ? 'text-amber-600 dark:text-amber-500' : 'text-zinc-400'}`}>Responsável pelo Agendamento</p>
+                        <p className={`text-xs font-bold uppercase truncate ${!responsibleName ? 'text-zinc-400 italic' : (['Em análise', 'Em orçamento'].includes(item.status) ? 'text-amber-900 dark:text-amber-200' : 'text-zinc-900 dark:text-white')}`}>
                             {responsibleName || '--'}
                         </p>
                     </div>

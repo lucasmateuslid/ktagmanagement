@@ -35,7 +35,7 @@ export const useFipeSearch = (categories: VehicleCategory[]) => {
     setLoading(false);
   };
 
-  const handleSelection = async (item: FipeReference, onComplete: (model: string, year: string) => void) => {
+  const handleSelection = async (item: FipeReference, onComplete: (model: string, year: string, price?: number) => void) => {
       setSearchTerm('');
       
       if (step === 1) {
@@ -53,8 +53,18 @@ export const useFipeSearch = (categories: VehicleCategory[]) => {
           setStep(3);
           setLoading(false);
       } else if (step === 3) {
+          setLoading(true);
+          const details = await fipeService.getDetails(currentType, selectedBrand!.codigo, selectedModel!.codigo, item.codigo);
           const yearStr = item.nome.replace(/\D/g, '');
-          onComplete(`${selectedBrand?.nome} ${selectedModel?.nome}`, yearStr);
+          
+          let priceNum: number | undefined;
+          if (details?.Valor) {
+              // Convert "R$ 50.000,00" to 50000
+              priceNum = parseFloat(details.Valor.replace(/[^\d,]/g, '').replace(',', '.'));
+          }
+
+          onComplete(`${selectedBrand?.nome} ${selectedModel?.nome}`, yearStr, priceNum);
+          setLoading(false);
           setIsOpen(false);
       }
   };

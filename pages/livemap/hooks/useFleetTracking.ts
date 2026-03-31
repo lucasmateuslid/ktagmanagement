@@ -69,8 +69,8 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       });
 
       // BUSCA EM LOTE (BATCHING)
-      // chunkSize de 10 é mais seguro para evitar erros 429 (Rate Limit)
-      const valid = await fetchTagsLocationBatch(tagsToTrack, 10);
+      // Usando o valor padrão (3) para evitar erros 429 (Rate Limit)
+      const valid = await fetchTagsLocationBatch(tagsToTrack);
       
       // PERSISTÊNCIA INTELIGENTE (Smart Save)
       const now = Date.now();
@@ -101,13 +101,19 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
 
   useEffect(() => {
     fetchUpdate();
-    timerRef.current = window.setInterval(fetchUpdate, 30000);
+    // Reduzido drasticamente a frequência de atualização automática da frota completa
+    // Agora o sistema conta com o Cloud Function atualizando em background a cada 30 min
+    timerRef.current = window.setInterval(fetchUpdate, 600000); // 10 minutos para frota toda
+    
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [selectedTagId, tags, vehicles]);
+  }, [tags.length]);
 
-  // Force immediate update when selecting a tag
+  // Atualização mais frequente apenas para o veículo selecionado
   useEffect(() => {
-      if (selectedTagId) setTimeout(fetchUpdate, 100);
+      if (selectedTagId) {
+          const interval = setInterval(() => refreshTag(selectedTagId), 60000); // 1 minuto para o selecionado
+          return () => clearInterval(interval);
+      }
   }, [selectedTagId]);
 
   return { fleetLocations, loading, manualRefresh: fetchUpdate, refreshTag };

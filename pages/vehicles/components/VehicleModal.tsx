@@ -1,9 +1,10 @@
 
 import React from 'react';
-import { X, Save, Search, Loader2, Building2, Book, User, Phone, ClipboardCheck, CreditCard, Calendar, Tag as TagIcon } from 'lucide-react';
+import { X, Save, Search, Loader2, Building2, Book, User, Phone, ClipboardCheck, CreditCard, Calendar, Tag as TagIcon, ChevronDown, Check, Activity, Link as LinkIcon, Unlink } from 'lucide-react';
 import { Vehicle, Client, Company, VehicleCategory, Tag, DeviceType } from '../../../types';
 import { getPlateInputStatus, validateBrazilianPlate } from '../utils/plateValidation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface VehicleModalProps {
   onClose: () => void;
@@ -33,6 +34,22 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   onHinovaLookup, hinovaStatus, onCheckClient, onFipeOpen,
   isTagListOpen, setIsTagListOpen, isPlateValid
 }) => {
+  const [isCategoryOpen, setIsCategoryOpen] = React.useState(false);
+  const [isCompanyOpen, setIsCompanyOpen] = React.useState(false);
+
+  // Fechar dropdowns ao clicar fora
+  React.useEffect(() => {
+      const handleClickOutside = () => {
+          setIsCategoryOpen(false);
+          setIsCompanyOpen(false);
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const selectedCategory = categories.find(c => c.id === formData.type);
+  const selectedCompany = companies.find(c => c.id === formData.companyId);
+
   const plateStatus = getPlateInputStatus(formData.plate || '');
 
   // Determina quais Tags estão ocupadas por outros veículos
@@ -47,18 +64,24 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
     return ids;
   }, [allVehicles, formData.id]);
 
-  // Filtra as tags disponíveis para seleção
-  const availableTags = React.useMemo(() => {
-    const term = tagSearch.toLowerCase();
-    return tags.filter(t => {
-      // 1. Deve bater com a pesquisa
-      const matchesSearch = t.accessoryId.toLowerCase().includes(term) || t.name.toLowerCase().includes(term);
-      // 2. Não deve estar ocupada por outro veículo
-      const isFreeOrMine = !occupiedTagIds.has(t.id);
-      
-      return matchesSearch && isFreeOrMine;
+  const tagLinkageMap = React.useMemo(() => {
+    const map: Record<string, Vehicle> = {};
+    allVehicles.forEach(v => {
+      if (v.tagId) map[v.tagId] = v;
     });
-  }, [tags, tagSearch, occupiedTagIds]);
+    return map;
+  }, [allVehicles]);
+
+  // Filtra as tags para a lista de seleção
+  const filteredTags = React.useMemo(() => {
+    const term = tagSearch.toLowerCase();
+    return tags.filter(t => 
+      t.accessoryId.toLowerCase().includes(term) || 
+      t.name.toLowerCase().includes(term)
+    );
+  }, [tags, tagSearch]);
+
+  const selectedTag = tags.find(t => t.id === formData.tagId);
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-hidden">
@@ -144,32 +167,102 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                     </div>
 
                     {/* Category & Company */}
-                    <div className="space-y-2">
-                        <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CATEGORIA</label>
-                        <select value={formData.type || ''} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
-                            <option value="">Selecione...</option>
-                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2 relative" onClick={e => e.stopPropagation()}>
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CATEGORIA</label>
+                            <div 
+                                className="relative flex items-center justify-between px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
+                                onClick={() => { setIsCategoryOpen(!isCategoryOpen); setIsCompanyOpen(false); }}
+                            >
+                                <span className={`text-xs font-bold truncate ${!selectedCategory ? 'text-zinc-500' : 'text-zinc-900 dark:text-white'}`}>
+                                    {selectedCategory ? selectedCategory.name : 'Selecione...'}
+                                </span>
+                                <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isCategoryOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                            
+                            <AnimatePresence>
+                                {isCategoryOpen && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[1005] overflow-hidden flex flex-col max-h-[200px]"
+                                    >
+                                        <div className="overflow-y-auto custom-scrollbar p-1">
+                                            <div 
+                                                onClick={() => { setFormData({...formData, type: ''}); setIsCategoryOpen(false); }}
+                                                className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all ${!formData.type ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}
+                                            >
+                                                Selecione...
+                                            </div>
+                                            {categories.map(c => (
+                                                <div 
+                                                    key={c.id}
+                                                    onClick={() => { setFormData({...formData, type: c.id}); setIsCategoryOpen(false); }}
+                                                    className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all ${formData.type === c.id ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}
+                                                >
+                                                    {c.name}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
 
-                    <div className="space-y-2">
-                        <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">EMPRESA</label>
-                        <div className="relative">
-                            <Building2 size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300" />
-                            <select value={formData.companyId || ''} onChange={e => setFormData({...formData, companyId: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none">
-                                <option value="">Selecione...</option>
-                                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                        <div className="space-y-2 relative" onClick={e => e.stopPropagation()}>
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">EMPRESA</label>
+                            <div 
+                                className="relative flex items-center justify-between pl-11 pr-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
+                                onClick={() => { setIsCompanyOpen(!isCompanyOpen); setIsCategoryOpen(false); }}
+                            >
+                                <Building2 size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <span className={`text-xs font-bold truncate ${!selectedCompany ? 'text-zinc-500' : 'text-zinc-900 dark:text-white'}`}>
+                                    {selectedCompany ? selectedCompany.name : 'Selecione...'}
+                                </span>
+                                <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isCompanyOpen ? 'rotate-180' : ''}`} />
+                            </div>
+
+                            <AnimatePresence>
+                                {isCompanyOpen && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[1005] overflow-hidden flex flex-col max-h-[200px]"
+                                    >
+                                        <div className="overflow-y-auto custom-scrollbar p-1">
+                                            <div 
+                                                onClick={() => { setFormData({...formData, companyId: ''}); setIsCompanyOpen(false); }}
+                                                className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all ${!formData.companyId ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}
+                                            >
+                                                Selecione...
+                                            </div>
+                                            {companies.map(c => (
+                                                <div 
+                                                    key={c.id}
+                                                    onClick={() => { setFormData({...formData, companyId: c.id}); setIsCompanyOpen(false); }}
+                                                    className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all ${formData.companyId === c.id ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}
+                                                >
+                                                    {c.name}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
 
                     {/* Model & Year */}
                     <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO</label>
-                            <button type="button" onClick={onFipeOpen} className="flex items-center gap-1 text-[8px] font-black text-[#f59e0b] border border-[#f59e0b]/30 bg-[#f59e0b]/5 px-2 py-0.5 rounded uppercase tracking-widest hover:bg-[#f59e0b]/20 transition-colors"><Book size={10}/> BUSCA FIPE</button>
+                        <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO</label>
+                        <div className="flex gap-2">
+                            <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                            <button type="button" onClick={onFipeOpen} className="px-4 h-12 rounded-xl bg-[#f59e0b]/10 hover:bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30 font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                                <Book size={14}/> BUSCA FIPE
+                            </button>
                         </div>
-                        <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -178,33 +271,116 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                             <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                         </div>
                         
-                        {/* Tag Linking com Filtro de Ocupação */}
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">VALOR FIPE (R$)</label>
+                            <input 
+                                type="number" 
+                                step="0.01"
+                                value={formData.fipeValue || ''} 
+                                onChange={e => setFormData({...formData, fipeValue: parseFloat(e.target.value)})} 
+                                className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" 
+                                placeholder="0,00"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                        {/* Tag Linking com UI Visual e Pesquisa */}
                         <div className="space-y-2 relative">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TAG VINCULADA</label>
-                            <div className="relative">
-                                <input 
-                                    type="text" 
-                                    placeholder="Busca Nome/SN..." 
-                                    value={tagSearch} 
-                                    onFocus={() => setIsTagListOpen(true)} 
-                                    onChange={e => { setTagSearch(e.target.value); setIsTagListOpen(true); }} 
-                                    className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none focus:border-primary-500" 
-                                />
-                                {isTagListOpen && (
-                                    <div className="absolute bottom-full mb-1 left-0 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[1100] max-h-40 overflow-y-auto p-1 ring-1 ring-black/5 animate-in fade-in slide-in-from-bottom-1 duration-200">
-                                        {availableTags.length === 0 ? (
-                                            <div className="p-3 text-[9px] font-black text-zinc-400 uppercase text-center italic">Nenhuma tag livre localizada</div>
-                                        ) : (
-                                            availableTags.map(t => (
-                                                <button key={t.id} type="button" onClick={() => { setFormData({...formData, tagId: t.id}); setTagSearch(t.accessoryId); setIsTagListOpen(false); }} className="w-full p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left border-b last:border-0 border-zinc-100 dark:border-zinc-800 group transition-colors">
-                                                    <span className="text-[10px] font-black uppercase text-zinc-900 dark:text-white block group-hover:text-primary-500">{t.accessoryId}</span>
-                                                    <span className="text-[8px] font-bold text-zinc-400 uppercase">{t.name}</span>
-                                                </button>
-                                            ))
-                                        )}
-                                    </div>
-                                )}
+                            <div 
+                                className="flex items-center justify-between px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
+                                onClick={() => setIsTagListOpen(!isTagListOpen)}
+                            >
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    <TagIcon size={16} className="text-zinc-400 shrink-0" />
+                                    <span className="text-xs font-bold dark:text-white truncate">
+                                        {selectedTag ? `${selectedTag.accessoryId} (${selectedTag.name})` : 'Selecione uma Tag...'}
+                                    </span>
+                                </div>
+                                <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isTagListOpen ? 'rotate-180' : ''}`} />
                             </div>
+
+                            <AnimatePresence>
+                                {isTagListOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[1001]" onClick={() => setIsTagListOpen(false)} />
+                                        <motion.div 
+                                            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                            className="absolute bottom-full mb-2 left-0 right-0 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-2xl z-[1002] overflow-hidden flex flex-col max-h-[300px]"
+                                        >
+                                            <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                                <div className="relative">
+                                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Buscar por nome ou ID..." 
+                                                        value={tagSearch}
+                                                        onChange={e => setTagSearch(e.target.value)}
+                                                        className="w-full pl-9 pr-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 ring-primary-500/20"
+                                                        autoFocus
+                                                        onClick={e => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="overflow-y-auto custom-scrollbar p-1">
+                                                {filteredTags.length === 0 ? (
+                                                    <div className="p-8 text-center">
+                                                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhuma tag encontrada</p>
+                                                    </div>
+                                                ) : (
+                                                    filteredTags.map(t => {
+                                                        const linkedVehicle = tagLinkageMap[t.id];
+                                                        const isOccupiedByOther = linkedVehicle && linkedVehicle.id !== formData.id;
+                                                        const isSelected = formData.tagId === t.id;
+                                                        
+                                                        return (
+                                                            <button 
+                                                                key={t.id}
+                                                                type="button"
+                                                                disabled={isOccupiedByOther}
+                                                                onClick={() => {
+                                                                    setFormData({...formData, tagId: t.id});
+                                                                    setIsTagListOpen(false);
+                                                                }}
+                                                                className={`w-full p-3 rounded-2xl flex items-center justify-between transition-all group ${isSelected ? 'bg-primary-500/10 text-primary-500' : isOccupiedByOther ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+                                                            >
+                                                                <div className="flex items-center gap-3 text-left">
+                                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:bg-zinc-200 dark:group-hover:bg-zinc-700'}`}>
+                                                                        <Activity size={18} />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-xs font-black uppercase truncate">{t.accessoryId}</p>
+                                                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{t.name}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-col items-end gap-1">
+                                                                    {linkedVehicle ? (
+                                                                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full border ${isOccupiedByOther ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'}`}>
+                                                                            <LinkIcon size={8} />
+                                                                            <span className="text-[8px] font-black uppercase tracking-widest">
+                                                                                {isOccupiedByOther ? linkedVehicle.plate : 'ESTE VEÍCULO'}
+                                                                            </span>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-full border border-zinc-200 dark:border-zinc-700">
+                                                                            <Unlink size={8} />
+                                                                            <span className="text-[8px] font-black uppercase tracking-widest">Livre</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {isSelected && <Check size={14} className="text-primary-500" />}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    </>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
                 </div>
@@ -245,7 +421,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TERÁ ACESSO AO PORTAL?</label>
                             <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-100 dark:border-zinc-800 h-12">
                                 <button type="button" onClick={() => setClientData({...clientData, hasAccess: true})} className={`flex-1 rounded-lg text-[9px] font-black transition-all ${clientData.hasAccess ? 'bg-zinc-800 dark:bg-white text-white dark:text-black shadow-lg' : 'text-zinc-500'}`}>SIM</button>
-                                <button type="button" onClick={() => setClientData({...clientData, hasAccess: false})} className={`flex-1 rounded-lg text-[9px] font-black transition-all ${!clientData.hasAccess ? 'bg-[#18181b] text-white' : 'text-zinc-500'}`}>NÃO</button>
+                                <button type="button" onClick={() => setClientData({...clientData, hasAccess: false})} className={`flex-1 rounded-lg text-[9px] font-black transition-all ${!clientData.hasAccess ? 'bg-zinc-900 dark:bg-zinc-700 text-white shadow-lg' : 'text-zinc-500'}`}>NÃO</button>
                             </div>
                         </div>
                     </div>

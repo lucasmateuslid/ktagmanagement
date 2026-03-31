@@ -7,6 +7,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { securityService } from '../services/security';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
@@ -24,6 +25,9 @@ export const Users = () => {
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isConfirmResetOpen, setIsConfirmResetOpen] = useState(false);
+  const [userToManage, setUserToManage] = useState<User | null>(null);
   
   const [selectedUser, setSelectedUser] = useState<Partial<User> | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({ role: 'user', status: 'approved' });
@@ -136,10 +140,6 @@ export const Users = () => {
           return;
       }
 
-      if (!confirm(`ATENÇÃO: Você está prestes a remover o acesso de ${userToDelete.name}.\n\nEsta ação excluirá o usuário permanentemente do banco de dados.\nDeseja continuar?`)) {
-          return;
-      }
-
       try {
           await storage.deleteUser(userToDelete.id);
           storage.logAction(currentUser, 'DELETE', 'User', `Excluiu o usuário ${userToDelete.name}`, userToDelete.id);
@@ -162,8 +162,6 @@ export const Users = () => {
   };
 
   const handleResetPassword = async (userId: string, userName: string, userEmail: string) => {
-    if (!confirm(`Deseja gerar uma nova senha aleatória para ${userName}? A senha atual será invalidada.`)) return;
-    
     try {
         const newPassword = securityService.generateStrongPassword();
         const newHash = await securityService.hashPassword(newPassword);
@@ -194,6 +192,10 @@ export const Users = () => {
         case 'admin':
             style = 'bg-amber-500/10 text-amber-500 border-amber-500/20';
             label = 'Administrador';
+            break;
+        case 'admin_tecnico':
+            style = 'bg-orange-500/10 text-orange-500 border-orange-500/20';
+            label = 'Admin Técnico';
             break;
         case 'moderator':
             style = 'bg-blue-500/10 text-blue-500 border-blue-500/20';
@@ -281,10 +283,10 @@ export const Users = () => {
                     </td>
                     <td className="px-8 py-5 text-right">
                     <div className="flex justify-end gap-2">
-                        <button onClick={() => handleResetPassword(user.id, user.name, user.email)} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
+                        <button onClick={() => { setUserToManage(user); setIsConfirmResetOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
                         <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
                         {user.id !== currentUser?.id && (
-                            <button onClick={() => handleDeleteUser(user)} className="p-2.5 bg-red-50 dark:bg-red-900/10 text-red-400 hover:text-red-600 rounded-xl transition-all" title="Excluir Usuário"><Trash2 size={16}/></button>
+                            <button onClick={() => { setUserToManage(user); setIsConfirmDeleteOpen(true); }} className="p-2.5 bg-red-50 dark:bg-red-900/10 text-red-400 hover:text-red-600 rounded-xl transition-all" title="Excluir Usuário"><Trash2 size={16}/></button>
                         )}
                     </div>
                     </td>
@@ -427,6 +429,7 @@ export const Users = () => {
                             <option value="user">Usuário</option>
                             <option value="moderator">Moderador</option>
                             <option value="admin">Admin</option>
+                            <option value="admin_tecnico">Admin Técnico</option>
                             <option value="client">Cliente</option>
                         </select>
                     </div>
@@ -492,6 +495,28 @@ export const Users = () => {
             </div>
         </div>
       )}
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => setIsConfirmDeleteOpen(false)}
+          onConfirm={() => userToManage && handleDeleteUser(userToManage)}
+          title="Excluir Usuário"
+          message={`ATENÇÃO: Você está prestes a remover o acesso de ${userToManage?.name}. Esta ação excluirá o usuário permanentemente do banco de dados. Deseja continuar?`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
+
+      <ConfirmModal 
+          isOpen={isConfirmResetOpen}
+          onClose={() => setIsConfirmResetOpen(false)}
+          onConfirm={() => userToManage && handleResetPassword(userToManage.id, userToManage.name, userToManage.email)}
+          title="Resetar Senha"
+          message={`Deseja gerar uma nova senha aleatória para ${userToManage?.name}? A senha atual será invalidada.`}
+          confirmText="Sim, Resetar"
+          cancelText="Cancelar"
+          type="warning"
+      />
     </div>
   );
 };

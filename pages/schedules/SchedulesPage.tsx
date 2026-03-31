@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { storage } from '../../services/storage';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { Schedule, Technician, Company } from '../../types';
 import { TrackingModal } from '../../components/TrackingModal';
 import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle } from 'lucide-react';
@@ -35,6 +36,8 @@ export const SchedulesPage = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
 
   // --- DATA LOADING ---
@@ -53,7 +56,7 @@ export const SchedulesPage = () => {
 
     if (user) {
         const unsubscribe = storage.subscribeToSchedules(
-            (user.role === 'admin' || user.role === 'moderator') ? 'admin' : 'user', 
+            (user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico') ? 'admin' : 'user', 
             user.id, 
             (data) => {
                 setSchedules(data.sort((a, b) => b.createdAt - a.createdAt));
@@ -126,6 +129,7 @@ export const SchedulesPage = () => {
   const handleUpdateSchedule = async (updated: Schedule) => {
       try {
           await storage.saveSchedule(updated);
+          storage.logAction(user, 'UPDATE', 'Schedule', `Atualizou agendamento: ${updated.vehiclePlate}`, updated.id);
           setSelectedSchedule(updated);
       } catch (e) {
           addNotification('error', 'Erro', 'Falha ao salvar agendamento.');
@@ -133,11 +137,13 @@ export const SchedulesPage = () => {
   };
 
   const handleDeleteSchedule = async (id: string) => {
-      if (window.confirm('Tem certeza que deseja excluir esta solicitação?')) {
-          await storage.deleteSchedule(id);
-          setSelectedSchedule(null);
-          addNotification('success', 'Excluído', 'Agendamento removido.');
+      const s = schedules.find(s => s.id === id);
+      await storage.deleteSchedule(id);
+      if (user && s) {
+          storage.logAction(user, 'DELETE', 'Schedule', `Removeu agendamento: ${s.vehiclePlate}`, id);
       }
+      setSelectedSchedule(null);
+      addNotification('success', 'Excluído', 'Agendamento removido.');
   };
 
     const userStats = React.useMemo(() => {
@@ -349,6 +355,17 @@ export const SchedulesPage = () => {
                 currentUser={user}
             />
         )}
+
+        <ConfirmModal 
+            isOpen={isConfirmDeleteOpen}
+            onClose={() => setIsConfirmDeleteOpen(false)}
+            onConfirm={() => scheduleToDelete && handleDeleteSchedule(scheduleToDelete)}
+            title="Excluir Agendamento"
+            message="Tem certeza que deseja excluir esta solicitação? Esta ação não pode ser desfeita."
+            confirmText="Sim, Excluir"
+            cancelText="Cancelar"
+            type="danger"
+        />
     </div>
   );
 };

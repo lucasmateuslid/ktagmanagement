@@ -159,8 +159,9 @@ export const useScheduleNotifications = () => {
               soundType = 'change'; // Som específico de mudança
               break;
             case 'Técnico no local':
-              title = 'Técnico Chegou!';
-              msg = 'O técnico informou que está no local de atendimento.';
+            case 'Cliente no local':
+              title = schedule.status === 'Cliente no local' ? 'Cliente Chegou!' : 'Técnico Chegou!';
+              msg = schedule.status === 'Cliente no local' ? 'O técnico informou que o cliente está no local.' : 'O técnico informou que está no local de atendimento.';
               type = 'success';
               soundType = 'arrival'; // Som de campainha
               break;
@@ -196,7 +197,7 @@ export const useScheduleNotifications = () => {
     const q = query(collection(db, 'ktag_schedules'), orderBy('createdAt', 'desc'), limit(50));
     
     // Escuta agendamentos ativos para checagem de 24h
-    const qActive = query(collection(db, 'ktag_schedules'), where('status', 'in', ['Confirmada', 'Reagendada', 'Técnico no local']));
+    const qActive = query(collection(db, 'ktag_schedules'), where('status', 'in', ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local']));
 
     const unsubscribeActive = onSnapshot(qActive, (snapshot) => {
         const active: Schedule[] = [];
@@ -223,13 +224,22 @@ export const useScheduleNotifications = () => {
                 }
             }
 
-            // 2. MODIFICAÇÃO (Alguém assumiu)
+            // 2. MODIFICAÇÃO (Alguém assumiu ou mudou status)
             if (change.type === 'modified' && prevSchedule) {
+                // Se alguém assumiu
                 if (prevSchedule.status === 'Solicitada' && schedule.status === 'Em análise') {
                     const lastHistory = schedule.history[schedule.history.length - 1];
                     const whoAssumed = lastHistory?.actionBy || 'Alguém';
                     playSound('admin');
                     addNotification('info', 'Solicitação Assumida', `${whoAssumed} assumiu o agendamento de ${schedule.vehiclePlate}.`, true);
+                }
+                
+                // Se mudou para qualquer outro status importante (Confirmada, Concluída, etc)
+                if (prevSchedule.status !== schedule.status && !['Solicitada', 'Em análise'].includes(schedule.status)) {
+                    const lastHistory = schedule.history[schedule.history.length - 1];
+                    const whoChanged = lastHistory?.actionBy || 'Alguém';
+                    playSound('admin');
+                    addNotification('info', 'Status Atualizado', `Placa ${schedule.vehiclePlate}: ${prevSchedule.status} ➔ ${schedule.status} por ${whoChanged}`, true);
                 }
             }
 

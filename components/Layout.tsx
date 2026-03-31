@@ -13,7 +13,7 @@ import {
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home
+  Home, Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -72,8 +72,24 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const getMenuSections = () => {
     const role = user?.role || 'user';
     
-    // O menu do cliente é tratado separadamente no render
-    if (role === 'client') return [];
+    if (role === 'client') {
+      return [
+        { title: 'MONITORAMENTO', items: [
+          { label: 'MINHA FROTA', path: '/vehicles', icon: CarFront },
+          { label: 'MAPA AO VIVO', path: '/map', icon: Map }
+        ]}
+      ];
+    }
+
+    if (role === 'technician') {
+      return [
+        { title: 'OPERACIONAL', items: [
+          { label: 'DASHBOARD', path: '/', icon: LayoutGrid },
+          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
+          { label: 'FEEDBACK', path: '/feedback', icon: MessageSquare }
+        ]}
+      ];
+    }
 
     // Menu for Non-Clients (Admin, Moderator, User)
     return [
@@ -84,26 +100,28 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       { title: 'OPERAÇÕES', items: [
         { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert }, 
         { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront },
-        ...(role === 'admin' || role === 'moderator' ? [
+        ...(role === 'admin' || role === 'moderator' || role === 'admin_tecnico' ? [
            { label: 'CLIENTES', path: '/clients', icon: Users },
            { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags },
+           { label: 'ENVIOS', path: '/envios', icon: Package },
         ] : [])
       ]},
       { title: 'AGENDAMENTOS', items: [
         { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus },
         { label: role === 'user' ? 'MINHAS SOLICITAÇÕES' : 'CENTRAL DE AGENDA', path: '/schedules', icon: Calendar },
         { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
-        ...(role === 'admin' ? [{ label: 'TÉCNICOS', path: '/technicians', icon: Wrench }] : [])
+        ...(role === 'admin' || role === 'admin_tecnico' ? [{ label: 'TÉCNICOS', path: '/technicians', icon: Wrench }] : [])
       ]},
       // Feedback Section for Internal Users
       { title: 'COMUNIDADE', items: [
           { label: isAdmin ? 'COMENTÁRIOS' : 'FEEDBACK & SUGESTÕES', path: '/feedback', icon: MessageSquare }
       ]},
-      ...(role === 'admin' || role === 'moderator' ? [
+      ...(role === 'admin' || role === 'moderator' || role === 'admin_tecnico' ? [
         { title: 'GESTÃO', items: [
           { label: 'RELATÓRIOS', path: '/reports', icon: FileText },
+          { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet },
           { label: 'AUDITORIA', path: '/audit', icon: ClipboardList },
-          ...(role === 'admin' ? [{ label: 'USUÁRIOS ADM', path: '/users', icon: UserCircle }] : []),
+          ...(role === 'admin' || role === 'admin_tecnico' ? [{ label: 'USUÁRIOS ADM', path: '/users', icon: UserCircle }] : []),
         ]}
       ] : [])
     ];
@@ -112,7 +130,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const menuSections = getMenuSections();
 
   return (
-    <div className="flex h-screen bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300 flex-col relative">
+    <div className="flex h-screen print:h-auto bg-zinc-100 dark:bg-black text-zinc-900 dark:text-zinc-100 overflow-hidden print:overflow-visible font-sans transition-colors duration-300 flex-col relative">
       
       {/* GLOBAL ALERTS (TOASTS) */}
       <AnimatePresence>
@@ -156,7 +174,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           )}
       </AnimatePresence>
 
-      <div className="flex flex-1 overflow-hidden relative z-0">
+      <div className="flex flex-1 overflow-hidden print:overflow-visible relative z-0">
         
         {isSidebarOpen && (
           <div 
@@ -168,7 +186,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         {/* SIDEBAR PADRÃO - Escondida para Cliente Mobile */}
         {!(isClient && isMobile) && (
             <aside className={`
-              fixed lg:static inset-y-0 left-0 z-[3000] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col
+              fixed lg:static inset-y-0 left-0 z-[3000] bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transform transition-all duration-300 lg:transform-none flex flex-col print:hidden
               ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
               ${isCollapsed ? 'w-24' : 'w-72'}
             `}>
@@ -239,14 +257,21 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                 >
                   {isCollapsed ? <ChevronRight size={16} /> : <div className="flex items-center gap-2"><ChevronLeft size={14} /><span className="text-[9px] font-black uppercase">Recolher</span></div>}
                 </button>
+                {!isCollapsed && (
+                  <div className="pt-2 text-center">
+                    <a href="https://www.siterastreio.com.br/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-zinc-400 hover:text-primary-500 transition-colors">
+                      Rastreamento
+                    </a>
+                  </div>
+                )}
               </div>
             </aside>
         )}
 
-        <main className={`flex-1 flex flex-col h-full overflow-hidden relative bg-zinc-100 dark:bg-black transition-all ${isClient && isMobile && isMapPage ? 'z-[100]' : ''}`}>
+        <main className={`flex-1 flex flex-col h-full overflow-hidden print:overflow-visible relative bg-zinc-100 dark:bg-black transition-all ${isClient && isMobile && isMapPage ? 'z-[100]' : ''}`}>
           {/* HEADER PADRÃO */}
           {!(isClient && isMobile) ? (
-              <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0">
+              <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0 print:hidden">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Menu size={24} /></button>
                   <div className="hidden md:flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-6 h-10 justify-center">
@@ -356,7 +381,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               </div>
           )}
 
-          <div className={`flex-1 overflow-y-auto custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : (isClient && isMobile ? 'px-4 pb-32 -mt-6' : 'p-6 lg:p-8')}`}>
+          <div className={`flex-1 overflow-y-auto print:overflow-visible custom-scrollbar bg-zinc-100 dark:bg-black ${isMapPage ? 'p-0' : (isClient && isMobile ? 'px-4 pb-32 -mt-6' : 'p-6 lg:p-8')}`}>
               {children || <Outlet />}
           </div>
           
@@ -393,12 +418,15 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   </div>
                   <div className="space-y-2 flex-1">
                       <Link to="/vehicles" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><CarFront size={18} className="text-primary-500"/> Minha Frota</Link>
-                      <Link to="/map" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Map size={18} className="text-primary-500"/> Mapa Tempo Real</Link>
+                      <Link to="/map" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Map size={18} className="text-primary-500"/> Mapa ao Vivo</Link>
                       <Link to="/settings" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Settings size={18} className="text-zinc-400"/> Configurações</Link>
                       <button onClick={() => { toggleTheme(); setIsClientMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all text-left">
                         {theme === 'dark' ? <Sun size={18} className="text-yellow-500"/> : <Moon size={18} className="text-blue-300"/>} 
                         <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>
                       </button>
+                      <a href="https://www.siterastreio.com.br/" target="_blank" className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                        <Package size={18} className="text-zinc-400"/> Rastreamento
+                      </a>
                   </div>
                   <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 mt-auto hover:bg-red-500 hover:text-white transition-all"><LogOut size={16}/> Sair do App</button>
                 </MotionDiv>

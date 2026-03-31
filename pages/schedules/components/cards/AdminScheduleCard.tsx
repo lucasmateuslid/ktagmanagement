@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Schedule, Technician } from '../../../../types';
-import { User, UserCircle2, Wrench, MapPin } from 'lucide-react';
+import { User, UserCircle2, Wrench, MapPin, SearchCheck } from 'lucide-react';
 import { getStatusStyle } from '../../utils/scheduleStatusUtils';
 import { getTimeElapsedStr, getDisplayDate, isScheduleOverdue } from '../../utils/scheduleTimeUtils';
 import { calculateServiceValue } from '../../utils/scheduleFinancialUtils';
@@ -17,11 +17,16 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
   const styleConfig = getStatusStyle(item.status);
   
   const isUnderAnalysis = ['Em análise', 'Em orçamento'].includes(item.status);
-  const analysisHistory = isUnderAnalysis 
-      ? [...item.history].reverse().find(h => h.action === 'Assumiu' || h.action === 'Verificando' || h.statusSnapshot === 'Em análise' || h.statusSnapshot === 'Em orçamento')
-      : null;
+  const analysisHistory = [...item.history].reverse().find(h => 
+      h.action === 'Assumiu' || 
+      h.action === 'Verificando' || 
+      h.statusSnapshot === 'Em análise' || 
+      h.statusSnapshot === 'Em orçamento' ||
+      (h.action === 'Confirmou' && item.status === 'Confirmada')
+  );
 
   const showAnalysisInfo = isUnderAnalysis && analysisHistory?.actionBy;
+  const responsibleName = analysisHistory?.actionBy;
   const techName = assignedTech ? assignedTech.name : 'A definir';
   const techColor = assignedTech ? (assignedTech.color || '#3b82f6') : '#e4e4e7';
   
@@ -56,11 +61,6 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
 
         <div className="flex items-center gap-3 mb-1">
             <span className="text-[10px] font-mono text-zinc-300 dark:text-zinc-600"># {item.id.slice(0, 2).toUpperCase()}</span>
-            {showAnalysisInfo && (
-                <span className="text-[9px] font-bold text-amber-500 uppercase tracking-wide">
-                    Em análise por: {analysisHistory.actionBy}
-                </span>
-            )}
         </div>
 
         <h2 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-1 truncate" title={item.vehiclePlate}>{item.vehiclePlate}</h2>
@@ -96,6 +96,15 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
                     <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-300 leading-tight line-clamp-2">{item.locationAddress}</span>
                 </div>
             </div>
+            {isUnderAnalysis && responsibleName && (
+                <div className="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/20 animate-in fade-in slide-in-from-top-1">
+                    <div className="mt-0.5"><SearchCheck size={14} className="text-amber-500"/></div>
+                    <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-[9px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest">RESPONSÁVEL PELA ANÁLISE:</span>
+                        <span className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase truncate">{responsibleName}</span>
+                    </div>
+                </div>
+            )}
         </div>
 
         {/* Footer */}
