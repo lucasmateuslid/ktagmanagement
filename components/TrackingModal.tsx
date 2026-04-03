@@ -87,6 +87,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         technicianPaid: schedule.technicianPaid ?? false,
         technicianPaymentAmount: schedule.technicianPaymentAmount || 0,
         technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0],
+        amountReceivedByTechnician: schedule.amountReceivedByTechnician || 0,
         locationAddress: schedule.locationAddress,
         notes: schedule.notes || '',
         clientName: schedule.clientName || '',
@@ -115,6 +116,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             technicianPaid: schedule.technicianPaid ?? false,
             technicianPaymentAmount: schedule.technicianPaymentAmount || 0,
             technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0],
+            amountReceivedByTechnician: schedule.amountReceivedByTechnician || 0,
             locationAddress: schedule.locationAddress,
             notes: schedule.notes || '',
             clientName: schedule.clientName || '',
@@ -244,6 +246,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             technicianPaid: formData.technicianPaid,
             technicianPaymentAmount: formData.technicianPaymentAmount,
             technicianPaymentDate: formData.technicianPaymentDate,
+            amountReceivedByTechnician: formData.amountReceivedByTechnician,
             locationAddress: formData.locationAddress,
             notes: formData.notes,
             clientName: formData.clientName,
@@ -333,6 +336,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             technicianPaid: formData.technicianPaid,
             technicianPaymentAmount: formData.technicianPaymentAmount,
             technicianPaymentDate: formData.technicianPaymentDate,
+            amountReceivedByTechnician: formData.amountReceivedByTechnician,
             history: [...schedule.history, { 
                 action: 'Atualizou', 
                 actionBy: currentUser?.name || 'Usuário', 
@@ -364,6 +368,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             technicianPaid: formData.technicianPaid,
             technicianPaymentAmount: formData.technicianPaymentAmount,
             technicianPaymentDate: formData.technicianPaymentDate,
+            amountReceivedByTechnician: formData.amountReceivedByTechnician,
             locationAddress: formData.locationAddress,
             notes: formData.notes,
             clientName: formData.clientName,
@@ -697,20 +702,20 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/20">
                                             <label className="flex items-center gap-3 cursor-pointer">
                                                 <div className="relative">
-                                                    <input type="checkbox" className="sr-only peer" checked={formData.technicianPaid} onChange={e => setFormData({...formData, technicianPaid: e.target.checked})} />
+                                                    <input type="checkbox" className="sr-only peer" checked={formData.amountReceivedByTechnician > 0} onChange={e => setFormData({...formData, amountReceivedByTechnician: e.target.checked ? (formData.amountReceivedByTechnician || 1) : 0})} />
                                                     <div className="w-10 h-6 bg-zinc-200 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
                                                     <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-4 transition-all shadow-sm"></div>
                                                 </div>
                                                 <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-widest flex items-center gap-2"><Wallet size={14}/> Pagamento ao Técnico</span>
                                             </label>
 
-                                            {formData.technicianPaid && (
+                                            {formData.amountReceivedByTechnician > 0 && (
                                                 <div className="grid grid-cols-2 gap-4 mt-4 animate-in slide-in-from-top-2">
                                                     <div>
                                                         <label className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-500 mb-1 block">Valor Recebido (R$)</label>
                                                         <div className="relative">
                                                             <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400"/>
-                                                            <input type="number" step="0.01" value={formData.technicianPaymentAmount} onChange={e => setFormData({...formData, technicianPaymentAmount: parseFloat(e.target.value)})} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs font-bold outline-none focus:border-emerald-500" placeholder="R$ 0,00"/>
+                                                            <input type="number" step="0.01" value={formData.amountReceivedByTechnician} onChange={e => setFormData({...formData, amountReceivedByTechnician: parseFloat(e.target.value)})} className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs font-bold outline-none focus:border-emerald-500" placeholder="R$ 0,00"/>
                                                         </div>
                                                     </div>
                                                     <div>
@@ -1057,18 +1062,18 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         <div className="space-y-3">
                                             <label className="flex items-center gap-3 cursor-pointer">
                                                 <div className="relative">
-                                                    <input type="checkbox" className="sr-only peer" checked={formData.technicianPaid} onChange={e => setFormData({...formData, technicianPaid: e.target.checked})} />
+                                                    <input type="checkbox" className="sr-only peer" checked={formData.amountReceivedByTechnician > 0} onChange={e => setFormData({...formData, amountReceivedByTechnician: e.target.checked ? (formData.amountReceivedByTechnician || 1) : 0})} />
                                                     <div className="w-8 h-5 bg-zinc-200 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
                                                     <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full peer-checked:translate-x-3 transition-all shadow-sm"></div>
                                                 </div>
                                                 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Pago</span>
                                             </label>
                                             
-                                            {formData.technicianPaid && (
+                                            {formData.amountReceivedByTechnician > 0 && (
                                                 <div className="grid grid-cols-1 gap-2">
                                                     <div>
                                                         <label className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-500 mb-1 block">Valor (R$)</label>
-                                                        <input type="number" step="0.01" value={formData.technicianPaymentAmount} onChange={e => setFormData({...formData, technicianPaymentAmount: parseFloat(e.target.value)})} className="w-full px-2 py-1.5 bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/50 rounded-lg text-xs font-bold outline-none focus:border-emerald-500" placeholder="0,00"/>
+                                                        <input type="number" step="0.01" value={formData.amountReceivedByTechnician} onChange={e => setFormData({...formData, amountReceivedByTechnician: parseFloat(e.target.value)})} className="w-full px-2 py-1.5 bg-white dark:bg-zinc-950 border border-emerald-200 dark:border-emerald-900/50 rounded-lg text-xs font-bold outline-none focus:border-emerald-500" placeholder="0,00"/>
                                                     </div>
                                                     <div>
                                                         <label className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-500 mb-1 block">Data</label>
@@ -1082,14 +1087,14 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                             </div>
                                         </div>
                                     </div>
-                                ) : schedule.technicianPaid ? (
+                                ) : (schedule.amountReceivedByTechnician && schedule.amountReceivedByTechnician > 0) ? (
                                     <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/20 col-span-2 sm:col-span-1 relative group">
                                         <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-500 mb-1">
                                             <Wallet size={14}/>
                                             <span className="text-[9px] font-black uppercase tracking-widest">Pagamento ao Técnico</span>
                                         </div>
                                         <p className="text-sm font-bold text-emerald-900 dark:text-emerald-300 uppercase">
-                                            R$ {(schedule.technicianPaymentAmount || 0).toFixed(2)}
+                                            R$ {(schedule.amountReceivedByTechnician || 0).toFixed(2)}
                                         </p>
                                         {schedule.technicianPaymentDate && (
                                             <p className="text-[10px] font-mono text-emerald-700 dark:text-emerald-500 mt-1">
@@ -1099,7 +1104,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         {currentUser?.role !== 'technician' && (
                                             <button 
                                                 onClick={() => {
-                                                    setFormData({...formData, technicianPaid: schedule.technicianPaid ?? false, technicianPaymentAmount: schedule.technicianPaymentAmount || 0, technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0]});
+                                                    setFormData({...formData, amountReceivedByTechnician: schedule.amountReceivedByTechnician || 0, technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0]});
                                                     setIsEditingPayment(true);
                                                 }} 
                                                 className="absolute top-2 right-2 p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1117,7 +1122,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                         {currentUser?.role !== 'technician' ? (
                                             <button 
                                                 onClick={() => {
-                                                    setFormData({...formData, technicianPaid: schedule.technicianPaid ?? false, technicianPaymentAmount: schedule.technicianPaymentAmount || 0, technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0]});
+                                                    setFormData({...formData, amountReceivedByTechnician: schedule.amountReceivedByTechnician || 0, technicianPaymentDate: schedule.technicianPaymentDate || new Date().toISOString().split('T')[0]});
                                                     setIsEditingPayment(true);
                                                 }} 
                                                 className="w-full py-2 bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-200 dark:hover:bg-emerald-900/40 transition-all"

@@ -86,6 +86,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         { title: 'OPERACIONAL', items: [
           { label: 'DASHBOARD', path: '/', icon: LayoutGrid },
           { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
+          { label: 'ENVIOS', path: '/envios', icon: Package },
           { label: 'FEEDBACK', path: '/feedback', icon: MessageSquare }
         ]}
       ];
@@ -100,10 +101,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       { title: 'OPERAÇÕES', items: [
         { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert }, 
         { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront },
+        { label: 'ENVIOS', path: '/envios', icon: Package },
         ...(role === 'admin' || role === 'moderator' || role === 'admin_tecnico' ? [
            { label: 'CLIENTES', path: '/clients', icon: Users },
            { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags },
-           { label: 'ENVIOS', path: '/envios', icon: Package },
         ] : [])
       ]},
       { title: 'AGENDAMENTOS', items: [

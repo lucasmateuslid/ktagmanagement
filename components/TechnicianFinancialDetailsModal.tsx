@@ -21,64 +21,110 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     return d.toISOString().split('T')[0];
   });
 
-  const [editingSchedules, setEditingSchedules] = useState<Schedule[]>([]);
+  const [localChanges, setLocalChanges] = useState<Record<string, Partial<Schedule>>>({});
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+  
+  const [pixKey, setPixKey] = useState(technician.pixKey || '');
+  const [cpf, setCpf] = useState(technician.cpf || '');
 
-  useMemo(() => {
+  const handleSaveTechnician = async () => {
+    await storage.saveTechnician({
+      ...technician,
+      pixKey,
+      cpf
+    });
+    onUpdate();
+  };
+
+  const editingSchedules = useMemo(() => {
     const startTs = new Date(`${startDate}T00:00:00`).getTime();
     const endTs = new Date(`${endDate}T23:59:59`).getTime();
-    setEditingSchedules(schedules.filter(s => {
+    return schedules.filter(s => {
       if (s.technicianId !== technician.id) return false;
       const scheduleDateStr = s.confirmedDate || s.preferredDate;
       const scheduleTs = new Date(`${scheduleDateStr}T12:00:00`).getTime();
       return scheduleTs >= startTs && scheduleTs <= endTs;
-    }));
-  }, [schedules, technician.id, startDate, endDate]);
+    }).map(s => ({ ...s, ...(localChanges[s.id] || {}) }));
+  }, [schedules, technician.id, startDate, endDate, localChanges]);
 
-  const handleUpdate = async (updatedSchedule: Schedule) => {
-    await storage.saveSchedule(updatedSchedule);
-    onUpdate();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este serviço?')) {
-      await storage.deleteSchedule(id);
-      onUpdate();
+  const calculateBaseAmount = (serviceType: string, deviceType: string | undefined, rates: any) => {
+    let amount = 0;
+    if (serviceType === 'Instalação') {
+      if (deviceType === 'Tag') amount = rates.tagInstallation || 0;
+      else if (deviceType === 'Rastreador') amount = rates.installation || 0;
+      else if (deviceType === 'Rastreador + Tag') amount = (rates.installation || 0) + (rates.tagInstallation || 0);
+      else amount = rates.installation || 0;
+    } else if (serviceType === 'Manutenção') {
+      amount = rates.maintenance || 0;
+    } else if (serviceType === 'Retirada') {
+      if (deviceType === 'Tag') amount = rates.tagRemoval || 0;
+      else if (deviceType === 'Rastreador') amount = rates.removal || 0;
+      else if (deviceType === 'Rastreador + Tag') amount = (rates.removal || 0) + (rates.tagRemoval || 0);
+      else amount = rates.removal || 0;
+    } else if (serviceType === 'Vistoria') {
+      amount = rates.inspection || 0;
     }
+    return amount;
   };
 
   const getCalculatedPaymentAmount = (s: Schedule) => {
     if (s.technicianPaymentAmount !== undefined && s.technicianPaymentAmount !== null && s.technicianPaymentAmount > 0) {
       return s.technicianPaymentAmount;
     }
-    
     const rates = technician.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 };
-    let amount = 0;
-    
-    if (s.serviceType === 'Instalação') {
-      if (s.deviceType === 'Tag') amount = rates.tagInstallation || 0;
-      else if (s.deviceType === 'Rastreador') amount = rates.installation || 0;
-      else if (s.deviceType === 'Rastreador + Tag') amount = (rates.installation || 0) + (rates.tagInstallation || 0);
-      else amount = rates.installation || 0;
-    } else if (s.serviceType === 'Manutenção') {
-      amount = rates.maintenance || 0;
-    } else if (s.serviceType === 'Retirada') {
-      if (s.deviceType === 'Tag') amount = rates.tagRemoval || 0;
-      else if (s.deviceType === 'Rastreador') amount = rates.removal || 0;
-      else if (s.deviceType === 'Rastreador + Tag') amount = (rates.removal || 0) + (rates.tagRemoval || 0);
-      else amount = rates.removal || 0;
-    } else if (s.serviceType === 'Vistoria') {
-      amount = rates.inspection || 0;
+    return calculateBaseAmount(s.serviceType, s.deviceType, rates);
+  };
+
+  const handleLocalChange = (id: string, field: keyof Schedule, value: any, recalculatePayment: boolean = false) => {
+    setLocalChanges(prev => {
+      const currentChanges = prev[id] || {};
+      const updatedChanges = { ...currentChanges, [field]: value };
+      
+      if (recalculatePayment) {
+         const schedule = schedules.find(s => s.id === id);
+         if (schedule) {
+           const merged = { ...schedule, ...updatedChanges };
+           const rates = technician.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 };
+           updatedChanges.technicianPaymentAmount = calculateBaseAmount(merged.serviceType, merged.deviceType, rates);
+         }
+      }
+      return { ...prev, [id]: updatedChanges };
+    });
+  };
+
+  const handleSaveAllChanges = async () => {
+    const idsWithChanges = Object.keys(localChanges);
+    if (idsWithChanges.length === 0) return;
+
+    for (const id of idsWithChanges) {
+      const schedule = schedules.find(s => s.id === id);
+      if (schedule) {
+        const updatedSchedule = { ...schedule, ...localChanges[id] };
+        await storage.saveSchedule(updatedSchedule);
+      }
     }
     
-    return amount;
+    setLocalChanges({});
+    onUpdate();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (confirm('Tem certeza que deseja excluir este serviço?')) {
+      await storage.deleteSchedule(id);
+      setLocalChanges(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      onUpdate();
+    }
   };
 
   const totalToReceive = useMemo(() => {
     return editingSchedules
       .filter(s => s.status === 'Concluída' && !s.technicianPaid)
-      .reduce((sum, s) => sum + getCalculatedPaymentAmount(s) + (s.displacementValue || 0), 0);
+      .reduce((sum, s) => sum + getCalculatedPaymentAmount(s) + (s.displacementValue || 0) - (s.amountReceivedByTechnician || 0), 0);
   }, [editingSchedules, technician.serviceRates]);
 
   const totalInHand = useMemo(() => {
@@ -125,14 +171,21 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     };
     await storage.saveTechnicianPayment(payment);
 
+    setLocalChanges(prev => {
+      const next = { ...prev };
+      selectedServices.forEach(id => delete next[id]);
+      return next;
+    });
+
     setSelectedServices([]);
     setIsPixModalOpen(false);
     onUpdate();
   };
 
   const handleExportCSV = () => {
-    const headers = ['Placa', 'Serviço', 'Status', 'Valor Serviço', 'Deslocamento', 'Dinheiro em Mãos', 'Pago Empresa'];
+    const headers = ['Data', 'Placa', 'Serviço', 'Status', 'Valor Serviço', 'Deslocamento', 'Dinheiro em Mãos', 'Pago Empresa'];
     const rows = editingSchedules.map(s => [
+      new Date(s.confirmedDate || s.preferredDate).toLocaleDateString('pt-BR'),
       s.vehiclePlate,
       s.serviceType,
       s.status,
@@ -158,93 +211,130 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-6xl rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col max-h-[90vh]">
-        <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-start flex-wrap gap-4">
-          <div>
-            <h2 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Financeiro: {technician.name}</h2>
-            <div className="flex gap-4 mt-4">
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none" />
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none" />
+        <div className="p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-800 flex flex-col md:flex-row justify-between items-start gap-6 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 p-2 text-zinc-400 hover:text-zinc-600 transition-colors bg-zinc-100 dark:bg-zinc-800 rounded-xl z-10"><X size={20}/></button>
+
+          <div className="flex-1 w-full md:min-w-[300px] pr-10 md:pr-0">
+            <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Financeiro: {technician.name}</h2>
+            <div className="flex flex-wrap gap-4 mt-4 mb-4">
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none flex-1 min-w-[120px]" />
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none flex-1 min-w-[120px]" />
             </div>
-            <p className="text-xs text-zinc-500 mt-2">Chave PIX: <span className="font-bold text-zinc-900 dark:text-white">{technician.pixKey || 'Não cadastrada'}</span></p>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[120px]">
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Chave PIX</label>
+                <input 
+                  type="text" 
+                  value={pixKey} 
+                  onChange={e => setPixKey(e.target.value)} 
+                  placeholder="Chave PIX"
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500" 
+                />
+              </div>
+              <div className="flex-1 min-w-[120px]">
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">CPF</label>
+                <input 
+                  type="text" 
+                  value={cpf} 
+                  onChange={e => setCpf(e.target.value)} 
+                  placeholder="CPF"
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500" 
+                />
+              </div>
+              <button 
+                onClick={handleSaveTechnician}
+                className="bg-primary-500 hover:bg-primary-600 text-white p-2 rounded-xl transition-colors w-full md:w-auto flex justify-center"
+                title="Salvar Dados do Técnico"
+              >
+                <Save size={20} />
+              </button>
+            </div>
           </div>
           
-          <div className="flex gap-4">
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+          <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto mt-4 md:mt-0">
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30 flex-1">
               <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">A Receber da Empresa</p>
-              <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300">R$ {totalToReceive.toFixed(2)}</p>
+              <p className="text-xl md:text-2xl font-black text-emerald-700 dark:text-emerald-300">R$ {totalToReceive.toFixed(2)}</p>
             </div>
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-800/30">
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-2xl border border-amber-100 dark:border-amber-800/30 flex-1">
               <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">Dinheiro em Mãos</p>
-              <p className="text-2xl font-black text-amber-700 dark:text-amber-300">R$ {totalInHand.toFixed(2)}</p>
+              <p className="text-xl md:text-2xl font-black text-amber-700 dark:text-amber-300">R$ {totalInHand.toFixed(2)}</p>
             </div>
-            <div className="flex flex-col gap-2">
-              <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-2 px-4 rounded-xl transition-colors text-xs">
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
+              <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-3 md:py-2 px-4 rounded-xl transition-colors text-xs w-full">
                 <Download size={16} /> Exportar CSV
               </button>
-              <button onClick={onClose} className="p-2 text-zinc-400 hover:text-zinc-600 transition-colors bg-zinc-100 dark:bg-zinc-800 rounded-xl self-end"><X size={20}/></button>
             </div>
           </div>
         </div>
 
         <div className="p-8 overflow-y-auto custom-scrollbar space-y-4">
           {/* Header Row */}
-          <div className="grid grid-cols-1 md:grid-cols-11 gap-4 items-center px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-            <div className="md:col-span-1 flex items-center justify-center">
+          <div className="hidden lg:grid lg:grid-cols-12 gap-4 items-center px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+            <div className="lg:col-span-1 flex items-center justify-center">
               <button onClick={selectAll} className="p-1 text-zinc-400 hover:text-primary-500">
                 {selectedServices.length === editingSchedules.length && editingSchedules.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
               </button>
             </div>
-            <div className="md:col-span-2">Serviço / Placa</div>
-            <div className="md:col-span-1">Status</div>
-            <div className="md:col-span-1">Equipamento</div>
-            <div className="md:col-span-1">Valor Serv.</div>
-            <div className="md:col-span-1">Desloc.</div>
-            <div className="md:col-span-1">Em Mãos</div>
-            <div className="md:col-span-1 text-center">Pago Emp.</div>
-            <div className="md:col-span-2 text-right">Ações</div>
+            <div className="lg:col-span-2">Data / Serviço</div>
+            <div className="lg:col-span-1">Status</div>
+            <div className="lg:col-span-2">Equipamento</div>
+            <div className="lg:col-span-1">Valor Serv.</div>
+            <div className="lg:col-span-1">Desloc.</div>
+            <div className="lg:col-span-1">Em Mãos</div>
+            <div className="lg:col-span-1 text-center">Pago Emp.</div>
+            <div className="lg:col-span-2 text-right">Ações</div>
           </div>
 
           {editingSchedules.map(s => (
-            <div key={s.id} className={`grid grid-cols-1 md:grid-cols-11 gap-4 items-center p-4 rounded-2xl border transition-colors ${selectedServices.includes(s.id) ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800/30' : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700'}`}>
-              <div className="md:col-span-1 flex items-center justify-center">
+            <div key={s.id} className={`flex flex-col lg:grid lg:grid-cols-12 gap-4 items-start lg:items-center p-4 rounded-2xl border transition-colors ${selectedServices.includes(s.id) ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800/30' : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700'}`}>
+              <div className="lg:col-span-1 flex items-center justify-between w-full lg:w-auto lg:justify-center">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase">Selecionar</span>
                 <button onClick={() => toggleSelection(s.id)} className={`p-1 ${selectedServices.includes(s.id) ? 'text-primary-500' : 'text-zinc-400 hover:text-primary-500'}`}>
                   {selectedServices.includes(s.id) ? <CheckSquare size={18} /> : <Square size={18} />}
                 </button>
               </div>
-              <div className="md:col-span-2">
-                <p className="font-bold text-zinc-900 dark:text-white">{s.vehiclePlate}</p>
-                <p className="text-xs text-zinc-500">{s.serviceType}</p>
+              <div className="lg:col-span-2 w-full">
+                <p className="text-xs text-zinc-500 mb-1">{new Date(s.confirmedDate || s.preferredDate).toLocaleDateString('pt-BR')} - {s.vehiclePlate}</p>
+                <select value={s.serviceType} onChange={e => handleLocalChange(s.id, 'serviceType', e.target.value, true)} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full">
+                  {['Instalação', 'Manutenção', 'Retirada', 'Vistoria'].map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
               </div>
-              <div className="md:col-span-1">
-                <select value={s.status} onChange={e => handleUpdate({...s, status: e.target.value as ScheduleStatus})} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full">
+              <div className="lg:col-span-1 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Status</span>
+                <select value={s.status} onChange={e => handleLocalChange(s.id, 'status', e.target.value)} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full">
                   {['Solicitada', 'Confirmada', 'Concluída', 'Frustrado', 'Cancelada'].map(status => <option key={status} value={status}>{status}</option>)}
                 </select>
               </div>
-              <div className="md:col-span-1">
-                <select value={s.deviceType} onChange={e => handleUpdate({...s, deviceType: e.target.value as DeviceType})} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full">
+              <div className="lg:col-span-2 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Equipamento</span>
+                <select value={s.deviceType} onChange={e => handleLocalChange(s.id, 'deviceType', e.target.value, true)} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full">
                   {['Rastreador', 'Rastreador + Tag', 'Tag'].map(type => <option key={type} value={type}>{type}</option>)}
                 </select>
               </div>
-              <div className="md:col-span-1">
-                <input type="number" value={getCalculatedPaymentAmount(s)} onChange={e => handleUpdate({...s, technicianPaymentAmount: parseFloat(e.target.value)})} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full" placeholder="Valor" />
+              <div className="lg:col-span-1 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Valor Serv.</span>
+                <input type="number" value={getCalculatedPaymentAmount(s)} onChange={e => handleLocalChange(s.id, 'technicianPaymentAmount', parseFloat(e.target.value))} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full" placeholder="Valor" />
               </div>
-              <div className="md:col-span-1">
-                <input type="number" value={s.displacementValue || 0} onChange={e => handleUpdate({...s, displacementValue: parseFloat(e.target.value)})} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full" placeholder="Desloc." />
+              <div className="lg:col-span-1 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Desloc.</span>
+                <input type="number" value={s.displacementValue || 0} onChange={e => handleLocalChange(s.id, 'displacementValue', parseFloat(e.target.value))} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full" placeholder="Desloc." />
               </div>
-              <div className="md:col-span-1">
-                <input type="number" value={s.amountReceivedByTechnician || 0} onChange={e => handleUpdate({...s, amountReceivedByTechnician: parseFloat(e.target.value)})} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full border-amber-500/30 focus:border-amber-500" placeholder="Em mãos" />
+              <div className="lg:col-span-1 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Em Mãos</span>
+                <input type="number" value={s.amountReceivedByTechnician || 0} onChange={e => handleLocalChange(s.id, 'amountReceivedByTechnician', parseFloat(e.target.value))} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full border-amber-500/30 focus:border-amber-500" placeholder="Em mãos" />
               </div>
-              <div className="md:col-span-1 flex justify-center">
+              <div className="lg:col-span-1 flex items-center justify-between w-full lg:w-auto lg:justify-center">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase">Pago Emp.</span>
                 <button 
-                  onClick={() => handleUpdate({...s, technicianPaid: !s.technicianPaid})}
+                  onClick={() => handleLocalChange(s.id, 'technicianPaid', !s.technicianPaid)}
                   className={`p-2 rounded-xl transition-colors ${s.technicianPaid ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700'}`}
                 >
                   {s.technicianPaid ? <CheckSquare size={18} /> : <Square size={18} />}
                 </button>
               </div>
-              <div className="md:col-span-2 flex justify-end gap-2">
-                <button onClick={() => handleUpdate(s)} className="p-2 text-emerald-500 hover:text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl"><Save size={18}/></button>
-                <button onClick={() => handleDelete(s.id)} className="p-2 text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl"><Trash2 size={18}/></button>
+              <div className="lg:col-span-2 flex justify-end gap-2 w-full lg:w-auto mt-2 lg:mt-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-200 dark:border-zinc-700">
+                <button onClick={() => handleDelete(s.id)} className="p-2 text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl flex-1 lg:flex-none flex justify-center" title="Excluir"><Trash2 size={18}/></button>
               </div>
             </div>
           ))}
@@ -256,17 +346,27 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
         </div>
 
         {/* Footer Actions */}
-        <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
+        <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-between items-center gap-4 bg-zinc-50 dark:bg-zinc-900/50">
           <div className="text-sm font-bold text-zinc-500">
             {selectedServices.length} serviços selecionados
           </div>
-          <button 
-            onClick={() => setIsPixModalOpen(true)}
-            disabled={selectedServices.length === 0}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition-colors"
-          >
-            <QrCode size={20} /> Pagar Selecionados (R$ {selectedTotal.toFixed(2)})
-          </button>
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            {Object.keys(localChanges).length > 0 && (
+              <button 
+                onClick={handleSaveAllChanges}
+                className="flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl transition-colors w-full sm:w-auto"
+              >
+                <Save size={20} /> Salvar Alterações ({Object.keys(localChanges).length})
+              </button>
+            )}
+            <button 
+              onClick={() => setIsPixModalOpen(true)}
+              disabled={selectedServices.length === 0}
+              className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition-colors w-full sm:w-auto"
+            >
+              <QrCode size={20} /> Pagar Selecionados (R$ {selectedTotal.toFixed(2)})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -291,6 +391,19 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                   <span className="font-mono font-bold text-zinc-900 dark:text-white">{technician.pixKey || 'Não cadastrada'}</span>
                   <button 
                     onClick={() => navigator.clipboard.writeText(technician.pixKey || '')}
+                    className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase"
+                  >
+                    Copiar
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">CPF do Técnico</p>
+                <div className="flex items-center justify-between bg-zinc-100 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <span className="font-mono font-bold text-zinc-900 dark:text-white">{technician.cpf || 'Não cadastrado'}</span>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(technician.cpf || '')}
                     className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase"
                   >
                     Copiar

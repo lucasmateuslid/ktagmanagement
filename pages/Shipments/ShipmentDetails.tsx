@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useShipments, useInventory } from '../../hooks/useShipments';
+import { useAuth } from '../../contexts/AuthContext';
 import { ArrowLeft, Printer, Package, Truck, Calendar, MapPin, CheckCircle, XCircle, Clock, AlertTriangle, Search, ExternalLink } from 'lucide-react';
 import { ShipmentStatus } from '../../types';
 import { storage } from '../../services/storage';
@@ -9,6 +10,8 @@ import { ShipmentTrackingModal } from '../../components/ShipmentTrackingModal';
 export const ShipmentDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
   const { shipments, loading, updateShipmentStatus } = useShipments();
   const { tags, loading: tagsLoading } = useInventory();
   const [shipment, setShipment] = useState<any>(null);
@@ -118,7 +121,7 @@ export const ShipmentDetails = () => {
           </div>
         </div>
         <div className="flex gap-2">
-          {shipment.status === 'rascunho' && (
+          {canEdit && shipment.status === 'rascunho' && (
             <button onClick={() => navigate(`/envios/${shipment.id}/editar`)} className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
               Editar
             </button>
@@ -210,7 +213,7 @@ export const ShipmentDetails = () => {
                       <AlertTriangle size={16} className="text-amber-500" />
                       <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pendente</span>
                     </div>
-                    {shipment.status !== 'entregue' && shipment.status !== 'cancelado' && (
+                    {canEdit && shipment.status !== 'entregue' && shipment.status !== 'cancelado' && (
                       <button onClick={() => setShowTrackingModal(true)} className="w-full py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                         Adicionar Rastreio
                       </button>

@@ -18,6 +18,7 @@ async function startServer() {
   app.post("/api/track", async (req, res) => {
     try {
       const { code, apiKey } = req.body;
+      console.log("Request body:", JSON.stringify({ code, apiKey: apiKey ? '***' : 'missing' }, null, 2));
 
       if (!code || !apiKey) {
         return res.status(400).json({ error: "Missing code or apiKey" });
@@ -40,7 +41,23 @@ async function startServer() {
       }
 
       const data = await response.json();
-      res.json(data);
+      console.log("API response:", JSON.stringify(data, null, 2));
+      
+      if (data.json) {
+        try {
+          const parsedJson = JSON.parse(data.json);
+          res.json({ 
+            ...parsedJson, 
+            events: parsedJson.eventos, 
+            carrier: data.carrier 
+          });
+        } catch (e) {
+          console.error("Error parsing nested JSON:", e);
+          res.json(data);
+        }
+      } else {
+        res.json(data);
+      }
     } catch (error: any) {
       console.error("Tracking API error:", error);
       res.status(500).json({ error: error.message || "Internal server error" });
@@ -57,7 +74,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('/*', (req, res) => {
+    app.get(/.*/, (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

@@ -12,6 +12,7 @@ export const ShipmentsList = () => {
   const { shipments, loading, deleteShipment, updateShipmentStatus } = useShipments();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | 'all'>('all');
   const [confirmModal, setConfirmModal] = useState<{
@@ -152,13 +153,15 @@ export const ShipmentsList = () => {
           <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Gerenciamento de Envios</h1>
           <p className="text-sm text-zinc-500">Controle de remessas e lotes de equipamentos</p>
         </div>
-        <button 
-          onClick={() => navigate('/envios/nova')}
-          className="bg-primary-500 hover:bg-primary-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-primary-500/20"
-        >
-          <Plus size={20} />
-          Nova Remessa
-        </button>
+        {canEdit && (
+          <button 
+            onClick={() => navigate('/envios/nova')}
+            className="bg-primary-500 hover:bg-primary-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-primary-500/20"
+          >
+            <Plus size={20} />
+            Nova Remessa
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col md:flex-row gap-4">
@@ -263,13 +266,15 @@ export const ShipmentsList = () => {
                 </div>
               )}
 
-              <div className="flex gap-2 mt-2">
-                <button onClick={(e) => handleEdit(e, shipment.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700" title="Editar"><Edit2 size={16} /></button>
-                {shipment.status !== 'cancelado' && (
-                  <button onClick={(e) => handleCancel(e, shipment.id)} className="p-2 bg-amber-100 dark:bg-amber-900/20 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/40" title="Cancelar"><XCircle size={16} /></button>
-                )}
-                <button onClick={(e) => handleDelete(e, shipment.id)} className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40" title="Excluir"><Trash2 size={16} /></button>
-              </div>
+              {canEdit && (
+                <div className="flex gap-2 mt-2">
+                  <button onClick={(e) => handleEdit(e, shipment.id)} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700" title="Editar"><Edit2 size={16} /></button>
+                  {shipment.status !== 'cancelado' && (
+                    <button onClick={(e) => handleCancel(e, shipment.id)} className="p-2 bg-amber-100 dark:bg-amber-900/20 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/40" title="Cancelar"><XCircle size={16} /></button>
+                  )}
+                  <button onClick={(e) => handleDelete(e, shipment.id)} className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40" title="Excluir"><Trash2 size={16} /></button>
+                </div>
+              )}
             </div>
             
             <div className="hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 group-hover:text-primary-500 transition-colors">
