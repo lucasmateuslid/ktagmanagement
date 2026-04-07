@@ -86,6 +86,7 @@ export const SchedulesPage = () => {
   const { handleExportPDF, handleExportExcel, isExporting } = useScheduleExport(
     filteredList, 
     technicians, 
+    companies,
     user, 
     viewDate, 
     stats

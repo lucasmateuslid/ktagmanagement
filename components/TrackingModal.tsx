@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { hinovaService } from '../services/hinova';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Schedule, Technician, Company, DeviceType, User } from '../types';
 import { 
@@ -7,7 +8,7 @@ import {
   Phone, Building2, Tag, Milestone, Map as MapIcon, 
   DollarSign, Send, Copy, MessageCircle, ExternalLink,
   Edit2, Trash2, Save, CheckCircle2, ShieldCheck,
-  Activity, Wrench, FileText, Play, RotateCcw, AlertTriangle, Check, Wallet, Camera
+  Activity, Wrench, FileText, Play, RotateCcw, AlertTriangle, Check, Wallet, Camera, Search
 } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import { ConfirmModal } from './ConfirmModal';
@@ -42,6 +43,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     const scannerRef = useRef<Html5Qrcode | null>(null);
     const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [hinovaStatus, setHinovaStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     
     // Cleanup scanner on unmount or when scannerActive changes
     useEffect(() => {
@@ -98,6 +100,39 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         installedImei: schedule.installedImei || '',
         installedTagImei: schedule.installedTagImei || ''
     });
+
+    const handleHinovaLookup = async () => {
+        if (hinovaStatus === 'loading') return;
+    
+        if (!formData.vehiclePlate || formData.vehiclePlate.length < 7) {
+            addNotification('info', 'Hinova', 'Digite uma placa válida.');
+            return;
+        }
+        
+        setHinovaStatus('loading');
+        try {
+            const result = await hinovaService.searchVehicle(formData.vehiclePlate);
+            if (result && result.vehicle) {
+                setFormData(prev => ({
+                    ...prev,
+                    vehicleModel: result.vehicle.model || prev.vehicleModel,
+                    fipeValue: result.price || (result.vehicle.fipeCode ? `Código FIPE: ${result.vehicle.fipeCode}` : prev.fipeValue),
+                    clientName: result.client.name || '', 
+                    clientPhone: result.client.phone || ''
+                }));
+                setHinovaStatus('success');
+                addNotification('success', 'Hinova', 'Dados do veículo e cliente importados do SGA.');
+            } else {
+                setHinovaStatus('error');
+                addNotification('error', 'Hinova', 'Veículo não encontrado na base externa.');
+            }
+        } catch (e: any) {
+            setHinovaStatus('error');
+            addNotification('error', 'API SGA', e.message);
+        } finally {
+            setTimeout(() => setHinovaStatus('idle'), 3000);
+        }
+      };
 
     useEffect(() => {
         setFormData({

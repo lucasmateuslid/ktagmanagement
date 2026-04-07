@@ -15,7 +15,7 @@ import {
   Check, Cpu, ListChecks, FileSpreadsheet, 
   Loader2, Terminal, RefreshCw, ChevronRight, FileText,
   Signal, CheckCircle2, XCircle, Box, AlertTriangle,
-  Power, MapPin, Clock, History
+  Power, MapPin, Clock, History, Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -24,6 +24,71 @@ import { ktagBatteryStatus } from '../services/api';
 
 const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
+
+const SkeletonStats = () => (
+  <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between animate-pulse">
+      <div className="flex justify-between items-start">
+          <div className="h-3 w-24 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+          <div className="h-4 w-4 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+      </div>
+      <div className="mt-4">
+          <div className="h-8 w-16 bg-zinc-200 dark:bg-zinc-800 rounded mb-2"></div>
+          <div className="flex gap-2 mt-2">
+              <div className="h-4 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+              <div className="h-4 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+          </div>
+      </div>
+  </div>
+);
+
+const SkeletonTableRow = () => (
+  <tr className="border-b border-zinc-100 dark:border-zinc-800/50 animate-pulse">
+      <td className="p-4 text-center"><div className="h-4 w-4 bg-zinc-200 dark:bg-zinc-800 rounded mx-auto"></div></td>
+      <td className="p-4">
+          <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>
+              <div>
+                  <div className="h-4 w-24 bg-zinc-200 dark:bg-zinc-800 rounded mb-1"></div>
+                  <div className="h-3 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+              </div>
+          </div>
+      </td>
+      <td className="p-4"><div className="h-4 w-32 bg-zinc-200 dark:bg-zinc-800 rounded"></div></td>
+      <td className="p-4"><div className="h-4 w-20 bg-zinc-200 dark:bg-zinc-800 rounded"></div></td>
+      <td className="p-4"><div className="h-6 w-24 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div></td>
+      <td className="p-4 text-right">
+          <div className="flex items-center justify-end gap-2">
+              <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+              <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+              <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+          </div>
+      </td>
+  </tr>
+);
+
+const SkeletonMobileCard = () => (
+  <div className="p-4 flex flex-col gap-4 animate-pulse border-b border-zinc-100 dark:border-zinc-800/50">
+      <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+              <div className="h-4 w-4 bg-zinc-200 dark:bg-zinc-800 rounded mt-1"></div>
+              <div className="w-10 h-10 rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>
+              <div>
+                  <div className="h-4 w-24 bg-zinc-200 dark:bg-zinc-800 rounded mb-1"></div>
+                  <div className="h-3 w-32 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+              </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+              <div className="h-3 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+              <div className="h-4 w-20 bg-zinc-200 dark:bg-zinc-800 rounded mt-1"></div>
+          </div>
+      </div>
+      <div className="flex items-center justify-end pt-3 border-t border-zinc-100 dark:border-zinc-800/50 gap-2">
+          <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+          <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+          <div className="h-8 w-8 bg-zinc-200 dark:bg-zinc-800 rounded-lg"></div>
+      </div>
+  </div>
+);
 
 interface ConsoleLog {
   id: string;
@@ -46,6 +111,7 @@ export const Tags = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isConfirmMassDeleteOpen, setIsConfirmMassDeleteOpen] = useState(false);
+  const [isMassActionMenuOpen, setIsMassActionMenuOpen] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   
   const [filterType, setFilterType] = useState<string>('all');
@@ -68,18 +134,25 @@ export const Tags = () => {
 
   const [formData, setFormData] = useState<Partial<Tag>>({ batteryWarrantyYears: 1, type: 'K_TAG' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const massActionMenuRef = useRef<HTMLDivElement>(null);
   const { t } = useLanguage();
   const { addNotification } = useNotification();
   const { user } = useAuth();
 
   const loadData = async () => {
-    const [loadedTags, loadedVehicles] = await Promise.all([
-      storage.getTags(),
-      storage.getVehicles()
-    ]);
-    setTags(loadedTags);
-    setVehicles(loadedVehicles);
+    setIsLoading(true);
+    try {
+      const [loadedTags, loadedVehicles] = await Promise.all([
+        storage.getTags(),
+        storage.getVehicles()
+      ]);
+      setTags(loadedTags);
+      setVehicles(loadedVehicles);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -96,12 +169,32 @@ export const Tags = () => {
     }
   }, [consoleLogs, isConsoleOpen]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (massActionMenuRef.current && !massActionMenuRef.current.contains(event.target as Node)) {
+        setIsMassActionMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const stats = useMemo(() => {
+      const total = tags.length;
+      const linked = tags.filter(t => vehicles.some(v => v.tagId === t.id)).length;
+      const free = total - linked;
+      
       return {
+          total,
+          linked,
+          free,
+          linkedPercent: total > 0 ? Math.round((linked / total) * 100) : 0,
+          freePercent: total > 0 ? Math.round((free / total) * 100) : 0,
           totalKTag: tags.filter(t => t.type === 'K_TAG').length,
-          totalXadTag: tags.filter(t => t.type === 'XADTAG').length
+          totalXadTag: tags.filter(t => t.type === 'XADTAG').length,
+          totalUnknown: tags.filter(t => t.type !== 'K_TAG' && t.type !== 'XADTAG').length
       };
-  }, [tags]);
+  }, [tags, vehicles]);
 
   const filteredTags = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -116,7 +209,11 @@ export const Tags = () => {
       );
 
       if (!matchesText) return false;
-      if (filterType !== 'all' && tag.type !== filterType) return false;
+      if (filterType === 'UNKNOWN') {
+          if (tag.type === 'K_TAG' || tag.type === 'XADTAG') return false;
+      } else if (filterType !== 'all' && tag.type !== filterType) {
+          return false;
+      }
       if (filterStatus === 'linked' && !linkedVehicle) return false;
       if (filterStatus === 'stock' && linkedVehicle) return false;
 
@@ -184,6 +281,50 @@ export const Tags = () => {
       setSelectedTags(new Set());
   };
 
+  const handleMassChangeType = async (newType: TagType) => {
+    const count = selectedTags.size;
+    if (count === 0) return;
+
+    try {
+        const promises = Array.from(selectedTags).map(async (id: string) => {
+            const tag = tags.find(t => t.id === id);
+            if (tag) {
+                await storage.saveTag({ ...tag, type: newType });
+            }
+        });
+        await Promise.all(promises);
+        
+        addNotification('success', 'Alteração em Massa', `${count} equipamentos alterados para ${newType}.`);
+        setSelectedTags(new Set());
+        loadData();
+    } catch (error: unknown) {
+        addNotification('error', 'Erro', 'Falha ao alterar tipo dos equipamentos.');
+    }
+  };
+
+  const handleMassCommand = async (command: 'ping' | 'activate') => {
+    const count = selectedTags.size;
+    if (count === 0) return;
+
+    setIsConsoleOpen(true);
+    addLog({ type: 'info', method: 'MASS CMD', url: `Iniciando ${command} em massa para ${count} itens` });
+
+    for (const id of Array.from(selectedTags)) {
+        const tag = tags.find(t => t.id === id);
+        if (!tag) continue;
+        
+        if (command === 'ping') {
+            await handleTestConnection(tag);
+        } else if (command === 'activate' && tag.type === 'XADTAG') {
+            await handleActivate(tag);
+        }
+        // Small delay between commands
+        await new Promise(r => setTimeout(r, 500));
+    }
+    
+    addLog({ type: 'success', method: 'MASS CMD', url: `Comando ${command} em massa finalizado` });
+  };
+
   const handleActivate = async (tag: Tag) => {
       const success = await xadtagService.activate(tag);
       if (success) {
@@ -209,8 +350,9 @@ export const Tags = () => {
   const clearConsole = () => setConsoleLogs([]);
 
   // COMMAND HANDLER FOR XADTAG
-  const handleXadCommand = async (command: 'ping' | 'location' | 'history') => {
-      if (!activeTestTag || activeTestTag.type !== 'XADTAG') return;
+  const handleXadCommand = async (command: 'ping' | 'location' | 'history', tag?: Tag) => {
+      const targetTag = tag || activeTestTag;
+      if (!targetTag || targetTag.type !== 'XADTAG') return;
       setTesting(true);
 
       const label = command === 'ping' ? 'Teste de Conectividade (Ping)' : 
@@ -220,7 +362,7 @@ export const Tags = () => {
           type: 'info',
           method: 'CMD',
           url: `Solicitando: ${label}`,
-          responseBody: { target: activeTestTag.name, deviceId: activeTestTag.traqcareId }
+          responseBody: { target: targetTag.name, deviceId: targetTag.traqcareId }
       });
 
       const startTime = Date.now();
@@ -229,14 +371,14 @@ export const Tags = () => {
           let resultData: any;
           
           if (command === 'ping') {
-              const diagnosis = await xadtagService.diagnose(activeTestTag);
+              const diagnosis = await xadtagService.diagnose(targetTag);
               resultData = {
                   summary: diagnosis.summary,
                   rawResponse: diagnosis.raw
               };
           } 
           else if (command === 'location') {
-              const locations = await xadtagService.fetchLocation(activeTestTag);
+              const locations = await xadtagService.fetchLocation(targetTag);
               if (locations.length > 0) {
                   const loc = locations[0];
                   const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
@@ -254,7 +396,7 @@ export const Tags = () => {
           else if (command === 'history') {
               const end = Date.now();
               const start = end - (24 * 60 * 60 * 1000);
-              const history = await xadtagService.fetchHistory(activeTestTag, start, end);
+              const history = await xadtagService.fetchHistory(targetTag, start, end);
               
               if (history.length > 0) {
                   const first = history[0];
@@ -298,7 +440,7 @@ export const Tags = () => {
       
       // Se for XADTAG, executa o Ping
       if (tag.type === 'XADTAG') {
-          await handleXadCommand('ping');
+          await handleXadCommand('ping', tag);
           return;
       }
 
@@ -497,17 +639,6 @@ export const Tags = () => {
         <div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Estoque de Equipamentos</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium italic opacity-70">Gestão e controle de ativos de segurança.</p>
-          
-          <div className="flex gap-3 mt-4">
-              <div className="flex items-center gap-2 px-3 py-1 bg-primary-500/10 border border-primary-500/20 rounded-lg">
-                  <div className="w-2 h-2 bg-primary-500 rounded-full"/>
-                  <span className="text-[10px] font-black text-primary-600 dark:text-primary-400 uppercase tracking-widest">K-Tag: {stats.totalKTag}</span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
-                  <div className="w-2 h-2 bg-cyan-500 rounded-full"/>
-                  <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-400 uppercase tracking-widest">XadTag: {stats.totalXadTag}</span>
-              </div>
-          </div>
         </div>
         
         <div className="flex items-center gap-3">
@@ -524,6 +655,64 @@ export const Tags = () => {
               <Plus size={18} strokeWidth={3} /> NOVO EQUIPAMENTO
             </button>
         </div>
+      </div>
+
+      {/* STATS DASHBOARD */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {isLoading ? (
+            <>
+                <SkeletonStats />
+                <SkeletonStats />
+                <SkeletonStats />
+            </>
+        ) : (
+            <>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total em Estoque</span>
+                        <Box size={16} className="text-zinc-400" />
+                    </div>
+                    <div className="mt-4">
+                        <span className="text-3xl font-black text-zinc-900 dark:text-white">{stats.total}</span>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            <span className="text-[10px] font-bold text-primary-600 bg-primary-500/10 px-2 py-0.5 rounded">K-Tag: {stats.totalKTag}</span>
+                            <span className="text-[10px] font-bold text-cyan-600 bg-cyan-500/10 px-2 py-0.5 rounded">XadTag: {stats.totalXadTag}</span>
+                            {stats.totalUnknown > 0 && (
+                                <span className="text-[10px] font-bold text-zinc-600 bg-zinc-500/10 px-2 py-0.5 rounded">Outros/Sem Tipo: {stats.totalUnknown}</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Vinculados (Em Uso)</span>
+                        <Car size={16} className="text-emerald-500" />
+                    </div>
+                    <div className="mt-4 flex items-end justify-between">
+                        <span className="text-3xl font-black text-zinc-900 dark:text-white">{stats.linked}</span>
+                        <span className="text-sm font-bold text-emerald-500 mb-1">{stats.linkedPercent}%</span>
+                    </div>
+                    <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${stats.linkedPercent}%` }} />
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Livres (Disponíveis)</span>
+                        <CheckCircle2 size={16} className="text-blue-500" />
+                    </div>
+                    <div className="mt-4 flex items-end justify-between">
+                        <span className="text-3xl font-black text-zinc-900 dark:text-white">{stats.free}</span>
+                        <span className="text-sm font-bold text-blue-500 mb-1">{stats.freePercent}%</span>
+                    </div>
+                    <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                        <div className="bg-blue-500 h-full rounded-full" style={{ width: `${stats.freePercent}%` }} />
+                    </div>
+                </div>
+            </>
+        )}
       </div>
 
       <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
@@ -546,6 +735,7 @@ export const Tags = () => {
                 <option value="all">Todos Tipos</option>
                 <option value="K_TAG">K-Tag</option>
                 <option value="XADTAG">XADTAG</option>
+                <option value="UNKNOWN">Sem Tipo / Outros</option>
             </select>
             <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none min-w-[120px]">
                 <option value="all">Todos Status</option>
@@ -554,31 +744,67 @@ export const Tags = () => {
             </select>
         </div>
         
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
             <AnimatePresence mode="popLayout">
                 {selectedTags.size > 0 && (
                     <MotionDiv 
                         initial={{ opacity: 0, x: 20 }} 
                         animate={{ opacity: 1, x: 0 }} 
                         exit={{ opacity: 0, x: 20 }}
-                        className="flex items-center gap-2"
+                        className="flex flex-wrap items-center gap-2"
                     >
-                        <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
+                        <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20 shrink-0">
                             <ListChecks size={16} />
                             <span className="text-[10px] font-black uppercase tracking-widest">{selectedTags.size}</span>
                         </div>
                         
-                        <button onClick={() => handleExportSelected('xlsx')} className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95" title="Exportar Excel">
+                        <button onClick={() => handleExportSelected('xlsx')} className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 shrink-0" title="Exportar Excel">
                             <FileSpreadsheet size={14} /> XLSX
                         </button>
-                        <button onClick={() => handleExportSelected('csv')} className="px-4 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 border border-blue-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95" title="Exportar CSV">
+                        <button onClick={() => handleExportSelected('csv')} className="px-4 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 border border-blue-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 shrink-0" title="Exportar CSV">
                             <FileText size={14} /> CSV
                         </button>
 
-                        <button onClick={() => { setSelectedTags(new Set(filteredTags.map(t => t.id))); setIsConfirmMassDeleteOpen(true); }} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95">
+                        <div className="relative shrink-0" ref={massActionMenuRef}>
+                            <button onClick={() => setIsMassActionMenuOpen(!isMassActionMenuOpen)} className={`px-4 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 border ${isMassActionMenuOpen ? 'bg-indigo-500/20 text-indigo-700 border-indigo-500/30' : 'bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 border-indigo-500/20'}`}>
+                                <Settings size={14} /> Ações
+                            </button>
+                            
+                            <AnimatePresence>
+                                {isMassActionMenuOpen && (
+                                    <MotionDiv 
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 flex flex-col p-2 origin-top-right"
+                                    >
+                                        <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-400">Alterar Tipo</div>
+                                        <button onClick={() => { handleMassChangeType('K_TAG'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 rounded-xl transition-colors flex items-center gap-3 group">
+                                            <Wifi size={16} className="text-zinc-400 group-hover:text-primary-500 transition-colors"/> Para K-Tag
+                                        </button>
+                                        <button onClick={() => { handleMassChangeType('XADTAG'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:text-cyan-600 rounded-xl transition-colors flex items-center gap-3 group">
+                                            <Cpu size={16} className="text-zinc-400 group-hover:text-cyan-500 transition-colors"/> Para XADTAG
+                                        </button>
+                                        
+                                        <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-2 mx-2" />
+                                        
+                                        <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-400">Comandos</div>
+                                        <button onClick={() => { handleMassCommand('ping'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 rounded-xl transition-colors flex items-center gap-3 group">
+                                            <Activity size={16} className="text-zinc-400 group-hover:text-emerald-500 transition-colors"/> Testar Conexão (Ping)
+                                        </button>
+                                        <button onClick={() => { handleMassCommand('activate'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 rounded-xl transition-colors flex items-center gap-3 group">
+                                            <Power size={16} className="text-zinc-400 group-hover:text-amber-500 transition-colors"/> Ativar (Apenas XADTAG)
+                                        </button>
+                                    </MotionDiv>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        <button onClick={() => setIsConfirmMassDeleteOpen(true)} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95 shrink-0">
                             <Trash2 size={14} />
                         </button>
-                        <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
+                        <div className="hidden md:block w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
                     </MotionDiv>
                 )}
             </AnimatePresence>
@@ -601,102 +827,249 @@ export const Tags = () => {
           type="danger"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredTags.map((tag) => {
-          const isSelected = selectedTags.has(tag.id);
-          const testResult = testResults[tag.id];
+      <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+        {/* DESKTOP TABLE VIEW */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-50 dark:bg-zinc-950/50 border-b border-zinc-200 dark:border-zinc-800">
+                <th className="p-4 w-12 text-center">
+                  <button onClick={handleSelectAll} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                    {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
+                  </button>
+                </th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Equipamento</th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Identificação</th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Veículo</th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                  <>
+                      <SkeletonTableRow />
+                      <SkeletonTableRow />
+                      <SkeletonTableRow />
+                      <SkeletonTableRow />
+                      <SkeletonTableRow />
+                  </>
+              ) : (
+                  <>
+                      {filteredTags.map((tag) => {
+                        const isSelected = selectedTags.has(tag.id);
+                        const testResult = testResults[tag.id];
+                        const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
 
-          return (
-            <MotionDiv 
-                layout key={tag.id} 
-                onClick={() => toggleSelect(tag.id)}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                whileHover={{ y: -5 }}
-                className={`bg-white dark:bg-zinc-900 p-10 rounded-[40px] border transition-all cursor-pointer group flex flex-col justify-between min-h-[360px] relative overflow-hidden ${isSelected ? 'border-primary-500 ring-4 ring-primary-500/10 shadow-2xl' : 'border-zinc-200 dark:border-zinc-800 shadow-sm'}`}
-            >
-                {isSelected && (
-                  <div className="absolute top-0 right-0 p-6">
-                      <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white shadow-lg animate-in zoom-in duration-200">
-                          <Check size={16} strokeWidth={4} />
-                      </div>
-                  </div>
-                )}
-
-                <div className="flex justify-between items-start">
-                    <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${tag.type === 'XADTAG' ? 'bg-cyan-500 text-white' : 'bg-primary-500 text-black'}`}>
-                        {tag.type === 'XADTAG' ? <Cpu size={28} /> : <Wifi size={28} />}
-                    </div>
-                    
-                    <div className="flex flex-col items-end gap-2">
-                        {!isSelected && (
-                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                        return (
+                          <tr 
+                            key={tag.id} 
+                            onClick={() => toggleSelect(tag.id)}
+                            className={`border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${isSelected ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''}`}
+                          >
+                            <td className="p-4 text-center">
+                              <button className={isSelected ? 'text-primary-500' : 'text-zinc-300 dark:text-zinc-700'}>
+                                {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                              </button>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                  {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
+                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              {linkedVehicle ? (
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> Vinculado
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                  <Box size={12}/> Estoque
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              {linkedVehicle ? (
+                                <div className="inline-flex items-center px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                                  <span className="text-xs font-black text-zinc-900 dark:text-white font-mono">{linkedVehicle.plate}</span>
+                                </div>
+                              ) : (
+                                <span className="text-zinc-400 text-xs">-</span>
+                              )}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                                {testResult && (
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border mr-2 ${
+                                        testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
+                                        testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                        'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                                    }`}>
+                                        {testResult.status === 'loading' ? <Loader2 size={10} className="animate-spin"/> : <Signal size={10}/>}
+                                        <span className="text-[9px] font-black uppercase tracking-widest">
+                                            {testResult.status === 'loading' ? 'PING...' : 
+                                            testResult.status === 'success' ? `OK` : 
+                                            `ERR`}
+                                        </span>
+                                    </div>
+                                )}
                                 {tag.type === 'XADTAG' && (
                                     <button 
                                         onClick={() => handleActivate(tag)} 
-                                        className={`p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl transition-all border border-zinc-200 dark:border-zinc-700 shadow-sm ${tag.isActivated ? 'text-emerald-500 hover:text-emerald-600' : 'text-zinc-400 hover:text-cyan-500'}`}
+                                        className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
                                         title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
                                     >
-                                        <Power size={16}/>
+                                        <Power size={14}/>
                                     </button>
                                 )}
-                                <button onClick={() => handleTestConnection(tag)} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                                    <Activity size={16}/>
+                                <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
+                                    <Activity size={14}/>
                                 </button>
-                                <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                                    <Edit2 size={16}/>
+                                <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                    <Edit2 size={14}/>
                                 </button>
-                                <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                                    <Trash2 size={16}/>
+                                <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
+                                    <Trash2 size={14}/>
                                 </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredTags.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-zinc-500 text-sm">
+                            Nenhum equipamento encontrado.
+                          </td>
+                        </tr>
+                      )}
+                  </>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* MOBILE LIST VIEW */}
+        <div className="md:hidden flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800/50">
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-950/50 flex items-center justify-between">
+                <button onClick={handleSelectAll} className="flex items-center gap-2 text-sm font-bold text-zinc-500">
+                    {selectedTags.size === filteredTags.length && filteredTags.length > 0 ? <CheckSquare size={18} className="text-primary-500" /> : <Square size={18} />}
+                    Selecionar Todos
+                </button>
+                <span className="text-xs font-medium text-zinc-400">{filteredTags.length} itens</span>
+            </div>
+            {isLoading ? (
+                <>
+                    <SkeletonMobileCard />
+                    <SkeletonMobileCard />
+                    <SkeletonMobileCard />
+                    <SkeletonMobileCard />
+                    <SkeletonMobileCard />
+                </>
+            ) : filteredTags.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500 text-sm">
+                    Nenhum equipamento encontrado.
+                </div>
+            ) : (
+                filteredTags.map((tag) => {
+                    const isSelected = selectedTags.has(tag.id);
+                    const testResult = testResults[tag.id];
+                    const linkedVehicle = vehicles.find(v => v.tagId === tag.id);
+
+                    return (
+                        <div 
+                            key={tag.id}
+                            onClick={() => toggleSelect(tag.id)}
+                            className={`p-4 flex flex-col gap-4 transition-colors cursor-pointer ${isSelected ? 'bg-primary-50/50 dark:bg-primary-900/10' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <button className={`mt-1 ${isSelected ? 'text-primary-500' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                                    </button>
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                        {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
+                                            <span className="text-zinc-300 dark:text-zinc-700 text-[10px]">•</span>
+                                            <div className="font-mono text-[10px] text-zinc-500 font-medium">
+                                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {linkedVehicle ? (
+                                    <div className="flex flex-col items-end gap-1">
+                                        <div className="flex items-center gap-1 text-[9px] font-black text-emerald-500 uppercase tracking-widest">
+                                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> Vinculado
+                                        </div>
+                                        <span className="text-[10px] font-black text-zinc-900 dark:text-white font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{linkedVehicle.plate}</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                                        <Box size={10}/> Estoque
+                                    </div>
+                                )}
                             </div>
-                        )}
-                        
-                        {testResult && !isSelected && (
-                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm animate-in fade-in slide-in-from-right-4 ${
-                                testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
-                                testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
-                            }`}>
-                                {testResult.status === 'loading' ? <Loader2 size={12} className="animate-spin"/> : <Signal size={12}/>}
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-black uppercase tracking-widest">
-                                        {testResult.status === 'loading' ? 'PING...' : 
-                                        testResult.status === 'success' ? `200 OK` : 
-                                        `ERR ${testResult.code || 'TIMEOUT'}`}
-                                    </span>
+
+                            <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800/50">
+                                <div>
+                                    {testResult && (
+                                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${
+                                            testResult.status === 'loading' ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500' :
+                                            testResult.status === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                            'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                                        }`}>
+                                            {testResult.status === 'loading' ? <Loader2 size={10} className="animate-spin"/> : <Signal size={10}/>}
+                                            <span className="text-[9px] font-black uppercase tracking-widest">
+                                                {testResult.status === 'loading' ? 'PING...' : 
+                                                testResult.status === 'success' ? `OK` : 
+                                                `ERR`}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                    {tag.type === 'XADTAG' && (
+                                        <button 
+                                            onClick={() => handleActivate(tag)} 
+                                            className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
+                                            title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
+                                        >
+                                            <Power size={14}/>
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
+                                        <Activity size={14}/>
+                                    </button>
+                                    <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                        <Edit2 size={14}/>
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
+                                        <Trash2 size={14}/>
+                                    </button>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="mt-8">
-                    <h3 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter truncate">{tag.name}</h3>
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20' : 'bg-primary-500/10 text-primary-600 border-primary-500/20'}`}>{tag.type}</span>
-                        <span className="text-[10px] font-mono text-zinc-400 font-bold">{tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}</span>
-                    </div>
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
-                     <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
-                        {vehicles.find(v => v.tagId === tag.id) ? <span className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-1.5 mt-1"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"/> VINCULADO</span> : <span className="text-[10px] font-black text-zinc-300 uppercase mt-1">NO ESTOQUE</span>}
-                     </div>
-                     {vehicles.find(v => v.tagId === tag.id) ? (
-                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
-                            <span className="text-sm font-black text-zinc-900 dark:text-white font-mono">{vehicles.find(v => v.tagId === tag.id)?.plate}</span>
                         </div>
-                     ) : (
-                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700">
-                            <span className="text-[10px] font-black text-zinc-300 uppercase flex items-center gap-2"><Box size={12}/> Livre</span>
-                        </div>
-                     )}
-                </div>
-            </MotionDiv>
-          );
-        })}
+                    );
+                })
+            )}
+        </div>
       </div>
 
       <AnimatePresence>

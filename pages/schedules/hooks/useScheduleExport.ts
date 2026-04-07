@@ -1,12 +1,13 @@
 
 import { useState } from 'react';
 import { useNotification } from '../../../contexts/NotificationContext';
-import { Schedule, Technician, User } from '../../../types';
+import { Schedule, Technician, User, Company } from '../../../types';
 import { calculateServiceValue, calculateScheduleTotal } from '../utils/scheduleFinancialUtils';
 
 export const useScheduleExport = (
   filteredList: Schedule[],
   technicians: Technician[],
+  companies: Company[],
   user: User | null,
   viewDate: Date,
   dashboardData: any
@@ -14,6 +15,10 @@ export const useScheduleExport = (
   const [isExporting, setIsExporting] = useState(false);
   const { addNotification } = useNotification();
   const isPrivileged = user?.role === 'admin' || user?.role === 'moderator';
+
+  const getCompanyName = (companyId?: string) => {
+      return companies.find(c => c.id === companyId)?.name || 'N/A';
+  };
 
   const formatDate = (dateStr?: string) => {
       if (!dateStr) return '-';
@@ -122,6 +127,7 @@ export const useScheduleExport = (
         const detailedRows = sourceData.map((s: Schedule) => {
             const tech = technicians.find(t => t.id === s.technicianId);
             const techName = tech?.name || '-';
+            const companyName = getCompanyName(s.companyId);
             const date = s.confirmedDate ? formatDate(s.confirmedDate) : (s.preferredDate ? formatDate(s.preferredDate) : '-');
             
             let val = 0;
@@ -133,6 +139,7 @@ export const useScheduleExport = (
             return [
                 date,
                 s.vehiclePlate,
+                companyName,
                 s.serviceType,
                 s.status,
                 techName,
@@ -145,7 +152,7 @@ export const useScheduleExport = (
 
         autoTable(doc, {
             startY: 25,
-            head: [['Data', 'Placa', 'Tipo', 'Status', 'Técnico', 'Desloc.', 'Valor Total', 'Pago Tec.', 'Data Pag.']],
+            head: [['Data', 'Placa', 'Empresa', 'Serviço', 'Status', 'Técnico', 'Desloc.', 'Valor Total', 'Pago Tec.', 'Data Pag.']],
             body: detailedRows,
             theme: 'striped',
             headStyles: { fillColor: [24, 24, 27] },
