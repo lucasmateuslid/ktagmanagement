@@ -472,6 +472,7 @@ exports.onFeedbackCreate = onDocumentCreated(
 // --- HELPERS PARA RASTREIO AGENDADO ---
 
 const ktagBatteryStatus = (status) => {
+  // API K-TAG: 0=Normal, 3=Muito baixo
   switch (status) {
     case 0: return { level: 100, label: 'Normal', color: '#10b981' };
     case 1: return { level: 60, label: 'Médio', color: '#eab308' };
@@ -482,11 +483,12 @@ const ktagBatteryStatus = (status) => {
 };
 
 const xadtagBatteryToInfo = (battery) => {
+  // API XADTAG (Traqcare): 0=Normal, 3=Muito baixo (mesma semântica do K-TAG)
   switch (battery) {
-    case 3: return { level: 100, label: 'Alto', color: '#10b981' };
-    case 2: return { level: 60, label: 'Médio', color: '#eab308' };
-    case 1: return { level: 30, label: 'Baixo', color: '#f97316' };
-    case 0: return { level: 10, label: 'Crítico', color: '#ef4444' };
+    case 0: return { level: 100, label: 'Alto', color: '#10b981' };
+    case 1: return { level: 60, label: 'Médio', color: '#eab308' };
+    case 2: return { level: 30, label: 'Baixo', color: '#f97316' };
+    case 3: return { level: 10, label: 'Crítico', color: '#ef4444' };
     default: return { level: 0, label: 'N/A', color: '#71717a' };
   }
 };

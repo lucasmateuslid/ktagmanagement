@@ -13,11 +13,22 @@ export const TechnicianDashboard = () => {
   const { schedules, technicians, companies, loading } = useDashboardData();
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [activeTab, setActiveTab] = useState<'agendados' | 'andamento' | 'concluidos'>('agendados');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const mySchedules = useMemo(() => {
     const techId = technicians.find(t => t.email?.toLowerCase() === user?.email.toLowerCase())?.id || user?.id;
-    return schedules.filter(s => s.technicianId === techId);
-  }, [schedules, user?.id, technicians, user?.email]);
+    let filtered = schedules.filter(s => s.technicianId === techId);
+    
+    if (searchTerm) {
+      const lower = searchTerm.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.vehiclePlate.toLowerCase().includes(lower) ||
+        s.osNumber?.toLowerCase().includes(lower)
+      );
+    }
+    
+    return filtered;
+  }, [schedules, user?.id, technicians, user?.email, searchTerm]);
 
   const agendados = mySchedules.filter(s => ['Confirmada', 'Reagendada', 'Autorizada'].includes(s.status));
   const emAndamento = mySchedules.filter(s => s.status === 'Técnico no local' || s.status === 'Cliente no local');
@@ -86,8 +97,20 @@ export const TechnicianDashboard = () => {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+      {/* Search and Tabs */}
+      <div className="space-y-4">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+          <input
+            type="text"
+            placeholder="Pesquisar por placa ou número da OS..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold text-sm outline-none focus:border-primary-500 transition-colors shadow-sm"
+          />
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         <button
           onClick={() => setActiveTab('agendados')}
           className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all ${
@@ -130,6 +153,7 @@ export const TechnicianDashboard = () => {
             {concluidos.length}
           </span>
         </button>
+      </div>
       </div>
 
       {/* List */}

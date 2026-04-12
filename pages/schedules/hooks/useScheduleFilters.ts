@@ -36,7 +36,8 @@ export const useScheduleFilters = (
             s.vehicleModel.toLowerCase().includes(lower) ||
             s.requesterName.toLowerCase().includes(lower) ||
             s.clientName?.toLowerCase().includes(lower) ||
-            s.locationAddress.toLowerCase().includes(lower)
+            s.locationAddress.toLowerCase().includes(lower) ||
+            s.osNumber?.toLowerCase().includes(lower)
         );
     }
 

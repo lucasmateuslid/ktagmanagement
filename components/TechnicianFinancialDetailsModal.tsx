@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { storage } from '../services/storage';
 import { Technician, Schedule, ScheduleStatus, DeviceType } from '../types';
-import { X, Save, Trash2, Calendar, FileText, Download, CheckSquare, Square, DollarSign, QrCode } from 'lucide-react';
+import { X, Save, Trash2, Calendar, FileText, Download, CheckSquare, Square, DollarSign, QrCode, Search } from 'lucide-react';
+import { ConfirmModal } from './ConfirmModal';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Props {
   technician: Technician;
@@ -24,6 +27,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   const [localChanges, setLocalChanges] = useState<Record<string, Partial<Schedule>>>({});
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   
   const [pixKey, setPixKey] = useState(technician.pixKey || '');
   const [cpf, setCpf] = useState(technician.cpf || '');
@@ -40,13 +46,23 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   const editingSchedules = useMemo(() => {
     const startTs = new Date(`${startDate}T00:00:00`).getTime();
     const endTs = new Date(`${endDate}T23:59:59`).getTime();
-    return schedules.filter(s => {
+    let filtered = schedules.filter(s => {
       if (s.technicianId !== technician.id) return false;
       const scheduleDateStr = s.confirmedDate || s.preferredDate;
       const scheduleTs = new Date(`${scheduleDateStr}T12:00:00`).getTime();
       return scheduleTs >= startTs && scheduleTs <= endTs;
-    }).map(s => ({ ...s, ...(localChanges[s.id] || {}) }));
-  }, [schedules, technician.id, startDate, endDate, localChanges]);
+    });
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.vehiclePlate?.toLowerCase().includes(term) ||
+        s.osNumber?.toLowerCase().includes(term)
+      );
+    }
+
+    return filtered.map(s => ({ ...s, ...(localChanges[s.id] || {}) }));
+  }, [schedules, technician.id, startDate, endDate, localChanges, searchTerm]);
 
   const calculateBaseAmount = (serviceType: string, deviceType: string | undefined, rates: any) => {
     let amount = 0;
@@ -110,15 +126,22 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Tem certeza que deseja excluir este serviço?')) {
-      await storage.deleteSchedule(id);
+    setScheduleToDelete(id);
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (scheduleToDelete) {
+      await storage.deleteSchedule(scheduleToDelete);
       setLocalChanges(prev => {
         const next = { ...prev };
-        delete next[id];
+        delete next[scheduleToDelete];
         return next;
       });
       onUpdate();
     }
+    setIsConfirmDeleteOpen(false);
+    setScheduleToDelete(null);
   };
 
   const totalToReceive = useMemo(() => {
@@ -153,10 +176,14 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   };
 
   const handlePaySelected = async () => {
+    const paidSchedules: Schedule[] = [];
+    
     for (const id of selectedServices) {
       const schedule = editingSchedules.find(s => s.id === id);
       if (schedule) {
-        await storage.saveSchedule({...schedule, technicianPaid: true});
+        const updated = {...schedule, technicianPaid: true};
+        await storage.saveSchedule(updated);
+        paidSchedules.push(updated);
       }
     }
 
@@ -171,6 +198,35 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     };
     await storage.saveTechnicianPayment(payment);
 
+    // Generate PDF Receipt
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text(`Comprovante de Pagamento: ${technician.name}`, 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Data do Pagamento: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
+    doc.text(`Total Pago: R$ ${selectedTotal.toFixed(2)}`, 14, 36);
+
+    const headers = [['Data', 'Placa', 'Serviço', 'Valor Serv.', 'Desloc.', 'Em Mãos', 'OBS']];
+    const data = paidSchedules.map(s => [
+      new Date(s.confirmedDate || s.preferredDate).toLocaleDateString('pt-BR'),
+      s.vehiclePlate,
+      s.serviceType,
+      `R$ ${getCalculatedPaymentAmount(s).toFixed(2)}`,
+      `R$ ${(s.displacementValue || 0).toFixed(2)}`,
+      `R$ ${(s.amountReceivedByTechnician || 0).toFixed(2)}`,
+      s.financialObs || ''
+    ]);
+
+    autoTable(doc, {
+      startY: 45,
+      head: headers,
+      body: data,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [46, 204, 113] } // Emerald color
+    });
+
+    doc.save(`comprovante_pagamento_${technician.name}_${new Date().getTime()}.pdf`);
+
     setLocalChanges(prev => {
       const next = { ...prev };
       selectedServices.forEach(id => delete next[id]);
@@ -180,6 +236,45 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     setSelectedServices([]);
     setIsPixModalOpen(false);
     onUpdate();
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(18);
+    doc.text(`Relatório Financeiro: ${technician.name}`, 14, 22);
+    
+    doc.setFontSize(11);
+    doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`, 14, 30);
+    doc.text(`Chave PIX: ${technician.pixKey || 'Não cadastrada'}`, 14, 36);
+    doc.text(`CPF: ${technician.cpf || 'Não cadastrado'}`, 14, 42);
+
+    const headers = [['Data', 'Placa', 'Serviço', 'Status', 'Valor Serv.', 'Desloc.', 'Em Mãos', 'Pago Emp.', 'OBS']];
+    const data = editingSchedules.map(s => [
+      new Date(s.confirmedDate || s.preferredDate).toLocaleDateString('pt-BR'),
+      s.vehiclePlate,
+      s.serviceType,
+      s.status,
+      `R$ ${getCalculatedPaymentAmount(s).toFixed(2)}`,
+      `R$ ${(s.displacementValue || 0).toFixed(2)}`,
+      `R$ ${(s.amountReceivedByTechnician || 0).toFixed(2)}`,
+      s.technicianPaid ? 'Sim' : 'Não',
+      s.financialObs || ''
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: headers,
+      body: data,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] }
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY || 50;
+    doc.text(`Total a Receber: R$ ${totalToReceive.toFixed(2)}`, 14, finalY + 10);
+    doc.text(`Total em Mãos: R$ ${totalInHand.toFixed(2)}`, 14, finalY + 16);
+
+    doc.save(`relatorio_financeiro_${technician.name}_${startDate}_${endDate}.pdf`);
   };
 
   const handleExportCSV = () => {
@@ -219,6 +314,16 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
             <div className="flex flex-wrap gap-4 mt-4 mb-4">
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none flex-1 min-w-[120px]" />
               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none flex-1 min-w-[120px]" />
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                <input 
+                  type="text" 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  placeholder="Pesquisar por placa ou OS..." 
+                  className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl pl-10 pr-4 py-2 text-xs font-bold outline-none border border-transparent focus:border-primary-500"
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex-1 min-w-[120px]">
@@ -261,6 +366,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               <p className="text-xl md:text-2xl font-black text-amber-700 dark:text-amber-300">R$ {totalInHand.toFixed(2)}</p>
             </div>
             <div className="flex flex-col gap-2 w-full sm:w-auto">
+              <button onClick={handleExportPDF} className="flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black font-bold py-3 md:py-2 px-4 rounded-xl transition-colors text-xs w-full">
+                <FileText size={16} /> Exportar PDF
+              </button>
               <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-3 md:py-2 px-4 rounded-xl transition-colors text-xs w-full">
                 <Download size={16} /> Exportar CSV
               </button>
@@ -283,7 +391,8 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
             <div className="lg:col-span-1">Desloc.</div>
             <div className="lg:col-span-1">Em Mãos</div>
             <div className="lg:col-span-1 text-center">Pago Emp.</div>
-            <div className="lg:col-span-2 text-right">Ações</div>
+            <div className="lg:col-span-1">OBS</div>
+            <div className="lg:col-span-1 text-right">Ações</div>
           </div>
 
           {editingSchedules.map(s => (
@@ -333,7 +442,11 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                   {s.technicianPaid ? <CheckSquare size={18} /> : <Square size={18} />}
                 </button>
               </div>
-              <div className="lg:col-span-2 flex justify-end gap-2 w-full lg:w-auto mt-2 lg:mt-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-200 dark:border-zinc-700">
+              <div className="lg:col-span-1 w-full">
+                <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase mb-1 block">OBS</span>
+                <input type="text" value={s.financialObs || ''} onChange={e => handleLocalChange(s.id, 'financialObs', e.target.value)} className="bg-white dark:bg-zinc-900 rounded-xl px-2 py-1 text-xs font-bold w-full" placeholder="OBS" />
+              </div>
+              <div className="lg:col-span-1 flex justify-end gap-2 w-full lg:w-auto mt-2 lg:mt-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-200 dark:border-zinc-700">
                 <button onClick={() => handleDelete(s.id)} className="p-2 text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl flex-1 lg:flex-none flex justify-center" title="Excluir"><Trash2 size={18}/></button>
               </div>
             </div>
@@ -426,6 +539,17 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => { setIsConfirmDeleteOpen(false); setScheduleToDelete(null); }}
+          onConfirm={confirmDelete}
+          title="Excluir Serviço"
+          message="Tem certeza que deseja excluir este serviço? Esta ação não pode ser desfeita."
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
     </div>
   );
 };

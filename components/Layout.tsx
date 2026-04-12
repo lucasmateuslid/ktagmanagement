@@ -85,9 +85,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       return [
         { title: 'OPERACIONAL', items: [
           { label: 'DASHBOARD', path: '/', icon: LayoutGrid },
-          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
-          { label: 'ENVIOS', path: '/envios', icon: Package },
-          { label: 'FEEDBACK', path: '/feedback', icon: MessageSquare }
+          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar }
         ]}
       ];
     }

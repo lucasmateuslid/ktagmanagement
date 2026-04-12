@@ -35,6 +35,9 @@ const rateLimitedFetch = (fn: () => Promise<Response>): Promise<Response> => {
                 resolve(result);
             } catch (err) {
                 reject(err);
+            } finally {
+                requestCount--;
+                processQueue();
             }
         };
 
@@ -48,11 +51,12 @@ const rateLimitedFetch = (fn: () => Promise<Response>): Promise<Response> => {
 ===================================================== */
 
 const batteryToInfo = (battery?: number): KTagBatteryInfo => {
+    // API XADTAG (Traqcare): 0=Normal, 3=Muito baixo (mesma semântica do K-TAG)
     switch (battery) {
-        case 3: return { level: 100, label: 'Alto', color: '#10b981' };
-        case 2: return { level: 60, label: 'Médio', color: '#eab308' };
-        case 1: return { level: 30, label: 'Baixo', color: '#f97316' };
-        case 0: return { level: 10, label: 'Crítico', color: '#ef4444' };
+        case 0: return { level: 100, label: 'Alto', color: '#10b981' };
+        case 1: return { level: 60, label: 'Médio', color: '#eab308' };
+        case 2: return { level: 30, label: 'Baixo', color: '#f97316' };
+        case 3: return { level: 10, label: 'Crítico', color: '#ef4444' };
         default: return { level: 0, label: 'N/A', color: '#71717a' };
     }
 };
@@ -90,6 +94,11 @@ const unwrapResponse = async <T>(response: Response): Promise<T | null> => {
     }
 
     const json = await response.json();
+
+    // Fallback for proxy unwrapped payload
+    if (json.statusCode === undefined) {
+        return json as T;
+    }
 
     if (json.statusCode !== 200) {
         throw new Error(json.message || json.problem || 'Erro API');
@@ -223,6 +232,64 @@ export const xadtagService = {
         } catch (err) {
             console.error('History Error:', err);
             return [];
+        }
+    },
+
+    activateAndDiscover: async (macAddress: string): Promise<{ success: boolean; traqcareId?: string; message: string }> => {
+        if (!macAddress) {
+            return { success: false, message: 'MAC Address não fornecido.' };
+        }
+
+        const normalizedMac = macAddress.replace(/[^A-Z0-9]/ig, '').toUpperCase();
+
+        try {
+            // Passo 1: Buscar todos os IDs
+            const allResponse = await callApi('/tag/all', 'GET');
+            const allIds = await unwrapResponse<number[]>(allResponse);
+
+            if (!allIds || !Array.isArray(allIds) || allIds.length === 0) {
+                return { success: false, message: 'Nenhum dispositivo encontrado na base Traqcare.' };
+            }
+
+            // Passo 2: Buscar detalhes de todos os IDs
+            const idsString = allIds.join(',');
+            const detailsResponse = await callApi('/tag', 'GET', { ids: idsString });
+            const details = await unwrapResponse<any[]>(detailsResponse);
+
+            if (!details || !Array.isArray(details)) {
+                return { success: false, message: 'Falha ao buscar detalhes dos dispositivos Traqcare.' };
+            }
+
+            // Passo 3: Cruzar pelo MAC
+            const targetDevice = details.find(d => {
+                if (!d.mac) return false;
+                const dMac = d.mac.replace(/[^A-Z0-9]/ig, '').toUpperCase();
+                return dMac === normalizedMac;
+            });
+
+            if (!targetDevice || !targetDevice.id) {
+                return { success: false, message: `Dispositivo com MAC ${normalizedMac} não encontrado na base Traqcare.` };
+            }
+
+            const traqcareId = targetDevice.id.toString();
+
+            // Passo 4: Ativar o dispositivo
+            try {
+                const activateResponse = await callApi('/tag', 'PATCH', undefined, [traqcareId]);
+                await unwrapResponse(activateResponse);
+                return { success: true, traqcareId, message: 'Dispositivo ativado com sucesso.' };
+            } catch (activateErr: any) {
+                console.error('Activation Error during discover:', activateErr);
+                return { 
+                    success: false, 
+                    traqcareId, 
+                    message: `ID ${traqcareId} encontrado, mas falha ao ativar: ${activateErr.message}` 
+                };
+            }
+
+        } catch (err: any) {
+            console.error('Discover Error:', err);
+            return { success: false, message: `Erro na comunicação com a API: ${err.message}` };
         }
     },
 

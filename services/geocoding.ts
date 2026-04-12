@@ -73,7 +73,6 @@ const setToCache = (key: string, address: string) => {
 export const geocodingService = {
   /**
    * Converts Lat/Lon to a human-readable address.
-   * Prioritizes Google Maps API if key is present, falls back to OpenStreetMap Nominatim.
    */
   reverseGeocode: async (lat: number, lon: number): Promise<string> => {
     const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
@@ -82,106 +81,45 @@ export const geocodingService = {
       return cachedAddress;
     }
 
-    // Cache settings for 5 minutes to avoid excessive Firestore reads
-    const now = Date.now();
-    if (!cachedSettings || now - settingsFetchTime > 5 * 60 * 1000) {
-      cachedSettings = await storage.getSettings();
-      settingsFetchTime = now;
-    }
-    const settings = cachedSettings;
-
-    // Strategy 1: Google Maps
-    if (settings?.googleMapsKey) {
-      try {
-        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${settings.googleMapsKey}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.status === 'OK' && data.results?.[0]) {
-          const address = data.results[0].formatted_address;
-          setToCache(cacheKey, address);
-          return address;
-        }
-      } catch (e) {
-        console.warn("Google Geocoding failed:", e);
-      }
-    }
-
-    // Strategy 2: OpenStreetMap Nominatim (Free, requires User-Agent)
     try {
-      // Throttle slightly to respect OSM policy
-      await new Promise(r => setTimeout(r, 1000)); 
-      
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': 'KTagManagerPro/1.0'
-        }
+      const res = await fetch('/api/reverse-geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng: lon })
       });
-      
-      if (res.status === 429) {
-        console.warn("OSM Geocoding rate limited (429 Too Many Requests)");
-        return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-      }
-
-      const data = await res.json();
-      if (data && data.display_name) {
-        const address = data.display_name;
-        setToCache(cacheKey, address);
-        return address;
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.displayName) {
+          setToCache(cacheKey, data.displayName);
+          return data.displayName;
+        }
       }
     } catch (e) {
-      console.warn("OSM Geocoding failed:", e);
+      console.warn("Reverse geocoding API failed:", e);
     }
 
     return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   },
 
   geocode: async (query: string): Promise<{lat: number, lon: number, address: string}[]> => {
-    const now = Date.now();
-    if (!cachedSettings || now - settingsFetchTime > 5 * 60 * 1000) {
-      cachedSettings = await storage.getSettings();
-      settingsFetchTime = now;
-    }
-    const settings = cachedSettings;
-    const apiKey = settings?.googleMapsKey;
-
-    if (apiKey) {
-      try {
-        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}&language=pt-BR`;
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        if (data.status === 'OK' && data.results) {
-          return data.results.map((r: any) => ({
-            lat: r.geometry.location.lat,
-            lon: r.geometry.location.lng,
-            address: r.formatted_address
-          }));
-        }
-      } catch (e) {
-        console.warn("Google Geocoding failed:", e);
-      }
-    }
-
     try {
-      await new Promise(r => setTimeout(r, 1000)); 
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': 'KTagManagerPro/1.0'
-        }
+      const res = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: query })
       });
-      
-      const data = await res.json();
-      if (data && Array.isArray(data)) {
-        return data.map((r: any) => ({
-          lat: parseFloat(r.lat),
-          lon: parseFloat(r.lon),
-          address: r.display_name
-        }));
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.lat !== undefined && data.lng !== undefined) {
+          return [{
+            lat: data.lat,
+            lon: data.lng,
+            address: data.displayName
+          }];
+        }
       }
     } catch (e) {
-      console.warn("OSM Geocoding failed:", e);
+      console.warn("Geocoding API failed:", e);
     }
 
     return [];

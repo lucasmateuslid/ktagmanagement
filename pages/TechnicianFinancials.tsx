@@ -13,15 +13,15 @@ export const TechnicianFinancials = () => {
 
   const { user } = useAuth();
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (background = false) => {
+    if (!background) setLoading(true);
     const [techs, scheds] = await Promise.all([
       storage.getTechnicians(),
       storage.getSchedules(user?.role || 'admin', user?.id || '')
     ]);
     setTechnicians(techs);
     setSchedules(scheds);
-    setLoading(false);
+    if (!background) setLoading(false);
   };
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export const TechnicianFinancials = () => {
           technician={selectedTechnician} 
           schedules={schedules} 
           onClose={() => setSelectedTechnician(null)} 
-          onUpdate={fetchData}
+          onUpdate={() => fetchData(true)}
         />
       )}
     </div>

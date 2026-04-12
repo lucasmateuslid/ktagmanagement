@@ -115,11 +115,11 @@ function App() {
                       <Route path="/technicians/financials" element={<RoleProtectedRoute roles={['admin', 'admin_tecnico']}><TechnicianFinancials /></RoleProtectedRoute>} />
 
                       {/* Envios */}
-                      <Route path="/envios" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user', 'technician']}><ShipmentsList /></RoleProtectedRoute>} />
+                      <Route path="/envios" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentsList /></RoleProtectedRoute>} />
                       <Route path="/envios/:id/editar" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><ShipmentForm /></RoleProtectedRoute>} />
                       <Route path="/envios/nova" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><ShipmentForm /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user', 'technician']}><ShipmentDetails /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user', 'technician']}><ShipmentPrint /></RoleProtectedRoute>} />
+                      <Route path="/envios/:id" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentDetails /></RoleProtectedRoute>} />
+                      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentPrint /></RoleProtectedRoute>} />
 
                       {/* Feedback - Available to all non-clients */}
                       <Route path="/feedback" element={<RoleProtectedRoute roles={['user', 'admin', 'moderator', 'admin_tecnico']}><FeedbackPage /></RoleProtectedRoute>} />

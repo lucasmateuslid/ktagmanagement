@@ -11,10 +11,12 @@ import {
   Activity, Wrench, FileText, Play, RotateCcw, AlertTriangle, Check, Wallet, Camera, Search
 } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { ConfirmModal } from './ConfirmModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { MapComponent } from './MapComponent';
-import { LocationHistory } from '../types';
+import { LocationHistory, defaultChecklistItems, ChecklistStatus } from '../types';
 
 import { getDisplayDate } from '../pages/schedules/utils/scheduleTimeUtils';
 
@@ -58,16 +60,23 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 (decodedText) => {
                     if (scannerActive === 'imei') setFormData({...formData, installedImei: decodedText});
                     else setFormData({...formData, installedTagImei: decodedText});
-                    scannerRef.current?.stop().then(() => setScannerActive(null));
+                    
+                    if (scannerRef.current && scannerRef.current.isScanning) {
+                        scannerRef.current.stop().then(() => setScannerActive(null)).catch(console.error);
+                    } else {
+                        setScannerActive(null);
+                    }
                 },
                 (error) => console.warn(error)
             );
         }
         return () => {
-            if (scannerRef.current) {
+            if (scannerRef.current && scannerRef.current.isScanning) {
                 scannerRef.current.stop().then(() => {
                     scannerRef.current = null;
                 }).catch(console.error);
+            } else {
+                scannerRef.current = null;
             }
         };
     }, [scannerActive]);
@@ -98,7 +107,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         vehicleModel: schedule.vehicleModel || '',
         fipeValue: schedule.fipeValue || '',
         installedImei: schedule.installedImei || '',
-        installedTagImei: schedule.installedTagImei || ''
+        installedTagImei: schedule.installedTagImei || '',
+        osNumber: schedule.osNumber || '',
+        osDetails: schedule.osDetails || '',
+        osSignature: schedule.osSignature || '',
+        checklist: schedule.checklist && schedule.checklist.length > 0 ? schedule.checklist : defaultChecklistItems.map(name => ({ name, before: '' as ChecklistStatus, after: '' as ChecklistStatus }))
     });
 
     const handleHinovaLookup = async () => {
@@ -134,6 +147,80 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         }
       };
 
+    const generateOsPdf = (type: 'os' | 'receipt') => {
+        const doc = new jsPDF();
+        const tech = technicians.find(t => t.id === schedule.technicianId);
+        const company = companies.find(c => c.id === schedule.companyId);
+
+        doc.setFontSize(20);
+        if (type === 'os') {
+            doc.text('Ordem de Serviço', 14, 22);
+        } else {
+            doc.text('Recibo de Serviço', 14, 22);
+        }
+
+        doc.setFontSize(10);
+        doc.text(`Data: ${new Date().toLocaleDateString()}`, 14, 30);
+        doc.text(`OS Número: ${schedule.osNumber || 'N/A'}`, 14, 36);
+        doc.text(`Status: ${schedule.status}`, 14, 42);
+
+        autoTable(doc, {
+            startY: 50,
+            head: [['Informações do Serviço', '']],
+            body: [
+                ['Cliente', schedule.clientName || schedule.requesterName || 'N/A'],
+                ['Telefone', schedule.clientPhone || 'N/A'],
+                ['Veículo', `${schedule.vehicleModel || 'N/A'} - ${schedule.vehiclePlate || 'N/A'}`],
+                ['Serviço', schedule.serviceType || 'N/A'],
+                ['Equipamento', schedule.deviceType || 'N/A'],
+                ['IMEI Instalado', schedule.installedImei || 'N/A'],
+                ['ID Tag Instalada', schedule.installedTagImei || 'N/A'],
+                ['Técnico', tech?.name || 'N/A'],
+                ['Regional', company?.name || 'N/A'],
+                ['Local', schedule.locationAddress || 'N/A'],
+            ],
+            theme: 'striped',
+            headStyles: { fillColor: [16, 185, 129] }
+        });
+
+        let finalY = (doc as any).lastAutoTable.finalY || 50;
+
+        if (type === 'os') {
+            if (schedule.checklist && schedule.checklist.length > 0) {
+                autoTable(doc, {
+                    startY: finalY + 10,
+                    head: [['Checklist', 'Antes', 'Após']],
+                    body: schedule.checklist.map(item => [
+                        item.name,
+                        item.before || '-',
+                        item.after || '-'
+                    ]),
+                    theme: 'grid',
+                    headStyles: { fillColor: [16, 185, 129] },
+                    styles: { fontSize: 8, cellPadding: 1 }
+                });
+                finalY = (doc as any).lastAutoTable.finalY || finalY;
+            }
+
+            doc.text('Detalhes da Execução:', 14, finalY + 10);
+            const splitDetails = doc.splitTextToSize(schedule.osDetails || 'Nenhum detalhe informado.', 180);
+            doc.text(splitDetails, 14, finalY + 16);
+
+            doc.text('Assinatura do Cliente/Responsável:', 14, finalY + 40);
+            doc.line(14, finalY + 48, 100, finalY + 48);
+            doc.text(schedule.osSignature || '___________________________________', 14, finalY + 54);
+        } else {
+            doc.text('Valor do Serviço:', 14, finalY + 10);
+            doc.text(`R$ ${(schedule.technicianPaymentAmount || 0).toFixed(2)}`, 14, finalY + 16);
+            
+            doc.text('Assinatura do Técnico:', 14, finalY + 40);
+            doc.line(14, finalY + 48, 100, finalY + 48);
+            doc.text(tech?.name || '___________________________________', 14, finalY + 54);
+        }
+
+        doc.save(`${type === 'os' ? 'OS' : 'Recibo'}_${schedule.vehiclePlate || 'Servico'}.pdf`);
+    };
+
     useEffect(() => {
         setFormData({
             date: schedule.confirmedDate || schedule.preferredDate,
@@ -160,7 +247,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             vehicleModel: schedule.vehicleModel || '',
             fipeValue: schedule.fipeValue || '',
             installedImei: schedule.installedImei || '',
-            installedTagImei: schedule.installedTagImei || ''
+            installedTagImei: schedule.installedTagImei || '',
+            osNumber: schedule.osNumber || '',
+            osDetails: schedule.osDetails || '',
+            osSignature: schedule.osSignature || '',
+            checklist: schedule.checklist && schedule.checklist.length > 0 ? schedule.checklist : defaultChecklistItems.map(name => ({ name, before: '' as ChecklistStatus, after: '' as ChecklistStatus }))
         });
     }, [schedule]);
 
@@ -1293,10 +1384,72 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                         <div className="fixed inset-0 z-[6000] bg-black flex flex-col items-center justify-center p-4">
                                                             <div id={scannerActive === 'imei' ? "readerImei" : "readerTag"} className="w-full max-w-md aspect-square bg-black"></div>
                                                             <button onClick={() => {
-                                                                scannerRef.current?.stop().then(() => setScannerActive(null));
+                                                                if (scannerRef.current && scannerRef.current.isScanning) {
+                                                                    scannerRef.current.stop().then(() => setScannerActive(null)).catch(console.error);
+                                                                } else {
+                                                                    setScannerActive(null);
+                                                                }
                                                             }} className="mt-4 px-6 py-3 bg-zinc-700 text-white rounded-xl font-black uppercase">Cancelar</button>
                                                         </div>
                                                     )}
+
+                                                    <div className="space-y-2 pt-2 border-t border-emerald-200 dark:border-emerald-800">
+                                                        <h5 className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400">Ordem de Serviço</h5>
+                                                        <input type="text" value={formData.osNumber} onChange={e => setFormData({...formData, osNumber: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800 rounded-xl font-bold text-sm outline-none" placeholder="Número da OS (Opcional)" />
+                                                        <textarea value={formData.osDetails} onChange={e => setFormData({...formData, osDetails: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800 rounded-xl font-bold text-sm outline-none resize-none h-24" placeholder="Detalhes do serviço executado..." />
+                                                        
+                                                        <div className="mt-4">
+                                                            <h5 className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 mb-2">Checklist do Veículo</h5>
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                {formData.checklist.map((item, index) => (
+                                                                    <div key={index} className="bg-white dark:bg-zinc-900 border border-emerald-100 dark:border-emerald-800/50 rounded-xl p-3 flex flex-col gap-2">
+                                                                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{item.name}</span>
+                                                                        <div className="flex justify-between items-center gap-4">
+                                                                            <div className="flex flex-col gap-1">
+                                                                                <span className="text-[9px] font-black uppercase text-zinc-400">Antes</span>
+                                                                                <div className="flex gap-1">
+                                                                                    {['OK', 'N/OK', 'N/A'].map(status => (
+                                                                                        <button 
+                                                                                            key={`before-${status}`}
+                                                                                            onClick={() => {
+                                                                                                const newChecklist = [...formData.checklist];
+                                                                                                newChecklist[index] = { ...newChecklist[index], before: status as ChecklistStatus };
+                                                                                                setFormData({...formData, checklist: newChecklist});
+                                                                                            }}
+                                                                                            className={`px-2 py-1 rounded text-[9px] font-bold transition-colors ${item.before === status ? 'bg-emerald-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                                                                                        >
+                                                                                            {status}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex flex-col gap-1">
+                                                                                <span className="text-[9px] font-black uppercase text-zinc-400">Após</span>
+                                                                                <div className="flex gap-1">
+                                                                                    {['OK', 'N/OK', 'N/A'].map(status => (
+                                                                                        <button 
+                                                                                            key={`after-${status}`}
+                                                                                            onClick={() => {
+                                                                                                const newChecklist = [...formData.checklist];
+                                                                                                newChecklist[index] = { ...newChecklist[index], after: status as ChecklistStatus };
+                                                                                                setFormData({...formData, checklist: newChecklist});
+                                                                                            }}
+                                                                                            className={`px-2 py-1 rounded text-[9px] font-bold transition-colors ${item.after === status ? 'bg-emerald-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                                                                                        >
+                                                                                            {status}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        <input type="text" value={formData.osSignature} onChange={e => setFormData({...formData, osSignature: e.target.value})} className="w-full px-4 py-3 bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800 rounded-xl font-bold text-sm outline-none mt-4" placeholder="Nome do Responsável (Assinatura)" />
+                                                    </div>
+
                                                     <div className="flex gap-2">
                                                         <button onClick={() => setIsFinishing(false)} className="flex-1 py-3 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-bold text-xs uppercase">Cancelar</button>
                                                         <button 
@@ -1310,11 +1463,16 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                                     status: 'Concluída' as const,
                                                                     installedImei: formData.installedImei,
                                                                     installedTagImei: formData.installedTagImei,
+                                                                    osNumber: formData.osNumber,
+                                                                    osDetails: formData.osDetails,
+                                                                    osSignature: formData.osSignature,
+                                                                    checklist: formData.checklist,
                                                                     history: [...schedule.history, { action: 'Finalizou', actionBy: currentUser?.name || 'Técnico', timestamp: Date.now(), details: 'Técnico finalizou o serviço' }]
                                                                 };
                                                                 onUpdate(updated);
                                                                 setIsFinishing(false);
-                                                                onClose();
+                                                                // Do not close immediately so they can generate PDF
+                                                                // onClose();
                                                             }}
                                                             className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                                                         >
@@ -1330,6 +1488,26 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                     <CheckCircle2 size={16}/> Confirmar Finalização
                                                 </button>
                                             )}
+                                        </div>
+                                    )}
+
+                                    {schedule.status === 'Concluída' && (
+                                        <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-2xl">
+                                            <h4 className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-500 tracking-widest mb-2">Documentos</h4>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => generateOsPdf('os')}
+                                                    className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+                                                >
+                                                    <FileText size={16}/> Gerar OS
+                                                </button>
+                                                <button 
+                                                    onClick={() => generateOsPdf('receipt')}
+                                                    className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-zinc-800/20"
+                                                >
+                                                    <FileText size={16}/> Gerar Recibo
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

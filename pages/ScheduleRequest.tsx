@@ -189,6 +189,21 @@ export const ScheduleRequest = () => {
         const finalRequesterId = formData.requesterId || user.id;
         const finalRequesterName = formData.requesterName || user.name;
 
+        // Generate OS Number
+        const company = companies.find(c => c.id === formData.companyId);
+        const prefix = company?.prefix || 'GEN';
+        const dateObj = new Date();
+        const dd = String(dateObj.getDate()).padStart(2, '0');
+        const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const yy = String(dateObj.getFullYear()).slice(-2);
+        
+        // Get all schedules to find the next number for today
+        const allSchedules = await storage.getSchedules();
+        const todayPrefix = `OS:${prefix}/${dd}/${mm}/${yy}-`;
+        const todaySchedules = allSchedules.filter(s => s.osNumber?.startsWith(todayPrefix));
+        const nextNum = String(todaySchedules.length + 1).padStart(4, '0');
+        const osNumber = `${todayPrefix}${nextNum}`;
+
         const schedule: Schedule = {
             id: crypto.randomUUID(),
             requesterId: finalRequesterId,
@@ -210,6 +225,7 @@ export const ScheduleRequest = () => {
             locationLat: formData.locationLat || 0,
             locationLng: formData.locationLng || 0,
             status: 'Solicitada',
+            osNumber: osNumber,
             createdAt: Date.now(),
             history: [{
                 action: 'Solicitou',

@@ -299,6 +299,22 @@ export interface ScheduleHistory {
   statusSnapshot?: string;
 }
 
+export type ChecklistStatus = 'OK' | 'N/OK' | 'N/A' | '';
+
+export interface ChecklistItem {
+  name: string;
+  before: ChecklistStatus;
+  after: ChecklistStatus;
+}
+
+export const defaultChecklistItems = [
+  'Partida elétrica', 'Setas', 'Pisca alerta', 'Farol baixo', 'Farol alto',
+  'Lanterna', 'Luz de freio', 'Buzina', 'Iluminação do painel', 'Luzes de painel',
+  'Limpadores', 'Ar condicionado', 'Vidro elétrico', 'Iluminação cortesia',
+  'Rádio/CD/MP3', 'Luz de ré', 'Trava elétrica', 'Bloqueio', 'Retrovisor elétrico',
+  'Teto solar', 'Desembaçador traseiro', 'Câmera de ré'
+];
+
 export interface Schedule {
   id: string;
   requesterId: string;
@@ -320,6 +336,11 @@ export interface Schedule {
   installedImei?: string; 
   installedTagImei?: string;
   isRemoteLocation?: boolean; 
+  financialObs?: string;
+  osNumber?: string;
+  osDetails?: string;
+  osSignature?: string;
+  checklist?: ChecklistItem[];
   displacementKm?: number; 
   displacementValue?: number; 
   adhesionValue?: number; 

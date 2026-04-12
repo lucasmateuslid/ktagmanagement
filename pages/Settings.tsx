@@ -283,7 +283,7 @@ export const Settings = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
         
         {/* COLUNA ESQUERDA (PERFIL E SEGURANÇA) */}
-        <div className={`space-y-6 md:space-y-10 ${currentUser?.role === 'client' ? 'lg:col-span-12 max-w-2xl mx-auto w-full' : 'lg:col-span-4'}`}>
+        <div className={`space-y-6 md:space-y-10 ${!isAdmin ? 'lg:col-span-12 max-w-2xl mx-auto w-full' : 'lg:col-span-4'}`}>
           
           {/* MEU PERFIL - Redesenhado */}
           <div className="bg-white dark:bg-zinc-900 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
@@ -500,7 +500,7 @@ export const Settings = () => {
         </div>
 
         {/* COLUNA DIREITA (APIs E SISTEMA) */}
-        {currentUser?.role !== 'client' && (
+        {isAdmin && (
           <div className="lg:col-span-8 space-y-6 md:space-y-10">
           
               {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}

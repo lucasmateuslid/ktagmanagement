@@ -326,15 +326,40 @@ export const Tags = () => {
   };
 
   const handleActivate = async (tag: Tag) => {
+    // Se já tem traqcareId, ativa normalmente
+    if (tag.traqcareId) {
       const success = await xadtagService.activate(tag);
       if (success) {
-          addNotification('success', 'Ativação XADTAG', `Comando enviado.`);
-          const updated = { ...tag, isActivated: true };
-          await storage.saveTag(updated);
-          loadData();
+        addNotification('success', 'Ativação XADTAG', 'Comando enviado.');
+        await storage.saveTag({ ...tag, isActivated: true });
+        loadData();
       } else {
-          addNotification('error', 'Erro', `Falha na ativação.`);
+        addNotification('error', 'Erro', 'Falha na ativação.');
       }
+      return;
+    }
+
+    // Se não tem traqcareId, usa o fluxo de descoberta automática
+    // O MAC está salvo no campo tag.imei neste caso
+    addNotification('info', 'Buscando dispositivo...', 'Cruzando MAC com a API Traqcare.');
+    
+    const result = await xadtagService.activateAndDiscover(tag.imei || '');
+    
+    if (result.traqcareId) {
+      // Salva o ID descoberto independente de sucesso na ativação
+      await storage.saveTag({ 
+        ...tag, 
+        traqcareId: result.traqcareId,
+        isActivated: result.success 
+      });
+      loadData();
+    }
+    
+    addNotification(
+      result.success ? 'success' : 'error',
+      result.success ? 'Ativação Concluída' : 'Ativação com Pendência',
+      result.message
+    );
   };
 
   // --- CONSOLE LOGIC ---
@@ -488,7 +513,7 @@ export const Tags = () => {
 
         if (!tag.name) throw new Error("Nome é obrigatório");
         if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
-        if (tag.type === 'XADTAG' && !tag.traqcareId) throw new Error("ID Traqcare é obrigatório para XADTAG");
+        if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI / MAC Address é obrigatório para XADTAG");
 
         await storage.saveTag(tag);
         
@@ -822,6 +847,23 @@ export const Tags = () => {
           onConfirm={handleMassDelete}
           title="Excluir em Massa"
           message={`ATENÇÃO: Você está prestes a excluir ${selectedTags.size} equipamentos. Equipamentos vinculados a veículos perderão a associação. Deseja continuar?`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          type="danger"
+      />
+
+      <ConfirmModal 
+          isOpen={isConfirmDeleteOpen}
+          onClose={() => { setIsConfirmDeleteOpen(false); setTagToDelete(null); }}
+          onConfirm={() => {
+              if (tagToDelete) {
+                  handleDelete(tagToDelete);
+                  setIsConfirmDeleteOpen(false);
+                  setTagToDelete(null);
+              }
+          }}
+          title="Excluir Equipamento"
+          message="Tem certeza que deseja excluir este equipamento? Esta ação não pode ser desfeita."
           confirmText="Sim, Excluir"
           cancelText="Cancelar"
           type="danger"
@@ -1183,12 +1225,12 @@ export const Tags = () => {
                     ) : (
                         <>
                             <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI <span className="text-red-500">*</span></label>
-                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Apenas números" />
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI / MAC Address <span className="text-red-500">*</span></label>
+                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: D04232E7E3FA ou numérico" />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
-                                <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="ID Interno da API" />
+                                <input type="text" readOnly value={formData.traqcareId || ''} className="w-full px-4 py-3.5 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none text-zinc-500 cursor-not-allowed" placeholder="Preenchido automaticamente na ativação" />
                             </div>
                         </>
                     )}
