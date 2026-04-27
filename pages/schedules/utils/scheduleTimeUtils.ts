@@ -43,7 +43,7 @@ export const getDisplayDate = (schedule: Schedule) => {
 };
 
 export const isScheduleOverdue = (schedule: Schedule): boolean => {
-  if (['Concluída', 'Cancelada'].includes(schedule.status)) return false;
+  if (['Concluída', 'Cancelada', 'Frustrada'].includes(schedule.status)) return false;
 
   const dateStr = schedule.confirmedDate;
   const timeStr = schedule.confirmedTime || '00:00';

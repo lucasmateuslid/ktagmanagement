@@ -8,6 +8,7 @@ export const useVehicleFilters = (vehicles: Vehicle[], clients: Client[]) => {
   const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [ownershipFilter, setOwnershipFilter] = useState<string>('all');
   const [installationFilter, setInstallationFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
 
   const filteredVehicles = useMemo(() => {
     return vehicles.filter(v => {
@@ -31,10 +32,15 @@ export const useVehicleFilters = (vehicles: Vehicle[], clients: Client[]) => {
 
       // Installation filter
       const matchesInstallation = installationFilter === 'all' || v.installationType === installationFilter;
+      
+      // Tag filter
+      const matchesTag = tagFilter === 'all' || 
+                         (tagFilter === 'c_tag' && !!v.tagId) || 
+                         (tagFilter === 's_tag' && !v.tagId);
 
-      return matchesSearch && matchesStatus && matchesCompany && matchesOwnership && matchesInstallation;
+      return matchesSearch && matchesStatus && matchesCompany && matchesOwnership && matchesInstallation && matchesTag;
     });
-  }, [vehicles, clients, searchTerm, statusFilter, companyFilter, ownershipFilter, installationFilter]);
+  }, [vehicles, clients, searchTerm, statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter]);
 
   return { 
     searchTerm, setSearchTerm, 
@@ -42,6 +48,7 @@ export const useVehicleFilters = (vehicles: Vehicle[], clients: Client[]) => {
     companyFilter, setCompanyFilter,
     ownershipFilter, setOwnershipFilter,
     installationFilter, setInstallationFilter,
+    tagFilter, setTagFilter,
     filteredVehicles 
   };
 };

@@ -30,6 +30,7 @@ const KEYS = {
   SHIPMENTS: 'ktag_shipments',
   SHIPPING_ADDRESSES: 'ktag_shipping_addresses',
   TECHNICIAN_PAYMENTS: 'ktag_technician_payments',
+  CUSTOM_ROLES: 'ktag_custom_roles',
 };
 
 // ... keep cache and cleanData ...
@@ -693,6 +694,14 @@ export const storage = {
     }
   },
 
+  updateShipment: async (id: string, updates: Partial<Shipment>) => {
+    if (db) {
+      const docRef = doc(db, KEYS.SHIPMENTS, id);
+      await updateDoc(docRef, { ...updates, updatedAt: Date.now() });
+      await storage.logAction(null, 'UPDATE', 'Shipment', `Dados da remessa atualizados via sync Melhor Envio`, id);
+    }
+  },
+
   deleteShipment: async (id: string) => {
     if (db) {
       await deleteDoc(doc(db, KEYS.SHIPMENTS, id));
@@ -765,6 +774,26 @@ export const storage = {
     if (db) {
       await deleteDoc(doc(db, KEYS.TECHNICIAN_PAYMENTS, id));
       await storage.logAction(null, 'DELETE', 'TechnicianPayment', `Pagamento removido: ${id}`, id);
+    }
+  },
+
+  getCustomRoles: async () => {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, KEYS.CUSTOM_ROLES));
+    return snap.docs.map(d => d.data() as any); // any mapped to CustomRole type
+  },
+
+  saveCustomRole: async (role: any) => {
+    if (db) {
+      await setDoc(doc(db, KEYS.CUSTOM_ROLES, role.id), cleanData(role));
+      await storage.logAction(null, 'UPDATE', 'CustomRole', `Cargo salvo: ${role.name}`, role.id);
+    }
+  },
+
+  deleteCustomRole: async (id: string) => {
+    if (db) {
+      await deleteDoc(doc(db, KEYS.CUSTOM_ROLES, id));
+      await storage.logAction(null, 'DELETE', 'CustomRole', `Cargo deletado: ${id}`, id);
     }
   },
 

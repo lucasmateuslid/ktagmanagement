@@ -2,15 +2,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../services/storage';
 import { hinovaService } from '../services/hinova';
-import { Schedule, DeviceType, ServiceType, Vehicle, User, Company } from '../types';
+import { Schedule, DeviceType, ServiceType, Vehicle, User, Company, Technician } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
-import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X, Tag } from 'lucide-react';
-import * as ReactRouterDOM from 'react-router-dom';
+import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X, Tag, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
 
-const { useNavigate } = ReactRouterDOM as any;
 
 export const ScheduleRequest = () => {
   const { user } = useAuth();
@@ -26,6 +25,27 @@ export const ScheduleRequest = () => {
   // Estados para o Dropdown Customizado de Operador
   const [isUserSelectOpen, setIsUserSelectOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
+
+  const [isPontoFixo, setIsPontoFixo] = useState<boolean | null>(null);
+  const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>('');
+
+  useEffect(() => {
+    if (isPontoFixo) {
+        const fetchTechs = async () => {
+            const techs = await storage.getTechnicians();
+            const available = techs.filter(t => t.serviceLocationType === 'Ponto Fixo' && t.active);
+            setAvailableTechnicians(available);
+            if (available.length > 0) {
+                setSelectedTechnicianId(available[0].id);
+            }
+        };
+        fetchTechs();
+    } else {
+        setAvailableTechnicians([]);
+        setSelectedTechnicianId('');
+    }
+  }, [isPontoFixo]);
 
   const [formData, setFormData] = useState<Partial<Schedule>>({
     deviceType: undefined, // Removida pré-seleção conforme solicitado
@@ -164,7 +184,22 @@ export const ScheduleRequest = () => {
         return;
     }
 
-    if (!formData.vehiclePlate || !formData.vehicleModel || !formData.preferredDate || !formData.preferredTime || !formData.locationAddress) {
+    if (isPontoFixo === null) {
+        addNotification('error', 'Campos Obrigatórios', 'Selecione o local de atendimento (Volante ou Ponto Fixo).');
+        return;
+    }
+
+    if (isPontoFixo && !selectedTechnicianId) {
+        addNotification('error', 'Campos Obrigatórios', 'Selecione um técnico para o Ponto Fixo.');
+        return;
+    }
+
+    if (!isPontoFixo && !formData.locationAddress) {
+        addNotification('error', 'Campos Obrigatórios', 'Informe o endereço para o atendimento Volante.');
+        return;
+    }
+
+    if (!formData.vehiclePlate || !formData.vehicleModel || !formData.preferredDate || !formData.preferredTime) {
         addNotification('error', 'Campos Obrigatórios', 'Preencha todos os dados obrigatórios (*).');
         return;
     }
@@ -198,7 +233,7 @@ export const ScheduleRequest = () => {
         const yy = String(dateObj.getFullYear()).slice(-2);
         
         // Get all schedules to find the next number for today
-        const allSchedules = await storage.getSchedules();
+        const allSchedules = await storage.getSchedules(user?.role || '', user?.id || '');
         const todayPrefix = `OS:${prefix}/${dd}/${mm}/${yy}-`;
         const todaySchedules = allSchedules.filter(s => s.osNumber?.startsWith(todayPrefix));
         const nextNum = String(todaySchedules.length + 1).padStart(4, '0');
@@ -221,10 +256,12 @@ export const ScheduleRequest = () => {
             notes: formData.notes,
             needsInspection: formData.needsInspection,
             paymentOnSite: formData.paymentOnSite,
-            locationAddress: formData.locationAddress,
-            locationLat: formData.locationLat || 0,
-            locationLng: formData.locationLng || 0,
-            status: 'Solicitada',
+            locationAddress: isPontoFixo ? 'Ponto Fixo' : (formData.locationAddress || ''),
+            locationLat: isPontoFixo ? 0 : (formData.locationLat || 0),
+            locationLng: isPontoFixo ? 0 : (formData.locationLng || 0),
+            isRemoteLocation: !isPontoFixo,
+            status: isPontoFixo ? 'Confirmada' : 'Solicitada',
+            technicianId: isPontoFixo ? selectedTechnicianId : undefined,
             osNumber: osNumber,
             createdAt: Date.now(),
             history: [{
@@ -234,6 +271,15 @@ export const ScheduleRequest = () => {
                 details: user.id !== finalRequesterId ? `Solicitado por Admin em nome de ${finalRequesterName}` : 'Solicitação criada via portal'
             }]
         };
+
+        if (isPontoFixo) {
+            schedule.history.push({
+                action: 'Confirmou',
+                actionBy: 'Sistema',
+                timestamp: Date.now() + 1000,
+                details: 'Agendamento automático para Ponto Fixo'
+            });
+        }
 
         await storage.saveSchedule(schedule);
         addNotification('success', 'Solicitação Enviada', `Agendamento criado com sucesso.`);
@@ -469,14 +515,45 @@ export const ScheduleRequest = () => {
                     </div>
                 </div>
 
-                <div>
-                    <LocationPicker 
-                        onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))}
-                        initialLat={-5.79448} 
-                        initialLng={-35.211}
-                        tileProvider="google"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><MapPin size={14}/> Local de Atendimento <span className="text-red-500">*</span></label>
+                        <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
+                            <button type="button" onClick={() => setIsPontoFixo(false)} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isPontoFixo === false ? 'bg-primary-500 text-white shadow-lg' : 'text-zinc-500'}`}>Volante</button>
+                            <button type="button" onClick={() => setIsPontoFixo(true)} className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isPontoFixo === true ? 'bg-primary-500 text-white shadow-lg' : 'text-zinc-500'}`}>Ponto Fixo</button>
+                        </div>
+                    </div>
                 </div>
+
+                {isPontoFixo === true && (
+                    <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Técnico (Ponto Fixo) <span className="text-red-500">*</span></label>
+                        <select 
+                            value={selectedTechnicianId} 
+                            onChange={e => setSelectedTechnicianId(e.target.value)} 
+                            className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-xs outline-none"
+                        >
+                            <option value="" disabled>-- Selecione um Técnico --</option>
+                            {availableTechnicians.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                        </select>
+                        {availableTechnicians.length === 0 && (
+                            <p className="text-xs text-red-500 mt-1">Nenhum técnico com ponto fixo disponível.</p>
+                        )}
+                    </div>
+                )}
+
+                {isPontoFixo === false && (
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                        <LocationPicker 
+                            onLocationSelect={(addr, lat, lng) => setFormData(prev => ({...prev, locationAddress: addr, locationLat: lat, locationLng: lng}))}
+                            initialLat={-5.79448} 
+                            initialLng={-35.211}
+                            tileProvider="google"
+                        />
+                    </div>
+                )}
 
                 <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Observações Adicionais</label>

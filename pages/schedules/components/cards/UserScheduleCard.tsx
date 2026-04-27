@@ -19,13 +19,13 @@ const UserStepper = ({ status }: { status: string }) => {
   else if (['Em análise', 'Em orçamento'].includes(status)) activeIndex = 1;
   else if (['Autorizada', 'Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(status)) activeIndex = 2;
   else if (status === 'Concluída') activeIndex = 3;
-  else if (status === 'Cancelada') activeIndex = -1;
+  else if (['Cancelada', 'Frustrada'].includes(status)) activeIndex = -1;
 
-  if (status === 'Cancelada') {
+  if (['Cancelada', 'Frustrada'].includes(status)) {
       return (
           <div className="w-full bg-red-50 dark:bg-red-900/10 p-3 rounded-2xl border border-red-100 dark:border-red-900/20 flex items-center justify-center gap-2 mt-4">
               <XCircle size={16} className="text-red-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">Cancelada</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400">{status}</span>
           </div>
       );
   }
@@ -87,9 +87,11 @@ export const UserScheduleCard: React.FC<UserScheduleCardProps> = ({ item, techni
         <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
             <div className="flex flex-wrap gap-2 items-center">
                 <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${styleConfig.badgeBg} ${styleConfig.badgeText}`}>{item.status}</span>
-                <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
-                    <Clock size={12}/> {timeElapsedStr}
-                </span>
+                {!['Concluída', 'Cancelada', 'Frustrada'].includes(item.status) && (
+                    <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
+                        <Clock size={12}/> {timeElapsedStr}
+                    </span>
+                )}
                 {isOverdue && (
                     <span className="px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 flex items-center gap-1 border border-red-200 dark:border-red-800 animate-pulse">
                         Atenção: +24h

@@ -1,13 +1,11 @@
 
-import * as React from 'react';
-import { useState, useEffect } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { MapComponent } from '../components/MapComponent';
 import { storage } from '../services/storage';
 import { StolenRecord, LocationHistory } from '../types';
 import { ShieldAlert, MapPin, Clock, Car, AlertTriangle } from 'lucide-react';
 
-const { useParams } = ReactRouterDOM as any;
 
 export const PublicTracking = () => {
   const { token } = useParams();

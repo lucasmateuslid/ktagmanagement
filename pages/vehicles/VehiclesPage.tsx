@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
 import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2 } from 'lucide-react';
@@ -26,7 +26,6 @@ import { Vehicle, LocationHistory } from '../../types';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
 
-const { useSearchParams, useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 export const VehiclesPage = () => {
@@ -44,6 +43,7 @@ export const VehiclesPage = () => {
     companyFilter, setCompanyFilter,
     ownershipFilter, setOwnershipFilter,
     installationFilter, setInstallationFilter,
+    tagFilter, setTagFilter,
     filteredVehicles 
   } = useVehicleFilters(vehicles, clients);
   
@@ -224,7 +224,14 @@ export const VehiclesPage = () => {
                       </div>
 
                       <div className="mb-6">
-                          <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none mb-1">{vehicle.plate}</h3>
+                          <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">{vehicle.plate}</h3>
+                              {tag && (
+                                  <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-1 rounded font-mono font-bold border border-zinc-200 dark:border-zinc-700">
+                                       TAG: {tag.accessoryId || tag.imei || tag.name}
+                                  </span>
+                              )}
+                          </div>
                           <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide leading-tight line-clamp-1">{vehicle.model}</p>
                       </div>
 
@@ -279,7 +286,14 @@ export const VehiclesPage = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
-                          <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">{vehicle.plate}</h3>
+                          <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">{vehicle.plate}</h3>
+                              {tag && (
+                                  <span className="text-[8px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded font-mono font-bold">
+                                       TAG: {tag.accessoryId || tag.imei || tag.name}
+                                  </span>
+                              )}
+                          </div>
                           <div className={`w-2 h-2 rounded-full ${lastPos ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
                       </div>
                       <p className="text-[10px] text-zinc-500 font-medium truncate mb-1">{vehicle.model}</p>
@@ -427,6 +441,8 @@ export const VehiclesPage = () => {
         setOwnershipFilter={setOwnershipFilter}
         installationFilter={installationFilter}
         setInstallationFilter={setInstallationFilter}
+        tagFilter={tagFilter}
+        setTagFilter={setTagFilter}
         companies={companies}
         isClientView={isClientView}
         selectedCount={selectedVehicles.size}

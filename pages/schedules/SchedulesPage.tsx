@@ -9,6 +9,7 @@ import { Schedule, Technician, Company } from '../../types';
 import { TrackingModal } from '../../components/TrackingModal';
 import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle } from 'lucide-react';
 import { TechnicianAvailabilityAlert } from '../../components/TechnicianAvailabilityAlert';
+import { whatsappService } from '../../services/whatsappService';
 
 // Hooks
 import { useScheduleStats } from './hooks/useScheduleStats';
@@ -105,12 +106,8 @@ export const SchedulesPage = () => {
       const tech = technicians.find(t => t.id === schedule.technicianId);
       const techName = tech ? tech.name : 'A definir';
       
-      // Formata data corretamente corrigindo timezone
       const dateParts = schedule.confirmedDate ? schedule.confirmedDate.split('-') : null;
-      const dateDisplay = dateParts 
-        ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` 
-        : 'A definir';
-
+      const dateDisplay = dateParts ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : 'A definir';
       const timeDisplay = schedule.confirmedTime || 'A definir';
       const clientDisplay = schedule.clientName ? schedule.clientName.split(' ')[0] : (schedule.requesterName.split(' ')[0] || 'Cliente');
 
@@ -129,9 +126,23 @@ export const SchedulesPage = () => {
 
   const handleUpdateSchedule = async (updated: Schedule) => {
       try {
+          const previousSchedule = schedules.find(s => s.id === updated.id);
+          const statusChanged = previousSchedule && previousSchedule.status !== updated.status;
+          
           await storage.saveSchedule(updated);
           storage.logAction(user, 'UPDATE', 'Schedule', `Atualizou agendamento: ${updated.vehiclePlate}`, updated.id);
           setSelectedSchedule(updated);
+
+          // Disparo de notificação WhatsApp
+          if (statusChanged && updated.clientPhone) {
+              const msg = whatsappService.getScheduleStatusMessage(
+                  updated.clientName?.split(' ')[0] || updated.requesterName.split(' ')[0], 
+                  updated.vehiclePlate, 
+                  updated.status,
+                  updated.confirmedDate ? `${updated.confirmedDate.split('-').reverse().join('/')} às ${updated.confirmedTime}` : undefined
+              );
+              whatsappService.sendMessage(updated.clientPhone, msg);
+          }
       } catch (e) {
           addNotification('error', 'Erro', 'Falha ao salvar agendamento.');
       }

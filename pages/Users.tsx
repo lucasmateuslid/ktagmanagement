@@ -37,7 +37,7 @@ export const Users = () => {
 
   const { addNotification } = useNotification();
   const { t } = useLanguage();
-  const { isAdmin, user: currentUser } = useAuth();
+  const { isAdmin, user: currentUser, customRoles } = useAuth();
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -184,7 +184,13 @@ export const Users = () => {
     addNotification('success', 'Copiado', 'Transferido para a área de transferência.');
   };
 
-  const getRoleBadge = (role?: string) => {
+  const getRoleBadge = (role?: string, customRoleId?: string) => {
+    if (customRoleId) {
+        const customRole = customRoles.find(r => r.id === customRoleId);
+        if (customRole) {
+            return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-purple-500/10 text-purple-500 border-purple-500/20`}>{customRole.name}</span>;
+        }
+    }
     let style = '';
     let label = '';
 
@@ -235,7 +241,7 @@ export const Users = () => {
                         <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
                     </div>
                     </div>
-                    {getRoleBadge(user.role)}
+                    {getRoleBadge(user.role, user.customRoleId)}
                 </div>
 
                 <div className="flex items-center justify-between py-3 border-y border-zinc-50 dark:border-zinc-800/50">
@@ -277,7 +283,7 @@ export const Users = () => {
                         </div>
                     </div>
                     </td>
-                    <td className="px-8 py-5">{getRoleBadge(user.role)}</td>
+                    <td className="px-8 py-5">{getRoleBadge(user.role, user.customRoleId)}</td>
                     <td className="px-8 py-5">
                     <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
                     </td>
@@ -425,12 +431,32 @@ export const Users = () => {
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-zinc-500">Cargo</label>
-                        <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as any})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none font-bold text-[10px] uppercase tracking-widest">
-                            <option value="user">Usuário</option>
-                            <option value="moderator">Moderador</option>
-                            <option value="admin">Admin</option>
-                            <option value="admin_tecnico">Admin Técnico</option>
-                            <option value="client">Cliente</option>
+                        <select 
+                            value={formData.customRoleId ? `custom:${formData.customRoleId}` : `base:${formData.role}`} 
+                            onChange={e => {
+                                const val = e.target.value;
+                                if (val.startsWith('custom:')) {
+                                    setFormData({...formData, role: 'user', customRoleId: val.replace('custom:', '')});
+                                } else {
+                                    setFormData({...formData, role: val.replace('base:', '') as any, customRoleId: undefined});
+                                }
+                            }}
+                            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none font-bold text-[10px] uppercase tracking-widest"
+                        >
+                            <optgroup label="Cargos do Sistema">
+                                <option value="base:user">Usuário</option>
+                                <option value="base:moderator">Moderador</option>
+                                <option value="base:admin">Admin</option>
+                                <option value="base:admin_tecnico">Admin Técnico</option>
+                                <option value="base:client">Cliente</option>
+                            </optgroup>
+                            {customRoles && customRoles.length > 0 && (
+                                <optgroup label="Cargos Customizados">
+                                    {customRoles.map(r => (
+                                        <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
+                                    ))}
+                                </optgroup>
+                            )}
                         </select>
                     </div>
                     <div className="space-y-1">

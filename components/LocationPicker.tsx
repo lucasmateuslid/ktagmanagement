@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Search, Loader2, AlertTriangle } from 'lucide-react';
+import { geocodingService } from '../services/geocoding';
 import { storage } from '../services/storage';
-
-declare var google: any;
 
 interface LocationPickerProps {
   onLocationSelect: (address: string, lat: number, lng: number) => void;
@@ -48,154 +46,114 @@ const LocationMarker = ({ position, setPosition, onSelect }: any) => {
 export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect, initialLat = -5.79448, initialLng = -35.211, tileProvider = 'osm' }) => {
   const [address, setAddress] = useState('');
   const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: initialLat, lng: initialLng });
-  const [googleReady, setGoogleReady] = useState(false);
-  const [googleError, setGoogleError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const autoCompleteRef = useRef<any>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<{lat: number, lon: number, address: string}[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [provider, setProvider] = useState<'osm' | 'google'>('osm');
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Carrega API do Google Maps
   useEffect(() => {
-    // Handler global para falhas de autenticação do Google Maps
-    (window as any).gm_authFailure = () => {
-        console.error("Google Maps: Falha de autenticação ou chave inválida/restrita.");
-        setGoogleReady(false);
-        setGoogleError(true);
-    };
-
-    const loadGoogleMaps = async () => {
-      const settings = await storage.getSettings();
-      if (!settings.googleMapsKey) {
-          // Sem chave, não tentamos carregar, usamos modo manual
-          setGoogleError(true); 
-          return;
+    storage.getSettings().then(s => {
+      if (s.geocodingProvider) {
+        setProvider(s.geocodingProvider);
       }
-
-      if ((window as any).google?.maps?.places) {
-        setGoogleReady(true);
-        return;
-      }
-
-      // Evita carregar scripts duplicados
-      if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-         // Se já existe mas ainda não carregou globalmente, espera um pouco
-         const checkInterval = setInterval(() => {
-            if ((window as any).google?.maps?.places) {
-                setGoogleReady(true);
-                clearInterval(checkInterval);
-            }
-         }, 500);
-         return;
-      }
-
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${settings.googleMapsKey}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => setGoogleReady(true);
-      script.onerror = () => { setGoogleReady(false); setGoogleError(true); };
-      document.head.appendChild(script);
-    };
-    loadGoogleMaps();
-
-    return () => {
-        (window as any).gm_authFailure = null;
-    };
+    });
   }, []);
 
-  // Inicializa Autocomplete
-  useEffect(() => {
-    if (googleReady && inputRef.current && !autoCompleteRef.current && (window as any).google?.maps?.places) {
-      try {
-          autoCompleteRef.current = new google.maps.places.Autocomplete(inputRef.current, {
-            fields: ['formatted_address', 'geometry'],
-            types: ['geocode', 'establishment'] // Permite endereços e estabelecimentos
-          });
-
-          autoCompleteRef.current.addListener('place_changed', () => {
-            const place = autoCompleteRef.current?.getPlace();
-            if (place && place.geometry && place.geometry.location) {
-              const lat = place.geometry.location.lat();
-              const lng = place.geometry.location.lng();
-              const addr = place.formatted_address || '';
-              
-              setAddress(addr);
-              setPosition({ lat, lng });
-              onLocationSelect(addr, lat, lng);
-            }
-          });
-      } catch (e) {
-          console.error("Erro ao inicializar Google Places Autocomplete:", e);
-          setGoogleError(true);
-      }
-    }
-  }, [googleReady, onLocationSelect]);
-
-  // Reverse Geocoding ao clicar no mapa (usando Google Geocoder se disponível)
-  const handleMapClick = (latlng: L.LatLng) => {
+  // Reverse Geocoding ao clicar no mapa
+  const handleMapClick = async (latlng: L.LatLng) => {
     setPosition(latlng);
-    
-    // Tenta usar Google Geocoder se disponível e sem erro
-    if (googleReady && !googleError && (window as any).google?.maps?.Geocoder) {
-        try {
-            const geocoder = new google.maps.Geocoder();
-            geocoder.geocode({ location: latlng }, (results: any, status: any) => {
-                if (status === 'OK' && results && results[0]) {
-                    const newAddr = results[0].formatted_address;
-                    setAddress(newAddr);
-                    onLocationSelect(newAddr, latlng.lat, latlng.lng);
-                } else {
-                    const fallback = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
-                    setAddress(fallback);
-                    onLocationSelect(fallback, latlng.lat, latlng.lng);
-                }
-            });
-        } catch (e) {
-            console.error("Erro no Geocoder:", e);
-            const fallback = `Lat: ${latlng.lat.toFixed(5)}, Lon: ${latlng.lng.toFixed(5)}`;
-            setAddress(fallback);
-            onLocationSelect(fallback, latlng.lat, latlng.lng);
-        }
-    } else {
-        // Fallback simples se API não estiver carregada ou com erro
+    setIsSearching(true);
+    try {
+        const newAddr = await geocodingService.reverseGeocode(latlng.lat, latlng.lng);
+        setAddress(newAddr);
+        onLocationSelect(newAddr, latlng.lat, latlng.lng);
+    } catch (e) {
+        console.error("Erro no Geocoder:", e);
         const fallback = `Lat: ${latlng.lat.toFixed(5)}, Lon: ${latlng.lng.toFixed(5)}`;
         setAddress(fallback);
         onLocationSelect(fallback, latlng.lat, latlng.lng);
+    } finally {
+        setIsSearching(false);
     }
+  };
+
+  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setAddress(value);
+    
+    if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current);
+    }
+
+    if (value.length > 3) {
+        searchTimeout.current = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const results = await geocodingService.geocode(value);
+                setSearchResults(results);
+                setShowDropdown(true);
+            } catch (error) {
+                console.error("Erro na busca de endereço:", error);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 800);
+    } else {
+        setSearchResults([]);
+        setShowDropdown(false);
+    }
+  };
+
+  const handleSelectResult = (result: {lat: number, lon: number, address: string}) => {
+      setAddress(result.address);
+      setPosition({ lat: result.lat, lng: result.lon });
+      onLocationSelect(result.address, result.lat, result.lon);
+      setShowDropdown(false);
   };
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="relative">
         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex justify-between">
             <span>Endereço de Instalação</span>
-            {googleReady && !googleError ? (
-                <span className="text-emerald-500 flex items-center gap-1"><Search size={10}/> Google Maps Ativo</span>
-            ) : (
-                <span className="text-amber-500 flex items-center gap-1" title="Selecione no mapa manualmente"><AlertTriangle size={10}/> Seleção Manual</span>
-            )}
+            <span className="text-emerald-500 flex items-center gap-1">
+              <Search size={10}/> 
+              {provider === 'google' ? 'Google Maps Ativo' : 'OpenStreetMap Ativo'}
+            </span>
         </label>
         <div className="relative mt-1">
-            <MapPin className={`absolute left-4 top-1/2 -translate-y-1/2 ${googleReady && !googleError ? 'text-red-500' : 'text-zinc-400'}`} size={16} />
+            <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
             <input 
-                ref={inputRef}
                 type="text" 
                 value={address}
-                onChange={(e) => {
-                    setAddress(e.target.value);
-                    // Atualiza o pai mesmo se digitar manualmente
-                    if (!googleReady || googleError) {
-                        onLocationSelect(e.target.value, position.lat, position.lng);
-                    }
-                }}
-                placeholder={googleReady && !googleError ? "Busque o endereço no Google Maps..." : "Digite o endereço ou selecione no mapa..."}
-                className={`w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border ${googleError ? 'border-amber-500/30' : 'border-zinc-200 dark:border-zinc-700'} rounded-2xl outline-none focus:border-primary-500 transition-all font-bold text-sm`}
+                onChange={handleAddressChange}
+                onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                placeholder="Digite o endereço ou selecione no mapa..."
+                className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:border-primary-500 transition-all font-bold text-sm"
             />
-            {!googleReady && !googleError && (
+            {isSearching && (
                 <div className="absolute right-4 top-1/2 -translate-y-1/2">
                     <Loader2 className="animate-spin text-zinc-300" size={16} />
                 </div>
             )}
         </div>
+        
+        {/* Dropdown de resultados */}
+        {showDropdown && searchResults.length > 0 && (
+            <div className="absolute z-[1000] w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                {searchResults.map((result, idx) => (
+                    <div 
+                        key={idx} 
+                        className="px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+                        onMouseDown={() => handleSelectResult(result)}
+                    >
+                        <p className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-2">{result.address}</p>
+                    </div>
+                ))}
+            </div>
+        )}
       </div>
 
       <div className="h-64 w-full rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative z-0 shadow-inner">

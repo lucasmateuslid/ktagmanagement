@@ -6,6 +6,7 @@ import { ArrowLeft, Printer, Package, Truck, Calendar, MapPin, CheckCircle, XCir
 import { ShipmentStatus } from '../../types';
 import { storage } from '../../services/storage';
 import { ShipmentTrackingModal } from '../../components/ShipmentTrackingModal';
+import { MelhorEnvioFlowModal } from '../../components/MelhorEnvioFlowModal';
 
 export const ShipmentDetails = () => {
   const { id } = useParams();
@@ -23,6 +24,9 @@ export const ShipmentDetails = () => {
   const [trackingData, setTrackingData] = useState<any>(null);
   const [isTrackingLoading, setIsTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState('');
+
+  // Melhor Envio Flow
+  const [showMelhorEnvioFlow, setShowMelhorEnvioFlow] = useState(false);
 
   useEffect(() => {
     if (!loading && !tagsLoading && id) {
@@ -121,6 +125,11 @@ export const ShipmentDetails = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          {canEdit && (
+            <button onClick={() => setShowMelhorEnvioFlow(true)} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 transition-colors">
+              <Truck size={18} /> Melhor Envio
+            </button>
+          )}
           {canEdit && shipment.status === 'rascunho' && (
             <button onClick={() => navigate(`/envios/${shipment.id}/editar`)} className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
               Editar
@@ -281,6 +290,15 @@ export const ShipmentDetails = () => {
         isLoading={isTrackingLoading}
         error={trackingError}
         trackingData={trackingData}
+      />
+
+      <MelhorEnvioFlowModal 
+        isOpen={showMelhorEnvioFlow}
+        onClose={() => setShowMelhorEnvioFlow(false)}
+        shipment={shipment}
+        onComplete={() => {
+           // Reload logic if needed, useShipments already triggers re-render via context
+        }}
       />
     </div>
   );

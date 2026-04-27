@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { AiAssistant } from './AiAssistant';
 import { pushService } from '../services/pushService'; 
 import { ChangelogModal } from './ChangelogModal'; // Import Changelog
+import { hasPermission } from '../utils/permissions';
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
@@ -17,11 +18,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const { Outlet, Link, useLocation, useNavigate } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, customRoles, logout, isAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -70,60 +70,58 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const RoleIcon = roleStyle?.icon;
 
   const getMenuSections = () => {
-    const role = user?.role || 'user';
-    
-    if (role === 'client') {
-      return [
-        { title: 'MONITORAMENTO', items: [
-          { label: 'MINHA FROTA', path: '/vehicles', icon: CarFront },
-          { label: 'MAPA AO VIVO', path: '/map', icon: Map }
-        ]}
-      ];
-    }
-
-    if (role === 'technician') {
-      return [
-        { title: 'OPERACIONAL', items: [
-          { label: 'DASHBOARD', path: '/', icon: LayoutGrid },
-          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar }
-        ]}
-      ];
-    }
-
-    // Menu for Non-Clients (Admin, Moderator, User)
-    return [
-      { title: 'MONITORAMENTO', items: [
-        { label: 'DASHBOARD', path: '/', icon: LayoutGrid }, 
-        { label: 'MAPA AO VIVO', path: '/map', icon: Map }
-      ]},
-      { title: 'OPERAÇÕES', items: [
-        { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert }, 
-        { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront },
-        { label: 'ENVIOS', path: '/envios', icon: Package },
-        ...(role === 'admin' || role === 'moderator' || role === 'admin_tecnico' ? [
-           { label: 'CLIENTES', path: '/clients', icon: Users },
-           { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags },
-        ] : [])
-      ]},
-      { title: 'AGENDAMENTOS', items: [
-        { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus },
-        { label: role === 'user' ? 'MINHAS SOLICITAÇÕES' : 'CENTRAL DE AGENDA', path: '/schedules', icon: Calendar },
-        { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar },
-        ...(role === 'admin' || role === 'admin_tecnico' ? [{ label: 'TÉCNICOS', path: '/technicians', icon: Wrench }] : [])
-      ]},
-      // Feedback Section for Internal Users
-      { title: 'COMUNIDADE', items: [
-          { label: isAdmin ? 'COMENTÁRIOS' : 'FEEDBACK & SUGESTÕES', path: '/feedback', icon: MessageSquare }
-      ]},
-      ...(role === 'admin' || role === 'moderator' || role === 'admin_tecnico' ? [
-        { title: 'GESTÃO', items: [
-          { label: 'RELATÓRIOS', path: '/reports', icon: FileText },
-          { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet },
-          { label: 'AUDITORIA', path: '/audit', icon: ClipboardList },
-          ...(role === 'admin' || role === 'admin_tecnico' ? [{ label: 'USUÁRIOS ADM', path: '/users', icon: UserCircle }] : []),
-        ]}
-      ] : [])
+    const rawSections = [
+      {
+        title: 'MONITORAMENTO',
+        items: [
+          { label: 'DASHBOARD', path: '/', icon: LayoutGrid, perm: 'ROUTE_DASHBOARD' },
+          { label: 'MAPA AO VIVO', path: '/map', icon: Map, perm: 'ROUTE_MAP' }
+        ]
+      },
+      {
+        title: 'OPERAÇÕES',
+        items: [
+          { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert, perm: 'ROUTE_SECURITY' },
+          { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront, perm: 'ROUTE_VEHICLES' },
+          { label: 'ENVIOS', path: '/envios', icon: Package, perm: 'ROUTE_SHIPMENTS' },
+          { label: 'CLIENTES', path: '/clients', icon: Users, perm: 'ROUTE_CLIENTS' },
+          { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags, perm: 'ROUTE_TAGS' }
+        ]
+      },
+      {
+        title: 'AGENDAMENTOS',
+        items: [
+          { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus, perm: 'ROUTE_SCHEDULE_NEW' },
+          { label: 'CENTRAL DE AGENDA', path: '/schedules', icon: Calendar, perm: 'ROUTE_SCHEDULES' },
+          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar, perm: 'ROUTE_CALENDAR' },
+          { label: 'TÉCNICOS', path: '/technicians', icon: Wrench, perm: 'ROUTE_TECHNICIANS' }
+        ]
+      },
+      {
+        title: 'COMUNIDADE',
+        items: [
+          { label: 'FEEDBACKS', path: '/feedback', icon: MessageSquare, perm: 'ROUTE_FEEDBACK' }
+        ]
+      },
+      {
+        title: 'GESTÃO',
+        items: [
+          { label: 'RELATÓRIOS', path: '/reports', icon: FileText, perm: 'ROUTE_REPORTS' },
+          { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet, perm: 'ROUTE_FINANCIAL' },
+          { label: 'AUDITORIA', path: '/audit', icon: ClipboardList, perm: 'ROUTE_AUDIT' }
+        ]
+      }
     ];
+
+    const out: any[] = [];
+    rawSections.forEach((section: any) => {
+        const allowedItems = section.items.filter((item: any) => hasPermission(user, customRoles || [], item.perm));
+        if (allowedItems.length > 0) {
+            out.push({ ...section, items: allowedItems });
+        }
+    });
+
+    return out;
   };
 
   const menuSections = getMenuSections();
@@ -210,7 +208,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                       <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mb-3">{section.title}</h3>
                     )}
                     <div className="space-y-1">
-                      {section.items.map((item) => {
+                      {section.items.map((item: any) => {
                         const isActive = location.pathname === item.path;
                         return (
                           <Link 

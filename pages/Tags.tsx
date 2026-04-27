@@ -1,7 +1,6 @@
 
-import * as React from 'react';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { storage } from '../services/storage';
 import { Tag, Vehicle, TagType } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -20,9 +19,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
 import * as XLSX from 'xlsx';
-import { ktagBatteryStatus } from '../services/api';
+import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 
-const { useSearchParams } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 const SkeletonStats = () => (
@@ -129,6 +127,8 @@ export const Tags = () => {
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLog[]>([]);
   const [activeTestTag, setActiveTestTag] = useState<Tag | null>(null);
   const [testing, setTesting] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportProgress, setReportProgress] = useState<{current: number, total: number, percentage: number, currentTag: string} | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: 'success' | 'error' | 'loading', code?: number, timestamp: number, battery?: any }>>({});
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -234,6 +234,61 @@ export const Tags = () => {
     } else {
       setSelectedTags(new Set(filteredTags.map(t => t.id)));
     }
+  };
+
+  const handleConnectionReport = async () => {
+      if (selectedTags.size === 0) return;
+      
+      setIsGeneratingReport(true);
+      setReportProgress({ current: 0, total: selectedTags.size, percentage: 0, currentTag: 'Iniciando...' });
+      
+      addNotification('info', 'Gerando Relatório', 'Buscando posição das tags...');
+
+      try {
+          const tagsToReport = tags.filter(t => selectedTags.has(t.id));
+          const locationsResult = await fetchTagsLocationBatch(tagsToReport, 1, (index, total, currentTag) => {
+              setReportProgress({
+                  current: index,
+                  total,
+                  percentage: Math.round((index / total) * 100),
+                  currentTag: currentTag.accessoryId || currentTag.imei || "Desconhecido"
+              });
+          });
+          
+          setReportProgress(prev => prev ? { ...prev, currentTag: 'Processando Endereços / APIs de Mapas...' } : null);
+          const reportData = await Promise.all(tagsToReport.map(async (t) => {
+              const loc = locationsResult.find(l => l.tagId === t.id);
+              let address = 'Sem localização / Off';
+              if (loc && loc.lat && loc.lon) {
+                  try {
+                      address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+                  } catch (e) {
+                      address = `${loc.lat}, ${loc.lon}`;
+                  }
+              }
+
+              return {
+                  "Nº Equipamento (Tag)": t.accessoryId || t.imei || t.id,
+                  "Data de Inclusão": new Date(t.createdAt).toLocaleDateString('pt-BR'),
+                  "Local com Horário da Posição": loc ? `${address} - ${new Date(loc.timestamp).toLocaleString('pt-BR')}` : '-',
+                  "Status Bateria": loc ? loc.battery.label : '-',
+                  "Latitude": loc ? loc.lat : '-',
+                  "Longitude": loc ? loc.lon : '-'
+              };
+          }));
+
+          const ws = XLSX.utils.json_to_sheet(reportData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Conexões");
+          XLSX.writeFile(wb, `relatorio_conexoes_tags_${Date.now()}.xlsx`);
+
+          addNotification('success', 'Relatório Concluído', 'O download foi iniciado com sucesso!');
+      } catch (e) {
+          addNotification('error', 'Erro na Geração', 'Ocorreu um erro ao buscar o status de conexão em massa.');
+      } finally {
+          setIsGeneratingReport(false);
+          setReportProgress(null);
+      }
   };
 
   const handleExportSelected = (format: 'xlsx' | 'csv') => {
@@ -788,6 +843,9 @@ export const Tags = () => {
                         </button>
                         <button onClick={() => handleExportSelected('csv')} className="px-4 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 border border-blue-500/20 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 shrink-0" title="Exportar CSV">
                             <FileText size={14} /> CSV
+                        </button>
+                        <button onClick={handleConnectionReport} disabled={isGeneratingReport} className={`px-4 py-2.5 ${isGeneratingReport ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 opacity-50 cursor-not-allowed' : 'bg-primary-500/10 hover:bg-primary-500/20 text-primary-600 border-primary-500/20'} rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 shrink-0`} title="Relatório de Conexão das selecionadas">
+                            {isGeneratingReport ? <Loader2 size={14} className="animate-spin" /> : <Signal size={14} />} {isGeneratingReport ? 'Buscando...' : 'Relatório Conexão'}
                         </button>
 
                         <div className="relative shrink-0" ref={massActionMenuRef}>
@@ -1365,6 +1423,48 @@ export const Tags = () => {
               </div>
           </div>
       )}
+
+      {/* Report Generation Progress Overlay */}
+      <AnimatePresence>
+        {reportProgress && (
+          <MotionDiv 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+              <div className="bg-white dark:bg-[#0a0a0a] border border-zinc-100 dark:border-zinc-800 p-8 rounded-3xl w-full max-w-md shadow-2xl flex flex-col items-center text-center">
+                  <div className="w-16 h-16 bg-primary-500/10 rounded-full flex items-center justify-center mb-6">
+                      <Signal className="text-primary-500 animate-pulse" size={32} />
+                  </div>
+                  
+                  <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight mb-2">Diagnosticando Conexões</h3>
+                  <p className="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-8 max-w-[280px]">
+                      Estabelecendo PING e lendo bateria e coordenadas das tags na fila. Não feche esta tela.
+                  </p>
+
+                  <div className="w-full space-y-3">
+                      <div className="flex justify-between text-[10px] font-black uppercase text-zinc-500 tracking-widest">
+                          <span>{reportProgress.current} DE {reportProgress.total}</span>
+                          <span className="text-primary-500">{reportProgress.percentage}%</span>
+                      </div>
+                      
+                      <div className="w-full h-3 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                          <div 
+                              className="h-full bg-primary-500 transition-all duration-300 ease-out relative"
+                              style={{ width: `${reportProgress.percentage}%` }}
+                          >
+                              <div className="absolute top-0 right-0 bottom-0 left-0 bg-white/20 animate-pulse"></div>
+                          </div>
+                      </div>
+
+                      <div className="pt-2 text-[10px] text-zinc-400 font-mono tracking-wider truncate flex justify-center items-center gap-2">
+                           <Loader2 size={10} className="animate-spin text-zinc-500"/>
+                           Em foco: <span className="text-white bg-zinc-800 px-2 py-0.5 rounded">{reportProgress.currentTag}</span>
+                      </div>
+                  </div>
+              </div>
+          </MotionDiv>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

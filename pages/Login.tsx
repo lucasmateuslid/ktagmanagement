@@ -4,12 +4,11 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
-import * as ReactRouterDOM from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, ArrowRight, Loader2, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { xssProtection } from '../services/xssProtection';
 
-const { useNavigate } = ReactRouterDOM as any;
 
 const REMEMBER_KEY = 'ktag_remember_login';
 

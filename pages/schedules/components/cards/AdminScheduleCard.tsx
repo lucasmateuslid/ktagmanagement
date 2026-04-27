@@ -55,7 +55,9 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
             </div>
             <div className="text-right">
                 <div className="text-[10px] font-bold text-zinc-400">{displayDate}</div>
-                <div className="text-lg font-black text-zinc-900 dark:text-white leading-none">{timeElapsedStr}</div>
+                {!['Concluída', 'Cancelada', 'Frustrada'].includes(item.status) && (
+                    <div className="text-lg font-black text-zinc-900 dark:text-white leading-none">{timeElapsedStr}</div>
+                )}
             </div>
         </div>
 

@@ -25,46 +25,45 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function performGeocoding(address: string) {
+async function performGeocoding(address: string, providerPreference: 'osm' | 'google' = 'osm') {
   const userAgent = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/1.0';
   const googleKey = process.env.GEOCODING_GOOGLE_API_KEY;
 
   let usedFallback = false;
   let fallbacksCount = 0;
 
-  // PASSO 1 -> Tentar OSM
-  try {
-    const start = Date.now();
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&addressdetails=1&limit=1&countrycodes=br`;
-    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const latency = Date.now() - start;
-        console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
-        return {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          displayName: data[0].display_name,
-          provider: "osm",
-          confidence: 1.0,
-          usedFallback,
-          raw: data[0]
-        };
+  const tryOSM = async () => {
+    try {
+      const start = Date.now();
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&addressdetails=1&limit=1&countrycodes=br`;
+      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const latency = Date.now() - start;
+          console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
+          return {
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon),
+            displayName: data[0].display_name,
+            provider: "osm",
+            confidence: 1.0,
+            usedFallback,
+            raw: data[0]
+          };
+        }
       }
+    } catch (e) {
+      // OSM failed
     }
-  } catch (e) {
-    // OSM failed
-  }
+    return null;
+  };
 
-  // Falha OSM -> aguardar 300ms -> ir para PASSO 2
-  await delay(300);
-  usedFallback = true;
-  fallbacksCount++;
-  console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
-
-  // PASSO 2 -> Tentar Google
-  if (googleKey) {
+  const tryGoogle = async () => {
+    if (!googleKey) {
+      console.log(`[GEOCODING] Google ignorado (chave ausente).`);
+      return null;
+    }
     try {
       const start = Date.now();
       const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=br&language=pt-BR&key=${googleKey}`;
@@ -88,53 +87,75 @@ async function performGeocoding(address: string) {
     } catch (e) {
       // Google failed
     }
+    return null;
+  };
+
+  if (providerPreference === 'google') {
+    const googleResult = await tryGoogle();
+    if (googleResult) return googleResult;
+    
+    await delay(300);
+    usedFallback = true;
+    fallbacksCount++;
+    console.log(`[GEOCODING] OSM ativado como fallback #1. Motivo: Google falhou ou não encontrou.`);
+    
+    const osmResult = await tryOSM();
+    if (osmResult) return osmResult;
   } else {
-    console.log(`[GEOCODING] Google ignorado (chave ausente).`);
+    const osmResult = await tryOSM();
+    if (osmResult) return osmResult;
+    
+    await delay(300);
+    usedFallback = true;
+    fallbacksCount++;
+    console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
+    
+    const googleResult = await tryGoogle();
+    if (googleResult) return googleResult;
   }
 
   throw new GeocodingError("Todos os provedores falharam");
 }
 
-async function performReverseGeocoding(lat: number, lng: number) {
+async function performReverseGeocoding(lat: number, lng: number, providerPreference: 'osm' | 'google' = 'osm') {
   const userAgent = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/1.0';
   const googleKey = process.env.GEOCODING_GOOGLE_API_KEY;
 
   let usedFallback = false;
   let fallbacksCount = 0;
 
-  // PASSO 1 -> Tentar OSM
-  try {
-    const start = Date.now();
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
-    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.display_name) {
-        const latency = Date.now() - start;
-        console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
-        return {
-          lat: parseFloat(data.lat),
-          lng: parseFloat(data.lon),
-          displayName: data.display_name,
-          provider: "osm",
-          confidence: 1.0,
-          usedFallback,
-          raw: data
-        };
+  const tryOSM = async () => {
+    try {
+      const start = Date.now();
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.display_name) {
+          const latency = Date.now() - start;
+          console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
+          return {
+            lat: parseFloat(data.lat),
+            lng: parseFloat(data.lon),
+            displayName: data.display_name,
+            provider: "osm",
+            confidence: 1.0,
+            usedFallback,
+            raw: data
+          };
+        }
       }
+    } catch (e) {
+      // OSM failed
     }
-  } catch (e) {
-    // OSM failed
-  }
+    return null;
+  };
 
-  // Falha OSM -> aguardar 300ms -> ir para PASSO 2
-  await delay(300);
-  usedFallback = true;
-  fallbacksCount++;
-  console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
-
-  // PASSO 2 -> Tentar Google
-  if (googleKey) {
+  const tryGoogle = async () => {
+    if (!googleKey) {
+      console.log(`[GEOCODING] Google ignorado (chave ausente).`);
+      return null;
+    }
     try {
       const start = Date.now();
       const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=pt-BR&key=${googleKey}`;
@@ -158,8 +179,31 @@ async function performReverseGeocoding(lat: number, lng: number) {
     } catch (e) {
       // Google failed
     }
+    return null;
+  };
+
+  if (providerPreference === 'google') {
+    const googleResult = await tryGoogle();
+    if (googleResult) return googleResult;
+    
+    await delay(300);
+    usedFallback = true;
+    fallbacksCount++;
+    console.log(`[GEOCODING] OSM ativado como fallback #1. Motivo: Google falhou ou não encontrou.`);
+    
+    const osmResult = await tryOSM();
+    if (osmResult) return osmResult;
   } else {
-    console.log(`[GEOCODING] Google ignorado (chave ausente).`);
+    const osmResult = await tryOSM();
+    if (osmResult) return osmResult;
+    
+    await delay(300);
+    usedFallback = true;
+    fallbacksCount++;
+    console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
+    
+    const googleResult = await tryGoogle();
+    if (googleResult) return googleResult;
   }
 
   throw new GeocodingError("Todos os provedores falharam");
@@ -179,10 +223,10 @@ async function startServer() {
 
   app.post("/api/geocode", async (req, res) => {
     try {
-      const { address } = req.body;
+      const { address, providerPreference } = req.body;
       if (!address) return res.status(400).json({ error: "Missing address" });
 
-      const result = await performGeocoding(address);
+      const result = await performGeocoding(address, providerPreference);
       res.json(result);
     } catch (error: any) {
       console.error("Geocoding Error:", error.message);
@@ -192,10 +236,10 @@ async function startServer() {
 
   app.post("/api/reverse-geocode", async (req, res) => {
     try {
-      const { lat, lng } = req.body;
+      const { lat, lng, providerPreference } = req.body;
       if (lat === undefined || lng === undefined) return res.status(400).json({ error: "Missing lat/lng" });
 
-      const result = await performReverseGeocoding(lat, lng);
+      const result = await performReverseGeocoding(lat, lng, providerPreference);
       res.json(result);
     } catch (error: any) {
       console.error("Reverse Geocoding Error:", error.message);
@@ -249,6 +293,279 @@ async function startServer() {
     } catch (error: any) {
       console.error("Tracking API error:", error);
       res.status(500).json({ error: error.message || "Internal server error" });
+    }
+  });
+
+  // --- INÍCIO ENDPOINTS MELHOR ENVIO --- //
+  
+  // Função helper interna para requisições do Melhor Envio
+  const performMeRequest = async (path: string, payload: any, token: string, method = 'POST', environment: string = 'sandbox') => {
+    const baseUrl = environment === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
+    
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+        'User-Agent': 'KTagManagerPro (paulo.lucalikeboss@gmail.com)'
+      },
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw { 
+          status: response.status, 
+          message: errorData.message || errorData.error || `Erro da API ${response.status}`,
+          data: errorData 
+        };
+    }
+
+    return await response.json();
+  };
+
+  app.post("/api/melhorenvio/oauth/exchange", async (req, res) => {
+    try {
+      const { code, clientId, clientSecret, redirectUri, environment } = req.body;
+      const baseUrl = environment === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
+      
+      const response = await fetch(`${baseUrl}/oauth/token`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'KTagManagerPro (paulo.lucalikeboss@gmail.com)'
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          code
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json({ error: data.message || data.error || "Failed to exchange token", details: data });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO] Exceção no exchange:", error);
+      res.status(500).json({ error: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/melhorenvio/oauth/refresh", async (req, res) => {
+    try {
+      const { refreshToken, clientId, clientSecret, environment } = req.body;
+      const baseUrl = environment === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
+      
+      const response = await fetch(`${baseUrl}/oauth/token`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'KTagManagerPro (paulo.lucalikeboss@gmail.com)'
+        },
+        body: JSON.stringify({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(response.status).json({ error: data.message || data.error || "Failed to refresh token", details: data });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO] Exceção no refresh:", error);
+      res.status(500).json({ error: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/melhorenvio/calculate", async (req, res) => {
+    try {
+      const { from, to, products, token, options, services, environment } = req.body;
+      if (!from || !to || !products || !token) {
+        return res.status(400).json({ error: "Missing from, to, products or token" });
+      }
+      
+      const payload: any = { from, to, products };
+      if (options) payload.options = options;
+      if (services) payload.services = services;
+
+      const data = await performMeRequest('/api/v2/me/shipment/calculate', payload, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO] Exceção:", error);
+      res.status(error.status || 500).json({ 
+        error: error.message || "Internal server error", 
+        details: error.data 
+      });
+    }
+  });
+
+  app.post("/api/melhorenvio/companies", async (req, res) => {
+    try {
+      const { token, environment } = req.body;
+      if (!token) return res.status(400).json({ error: "Missing token" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/companies', null, token, 'GET', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Companies] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/cart", async (req, res) => {
+    try {
+      const { 
+        service, from, to, products, volumes, options, token, environment
+      } = req.body;
+      
+      if (!token) return res.status(400).json({ error: "Missing token" });
+
+      const data = await performMeRequest('/api/v2/me/cart', {
+        service, from, to, products, volumes, options
+      }, token, 'POST', environment);
+      
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Cart] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/checkout", async (req, res) => {
+    try {
+      const { orders, token, environment } = req.body;
+      if (!token) return res.status(400).json({ error: "Missing token" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/checkout', { orders: orders || [] }, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Checkout] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/generate", async (req, res) => {
+    try {
+      const { orders, token, environment } = req.body;
+      if (!token || !orders) return res.status(400).json({ error: "Missing token or orders" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/generate', { orders }, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Generate] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/print", async (req, res) => {
+    try {
+      const { orders, token, mode, environment } = req.body;
+      if (!token || !orders) return res.status(400).json({ error: "Missing token or orders" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/print', { mode: mode || 'public', orders }, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Print] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/tracking", async (req, res) => {
+    try {
+      const { orders, token, environment } = req.body;
+      if (!token || !orders) return res.status(400).json({ error: "Missing token or orders" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/tracking', { orders }, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Tracking] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/cancel", async (req, res) => {
+    try {
+      const { orders, token, environment } = req.body;
+      if (!token || !orders) return res.status(400).json({ error: "Missing token or orders" });
+
+      const data = await performMeRequest('/api/v2/me/shipment/cancel', { orders }, token, 'POST', environment);
+      res.json(data);
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Cancel] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  app.post("/api/melhorenvio/sync-tracking", async (req, res) => {
+    try {
+      const { shipments, token, environment } = req.body;
+      if (!token || !shipments || !Array.isArray(shipments)) return res.status(400).json({ error: "Missing token or shipments" });
+
+      const updates: any[] = [];
+      const ordersToTrack = shipments.filter(s => s.melhorEnvio?.orderId && s.status === 'enviado').map(s => s.melhorEnvio.orderId);
+
+      if (ordersToTrack.length > 0) {
+        const data = await performMeRequest('/api/v2/me/shipment/tracking', { orders: ordersToTrack }, token, 'POST', environment);
+        
+        for (const [orderId, trackingInfo] of Object.entries(data as any)) {
+          const tInfo = trackingInfo as any;
+          if (tInfo && tInfo.status) {
+            // Verifica o status do Melhor Envio: "delivered"
+            if (tInfo.status === 'delivered') {
+              updates.push({
+                orderId,
+                status: 'entregue',
+                melhorEnvioStatus: tInfo.status,
+                trackingHistory: tInfo.tracking
+              });
+            } else if (tInfo.status === 'canceled') {
+              updates.push({
+                orderId,
+                status: 'cancelado',
+                melhorEnvioStatus: tInfo.status,
+                trackingHistory: tInfo.tracking
+              });
+            }
+          }
+        }
+      }
+
+      res.json({ success: true, updates });
+    } catch (error: any) {
+      console.error("[MELHOR ENVIO Sync Tracking] Error:", error);
+      res.status(error.status || 500).json({ error: error.message || "Internal server error", details: error.data });
+    }
+  });
+
+  // Webhook Receiver
+  app.post("/api/melhorenvio/webhook", async (req, res) => {
+    try {
+      const signature = req.headers['x-me-signature'];
+      // The secret should be validated if possible. In this environment, it requires the user's stored clientSecret,
+      // but webhooks don't identify the tenant easily without a custom parameter in the URL.
+      // For now, we will just log the webhook.
+      
+      const { order } = req.body;
+      console.log('[MELHOR ENVIO Webhook] Evento Recebido:', order?.status, '| ID:', order?.id);
+      
+      // Emit event or update firebase (Not full implemented as we need to match to specific Shipment doc without knowing app config immediately here, but basic structure is ready)
+      res.status(200).send('ok');
+    } catch (error) {
+      console.error("[MELHOR ENVIO Webhook] Error:", error);
+      res.status(500).send('error');
     }
   });
 

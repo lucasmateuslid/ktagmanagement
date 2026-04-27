@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
-import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock } from 'lucide-react';
+import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi } from 'lucide-react';
 import { fetchTagLocation } from '../../../services/api';
 import { storage } from '../../../services/storage';
 
@@ -92,8 +92,15 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
         )}
         <div className="flex items-center gap-3 md:gap-4">
             <div className="flex flex-col gap-1 min-w-0">
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
-                    {vehicle.plate}
+                <div className="flex items-center gap-2">
+                    <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
+                        {vehicle.plate}
+                    </div>
+                    {tag && (
+                        <div className="text-[9px] font-mono font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-700">
+                            TAG: {tag.accessoryId || tag.imei || tag.name}
+                        </div>
+                    )}
                 </div>
                 <div className="flex gap-1">
                     <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
@@ -130,6 +137,29 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                 </span>
             )}
         </div>
+        
+        {/* NOVO CÓDIGO - INÍCIO */}
+        {vehicle.lastPosition && (
+            <div className="flex items-center gap-3 mt-1.5 bg-zinc-50 dark:bg-zinc-800/50 p-1.5 rounded-lg border border-zinc-100 dark:border-zinc-800 w-fit">
+                {vehicle.lastPosition.battery && (
+                    <div className="flex items-center gap-1" title="Bateria">
+                        <BatteryCharging size={10} className="text-zinc-500" />
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                            Bat: {vehicle.lastPosition.battery.label}
+                        </span>
+                    </div>
+                )}
+                {vehicle.lastPosition.conf !== undefined && (
+                    <div className="flex items-center gap-1" title="Sinal Confidência">
+                        <Wifi size={10} className="text-zinc-500" />
+                        <span className="text-[8px] font-black uppercase text-zinc-500">
+                            Sinal: {vehicle.lastPosition.conf}
+                        </span>
+                    </div>
+                )}
+            </div>
+        )}
+        {/* NOVO CÓDIGO - FIM */}
       </div>
 
       {/* CLIENTE (Apenas Operadores) */}

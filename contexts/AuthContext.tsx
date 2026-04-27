@@ -1,13 +1,14 @@
 
 import * as React from 'react';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '../types';
+import { User, CustomRole } from '../types';
 import { storage } from '../services/storage';
 import { rateLimitService } from '../services/rateLimit';
 import { securityService } from '../services/security';
 
 interface AuthContextType {
   user: User | null;
+  customRoles: CustomRole[];
   login: (email: string, password?: string) => Promise<string | void>;
   register: (name: string, email: string, password: string, ip: string) => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
@@ -23,11 +24,15 @@ const ADMIN_EMAIL = 'lucasmateus.lima@outlook.com';
 
 export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const initSession = async () => {
       try {
+        const roles = await storage.getCustomRoles();
+        setCustomRoles(roles);
+
         const cachedUser = await storage.getSessionUser();
         
         if (cachedUser) {
@@ -182,9 +187,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{ 
-      user, login, register, updateProfile, logout, 
+      user, customRoles, login, register, updateProfile, logout, 
       isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin' || user?.role === 'admin_tecnico',
+      isAdmin: user?.role === 'admin' || user?.role === 'admin_tecnico' || (user?.customRoleId && customRoles.find(r => r.id === user?.customRoleId)?.isSystem) || false,
       loading
     }}>
       {children}

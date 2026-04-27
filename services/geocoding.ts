@@ -82,10 +82,13 @@ export const geocodingService = {
     }
 
     try {
+      const settings = await storage.getSettings();
+      const providerPreference = settings.geocodingProvider || 'osm';
+
       const res = await fetch('/api/reverse-geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng: lon })
+        body: JSON.stringify({ lat, lng: lon, providerPreference })
       });
       if (res.ok) {
         const data = await res.json();
@@ -103,10 +106,13 @@ export const geocodingService = {
 
   geocode: async (query: string): Promise<{lat: number, lon: number, address: string}[]> => {
     try {
+      const settings = await storage.getSettings();
+      const providerPreference = settings.geocodingProvider || 'osm';
+
       const res = await fetch('/api/geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: query })
+        body: JSON.stringify({ address: query, providerPreference })
       });
       if (res.ok) {
         const data = await res.json();

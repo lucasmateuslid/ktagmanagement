@@ -24,14 +24,17 @@ export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
 /**
  * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
  */
-export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1): Promise<KTagLocationResult[]> => {
+export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1, onProgress?: (index: number, total: number, currentTag: Tag) => void): Promise<KTagLocationResult[]> => {
   const allResults: KTagLocationResult[] = [];
   
+  let processedCount = 0;
   for (let i = 0; i < tags.length; i += chunkSize) {
     const chunk = tags.slice(i, i + chunkSize);
     
     const chunkResults = [];
     for (const tag of chunk) {
+      if (onProgress) onProgress(processedCount + 1, tags.length, tag);
+      
       // Tenta buscar a localização com até 5 retentativas em caso de 429
       let attempts = 0;
       const maxAttempts = 5;
@@ -54,6 +57,7 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1): Promis
         }
       }
       chunkResults.push(result);
+      processedCount++;
       
       // Delay entre requisições individuais para evitar sobrecarga (1s)
       await new Promise(resolve => setTimeout(resolve, 1000));

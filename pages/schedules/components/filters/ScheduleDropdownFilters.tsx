@@ -54,6 +54,7 @@ export const ScheduleDropdownFilters: React.FC<ScheduleDropdownFiltersProps> = (
             <option>Técnico no local</option>
             <option>Cliente no local</option>
             <option>Concluída</option>
+            <option>Frustrada</option>
             <option>Cancelada</option>
         </select>
     </div>

@@ -17,6 +17,8 @@ interface VehicleFiltersBarProps {
   setOwnershipFilter: (ownership: string) => void;
   installationFilter: string;
   setInstallationFilter: (installation: string) => void;
+  tagFilter: string;
+  setTagFilter: (tagFilter: string) => void;
   companies: Company[];
   isClientView: boolean;
   selectedCount: number;
@@ -34,6 +36,7 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
   companyFilter, setCompanyFilter,
   ownershipFilter, setOwnershipFilter,
   installationFilter, setInstallationFilter,
+  tagFilter, setTagFilter,
   companies,
   isClientView, selectedCount, totalCount,
   handleSelectAll, handleExportPDF, handleExportExcel, handleExportCSV, searchPlaceholder
@@ -180,6 +183,23 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
                     <option value="all">Todos os Tipos</option>
                     <option value="tag_only">Apenas Tag</option>
                     <option value="tag_tracker">Tag + Rastreador</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Tag Status Filter */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Status da Tag</label>
+                <div className="relative">
+                  <select 
+                    value={tagFilter} 
+                    onChange={e => setTagFilter(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
+                  >
+                    <option value="all">Todas</option>
+                    <option value="c_tag">C/Tag</option>
+                    <option value="s_tag">S/Tag</option>
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                 </div>

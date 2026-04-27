@@ -280,7 +280,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     };
 
     // --- FLUXO DE AÇÕES DO ADMINISTRADOR ---
-    const handleWorkflowAction = (actionType: 'verify' | 'budget' | 'confirm' | 'reschedule' | 'onsite' | 'finish' | 'cancel' | 'delete') => {
+    const handleWorkflowAction = (actionType: 'verify' | 'budget' | 'confirm' | 'reschedule' | 'onsite' | 'finish' | 'cancel' | 'delete' | 'frustrate') => {
         let newStatus = schedule.status;
         let historyAction = '';
         let historyDetails = '';
@@ -288,6 +288,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         const currentUserName = currentUser?.name || 'Admin';
 
         switch (actionType) {
+            case 'frustrate':
+                newStatus = 'Frustrada';
+                historyAction = 'Frustrada';
+                historyDetails = 'Visita técnica frustrada.';
+                break;
             case 'verify':
                 newStatus = 'Em análise';
                 historyAction = 'Verificando';
@@ -920,6 +925,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
                                                     <button onClick={() => handleWorkflowAction('reschedule')} className="py-4 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all flex items-center justify-center gap-2 border border-amber-200 dark:border-amber-800">
                                                         <RotateCcw size={16}/> Reagendar
+                                                    </button>
+                                                    <button onClick={() => handleWorkflowAction('frustrate')} className="py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2 border border-zinc-200 dark:border-zinc-700">
+                                                        <AlertTriangle size={16}/> Frustrada
                                                     </button>
                                                 </>
                                             )}

@@ -49,9 +49,9 @@ export const useScheduleFilters = (
             
             // APLICA LÓGICA DE USUÁRIO (Abas: Em Andamento vs Histórico)
             if (statusFilter === 'active') {
-                filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
+                filtered = filtered.filter(s => !['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
             } else if (statusFilter === 'completed') {
-                filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+                filtered = filtered.filter(s => ['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
             }
         } else {
             if (adminTab === 'pendentes') {
@@ -76,7 +76,7 @@ export const useScheduleFilters = (
                 }
 
             } else if (adminTab === 'historico') {
-                filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+                filtered = filtered.filter(s => ['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
                 
                 // DATE FILTER LOGIC
                 if (filterDate) {
@@ -122,16 +122,16 @@ export const useScheduleFilters = (
         filtered = filtered.filter(s => s.technicianId === techId);
         
         if (statusFilter === 'active') {
-            filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
+            filtered = filtered.filter(s => !['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
         } else if (statusFilter === 'completed') {
-            filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+            filtered = filtered.filter(s => ['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
         }
     } else {
         // 5. User Logic
         if (statusFilter === 'active') {
-            filtered = filtered.filter(s => !['Concluída', 'Cancelada'].includes(s.status));
+            filtered = filtered.filter(s => !['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
         } else if (statusFilter === 'completed') {
-            filtered = filtered.filter(s => ['Concluída', 'Cancelada'].includes(s.status));
+            filtered = filtered.filter(s => ['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
         }
     }
 

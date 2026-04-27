@@ -7,6 +7,8 @@ import { Shipment, ShipmentStatus } from '../../types';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { ShipmentTrackingModal } from '../../components/ShipmentTrackingModal';
 import { storage } from '../../services/storage';
+import { QuotationModal } from './QuotationModal';
+import { Calculator } from 'lucide-react';
 
 export const ShipmentsList = () => {
   const { shipments, loading, deleteShipment, updateShipmentStatus } = useShipments();
@@ -15,6 +17,8 @@ export const ShipmentsList = () => {
   const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | 'all'>('all');
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [syncingTracking, setSyncingTracking] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -28,6 +32,67 @@ export const ShipmentsList = () => {
     type: 'danger',
     onConfirm: () => {},
   });
+
+  // Efeito para sincronizar status diariamente
+  React.useEffect(() => {
+    const syncTracking = async () => {
+      if (loading || shipments.length === 0 || syncingTracking) return;
+      
+      const lastSync = localStorage.getItem('last_tracking_sync');
+      const now = Date.now();
+      // Sync at most once every 12 hours (43200000 ms)
+      if (lastSync && now - parseInt(lastSync) < 43200000) return;
+
+      try {
+        setSyncingTracking(true);
+        const settings = await storage.getSettings();
+        const env = settings?.melhorEnvioEnvironment || 'sandbox';
+        const token = env === 'production' ? settings?.melhorEnvioProdToken : settings?.melhorEnvioSandboxToken;
+
+        if (token) {
+          const res = await fetch('/api/melhorenvio/sync-tracking', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              shipments,
+              token,
+              environment: env
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.updates && data.updates.length > 0) {
+              // Aplica os updates no banco de dados local
+              for (const update of data.updates) {
+                const shipment = shipments.find(s => s.melhorEnvio?.orderId === update.orderId);
+                if (shipment) {
+                  await storage.updateShipment(shipment.id, {
+                    ...shipment,
+                    status: update.status,
+                    dataEntrega: update.status === 'entregue' ? Date.now() : shipment.dataEntrega,
+                    melhorEnvio: {
+                      ...shipment.melhorEnvio,
+                      status: update.melhorEnvioStatus
+                    }
+                  });
+                }
+              }
+              // Opção: Mostrar notificação ou dar trigger num reload
+              console.log(`[Sync] ${data.updates.length} remessas atualizadas.`);
+            }
+          }
+        }
+        localStorage.setItem('last_tracking_sync', now.toString());
+      } catch (err) {
+        console.error('Failed to sync tracking:', err);
+      } finally {
+        setSyncingTracking(false);
+      }
+    };
+
+    syncTracking();
+  }, [shipments, loading]);
 
   // Rastreio API
   const [showTrackingInfoModal, setShowTrackingInfoModal] = useState(false);
@@ -153,15 +218,26 @@ export const ShipmentsList = () => {
           <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Gerenciamento de Envios</h1>
           <p className="text-sm text-zinc-500">Controle de remessas e lotes de equipamentos</p>
         </div>
-        {canEdit && (
-          <button 
-            onClick={() => navigate('/envios/nova')}
-            className="bg-primary-500 hover:bg-primary-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-primary-500/20"
-          >
-            <Plus size={20} />
-            Nova Remessa
-          </button>
-        )}
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          {canEdit && (
+            <button 
+              onClick={() => setIsQuotationModalOpen(true)}
+              className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3 rounded-[20px] font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-xl shadow-emerald-500/20"
+            >
+              <Calculator size={16} />
+              Cotar Frete
+            </button>
+          )}
+          {canEdit && (
+            <button 
+              onClick={() => navigate('/envios/nova')}
+              className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-[20px] font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-xl shadow-primary-500/20"
+            >
+              <Plus size={16} />
+              Nova Remessa
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4">
@@ -299,6 +375,11 @@ export const ShipmentsList = () => {
         isLoading={isTrackingLoading}
         error={trackingError}
         trackingData={trackingData}
+      />
+
+      <QuotationModal 
+        isOpen={isQuotationModalOpen} 
+        onClose={() => setIsQuotationModalOpen(false)} 
       />
     </div>
   );

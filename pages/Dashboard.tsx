@@ -1,6 +1,5 @@
 
-import * as React from 'react';
-import { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,7 +9,7 @@ import {
   Car, ShoppingCart, Map as MapIcon, 
   TrendingUp, HandCoins, Calendar, Hourglass, Wrench, Users, Building2
 } from 'lucide-react';
-import * as ReactRouterDOM from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 // Import Hook & Utils
 import { useDashboardData } from './dashboard/hooks/useDashboardData';
@@ -30,9 +29,7 @@ import {
 
 import { TechnicianDashboard } from './TechnicianDashboard';
 
-const { Link, useNavigate } = ReactRouterDOM as any;
-
-// --- CORES PREMIUM (C6 STYLE) ---
+// --- CORES PREMIUM (C6 STYLE) --- // Cache invalidation
 const COLORS = {
   primary: '#f59e0b',   // Amber 500 (Destaque Principal)
   darkBase: '#18181b',  // Zinc 900

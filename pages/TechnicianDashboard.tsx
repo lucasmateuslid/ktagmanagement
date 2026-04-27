@@ -4,7 +4,7 @@ import { useDashboardData } from './dashboard/hooks/useDashboardData';
 import { Schedule } from '../types';
 import { 
   Calendar, CheckCircle2, Clock, MapPin, Wrench, 
-  Wallet, TrendingUp, Activity, Check, FileText, Building
+  Wallet, TrendingUp, Activity, Check, FileText, Building, Search
 } from 'lucide-react';
 import { TrackingModal } from '../components/TrackingModal';
 

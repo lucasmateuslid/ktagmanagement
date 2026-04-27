@@ -1,7 +1,6 @@
 
-import * as React from 'react';
-import { useState, useEffect, useMemo } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { storage } from '../services/storage';
 import { StolenRecord, Vehicle, Client } from '../types';
@@ -15,7 +14,6 @@ import { useNotification } from '../contexts/NotificationContext';
 
 import { ConfirmModal } from '../components/ConfirmModal';
 
-const { Link } = ReactRouterDOM as any;
 const MotionDiv = motion.div as any;
 
 export const Security = () => {

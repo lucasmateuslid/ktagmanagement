@@ -31,7 +31,7 @@ export const TechnicianFinancials = () => {
   const financialData = useMemo(() => {
     return technicians.map(tech => {
       const techSchedules = schedules.filter(s => s.technicianId === tech.id);
-      const openServices = techSchedules.filter(s => s.status !== 'Concluída' && s.status !== 'Cancelada');
+      const openServices = techSchedules.filter(s => s.status !== 'Concluída' && s.status !== 'Cancelada' && s.status !== 'Frustrada');
       
       const getCalculatedPaymentAmount = (s: Schedule) => {
         if (s.technicianPaymentAmount !== undefined && s.technicianPaymentAmount !== null && s.technicianPaymentAmount > 0) {
@@ -56,12 +56,16 @@ export const TechnicianFinancials = () => {
         } else if (s.serviceType === 'Vistoria') {
           amount = rates.inspection || 0;
         }
+
+        if (s.status === 'Frustrada') {
+          amount = amount * 0.5;
+        }
         
         return amount;
       };
 
       const totalToReceive = techSchedules
-        .filter(s => s.status === 'Concluída' && !s.technicianPaid)
+        .filter(s => (s.status === 'Concluída' || s.status === 'Frustrada') && !s.technicianPaid)
         .reduce((sum, s) => sum + getCalculatedPaymentAmount(s) + (s.displacementValue || 0), 0);
 
       const totalInHand = techSchedules

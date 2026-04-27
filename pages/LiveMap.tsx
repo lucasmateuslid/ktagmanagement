@@ -1,7 +1,6 @@
 
-import * as React from 'react';
-import { useState, useMemo, useEffect } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { MapComponent } from '../components/MapComponent';
 
@@ -21,7 +20,6 @@ import { TopHUD } from './livemap/components/TopHUD';
 import { DetailsSheet } from './livemap/components/DetailsSheet';
 import { HistoryOverlay } from './livemap/components/HistoryOverlay';
 
-const { useSearchParams } = ReactRouterDOM as any;
 
 type FleetFilter = 'all' | 'online' | 'offline';
 export type DisplayLimit = 10 | 30 | 50 | 100 | 200 | 'all';

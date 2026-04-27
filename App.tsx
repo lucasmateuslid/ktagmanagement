@@ -1,6 +1,6 @@
 
 import React, { useEffect, Suspense, lazy } from 'react';
-import * as ReactRouterDOM from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
@@ -38,7 +38,7 @@ const ShipmentForm = lazy(() => import('./pages/Shipments/ShipmentForm').then(m 
 const ShipmentDetails = lazy(() => import('./pages/Shipments/ShipmentDetails').then(m => ({ default: m.ShipmentDetails })));
 const ShipmentPrint = lazy(() => import('./pages/Shipments/ShipmentPrint').then(m => ({ default: m.ShipmentPrint })));
 
-const { HashRouter, Routes, Route, useNavigate, Outlet, Navigate } = ReactRouterDOM as any;
+import { hasPermission } from './utils/permissions';
 
 const LoadingFallback = () => (
   <div className="h-full w-full flex items-center justify-center p-20">
@@ -75,11 +75,31 @@ const ProtectedLayout = () => {
   );
 };
 
-const RoleProtectedRoute = ({ roles, children }: { roles: string[], children?: React.ReactNode }) => {
-  const { user, isAuthenticated, loading } = useAuth();
+const RoleProtectedRoute = ({ 
+  roles, 
+  permission, 
+  children 
+}: { 
+  roles?: string[], 
+  permission?: string, 
+  children?: React.ReactNode 
+}) => {
+  const { user, customRoles, isAuthenticated, loading } = useAuth();
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (!roles.includes(user?.role || 'user')) return <Navigate to="/" replace />;
+  
+  if (permission && !hasPermission(user, customRoles, permission)) {
+     return <Navigate to="/" replace />;
+  }
+
+  if (roles && !roles.includes(user?.role || 'user')) {
+    // Permitir se tiver permissões customizadas de super admin?
+    // Vamos deixar a checagem básica apenas se não usar a checagem de permission
+    if (!permission) {
+        return <Navigate to="/" replace />;
+    }
+  }
+
   return <>{children}</>;
 };
 
@@ -101,34 +121,33 @@ function App() {
                       </RoleProtectedRoute>
                     } />
                     <Route element={<ProtectedLayout />}>
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/map" element={<LiveMap />} />
-                      <Route path="/vehicles" element={<Vehicles />} />
-                      <Route path="/security" element={<Security />} />
+                      <Route path="/" element={<RoleProtectedRoute permission="ROUTE_DASHBOARD"><Dashboard /></RoleProtectedRoute>} />
+                      <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
+                      <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
+                      <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
                       <Route path="/settings" element={<Settings />} />
                       
-                      {/* Agendamentos - Permite User, Admin e Moderator */}
-                      <Route path="/schedule/new" element={<RoleProtectedRoute roles={['user', 'admin', 'moderator', 'admin_tecnico']}><ScheduleRequest /></RoleProtectedRoute>} />
+                      {/* Agendamentos */}
+                      <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
                       <Route path="/schedules" element={<Schedules />} /> {/* Acesso condicional gerido dentro da página */}
-                      <Route path="/calendar" element={<Calendar />} />
-                      <Route path="/technicians" element={<RoleProtectedRoute roles={['admin', 'admin_tecnico']}><Technicians /></RoleProtectedRoute>} />
-                      <Route path="/technicians/financials" element={<RoleProtectedRoute roles={['admin', 'admin_tecnico']}><TechnicianFinancials /></RoleProtectedRoute>} />
+                      <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
+                      <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
+                      <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
 
                       {/* Envios */}
-                      <Route path="/envios" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentsList /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id/editar" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><ShipmentForm /></RoleProtectedRoute>} />
-                      <Route path="/envios/nova" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><ShipmentForm /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentDetails /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico', 'user']}><ShipmentPrint /></RoleProtectedRoute>} />
+                      <Route path="/envios" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentsList /></RoleProtectedRoute>} />
+                      <Route path="/envios/:id/editar" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+                      <Route path="/envios/nova" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+                      <Route path="/envios/:id" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentDetails /></RoleProtectedRoute>} />
+                      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentPrint /></RoleProtectedRoute>} />
 
                       {/* Feedback - Available to all non-clients */}
-                      <Route path="/feedback" element={<RoleProtectedRoute roles={['user', 'admin', 'moderator', 'admin_tecnico']}><FeedbackPage /></RoleProtectedRoute>} />
+                      <Route path="/feedback" element={<RoleProtectedRoute permission="ROUTE_FEEDBACK"><FeedbackPage /></RoleProtectedRoute>} />
 
-                      <Route path="/clients" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><Clients /></RoleProtectedRoute>} />
-                      <Route path="/tags" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><Tags /></RoleProtectedRoute>} />
-                      <Route path="/reports" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><Reports /></RoleProtectedRoute>} />
-                      <Route path="/audit" element={<RoleProtectedRoute roles={['admin', 'moderator', 'admin_tecnico']}><AuditLogs /></RoleProtectedRoute>} />
-                      <Route path="/users" element={<RoleProtectedRoute roles={['admin', 'admin_tecnico']}><Users /></RoleProtectedRoute>} />
+                      <Route path="/clients" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><Clients /></RoleProtectedRoute>} />
+                      <Route path="/tags" element={<RoleProtectedRoute permission="ROUTE_TAGS"><Tags /></RoleProtectedRoute>} />
+                      <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
+                      <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
                     </Route>
                   </Routes>
                 </Suspense>

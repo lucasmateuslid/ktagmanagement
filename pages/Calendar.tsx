@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, User, MapPin, CalendarDays, Clock, MoreHoriz
 import { TrackingModal } from '../components/TrackingModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
+import { whatsappService } from '../services/whatsappService';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -232,8 +233,22 @@ export const Calendar = () => {
 
   const handleUpdateSchedule = async (updated: Schedule) => {
       try {
+          const previousSchedule = schedules.find(s => s.id === updated.id);
+          const statusChanged = previousSchedule && previousSchedule.status !== updated.status;
+          
           await storage.saveSchedule(updated);
           addNotification('success', 'Atualizado', 'Agendamento atualizado com sucesso.');
+          
+          if (statusChanged && updated.clientPhone) {
+              const msg = whatsappService.getScheduleStatusMessage(
+                  updated.clientName?.split(' ')[0] || updated.requesterName.split(' ')[0], 
+                  updated.vehiclePlate, 
+                  updated.status,
+                  updated.confirmedDate ? `${updated.confirmedDate.split('-').reverse().join('/')} às ${updated.confirmedTime}` : undefined
+              );
+              whatsappService.sendMessage(updated.clientPhone, msg);
+          }
+          
           loadData();
           setSelectedSchedule(updated);
       } catch (e) {

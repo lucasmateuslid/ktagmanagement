@@ -1,4 +1,11 @@
 
+export interface CustomRole {
+  id: string;
+  name: string;
+  isSystem?: boolean;
+  permissions: string[];
+}
+
 export interface UserNotificationPreferences {
   newTechnicalRequest: boolean;
   serviceCompleted: boolean;
@@ -13,8 +20,10 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico';
+  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | string;
+  customRoleId?: string;
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
   companySlug?: string;
@@ -109,6 +118,15 @@ export interface Shipment {
   itens: ShipmentItem[];
   createdBy: string;
   updatedAt: number;
+  melhorEnvio?: {
+    orderId?: string;
+    status?: string;
+    tracking?: string;
+    price?: number;
+    deliveryTime?: number;
+    serviceId?: number;
+    urlPrint?: string;
+  };
 }
 
 export interface ShippingAddress {
@@ -231,6 +249,30 @@ export interface AuditLog {
   timestamp: number;
 }
 
+export interface ShippingPackage {
+  id: string;
+  name: string;
+  weight: number;
+  width: number;
+  height: number;
+  length: number;
+  insuranceValue: number;
+}
+
+export interface ShippingAddress {
+  postalCode: string;
+  street: string;
+  number: string;
+  complement?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  document: string;
+  name: string;
+  phone: string;
+  email?: string;
+}
+
 export interface AppSettings {
   language: 'pt' | 'en';
   customProxyUrl: string;
@@ -240,6 +282,7 @@ export interface AppSettings {
   traqcareToken: string;
   googleMapsKey: string;
   mapboxKey: string;
+  geocodingProvider?: 'osm' | 'google';
   hinovaUrl: string;
   hinovaToken: string;
   hinovaUser: string;
@@ -250,9 +293,34 @@ export interface AppSettings {
   criticalStockLevel?: number;
   budgetMarginThreshold?: number; 
   siteRastreioApiKey?: string;
+  melhorEnvioEnvironment?: 'sandbox' | 'production';
+  melhorEnvioSandboxClientId?: string;
+  melhorEnvioSandboxClientSecret?: string;
+  melhorEnvioSandboxToken?: string;
+  melhorEnvioSandboxRefreshToken?: string;
+  melhorEnvioSandboxExpiresAt?: number;
+  melhorEnvioProdClientId?: string;
+  melhorEnvioProdClientSecret?: string;
+  melhorEnvioProdToken?: string;
+  melhorEnvioProdRefreshToken?: string;
+  melhorEnvioProdExpiresAt?: number;
+  // Legacy fields (keep for fallback/migration)
+  melhorEnvioClientId?: string;
+  melhorEnvioClientSecret?: string;
+  melhorEnvioToken?: string;
+  melhorEnvioRefreshToken?: string;
+  melhorEnvioExpiresAt?: number;
+  // WhatsApp / Evolution API
+  evolutionApiUrl?: string;
+  evolutionApiKey?: string;
+  evolutionInstanceName?: string;
+  enableWhatsAppNotifications?: boolean;
+  // Shipping Preferences
+  melhorEnvioSenderAddress?: ShippingAddress;
+  melhorEnvioPackages?: ShippingPackage[];
 }
 
-export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrado';
+export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrada';
 export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag' | 'Não precisa';
 export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada' | 'Vistoria';
 
