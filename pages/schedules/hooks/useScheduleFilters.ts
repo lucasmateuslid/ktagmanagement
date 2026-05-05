@@ -37,7 +37,9 @@ export const useScheduleFilters = (
             s.requesterName.toLowerCase().includes(lower) ||
             s.clientName?.toLowerCase().includes(lower) ||
             s.locationAddress.toLowerCase().includes(lower) ||
-            s.osNumber?.toLowerCase().includes(lower)
+            s.osNumber?.toLowerCase().includes(lower) ||
+            s.installedImei?.toLowerCase().includes(lower) ||
+            s.installedTagImei?.toLowerCase().includes(lower)
         );
     }
 

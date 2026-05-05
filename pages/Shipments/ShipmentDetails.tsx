@@ -13,6 +13,7 @@ export const ShipmentDetails = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
+  const canQuote = user?.role !== 'client';
   const { shipments, loading, updateShipmentStatus } = useShipments();
   const { tags, loading: tagsLoading } = useInventory();
   const [shipment, setShipment] = useState<any>(null);
@@ -125,7 +126,7 @@ export const ShipmentDetails = () => {
           </div>
         </div>
         <div className="flex gap-2">
-          {canEdit && (
+          {canQuote && (
             <button onClick={() => setShowMelhorEnvioFlow(true)} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold flex items-center gap-2 transition-colors">
               <Truck size={18} /> Melhor Envio
             </button>

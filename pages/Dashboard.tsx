@@ -1,18 +1,19 @@
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConnection } from '../contexts/ConnectionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { 
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
-  Car, ShoppingCart, Map as MapIcon, 
+  Car, ShoppingCart, Map as MapIcon, RefreshCw,
   TrendingUp, HandCoins, Calendar, Hourglass, Wrench, Users, Building2
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 // Import Hook & Utils
 import { useDashboardData } from './dashboard/hooks/useDashboardData';
+import { UpdateTagsModal } from '../components/UpdateTagsModal';
 import { 
   calculateServiceHistory, 
   calculateTopTechnicians, 
@@ -28,6 +29,8 @@ import {
 } from './dashboard/utils/dashboardCalculations';
 
 import { TechnicianDashboard } from './TechnicianDashboard';
+import { useNotification } from '../contexts/NotificationContext';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 // --- CORES PREMIUM (C6 STYLE) --- // Cache invalidation
 const COLORS = {
@@ -40,15 +43,25 @@ const COLORS = {
 };
 
 export const Dashboard = () => {
+  // trigger vite HMR
   const { user } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { lastSync } = useConnection();
+  const { addNotification } = useNotification();
+
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
   // 1. Data Fetching via Hook
   const { 
     tags, vehicles, companies, categories, settings, schedules, technicians, loading 
   } = useDashboardData();
+
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+     const iv = setInterval(() => setNow(Date.now()), 60000);
+     return () => clearInterval(iv);
+  }, []);
 
   // 2. Redirect Client
   useEffect(() => {
@@ -84,6 +97,22 @@ export const Dashboard = () => {
   const purchasedCount = ownershipData.find(d => d.name === 'Adquirido')?.value || 0;
   const leasedCount = ownershipData.find(d => d.name === 'Comodato')?.value || 0;
 
+  // Veiculos sem tag
+  const vehiclesWithoutTag = useMemo(() => vehicles.filter(v => !v.tagId), [vehicles]);
+
+  const [alertSuccessModal, setAlertSuccessModal] = useState<{isOpen: boolean, plate: string}>({isOpen: false, plate: ''});
+
+  const handleAlertResponsible = async (v: any) => {
+    try {
+      const { storage } = await import('../services/storage');
+      await storage.saveVehicle({ ...v, requiresTagReview: true });
+      setAlertSuccessModal({ isOpen: true, plate: v.plate });
+    } catch(e) {
+      console.error(e);
+      addNotification('error', 'Erro', 'Falha ao alertar o responsável.');
+    }
+  };
+
   if (user?.role === 'client') return null;
   if (user?.role === 'technician' || user?.role === 'admin_tecnico') return <TechnicianDashboard />;
   if (loading && tags.length === 0) return <div className="p-10 flex justify-center"><div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>;
@@ -99,12 +128,20 @@ export const Dashboard = () => {
           </h1>
           <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-[0.4em]">Control Center</p>
         </div>
-        {lastSync && (
-          <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            ONLINE: {new Date(lastSync).toLocaleTimeString()}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+            <button 
+                onClick={() => setIsUpdateModalOpen(true)}
+                className="bg-primary-500 text-black hover:bg-primary-400 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95"
+            >
+                <RefreshCw size={14} /> Atualizar Frota
+            </button>
+            {lastSync && (
+            <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm hidden sm:flex">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                ONLINE: {new Date(lastSync).toLocaleTimeString()}
+            </div>
+            )}
+        </div>
       </div>
 
       {/* --- ATALHOS --- */}
@@ -132,6 +169,8 @@ export const Dashboard = () => {
               ))}
           </div>
       </div>
+
+
 
       {/* --- SEÇÃO 1: VEÍCULOS E EQUIPAMENTOS --- */}
       <div className="space-y-6">
@@ -447,6 +486,82 @@ export const Dashboard = () => {
               </div>
           </div>
       </div>
+
+      {/* --- VEÍCULOS SEM TAG (NOVA POSIÇÃO NO FINAL) --- */}
+      {vehiclesWithoutTag.length > 0 && (
+        <div className="space-y-4">
+            <div className="flex items-center gap-3 px-2 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <div className="w-1 h-4 bg-red-500 rounded-full" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500">Revisão Necessária - Veículos sem K-TAG ({vehiclesWithoutTag.length})</span>
+            </div>
+            <div className="bg-white dark:bg-zinc-900 border border-red-500/30 rounded-[32px] p-8 shadow-sm overflow-x-auto hover:border-red-500/50 transition-colors">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                            <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400">Veículo</th>
+                            <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400">Responsável & Data</th>
+                            <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400 text-right">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                        {vehiclesWithoutTag.map(v => (
+                            <tr key={v.id} className="border-b border-zinc-50 dark:border-zinc-800/20 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                <td className="py-4 font-bold text-zinc-900 dark:text-white">
+                                    <div className="flex flex-col">
+                                       <span className="uppercase tracking-tight">{v.plate}</span>
+                                       <span className="text-[10px] text-zinc-500 font-medium">{v.model}</span>
+                                    </div>
+                                </td>
+                                <td className="py-4 text-zinc-200">
+                                   <div className="flex flex-col">
+                                      <span className="font-bold text-zinc-900 dark:text-white text-xs uppercase tracking-tight">{v.createdByName || v.updatedBy || 'Desconhecido'}</span>
+                                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-medium mt-0.5">
+                                         <Calendar size={12} className="opacity-70" />
+                                         <span>{new Date(v.createdAt).toLocaleDateString('pt-BR')}</span>
+                                      </div>
+                                   </div>
+                                </td>
+                                <td className="py-4 text-right">
+                                    {(v.tagReviewUrgentUntil && v.tagReviewUrgentUntil > now) ? (
+                                        <div className="flex flex-col items-end gap-1">
+                                           <span className="text-[10px] font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-3 py-1.5 rounded-full inline-flex items-center">Resolvendo</span>
+                                           <span className="text-[9px] font-bold text-red-500 uppercase">Tempo: {Math.max(0, Math.ceil((v.tagReviewUrgentUntil - now) / 60000))} min</span>
+                                        </div>
+                                    ) : v.requiresTagReview ? (
+                                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest bg-amber-500/10 px-3 py-1.5 rounded-full inline-flex items-center">Alertado</span>
+                                    ) : (
+                                        (user?.role === 'admin' || user?.role === 'admin_tecnico') && (
+                                           <button 
+                                               onClick={() => handleAlertResponsible(v)}
+                                               className="text-[10px] font-black text-red-500 uppercase border border-red-500/30 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                           >
+                                                Alertar Responsável
+                                           </button>
+                                        )
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      )}
+
+      <UpdateTagsModal 
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        tags={tags}
+        vehicles={vehicles}
+      />
+
+      <ConfirmModal 
+         isOpen={alertSuccessModal.isOpen}
+         onClose={() => setAlertSuccessModal({isOpen: false, plate: ''})}
+         onConfirm={() => setAlertSuccessModal({isOpen: false, plate: ''})}
+         title="Responsável Alertado"
+         message={`O responsável pelo veículo ${alertSuccessModal.plate} foi notificado com sucesso e a placa foi marcada para revisão.`}
+      />
     </div>
   );
 };

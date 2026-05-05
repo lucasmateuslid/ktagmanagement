@@ -1,5 +1,8 @@
 {
-  "name": "K-Tag Manager Pro",
+  "name": "K-Tag Manager Pro - Lock Version",
   "description": "A professional tag management platform featuring real-time tracking, vehicle association, historical data analysis, and seamless integration with the K-Tag API.",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
 }

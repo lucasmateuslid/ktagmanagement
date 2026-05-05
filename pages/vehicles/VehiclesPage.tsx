@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
 import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2 } from 'lucide-react';
@@ -31,6 +31,7 @@ const MotionDiv = motion.div as any;
 export const VehiclesPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user: currentUser } = useAuth();
   
   // 1. Data Fetching
@@ -46,6 +47,13 @@ export const VehiclesPage = () => {
     tagFilter, setTagFilter,
     filteredVehicles 
   } = useVehicleFilters(vehicles, clients);
+
+  React.useEffect(() => {
+     if (location.state?.searchTarget) {
+        setSearchTerm(location.state.searchTarget);
+        window.history.replaceState({}, document.title);
+     }
+  }, [location.state, setSearchTerm]);
   
   // 3. Selection
   const { selectedVehicles, toggleSelect, handleSelectAll, clearSelection } = useVehicleSelection(filteredVehicles);
@@ -62,7 +70,7 @@ export const VehiclesPage = () => {
     clientData, setClientData, 
     tagSearch, setTagSearch, 
     handleSave, checkExistingClient, openNew, openEdit 
-  } = useVehicleForm(clients, currentUser, reload);
+  } = useVehicleForm(vehicles, clients, currentUser, reload);
 
   // 6. External Services
   const { status: hinovaStatus, lookupPlate } = useHinovaLookup(setFormData, setClientData, clients);

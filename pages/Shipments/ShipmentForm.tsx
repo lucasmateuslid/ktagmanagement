@@ -443,9 +443,11 @@ export const ShipmentForm = () => {
               Voltar
             </button>
             <div className="flex gap-4">
-              <button onClick={() => melhorEnvioService.calculateShipping({ itens, destinatarioNome, enderecoCompleto })} className="px-6 py-3 rounded-xl font-bold text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20 dark:hover:bg-primary-900/40 transition-colors flex items-center gap-2">
-                <Calculator size={20} /> Calcular Frete (Melhor Envio)
-              </button>
+              {user?.role !== 'client' && (
+                <button onClick={() => melhorEnvioService.calculateShipping({ itens, destinatarioNome, enderecoCompleto })} className="px-6 py-3 rounded-xl font-bold text-primary-600 bg-primary-50 hover:bg-primary-100 dark:text-primary-400 dark:bg-primary-900/20 dark:hover:bg-primary-900/40 transition-colors flex items-center gap-2">
+                  <Calculator size={20} /> Calcular Frete (Melhor Envio)
+                </button>
+              )}
               <button onClick={() => handleSave('rascunho')} className="px-6 py-3 rounded-xl font-bold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 dark:text-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors">
                 Salvar Rascunho
               </button>

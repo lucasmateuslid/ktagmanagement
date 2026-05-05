@@ -315,9 +315,12 @@ async function startServer() {
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        let msg = errorData.message || errorData.error || `Erro da API ${response.status}`;
+        if (typeof msg === 'object') msg = JSON.stringify(msg);
+
         throw { 
           status: response.status, 
-          message: errorData.message || errorData.error || `Erro da API ${response.status}`,
+          message: msg,
           data: errorData 
         };
     }

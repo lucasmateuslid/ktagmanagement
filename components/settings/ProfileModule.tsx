@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { User, Shield, Key, Mail, Phone, Fingerprint, EyeOff, Eye, Save } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AvatarSelector } from '../AvatarSelector';
 
 const getRoleStyle = (role?: string) => {
     switch (role) {
@@ -31,6 +32,7 @@ export const ProfileModule = () => {
     const [showPwds, setShowPwds] = useState(false);
     const [loading, setLoading] = useState(false);
     const [pwdLoading, setPwdLoading] = useState(false);
+    const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false);
 
     useEffect(() => {
         if (currentUser) {
@@ -95,8 +97,27 @@ export const ProfileModule = () => {
         if (cr) renderRole = cr.name;
     }
 
+    const handleUpdateAvatar = async (url: string) => {
+        try {
+            await updateProfile({ avatarUrl: url });
+            setIsAvatarSelectorOpen(false);
+            addNotification('success', 'Avatar atualizado', 'Seu avatar foi atualizado com sucesso.');
+        } catch (e: any) {
+            addNotification('error', 'Erro', 'Não foi possível atualizar o avatar.');
+        }
+    };
+
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
+            <AnimatePresence>
+                {isAvatarSelectorOpen && (
+                    <AvatarSelector 
+                        currentAvatar={currentUser?.avatarUrl} 
+                        onSelect={handleUpdateAvatar} 
+                        onClose={() => setIsAvatarSelectorOpen(false)} 
+                    />
+                )}
+            </AnimatePresence>
             <div className="flex flex-col md:flex-row gap-6">
                 
                 {/* DADOS PRINCIPAIS */}
@@ -112,9 +133,27 @@ export const ProfileModule = () => {
                     
                     <div className="px-8 pb-8">
                         <div className="flex justify-between items-end -mt-12 mb-6">
-                            <div className="w-24 h-24 rounded-[28px] bg-white dark:bg-zinc-800 border-4 border-white dark:border-zinc-900 shadow-xl flex items-center justify-center text-zinc-800 dark:text-white font-black text-4xl">
-                                {profileForm.avatarInitial}
-                            </div>
+                            <button
+                                onClick={() => setIsAvatarSelectorOpen(true)}
+                                type="button"
+                                className="w-24 h-24 rounded-[28px] bg-white dark:bg-zinc-800 border-4 border-white dark:border-zinc-900 shadow-xl flex items-center justify-center text-zinc-800 dark:text-white font-black text-4xl hover:border-primary-500 hover:scale-105 transition-all overflow-hidden relative group"
+                            >
+                                {currentUser?.avatarUrl ? (
+                                    <>
+                                        <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center">
+                                            <span className="text-[9px] uppercase tracking-widest text-white mt-1">Alterar</span>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {profileForm.avatarInitial}
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center">
+                                            <span className="text-[9px] uppercase tracking-widest text-white mt-1">Alterar</span>
+                                        </div>
+                                    </>
+                                )}
+                            </button>
                         </div>
 
                         <form onSubmit={handleSaveProfile} className="space-y-5">

@@ -117,7 +117,7 @@ export const Tags = () => {
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importData, setImportData] = useState<any[]>([]);
-  const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number }>({ type: 'K_TAG', warranty: 1 });
+  const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number, powerType: 'battery' | '12v' }>({ type: 'K_TAG', warranty: 1, powerType: 'battery' });
   const [importing, setImporting] = useState(false);
   const [importStep, setImportStep] = useState<'upload' | 'validate' | 'processing'>('upload');
   const [validationSummary, setValidationSummary] = useState({ valid: 0, invalid: 0 });
@@ -563,6 +563,7 @@ export const Tags = () => {
             privateKey: formData.privateKey,
             imei: formData.imei,
             traqcareId: formData.traqcareId,
+            powerType: formData.powerType,
             batteryWarrantyYears: formData.batteryWarrantyYears
         };
 
@@ -615,6 +616,13 @@ export const Tags = () => {
         "Serial/IMEI": "ABC12345",
         "Chave Publica (Opcional K-Tag)": "key_hash...",
         "Chave Privada (Opcional K-Tag)": "priv_key..."
+      },
+      { 
+        "Key名称": "Tag Exemplo 02", 
+        "SN码": "DEF67890",
+        "MAC地址": "00:11:22:33:44:55",
+        "hashedAdvKey值": "key_hash...",
+        "privateKey值": "priv_key..."
       }
     ];
     const ws = XLSX.utils.json_to_sheet(headers);
@@ -642,7 +650,7 @@ export const Tags = () => {
         }
 
         const validatedData = data.map((row: any) => {
-            const serial = row['Serial/IMEI'] || row['serial'] || row['imei'] || row['sn'];
+            const serial = row['Serial/IMEI'] || row['serial'] || row['imei'] || row['sn'] || row['SN码'];
             return {
                 ...row,
                 _valid: !!serial,
@@ -675,10 +683,10 @@ export const Tags = () => {
     try {
       for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
+          const name = row['Identificacao'] || row['nome'] || row['name'] || row['Key名称'] || `Equip-${Math.floor(Math.random()*10000)}`;
           const serial = row._serial;
-          const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
-          const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
+          const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'] || row['hashedAdvKey值'];
+          const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'] || row['privateKey值'];
 
           const exists = tags.some(t => t.accessoryId === serial || t.imei === serial);
           if (!exists) {
@@ -690,6 +698,7 @@ export const Tags = () => {
                 imei: importConfig.type === 'XADTAG' ? serial : undefined,
                 hashedAdvKey: importConfig.type === 'K_TAG' ? pubKey : undefined,
                 privateKey: importConfig.type === 'K_TAG' ? privKey : undefined,
+                powerType: importConfig.type === 'XADTAG' ? importConfig.powerType : undefined,
                 batteryWarrantyYears: importConfig.warranty,
                 createdAt: Date.now()
               };
@@ -726,7 +735,7 @@ export const Tags = () => {
                 <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
                     <FileSpreadsheet size={18} />
                 </button>
-                <button onClick={() => { setImportStep('upload'); setImportConfig({ type: 'K_TAG', warranty: 1 }); setIsImportModalOpen(true); }} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
+                <button onClick={() => { setImportStep('upload'); setImportConfig({ type: 'K_TAG', warranty: 1, powerType: 'battery' }); setIsImportModalOpen(true); }} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
                   <Upload size={16} /> Importar Lista
                 </button>
             </div>
@@ -979,7 +988,9 @@ export const Tags = () => {
                                 </div>
                                 <div>
                                   <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
-                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
+                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>
+                                      {tag.type || 'Sem Tipo'} {tag.type === 'XADTAG' && tag.powerType === '12v' ? '(12V)' : tag.type === 'XADTAG' && tag.powerType === 'battery' ? '(Bateria)' : ''}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -1288,7 +1299,14 @@ export const Tags = () => {
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
-                                <input type="text" readOnly value={formData.traqcareId || ''} className="w-full px-4 py-3.5 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none text-zinc-500 cursor-not-allowed" placeholder="Preenchido automaticamente na ativação" />
+                                <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Deixe em branco para preencher automaticamente na ativação" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Power size={12}/> Tipo de Alimentação</label>
+                                <select value={formData.powerType || 'battery'} onChange={e => setFormData({...formData, powerType: e.target.value as 'battery' | '12v'})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-cyan-500">
+                                    <option value="battery">Com Bateria</option>
+                                    <option value="12v">Alimentado 12V</option>
+                                </select>
                             </div>
                         </>
                     )}
@@ -1329,6 +1347,16 @@ export const Tags = () => {
                                       <button onClick={() => setImportConfig({...importConfig, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-md' : 'text-zinc-500'}`}>XADTAG</button>
                                   </div>
                               </div>
+                              
+                              {importConfig.type === 'XADTAG' && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Power size={12}/> Tipo de Alimentação</label>
+                                    <select value={importConfig.powerType || 'battery'} onChange={e => setImportConfig({...importConfig, powerType: e.target.value as 'battery' | '12v'})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none">
+                                        <option value="battery">Com Bateria</option>
+                                        <option value="12v">Alimentado 12V</option>
+                                    </select>
+                                </div>
+                              )}
 
                               <div className="space-y-2">
                                   <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Garantia Padrão (Anos)</label>
@@ -1384,7 +1412,7 @@ export const Tags = () => {
                                                   <td className="p-3">
                                                       {row._valid ? <CheckCircle2 size={14} className="text-emerald-500"/> : <XCircle size={14} className="text-red-500"/>}
                                                   </td>
-                                                  <td className="p-3 font-medium truncate max-w-[150px]">{row['Identificacao'] || row['nome'] || 'Sem Nome'}</td>
+                                                  <td className="p-3 font-medium truncate max-w-[150px]">{row['Identificacao'] || row['nome'] || row['Key名称'] || 'Sem Nome'}</td>
                                                   <td className="p-3 font-mono text-zinc-500">{row._serial || '-'}</td>
                                               </tr>
                                           ))}

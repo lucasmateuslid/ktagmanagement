@@ -53,6 +53,18 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
         }
     };
 
+    const getTimeAgoText = (timestamp?: number) => {
+        if (!timestamp) return 'Sem conexão';
+        const diffMs = Date.now() - timestamp;
+        if (diffMs < 0) return 'Agora';
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 60) return `${diffMins}m atrás`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours}h atrás`;
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays}d atrás`;
+    };
+
     return (
         <AnimatePresence>
             {isVisible && (
@@ -64,8 +76,9 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                      // Lógica de Renderização Mista (Veículo vs Tag)
                      if (item.isTag) {
                          // Renderização de TAG SOLTA
+                         const loc = fleetLocations.find(l => l.tagId === item.id);
                          return (
-                            <button key={item.id} onClick={() => onSelect(item.tagId)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left border-l-4 border-transparent hover:border-primary-500">
+                            <button key={item.id} onClick={() => onSelect(item.id)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left border-l-4 border-transparent hover:border-primary-500">
                                 <div className="flex items-center gap-4 min-w-0">
                                     <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700">
                                         <TagIcon size={20} />
@@ -73,7 +86,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                                     <div className="min-w-0">
                                         <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{item.name}</div>
                                         <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">
-                                            Serial: {item.serial} • <span className="text-amber-500">ESTOQUE (SEM VÍNCULO)</span>
+                                            Serial: {item.serial} • <span className="text-amber-500">ESTOQUE</span> • Atualizado: {getTimeAgoText(loc?.timestamp)}
                                         </div>
                                     </div>
                                 </div>
@@ -84,6 +97,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                          // Renderização de VEÍCULO
                          const v = item as Vehicle;
                          const cliName = clients.find(c => c.id === v.clientId)?.name;
+                         const loc = fleetLocations.find(l => l.tagId === v.tagId);
                          return (
                             <button key={v.id} onClick={() => onSelect(v.tagId!)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
                                 <div className="flex items-center gap-4 min-w-0">
@@ -93,7 +107,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                                     <div className="min-w-0">
                                         <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{v.plate}</div>
                                         <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">
-                                            {v.model} {cliName && userRole !== 'client' ? `• ${cliName}` : ''}
+                                            {v.model} {cliName && userRole !== 'client' ? `• ${cliName}` : ''} • Atualizado: {getTimeAgoText(loc?.timestamp)}
                                         </div>
                                     </div>
                                 </div>

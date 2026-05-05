@@ -74,25 +74,27 @@ export const Settings = () => {
                 </motion.div>
 
                 {/* SYSTEM & API CARD */}
-                <motion.div 
-                   whileHover={{ scale: 1.02 }}
-                   whileTap={{ scale: 0.98 }}
-                   onClick={() => setActiveModule('system')}
-                   className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm cursor-pointer hover:border-primary-500/50 hover:shadow-primary-500/10 transition-all flex flex-col justify-between group md:col-span-1 lg:col-span-2"
-                >
-                    <div className="flex justify-between items-start mb-6">
-                        <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-2xl flex items-center justify-center">
-                            <Sliders size={28} />
+                {isAdmin && (
+                    <motion.div 
+                       whileHover={{ scale: 1.02 }}
+                       whileTap={{ scale: 0.98 }}
+                       onClick={() => setActiveModule('system')}
+                       className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm cursor-pointer hover:border-primary-500/50 hover:shadow-primary-500/10 transition-all flex flex-col justify-between group md:col-span-1 lg:col-span-2"
+                    >
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-2xl flex items-center justify-center">
+                                <Sliders size={28} />
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ChevronLeft size={16} className="rotate-180" />
+                            </div>
                         </div>
-                        <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <ChevronLeft size={16} className="rotate-180" />
+                        <div>
+                            <h2 className="text-xl font-black uppercase text-zinc-900 dark:text-white tracking-tight mb-2">Sistema & APIs</h2>
+                            <p className="text-xs text-zinc-500 font-medium">Proxy K-TAG, Gateways de Pagamento, Mapas, Regionais e Parâmetros.</p>
                         </div>
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-black uppercase text-zinc-900 dark:text-white tracking-tight mb-2">Sistema & APIs</h2>
-                        <p className="text-xs text-zinc-500 font-medium">Proxy K-TAG, Gateways de Pagamento, Mapas, Regionais e Parâmetros.</p>
-                    </div>
-                </motion.div>
+                    </motion.div>
+                )}
 
                 {isAdmin && (
                     <>

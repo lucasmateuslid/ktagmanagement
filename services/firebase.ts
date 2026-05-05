@@ -4,12 +4,12 @@ import { initializeFirestore, Firestore, enableMultiTabIndexedDbPersistence } fr
 
 // Configuração do Firebase do seu Web App
 const firebaseConfig = {
-  apiKey: "AIzaSyC3KcC5ySMCU58Af1Lqv5jtcpZPdC__WlQ",
-  authDomain: "ktag-d15b6.firebaseapp.com",
-  projectId: "ktag-d15b6",
-  storageBucket: "ktag-d15b6.firebasestorage.app",
-  messagingSenderId: "843254608500",
-  appId: "1:843254608500:web:8daab97451b1cecace5721"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 let app;

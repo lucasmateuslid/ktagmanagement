@@ -27,9 +27,9 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
     return (
         <AnimatePresence>
             {isVisible && (
-               <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2000] bg-black/70 backdrop-blur-md flex items-center justify-end">
+               <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2000] pointer-events-none flex items-center justify-end">
                   <MotionDiv initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-                    className="w-full md:w-[480px] h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col overflow-hidden relative"
+                    className="w-full md:w-[480px] h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col overflow-hidden relative pointer-events-auto"
                   >
                     {/* OVERLAY DE EXPORTAÇÃO */}
                     <AnimatePresence>
@@ -79,8 +79,8 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                         ) : (
                             historyItems.map((item, idx) => (
                                 <div key={item.id} className="relative flex gap-8 group">
-                                    {idx !== historyItems.length - 1 && <div className="absolute left-5 top-10 bottom-0 w-px bg-zinc-100 dark:bg-zinc-800" />}
-                                    <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center border-2 transition-all ${idx === 0 ? 'bg-primary-500 border-primary-400 text-black shadow-2xl' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-300'}`}>
+                                    {idx !== historyItems.length - 1 && <div className="absolute w-[2px] bg-zinc-300 dark:bg-zinc-700 z-0" style={{ left: '19px', top: '40px', bottom: '-24px' }} />}
+                                    <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center relative z-10 border-2 transition-all ${idx === 0 ? 'bg-primary-500 border-primary-400 text-black shadow-2xl' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-300'}`}>
                                         {idx === 0 ? <Navigation size={18} className="fill-current"/> : <div className="w-2 h-2 rounded-full bg-current"/>}
                                     </div>
                                     <div className="flex-1 pb-10">
@@ -116,8 +116,6 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                         </p>
                     </div>
                   </MotionDiv>
-                  {/* Fechar ao clicar fora */}
-                  <div className="absolute inset-0 z-[-1]" onClick={onClose} />
                </MotionDiv>
             )}
         </AnimatePresence>

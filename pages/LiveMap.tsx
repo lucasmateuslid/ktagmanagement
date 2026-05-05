@@ -19,10 +19,10 @@ import { processExportData, generatePDF, generateExcel } from './livemap/utils/e
 import { TopHUD } from './livemap/components/TopHUD';
 import { DetailsSheet } from './livemap/components/DetailsSheet';
 import { HistoryOverlay } from './livemap/components/HistoryOverlay';
-
+import { UpdateTagsModal } from '../components/UpdateTagsModal';
+import { DisplayLimit } from '../types';
 
 type FleetFilter = 'all' | 'online' | 'offline';
-export type DisplayLimit = 10 | 30 | 50 | 100 | 200 | 'all';
 
 export const LiveMap = () => {
   const { user } = useAuth();
@@ -36,6 +36,7 @@ export const LiveMap = () => {
   const [displayLimit, setDisplayLimit] = useState<DisplayLimit>(50);
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [showPlates, setShowPlates] = useState(false); // Novo Estado
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   
   // Export State
   const [exporting, setExporting] = useState(false);
@@ -54,7 +55,7 @@ export const LiveMap = () => {
   const { 
       historyItems, historyLoading, showHistoryList, 
       fetchHistory, closeHistory, setShowHistoryList 
-  } = useTagHistory(selectedTagId, tags, fleetLocations, (items) => {
+  } = useTagHistory(selectedTagId, tags, vehicles, fleetLocations, (items) => {
       items.forEach(resolveAddress);
   });
 
@@ -69,9 +70,11 @@ export const LiveMap = () => {
       filterFleetList(tagSearchTerm, filter, vehicles, tags, clients, fleetLocations, user), 
   [vehicles, fleetLocations, filter, tagSearchTerm, tags, clients, user]);
 
-  const locationsToRender = useMemo(() => 
-      filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles),
-  [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
+  const locationsToRender = useMemo(() => {
+      const filtered = filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles);
+      console.log('Locations to render:', filtered.length, 'out of total:', fleetLocations.length);
+      return filtered;
+  }, [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
 
   const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
   const activeTag = useMemo(() => tags.find(t => t.id === selectedTagId), [tags, selectedTagId]);
@@ -138,23 +141,24 @@ export const LiveMap = () => {
         setDisplayLimit={setDisplayLimit}
         showPlates={showPlates} // Pass
         setShowPlates={setShowPlates} // Pass
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
       />
 
       <div className="flex-1 relative z-0">
         <MapComponent 
-            locations={locationsToRender} 
-            isFleetMode={true} 
+            locations={showHistoryList && historyItems.length > 0 ? historyItems : locationsToRender} 
+            isFleetMode={!showHistoryList} 
             vehicles={vehicles}
             tags={tags}
             categories={categories}
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleSelection} 
-            showPlates={showPlates} // Pass
+            showPlates={showPlates} 
         />
       </div>
 
       <DetailsSheet 
-        selectedTagId={selectedTagId}
+        selectedTagId={showHistoryList ? '' : selectedTagId}
         isExpanded={isSheetExpanded}
         toggleExpanded={() => setIsSheetExpanded(!isSheetExpanded)}
         vehicle={activeVehicle}
@@ -180,6 +184,13 @@ export const LiveMap = () => {
         exporting={exporting}
         exportProgress={exportProgress}
         onExport={handleExport}
+      />
+
+      <UpdateTagsModal 
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        tags={tags}
+        vehicles={vehicles}
       />
     </div>
   );

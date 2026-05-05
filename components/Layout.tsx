@@ -18,19 +18,236 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { AvatarSelector } from './AvatarSelector';
+import { storage } from '../services/storage';
+
 const MotionDiv = motion.div as any;
 
+// === Animações para a Sidebar (Prompt 1) ===
+const sidebarVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, x: -20 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { type: 'spring', stiffness: 100, damping: 15 },
+  },
+};
+
+const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) => {
+  const [isOpen, setIsOpen] = useState(true);
+  
+  const hasActiveItem = section.items.some((item: any) => location.pathname === item.path);
+
+  // Mantém aberto se tiver item ativo (opcional, pode só iniciar aberto)
+  useEffect(() => {
+    if (hasActiveItem) setIsOpen(true);
+  }, [hasActiveItem]);
+
+  return (
+    <motion.div variants={itemVariants} className="px-3 mb-2">
+      {/* SECTION HEADER (Submenu Toggle) */}
+      {!isCollapsed ? (
+        <button 
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors group cursor-pointer"
+        >
+          <span>{section.title}</span>
+          <ChevronRight size={14} className={`transition-transform duration-200 opacity-50 group-hover:opacity-100 ${isOpen ? 'rotate-90' : ''}`} />
+        </button>
+      ) : (
+        <div className="flex justify-center py-2">
+           <div className="w-4 h-[1px] bg-zinc-200 dark:bg-zinc-800" />
+        </div>
+      )}
+
+      {/* ITEMS */}
+      <AnimatePresence initial={false}>
+        {(isOpen || isCollapsed) && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-1 overflow-hidden"
+          >
+            {section.items.map((item: any) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Link 
+                  key={item.path} 
+                  to={item.path}
+                  onClick={() => setIsSidebarOpen(false)}
+                  className={`group flex items-center rounded-xl px-3 py-2.5 transition-all relative ${
+                    isActive 
+                      ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500 font-bold' 
+                      : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white font-medium'
+                  } ${isCollapsed ? 'justify-center' : ''}`}
+                  title={isCollapsed ? item.label : ''}
+                >
+                  <span className={`shrink-0 ${isCollapsed ? '' : 'mr-3'} flex items-center justify-center`}>
+                     <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                  </span>
+                  
+                  {!isCollapsed && (
+                    <span className="text-xs">{item.label}</span>
+                  )}
+
+                  {!isCollapsed && (
+                     <ChevronRight className={`ml-auto h-4 w-4 transition-opacity ${isActive ? 'opacity-100 text-primary-500' : 'opacity-0 group-hover:opacity-100'}`} />
+                  )}
+                </Link>
+              )
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
-  const { user, customRoles, logout, isAdmin } = useAuth();
+  const { user, customRoles, logout, isAdmin, updateProfile } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast } = useNotification();
+  const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast, addNotification } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isClientMenuOpen, setIsClientMenuOpen] = useState(false); // Novo estado para menu do cliente
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false); // State for Changelog
+  const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false);
+  const [tagReviewState, setTagReviewState] = useState({ remindCount: 0, hideUntil: 0, urgentPendingUntil: 0 });
+  const [now, setNow] = useState(Date.now());
+  const [vehiclesReview, setVehiclesReview] = useState<any[]>([]);
+
+  useEffect(() => {
+     const saved = localStorage.getItem('ktag_tag_review_state');
+     if (saved) {
+        try { setTagReviewState(JSON.parse(saved)); } catch(e) {}
+     }
+     const interval = setInterval(() => setNow(Date.now()), 1000);
+     return () => clearInterval(interval);
+  }, []);
+
+  const saveTagReviewState = (newState: Partial<typeof tagReviewState>) => {
+     const next = { ...tagReviewState, ...newState };
+     setTagReviewState(next);
+     localStorage.setItem('ktag_tag_review_state', JSON.stringify(next));
+  };
+  const [appSettings, setAppSettings] = useState<{appName?: string, appLogo?: string} | null>(null);
+  const hasPlayedAlert = React.useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isUrgentPending = vehiclesReview.length > 0 && tagReviewState.urgentPendingUntil > now;
+  const isHidden = tagReviewState.hideUntil > now;
+  // If count >= 3, they don't get the option to "Lembrar Depois" (which means wait, it should just force them to fix it. If they reach 3 delays, the next time the modal shows, there is no hide).
+  const showReviewModal = vehiclesReview.length > 0 && !isUrgentPending && !isHidden;
+
+  useEffect(() => {
+     const loadSettings = async () => {
+         try {
+             const settings = await storage.getSettings();
+             setAppSettings({
+                 appName: settings.customAppName,
+                 appLogo: settings.customLogoUrl
+             });
+         } catch(e) {
+             console.log(e);
+         }
+     };
+     loadSettings();
+  }, []);
+
+  useEffect(() => {
+     if (vehiclesReview.length > 0 && !hasPlayedAlert.current) {
+        hasPlayedAlert.current = true;
+        // Tenta tocar um som de alerta
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log('Autoplay do audio bloqueado pelo navegador', e));
+        
+        // IA Voice (Text to Speech)
+        if ('speechSynthesis' in window) {
+           const text = `Atenção responsável, você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
+           const utterance = new SpeechSynthesisUtterance(text);
+           utterance.lang = 'pt-BR';
+           window.speechSynthesis.speak(utterance);
+        }
+     }
+  }, [vehiclesReview]);
+
+  useEffect(() => {
+     if (user) {
+        let isM = true;
+        const checkReview = async () => {
+           try {
+              const { storage } = await import('../services/storage');
+              const unsub = storage.subscribeVehicles((vehicles) => {
+                 if (!isM) return;
+                 const needReview = vehicles.filter((v: any) => 
+                     (v.createdBy === user.id || v.createdByName === user.name || v.updatedBy === user.name) 
+                     && v.requiresTagReview && !v.tagId
+                 );
+                 setVehiclesReview(needReview);
+              });
+              return unsub;
+           } catch(e) {}
+           return () => {};
+        };
+        const promiseUnsub = checkReview();
+        return () => { isM = false; promiseUnsub.then(u => { if (u) u(); }) };
+     }
+  }, [user]);
+
+  const handleResolveNow = async () => {
+     const urgentUntil = Date.now() + 30 * 60 * 1000;
+     saveTagReviewState({ urgentPendingUntil: urgentUntil });
+     
+     try {
+        const { storage } = await import('../services/storage');
+        // Update all vehicles currently needing review
+        for (const v of vehiclesReview) {
+            await storage.saveVehicle({
+                ...v,
+                tagReviewUrgentUntil: urgentUntil
+            });
+        }
+     } catch (err) {
+        console.error('Failed to update vehicles urgent status', err);
+     }
+
+     const firstPlate = vehiclesReview[0]?.plate;
+     navigate('/vehicles', { state: { searchTarget: firstPlate } });
+  };
+
+  const handleRemindLater = () => {
+     const { remindCount } = tagReviewState;
+     const count = remindCount + 1;
+     let delayMinutes = 60;
+     if (count === 1) delayMinutes = 60;
+     else if (count === 2) delayMinutes = 30;
+     else delayMinutes = 15;
+     
+     saveTagReviewState({ remindCount: count, hideUntil: Date.now() + delayMinutes * 60 * 1000 });
+  };
+
+  const handleUpdateAvatar = async (url: string) => {
+    try {
+      await updateProfile({ avatarUrl: url });
+      setIsAvatarSelectorOpen(false);
+      addNotification('success', 'Avatar atualizado', 'Seu avatar foi atualizado com sucesso.');
+    } catch (e: any) {
+      addNotification('error', 'Erro', 'Não foi possível atualizar o avatar.');
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -187,55 +404,52 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
               ${isCollapsed ? 'w-24' : 'w-72'}
             `}>
-              <div className={`h-24 flex items-center ${isCollapsed ? 'justify-center px-0' : 'px-8'} border-b border-zinc-100 dark:border-zinc-800 transition-all`}>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl">
-                    <span className="font-display font-black text-white dark:text-black text-lg">K</span>
-                  </div>
+              <div className={`py-6 flex items-center ${isCollapsed ? 'justify-center px-4' : 'px-6 space-x-4'} border-b border-zinc-100 dark:border-zinc-800 transition-all`}>
+                  <button 
+                    disabled
+                    className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-zinc-300 dark:border-zinc-700 flex items-center justify-center shadow-sm shrink-0 relative overflow-hidden group transition-colors"
+                  >
+                     {user?.avatarUrl ? (
+                         <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                     ) : (
+                         <span className="font-black text-lg text-zinc-700 dark:text-zinc-300 group-hover:text-primary-500 transition-colors">{user?.name?.charAt(0) || 'U'}</span>
+                     )}
+                     {roleStyle && isCollapsed && !user?.avatarUrl && (
+                       <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border border-white dark:border-zinc-900 flex items-center justify-center ${roleStyle.bg} ${roleStyle.color}`}>
+                         {RoleIcon && <RoleIcon size={8} strokeWidth={3} />}
+                       </div>
+                     )}
+                  </button>
                   {!isCollapsed && (
-                    <div className="flex flex-col">
-                      <span className="font-display font-black text-lg leading-none text-zinc-900 dark:text-white tracking-tight">K-TAG</span>
-                      <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.2em]">Manager Pro</span>
+                    <div className="flex flex-col truncate flex-1 pr-2">
+                      <span className="font-bold text-sm text-zinc-900 dark:text-white truncate uppercase tracking-tight leading-none mb-1">{user?.name}</span>
+                      <span className="text-[10px] text-zinc-500 truncate mb-1">{user?.email}</span>
+                      {roleStyle && (
+                        <div className={`self-start inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
+                            {RoleIcon && <RoleIcon size={8} className={roleStyle.color} strokeWidth={3} />}
+                            <span className={`text-[8px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
               </div>
 
-              <nav className="flex-1 overflow-y-auto py-8 space-y-8 custom-scrollbar">
+              <motion.nav 
+                className="flex-1 overflow-y-auto py-6 custom-scrollbar"
+                initial="hidden"
+                animate="visible"
+                variants={sidebarVariants}
+              >
                 {menuSections.map((section, idx) => (
-                  <div key={idx} className="px-4">
-                    {!isCollapsed && (
-                      <h3 className="px-4 text-[10px] font-black text-zinc-400 uppercase tracking-[0.3em] mb-3">{section.title}</h3>
-                    )}
-                    <div className="space-y-1">
-                      {section.items.map((item: any) => {
-                        const isActive = location.pathname === item.path;
-                        return (
-                          <Link 
-                            key={item.path} 
-                            to={item.path}
-                            onClick={() => setIsSidebarOpen(false)}
-                            className={`flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all group relative ${
-                              isActive 
-                                ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500' 
-                                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
-                            } ${isCollapsed ? 'justify-center' : ''}`}
-                            title={isCollapsed ? item.label : ''}
-                          >
-                            <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-                            {!isCollapsed && (
-                              <span className="text-[11px] font-black uppercase tracking-widest">{item.label}</span>
-                            )}
-                            {isActive && !isCollapsed && (
-                              <div className="absolute right-4 w-1.5 h-1.5 rounded-full bg-primary-500" />
-                            )}
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </div>
+                  <NavSection
+                    key={idx}
+                    section={section}
+                    isCollapsed={isCollapsed}
+                    location={location}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                  />
                 ))}
-              </nav>
+              </motion.nav>
 
               <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
                 <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
@@ -266,17 +480,40 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         )}
 
         <main className={`flex-1 flex flex-col h-full overflow-hidden print:overflow-visible relative bg-zinc-100 dark:bg-black transition-all ${isClient && isMobile && isMapPage ? 'z-[100]' : ''}`}>
+          {isUrgentPending && (
+             <div className="bg-red-500 text-white w-full py-2 px-6 flex items-center justify-between z-[3000] shadow-md shrink-0">
+                <div className="flex items-center gap-2">
+                   <ShieldAlert size={16} />
+                   <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest">Veículos aguardando revisão</span>
+                </div>
+                <div className="flex items-center gap-2 sm:gap-4">
+                   <span className="text-[10px] sm:text-xs font-bold">Tempo restante: {Math.max(0, Math.ceil((tagReviewState.urgentPendingUntil - now) / 60000))} min</span>
+                   <button onClick={() => navigate('/vehicles')} className="text-[10px] font-black uppercase bg-white text-red-500 hover:bg-red-50 px-3 py-1 rounded shadow-sm">Resolver</button>
+                </div>
+             </div>
+          )}
+
           {/* HEADER PADRÃO */}
           {!(isClient && isMobile) ? (
               <header className="h-24 shrink-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 lg:px-8 z-[2000] sticky top-0 print:hidden">
                 <div className="flex items-center gap-4">
                   <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Menu size={24} /></button>
-                  <div className="hidden md:flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-6 h-10 justify-center">
-                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Portal K-TAG</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                        <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>
-                      </div>
+                  
+                  <div className="hidden md:flex items-center gap-4 h-10">
+                    {appSettings?.appLogo ? (
+                        <img src={appSettings.appLogo} alt="Logo" className="w-10 h-10 object-contain" />
+                    ) : (
+                        <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-800 dark:border-zinc-200">
+                          <span className="font-display font-black text-white dark:text-black text-lg">K</span>
+                        </div>
+                    )}
+                    <div className="flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 justify-center">
+                        <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.appName || 'Manager Pro'}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                          <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>
+                        </div>
+                    </div>
                   </div>
                 </div>
 
@@ -287,19 +524,6 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                       {notifications.filter(n => !n.read).length > 0 && <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-zinc-800" />}
                     </button>
                     <button onClick={toggleTheme} className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 transition-all border border-zinc-100 dark:border-zinc-700 hover:border-primary-500/30">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
-                    <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800 mx-2 hidden sm:block" />
-                    <div className="flex items-center gap-3 pl-2 group cursor-default">
-                      <div className="flex flex-col items-end hidden sm:flex">
-                          <p className="text-xs font-black uppercase text-zinc-900 dark:text-white tracking-tight leading-none mb-1">{user?.name}</p>
-                          {roleStyle && (
-                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${roleStyle.bg} ${roleStyle.border}`}>
-                                {RoleIcon && <RoleIcon size={8} className={roleStyle.color} strokeWidth={3} />}
-                                <span className={`text-[8px] font-black uppercase tracking-widest ${roleStyle.color}`}>{roleStyle.label}</span>
-                            </div>
-                          )}
-                      </div>
-                      <div className={`w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center shadow-sm group-hover:border-primary-500/50 transition-colors`}><span className="font-black text-lg text-zinc-700 dark:text-zinc-300">{user?.name?.charAt(0) || 'U'}</span></div>
-                    </div>
                     {isNotifOpen && (
                         <>
                           <div className="fixed inset-0 z-[4000]" onClick={() => setIsNotifOpen(false)} />
@@ -384,6 +608,61 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           
           {user?.role !== 'client' && <AiAssistant />}
           {isChangelogOpen && <ChangelogModal onClose={() => setIsChangelogOpen(false)} />}
+
+          <AnimatePresence>
+             {showReviewModal && (
+                <>
+                   <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9000]" />
+                   <div className="fixed inset-0 z-[9001] flex items-center justify-center p-4">
+                      <motion.div 
+                         initial={{ scale: 0.9, opacity: 0 }}
+                         animate={{ scale: 1, opacity: 1 }}
+                         className="bg-white dark:bg-zinc-900 border border-red-500/50 rounded-[32px] p-8 max-w-lg w-full shadow-2xl relative overflow-hidden"
+                      >
+                         <div className="absolute top-0 left-0 w-full h-2 bg-red-500" />
+                         <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="w-16 h-16 bg-red-500/10 text-red-500 flex items-center justify-center rounded-full">
+                               <ShieldAlert size={32} />
+                            </div>
+                            <h2 className="text-2xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">Revisão Necessária</h2>
+                            <p className="text-zinc-500">
+                               Você tem {vehiclesReview.length} veículo(s) cadastrado(s) que precisam de revisão, pois não possuem K-TAG vinculado.
+                            </p>
+                            
+                            <div className="w-full text-left bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 max-h-[40vh] overflow-y-auto space-y-2">
+                               {vehiclesReview.map((v: any) => (
+                                  <div key={v.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 p-3 rounded-xl flex items-center justify-between">
+                                     <div className="flex flex-col">
+                                        <span className="font-bold text-zinc-900 dark:text-white">{v.plate}</span>
+                                        <span className="text-[10px] text-zinc-500">{v.model}</span>
+                                     </div>
+                                     <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-1 rounded-md">Pendente</span>
+                                  </div>
+                               ))}
+                            </div>
+
+                            <div className="w-full flex flex-col gap-2 mt-4">
+                               <button 
+                                  onClick={handleResolveNow}
+                                  className="w-full bg-red-500 text-white font-black uppercase tracking-widest py-4 rounded-xl hover:bg-red-600 transition-colors"
+                               >
+                                  Resolver Agora
+                               </button>
+                               {tagReviewState.remindCount < 3 && (
+                                   <button 
+                                      onClick={handleRemindLater} 
+                                      className="w-full text-zinc-500 font-bold uppercase tracking-widest py-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                   >
+                                      Lembrar Depois
+                                   </button>
+                               )}
+                            </div>
+                         </div>
+                      </motion.div>
+                   </div>
+                </>
+             )}
+          </AnimatePresence>
         </main>
       </div>
 

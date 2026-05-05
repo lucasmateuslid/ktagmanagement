@@ -91,9 +91,17 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
 
   const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
   
+  const FALLBACK_PROXIES = [
+      'https://corsproxy.io/?',
+      'https://api.allorigins.win/raw?url='
+  ];
+
+  let response: Response | null = null;
+  let lastError: any = null;
+
   if (settings.customProxyUrl) {
     try {
-      const response = await fetch(settings.customProxyUrl, {
+      response = await fetch(settings.customProxyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,41 +111,62 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
           body: payload
         })
       });
-
-      if (!response.ok) {
-        if (response.status === 401) throw new Error("Acesso Negado (401): Credenciais K-Tag inválidas.");
-        if (response.status === 404) throw new Error("Endpoint K-Tag não encontrado (404).");
-        if (response.status === 429) throw new Error("Erro 429: Muitas requisições. O servidor está limitando o acesso.");
-        throw new Error(`Erro ${response.status}: Falha no Proxy K-Tag.`);
-      }
-      
-      const text = await response.text();
-      try {
-        const data = JSON.parse(text);
-        
-        // Parse da Resposta conforme K-Tag API v1.2
-        if (data && Array.isArray(data.results)) {
-            return data.results.map((p: any) => ({
-                lat: p.lat,
-                lon: p.lon,
-                conf: p.conf,
-                status: p.status, // Raw status
-                battery: ktagBatteryStatus(p.status), // New interpreted battery
-                timestamp: p.timestamp, // Already in ms
-                isodatetime: p.isodatetime
-            }));
-        }
-        
-        return [];
-      } catch (jsonErr) {
-        throw new Error("Resposta inválida do servidor K-Tag.");
-      }
     } catch (e: any) {
-      throw new Error(e.message || "Erro de conexão com o servidor de rastreio.");
+      console.warn("Custom proxy failed:", e.message);
+      lastError = e;
     }
   }
 
-  throw new Error("Proxy não configurado. Impossível realizar rastreio.");
+  // Se o proxy primário falhou ou não existe, usa fallback
+  if (!response || !response.ok) {
+    for (const proxyBase of FALLBACK_PROXIES) {
+       try {
+           const fallbackUrl = `${proxyBase}${encodeURIComponent(settings.ktagUrl)}`;
+           response = await fetch(fallbackUrl, {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+               body: JSON.stringify(payload)
+           });
+           if (response.ok) break;
+       } catch (e: any) {
+           console.warn(`Fallback proxy ${proxyBase} failed:`, e.message);
+           lastError = e;
+       }
+    }
+  }
+
+  if (!response) {
+      throw new Error(lastError?.message || "Falha ao conectar via proxies de rastreio.");
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("Acesso Negado (401): Credenciais K-Tag inválidas.");
+    if (response.status === 404) throw new Error("Endpoint K-Tag não encontrado (404).");
+    if (response.status === 429) throw new Error("Erro 429: Muitas requisições. O servidor está limitando o acesso.");
+    throw new Error(`Erro ${response.status}: Falha no Proxy K-Tag.`);
+  }
+  
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    
+    // Parse da Resposta conforme K-Tag API v1.2
+    if (data && Array.isArray(data.results)) {
+        return data.results.map((p: any) => ({
+            lat: p.lat,
+            lon: p.lon,
+            conf: p.conf,
+            status: p.status, // Raw status
+            battery: ktagBatteryStatus(p.status), // New interpreted battery
+            timestamp: p.timestamp, // Already in ms
+            isodatetime: p.isodatetime
+        }));
+    }
+    
+    return [];
+  } catch (jsonErr) {
+    throw new Error("Resposta inválida do servidor K-Tag.");
+  }
 };
 
 export const exportToCSV = (locations: KTagLocationResult[]) => {

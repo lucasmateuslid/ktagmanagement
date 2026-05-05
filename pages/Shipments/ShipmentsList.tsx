@@ -15,6 +15,7 @@ export const ShipmentsList = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
+  const canQuote = user?.role !== 'client';
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | 'all'>('all');
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
@@ -219,7 +220,7 @@ export const ShipmentsList = () => {
           <p className="text-sm text-zinc-500">Controle de remessas e lotes de equipamentos</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          {canEdit && (
+          {canQuote && (
             <button 
               onClick={() => setIsQuotationModalOpen(true)}
               className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3 rounded-[20px] font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-xl shadow-emerald-500/20"

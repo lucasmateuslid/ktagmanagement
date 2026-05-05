@@ -102,7 +102,7 @@ export const storage = {
 
   clearSessionUser: async () => {
     localStorage.removeItem(KEYS.USER_SESSION);
-    const keysToKeep = [KEYS.SETTINGS, 'ktag_theme'];
+    const keysToKeep = [KEYS.SETTINGS, 'ktag_theme', 'ktag_remember_login'];
     Object.keys(localStorage).forEach(k => {
       if (!keysToKeep.includes(k)) localStorage.removeItem(k);
     });

@@ -9,6 +9,7 @@ export const getStatusStyle = (status: string) => {
       case 'Técnico no local': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
       case 'Cliente no local': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
       case 'Em andamento': return { color: '#3b82f6', badgeBg: 'bg-blue-100 dark:bg-blue-900/30', badgeText: 'text-blue-700 dark:text-blue-300' };
+      case 'Aguardando Vínculo': return { color: '#8b5cf6', badgeBg: 'bg-violet-100 dark:bg-violet-900/30', badgeText: 'text-violet-700 dark:text-violet-300' };
       case 'Concluída': return { color: '#14b8a6', badgeBg: 'bg-teal-100 dark:bg-teal-900/30', badgeText: 'text-teal-700 dark:text-teal-300' };
       case 'Frustrada': return { color: '#f97316', badgeBg: 'bg-orange-100 dark:bg-orange-900/30', badgeText: 'text-orange-700 dark:text-orange-300' };
       case 'Cancelada': return { color: '#ef4444', badgeBg: 'bg-red-100 dark:bg-red-900/30', badgeText: 'text-red-700 dark:text-red-300' };

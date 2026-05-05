@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { securityService } from '../services/security';
+import { Checkbox } from '../components/ui/checkbox';
 import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff, Layers, Radio, Tag } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
@@ -421,15 +422,13 @@ export const Technicians = () => {
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 block">Habilidades / Serviços</label>
                         <div className="grid grid-cols-1 gap-2">
                             {['Rastreador', 'Tag', 'Rastreador + Tag'].map((svc) => (
-                                <label key={svc} className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={formData.services?.includes(svc) || false} 
-                                        onChange={() => toggleService(svc)}
-                                        className="w-4 h-4 accent-primary-500 rounded"
-                                    />
-                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase">{svc}</span>
-                                </label>
+                                <Checkbox 
+                                  key={svc} 
+                                  checked={formData.services?.includes(svc) || false}
+                                  onChange={() => toggleService(svc)}
+                                >
+                                  <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase">{svc}</span>
+                                </Checkbox>
                             ))}
                         </div>
                     </div>

@@ -76,10 +76,12 @@ export const filterLocationsToRender = (
     }
     
     // Se não tem nada selecionado, mostra frota
-    // Filtra para remover tags soltas que não estão selecionadas
+    // Filtra para remover tags soltas que não estão selecionadas, a menos que sejam XADTAG (que podem ser usadas soltas)
+    // Para simplificar, vamos mostrar todas as tags que têm localização ativa, já que não temos tantos.
     const activeVehicleTagIds = new Set(vehicles.map(v => v.tagId));
     
-    let base = fleetLocations.filter(l => activeVehicleTagIds.has(l.tagId));
+    // Mostra todas as localizações que têm tagId
+    let base = fleetLocations.filter(l => l.tagId);
 
     // Se filter === 'online', já está implícito pois fleetLocations são os onlines
     

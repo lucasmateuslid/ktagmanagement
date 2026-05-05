@@ -171,7 +171,15 @@ export const MelhorEnvioFlowModal = ({
          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao adicionar ao carrinho');
+      if (!res.ok) {
+        console.error("Melhor Envio full error details:", data);
+        let errorMsg = data.error;
+        if (data.details && Object.keys(data.details).length > 0) {
+          const detailStr = JSON.stringify(data.details);
+          errorMsg = `${data.error} - Detalhes: ${detailStr}`;
+        }
+        throw new Error(errorMsg || 'Erro ao adicionar ao carrinho');
+      }
 
       setMelhorEnvioOrderId(data.id);
       

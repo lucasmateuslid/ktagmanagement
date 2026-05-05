@@ -13,10 +13,6 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
-      fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        display: ['Manrope', 'sans-serif'],
-      },
       colors: {
         // "Carbon" Palette based on Zinc/Neutral
         zinc: {
@@ -41,9 +37,20 @@ export default {
           950: '#451a03',
           // Bright Yellow for Dark Mode highlights
           yellow: '#FFC800' 
-        }
+        },
+        "gray-100": "var(--ds-gray-100)",
+        "gray-200": "var(--ds-gray-200)",
+        "gray-500": "var(--ds-gray-500)",
+        "gray-600": "var(--ds-gray-600)",
+        "gray-700": "var(--ds-gray-700)",
+        "gray-1000": "var(--ds-gray-1000)",
+        "background-100": "var(--ds-background-100)"
+      },
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        display: ['Manrope', 'sans-serif'],
       }
     },
   },
   plugins: [],
-}
+};

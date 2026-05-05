@@ -180,9 +180,11 @@ export const xadtagService = {
             const data = await unwrapResponse<any[]>(response);
             if (!data || !Array.isArray(data)) return [];
 
+            console.log('XADTAG RAW DATA:', data);
+
             return data.map((loc) => ({
-                lat: loc.lat ?? 0,
-                lon: loc.lng ?? 0,
+                lat: Number(loc.lat ?? loc.latitude ?? 0),
+                lon: Number(loc.lng ?? loc.longitude ?? loc.lon ?? 0),
                 conf: 100,
                 status: 1,
                 battery: batteryToInfo(loc.battery),
@@ -219,8 +221,8 @@ export const xadtagService = {
             if (!points) return [];
 
             return points.map((p) => ({
-                lat: p.lat ?? 0,
-                lon: p.lng ?? 0,
+                lat: Number(p.lat ?? p.latitude ?? 0),
+                lon: Number(p.lng ?? p.longitude ?? p.lon ?? 0),
                 conf: 100,
                 status: 1,
                 distance: p.distance ?? 0,

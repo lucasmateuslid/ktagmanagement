@@ -65,7 +65,8 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       const tagsToTrack = tags.filter(t => {
           const isLinked = vehicles.some(v => v.tagId === t.id);
           const isSelected = t.id === selectedTagId;
-          return isLinked || isSelected;
+          const isXadTag = t.type === 'XADTAG';
+          return isLinked || isSelected || isXadTag;
       });
 
       // BUSCA EM LOTE (BATCHING)

@@ -3,6 +3,7 @@ import { ShieldCheck, Plus, Trash2, ShieldAlert, Check } from 'lucide-react';
 import { storage } from '../../services/storage';
 import { CustomRole } from '../../types';
 import { useNotification } from '../../contexts/NotificationContext';
+import { Checkbox } from '../ui/checkbox';
 
 const AVAILABLE_PERMISSIONS = [
   { id: 'ROUTE_DASHBOARD', label: 'Dashboard' },
@@ -175,15 +176,10 @@ export const PermissionsModule = () => {
                                 const isChecked = activeRole.permissions.includes(perm.id);
                                 return (
                                     <label key={perm.id} className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${isChecked ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800'} ${activeRole.id === 'sysadmin' ? 'opacity-70 cursor-not-allowed' : 'hover:border-primary-500/50'}`}>
-                                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border ${isChecked ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700'}`}>
-                                            {isChecked && <Check size={14} strokeWidth={3} />}
-                                        </div>
-                                        <input 
-                                            type="checkbox" 
-                                            className="sr-only" 
-                                            disabled={activeRole.id === 'sysadmin'}
-                                            checked={isChecked}
-                                            onChange={() => handleTogglePermission(perm.id)}
+                                        <Checkbox 
+                                           checked={isChecked}
+                                           disabled={activeRole.id === 'sysadmin'}
+                                           onChange={() => handleTogglePermission(perm.id)}
                                         />
                                         <span className={`text-[11px] font-black uppercase tracking-tight ${isChecked ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{perm.label}</span>
                                     </label>

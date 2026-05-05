@@ -2,6 +2,7 @@ import { storage } from './storage';
 
 const CACHE_KEY = 'ktag_geocode_cache';
 const CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_CACHE_SIZE = 1000;
 
 interface CacheEntry {
   address: string;
@@ -9,8 +10,8 @@ interface CacheEntry {
 }
 
 let geocodeCache: Map<string, CacheEntry> | null = null;
-let cachedSettings: any = null;
-let settingsFetchTime = 0;
+let saveCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+const pendingRequests = new Map<string, Promise<string>>();
 
 const initCache = () => {
   if (geocodeCache) return;
@@ -23,21 +24,37 @@ const initCache = () => {
       
       // Load and clean up expired entries
       let hasExpired = false;
-      Object.entries(parsed).forEach(([key, entry]) => {
-        if (now - entry.timestamp < CACHE_EXPIRATION_MS) {
-          geocodeCache!.set(key, entry);
-        } else {
+      const entries = Object.entries(parsed)
+        .filter(([_, entry]) => {
+          if (now - entry.timestamp < CACHE_EXPIRATION_MS) {
+            return true;
+          }
           hasExpired = true;
-        }
+          return false;
+        })
+        .sort((a, b) => b[1].timestamp - a[1].timestamp) // Sort newest first
+        .slice(0, MAX_CACHE_SIZE); // Enforce max size on load
+
+      entries.forEach(([key, entry]) => {
+        geocodeCache!.set(key, entry);
       });
       
-      if (hasExpired) {
-        saveCache();
+      if (hasExpired || entries.length < Object.keys(parsed).length) {
+        scheduleSaveCache();
       }
     }
   } catch (e) {
     console.warn("Failed to load geocode cache", e);
   }
+};
+
+const scheduleSaveCache = () => {
+  if (saveCacheTimeout) {
+    clearTimeout(saveCacheTimeout);
+  }
+  saveCacheTimeout = setTimeout(() => {
+    saveCache();
+  }, 1000);
 };
 
 const saveCache = () => {
@@ -58,7 +75,7 @@ const getFromCache = (key: string): string | null => {
       return entry.address;
     } else {
       geocodeCache!.delete(key);
-      saveCache();
+      scheduleSaveCache();
     }
   }
   return null;
@@ -66,8 +83,18 @@ const getFromCache = (key: string): string | null => {
 
 const setToCache = (key: string, address: string) => {
   initCache();
+  
+  // Evict oldest if we hit the limit
+  if (geocodeCache!.size >= MAX_CACHE_SIZE) {
+    const oldestKey = geocodeCache!.keys().next().value;
+    if (oldestKey) geocodeCache!.delete(oldestKey);
+  }
+  
+  // Map preserves insertion order, so delete and re-set makes it the newest
+  geocodeCache!.delete(key);
   geocodeCache!.set(key, { address, timestamp: Date.now() });
-  saveCache();
+  
+  scheduleSaveCache();
 };
 
 export const geocodingService = {
@@ -76,32 +103,47 @@ export const geocodingService = {
    */
   reverseGeocode: async (lat: number, lon: number): Promise<string> => {
     const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    
+    // 1. Check Cache
     const cachedAddress = getFromCache(cacheKey);
     if (cachedAddress) {
       return cachedAddress;
     }
 
-    try {
-      const settings = await storage.getSettings();
-      const providerPreference = settings.geocodingProvider || 'osm';
-
-      const res = await fetch('/api/reverse-geocode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng: lon, providerPreference })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.displayName) {
-          setToCache(cacheKey, data.displayName);
-          return data.displayName;
-        }
-      }
-    } catch (e) {
-      console.warn("Reverse geocoding API failed:", e);
+    // 2. Check Pending Requests (Promise Coalescing)
+    if (pendingRequests.has(cacheKey)) {
+      return pendingRequests.get(cacheKey)!;
     }
 
-    return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    // 3. Execute Fetch
+    const fetchPromise = (async () => {
+      try {
+        const settings = await storage.getSettings();
+        const providerPreference = settings.geocodingProvider || 'osm';
+
+        const res = await fetch('/api/reverse-geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng: lon, providerPreference })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.displayName) {
+            setToCache(cacheKey, data.displayName);
+            return data.displayName;
+          }
+        }
+      } catch (e) {
+        console.warn("Reverse geocoding API failed:", e);
+      } finally {
+        pendingRequests.delete(cacheKey);
+      }
+      return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    })();
+
+    pendingRequests.set(cacheKey, fetchPromise);
+    return fetchPromise;
   },
 
   geocode: async (query: string): Promise<{lat: number, lon: number, address: string}[]> => {

@@ -30,6 +30,7 @@ export interface User {
   createdAt?: number;
   cpf?: string; 
   avatarInitial?: string;
+  avatarUrl?: string;
   pixKey?: string;
   notificationPreferences?: UserNotificationPreferences;
 }
@@ -58,6 +59,7 @@ export interface Tag {
   privateKey?: string;
   imei?: string;
   traqcareId?: string;
+  powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;
   batteryWarrantyYears?: number;
@@ -160,6 +162,8 @@ export interface KTagBatteryInfo {
   color: string;
 }
 
+export type DisplayLimit = 10 | 30 | 50 | 100 | 200 | 'all';
+
 export interface LocationHistory {
   id: string;
   tagId: string;
@@ -188,6 +192,10 @@ export interface Vehicle {
   createdAt: number;
   updatedBy?: string;
   chassis?: string;
+  createdBy?: string;
+  createdByName?: string;
+  requiresTagReview?: boolean;
+  tagReviewUrgentUntil?: number;
   fipeCode?: string;
   fipeValue?: number;
   hinovaId?: string;
@@ -276,6 +284,8 @@ export interface ShippingAddress {
 export interface AppSettings {
   language: 'pt' | 'en';
   customProxyUrl: string;
+  customAppName?: string;
+  customLogoUrl?: string;
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;
@@ -320,7 +330,7 @@ export interface AppSettings {
   melhorEnvioPackages?: ShippingPackage[];
 }
 
-export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrada';
+export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrada' | 'Aguardando Vínculo';
 export type DeviceType = 'Rastreador' | 'Rastreador + Tag' | 'Tag' | 'Não precisa';
 export type ServiceType = 'Instalação' | 'Manutenção' | 'Retirada' | 'Vistoria';
 

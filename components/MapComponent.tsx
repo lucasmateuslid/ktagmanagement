@@ -279,20 +279,47 @@ export const MapComponent: React.FC<MapProps> = ({
               )
           ) : (
               <>
-                {locations.length > 0 && (
-                    <Marker 
-                        position={[locations[0].lat, locations[0].lon]} 
-                        icon={createVehicleIcon(true, undefined, undefined, '#f59e0b', false, showPlates, 'INÍCIO')}
-                    />
-                )}
                 <Polyline 
                     positions={locations.map(l => [l.lat, l.lon] as [number, number])} 
                     color="#f59e0b" 
-                    weight={6} 
-                    opacity={0.6} 
-                    dashArray="1, 10"
+                    weight={5} 
+                    opacity={0.7} 
                     lineCap="round"
+                    lineJoin="round"
                 />
+                
+                {/* Pontos intermediários */}
+                {locations.map((loc, idx) => (
+                    <Marker 
+                        key={loc.id || idx}
+                        position={[loc.lat, loc.lon]}
+                        icon={L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div style="background: #f59e0b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transform: translate(-50%, -50%);"></div>`,
+                            iconSize: [0, 0],
+                            iconAnchor: [0, 0]
+                        })}
+                    >
+                        <Popup className="font-sans text-xs">
+                           <div className="font-bold">{new Date(loc.timestamp).toLocaleString()}</div>
+                           {loc.battery && <div>Bat: {loc.battery.level}%</div>}
+                        </Popup>
+                    </Marker>
+                ))}
+
+                {locations.length > 0 && (
+                    <Marker 
+                        position={[locations[0].lat, locations[0].lon]} 
+                        icon={createVehicleIcon(true, undefined, undefined, '#10b981', false, showPlates, 'FIM/ATUAL')}
+                    />
+                )}
+                
+                {locations.length > 1 && (
+                    <Marker 
+                        position={[locations[locations.length-1].lat, locations[locations.length-1].lon]} 
+                        icon={createVehicleIcon(true, undefined, undefined, '#ef4444', false, showPlates, 'INÍCIO')}
+                    />
+                )}
               </>
           )}
         </MapContainer>

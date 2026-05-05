@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { Checkbox } from '../components/ui/checkbox';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -508,17 +509,14 @@ export const Clients = () => {
                                 <input type="email" value={selectedClient.email || ''} onChange={e => setSelectedClient({...selectedClient, email: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="cliente@provedor.com" />
                             </div>
                             <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                               <label className="flex items-center gap-4 cursor-pointer group bg-zinc-100/50 dark:bg-zinc-950 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800">
-                                  <div className="relative shrink-0">
-                                    <input type="checkbox" className="sr-only peer" checked={selectedClient.hasAccess || false} onChange={e => setSelectedClient({...selectedClient, hasAccess: e.target.checked})}/>
-                                    <div className="w-12 h-7 bg-zinc-300 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
-                                    <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full peer-checked:translate-x-5 transition-all shadow-sm"></div>
-                                  </div>
-                                  <div className="flex flex-col">
-                                     <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-white tracking-tight">Liberar Portal do Cliente</span>
-                                     <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-tighter">Acesso via CPF e senha inicial</span>
-                                  </div>
-                               </label>
+                               <div className="group bg-zinc-100/50 dark:bg-zinc-950 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800">
+                                   <Checkbox checked={selectedClient.hasAccess || false} onChange={checked => setSelectedClient({...selectedClient, hasAccess: checked})}>
+                                     <div className="flex flex-col ml-1">
+                                        <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-white tracking-tight">Liberar Portal do Cliente</span>
+                                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-tighter">Acesso via CPF e senha inicial</span>
+                                     </div>
+                                   </Checkbox>
+                               </div>
                             </div>
                         </div>
                     </div>

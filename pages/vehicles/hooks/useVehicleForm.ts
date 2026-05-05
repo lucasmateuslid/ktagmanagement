@@ -6,6 +6,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { validateBrazilianPlate } from '../utils/plateValidation';
 
 export const useVehicleForm = (
+  vehicles: Vehicle[],
   clients: Client[], 
   currentUser: User | null, 
   onSuccess: () => void
@@ -38,6 +39,17 @@ export const useVehicleForm = (
     }
     if (!formData.plate || !formData.model || !clientData.cpf) return;
 
+    const currentPlate = formData.plate.toUpperCase();
+    const samePlates = vehicles.filter(v => v.plate === currentPlate && v.id !== formData.id);
+
+    if (samePlates.length > 0) {
+      const hasComodato = samePlates.some(v => v.ownershipStatus === 'leased') || formData.ownershipStatus === 'leased';
+      if (hasComodato) {
+        addNotification('error', 'Placa Duplicada', 'Não é possível cadastrar: Essa placa já possui cadastro e para o modelo COMODATO é permitido apenas um cadastro por placa.');
+        return;
+      }
+    }
+
     const cleanCpf = clientData.cpf.replace(/\D/g, '');
     const existingClient = clients.find(c => c.cpf.replace(/\D/g, '') === cleanCpf);
 
@@ -58,6 +70,8 @@ export const useVehicleForm = (
         plate: formData.plate.toUpperCase(), 
         createdAt: formData.createdAt || Date.now(),
         updatedBy: currentUser?.name || 'SISTEMA',
+        createdBy: formData.createdBy || currentUser?.id,
+        createdByName: formData.createdByName || currentUser?.name,
         ownershipStatus: formData.ownershipStatus || 'leased'
     };
     await storage.saveVehicle(vehicleToSave);

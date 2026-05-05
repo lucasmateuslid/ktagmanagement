@@ -3,7 +3,7 @@ import React from 'react';
 import { Search, RefreshCw, X } from 'lucide-react';
 import { SearchDropdown } from './SearchDropdown';
 import { FleetStatusChips } from './FleetStatusChips';
-import { DisplayLimit } from '../../LiveMap';
+import { DisplayLimit } from '../../../types';
 
 interface TopHUDProps {
     searchTerm: string;
@@ -26,13 +26,14 @@ interface TopHUDProps {
     setDisplayLimit: (v: DisplayLimit) => void;
     showPlates?: boolean; // New prop
     setShowPlates?: (b: boolean) => void; // New prop
+    onOpenUpdateModal?: () => void;
 }
 
 export const TopHUD: React.FC<TopHUDProps> = ({ 
     searchTerm, setSearchTerm, isFocused, setIsFocused, loading, onRefresh, searchPlaceholder,
     filteredList, fleetLocations, clients, categories, userRole, onSelect,
     stats, filter, setFilter, displayLimit, setDisplayLimit,
-    showPlates, setShowPlates
+    showPlates, setShowPlates, onOpenUpdateModal
 }) => {
     
     const handleClearSearch = () => {
@@ -42,6 +43,14 @@ export const TopHUD: React.FC<TopHUDProps> = ({
 
     return (
         <div className="absolute top-4 left-0 right-0 z-[400] px-4 pointer-events-none flex flex-col items-center gap-3">
+            <div className="w-full flex justify-end max-w-lg pointer-events-auto">
+                <button 
+                    onClick={onOpenUpdateModal}
+                    className="bg-primary-500 text-black hover:bg-primary-400 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95"
+                >
+                    <RefreshCw size={14} /> Atualizar Tudo
+                </button>
+            </div>
             
             {/* OVERLAY PARA FECHAR AO CLICAR FORA */}
             {isFocused && (

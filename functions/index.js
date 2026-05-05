@@ -572,9 +572,9 @@ async function fetchXadtagLocation(tag, settings) {
 }
 
 /**
- * RASTREIO AGENDADO: Atualiza 1/3 dos equipamentos a cada 30 minutos
+ * RASTREIO AGENDADO: Atualiza todos os equipamentos a cada 3 horas
  */
-exports.scheduledTagUpdate = onSchedule("every 30 minutes", async (event) => {
+exports.scheduledTagUpdate = onSchedule("every 3 hours", async (event) => {
   const db = admin.firestore();
   
   try {
@@ -596,21 +596,11 @@ exports.scheduledTagUpdate = onSchedule("every 30 minutes", async (event) => {
       return;
     }
     
-    // 3. Determine which third to update
-    const now = new Date();
-    const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
-    const currentThird = Math.floor(minutesSinceMidnight / 30) % 3;
+    console.log(`[Scheduled Update] Updating ${allTags.length} tags`);
     
-    // Sort tags by ID to have a consistent order
-    allTags.sort((a, b) => a.id.localeCompare(b.id));
-    
-    const tagsToUpdate = allTags.filter((_, index) => index % 3 === currentThird);
-    
-    console.log(`[Scheduled Update] Updating ${tagsToUpdate.length} tags (Third: ${currentThird})`);
-    
-    // 4. Fetch and Update
+    // 3. Fetch and Update all tags
     let updatedCount = 0;
-    for (const tag of tagsToUpdate) {
+    for (const tag of allTags) {
       try {
         let locationResult = null;
         
@@ -630,6 +620,15 @@ exports.scheduledTagUpdate = onSchedule("every 30 minutes", async (event) => {
           if (!vehiclesSnapshot.empty) {
             const vehicleDoc = vehiclesSnapshot.docs[0];
             await vehicleDoc.ref.update({ lastPosition: locationResult });
+            
+            // Add to history subcollection
+            await vehicleDoc.ref.collection('history').doc(locationResult.id || Math.random().toString(36).substring(2, 15)).set({
+                ...locationResult,
+                tagId: tag.id,
+                vehicleId: vehicleDoc.id,
+                savedAt: Date.now()
+            });
+
             updatedCount++;
           }
         }

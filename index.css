@@ -5,6 +5,26 @@
 
 /* Global Base Styles */
 @layer base {
+  :root {
+      --ds-gray-100: hsla(0, 0%, 95%, 1);
+      --ds-gray-200: hsla(0, 0%, 92%, 1);
+      --ds-gray-500: hsla(0, 0%, 79%, 1);
+      --ds-gray-600: hsla(0, 0%, 66%, 1);
+      --ds-gray-700: hsla(0, 0%, 56%, 1);
+      --ds-gray-1000: hsla(0, 0%, 9%, 1);
+      --ds-background-100: hsla(0, 0%, 100%, 1);
+  }
+
+  .dark {
+      --ds-gray-100: hsla(0, 0%, 10%, 1);
+      --ds-gray-200: hsla(0, 0%, 12%, 1);
+      --ds-gray-500: hsla(0, 0%, 27%, 1);
+      --ds-gray-600: hsla(0, 0%, 53%, 1);
+      --ds-gray-700: hsla(0, 0%, 56%, 1);
+      --ds-gray-1000: hsla(0, 0%, 93%, 1);
+      --ds-background-100: hsla(0,0%,4%, 1);
+  }
+
   /* Garante contraste em formulários */
   input, textarea, select {
     @apply text-zinc-900 dark:text-white caret-primary-500;

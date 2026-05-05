@@ -11,11 +11,13 @@ import {
   Activity, Wrench, FileText, Play, RotateCcw, AlertTriangle, Check, Wallet, Camera, Search
 } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ConfirmModal } from './ConfirmModal';
 import { useNotification } from '../contexts/NotificationContext';
 import { MapComponent } from './MapComponent';
+import { Checkbox } from './ui/checkbox';
 import { LocationHistory, defaultChecklistItems, ChecklistStatus } from '../types';
 
 import { getDisplayDate } from '../pages/schedules/utils/scheduleTimeUtils';
@@ -35,6 +37,7 @@ interface TrackingModalProps {
 export const TrackingModal: React.FC<TrackingModalProps> = ({ 
     schedule, technicians, companies, onClose, onUpdate, onDelete, currentUser 
 }) => {
+    const navigate = useNavigate();
     const { addNotification } = useNotification();
     const isPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'moderator';
     
@@ -345,9 +348,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                     return;
                 }
 
-                newStatus = 'Concluída';
-                historyAction = 'Finalizada';
-                historyDetails = 'Serviço concluído com sucesso.';
+                newStatus = 'Aguardando Vínculo';
+                historyAction = 'Aguardando Vínculo';
+                historyDetails = 'Equipamento informado, aguardando confirmação de vínculo.';
                 break;
             case 'cancel':
                 setConfirmCancelOpen(true);
@@ -717,15 +720,13 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                 </select>
                                             </div>
                                         </div>
-                                        <div className="flex flex-col gap-2">
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={formData.needsInspection} onChange={e => setFormData({...formData, needsInspection: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
-                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">Necessita Vistoria</span>
-                                            </label>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={formData.paymentOnSite} onChange={e => setFormData({...formData, paymentOnSite: e.target.checked})} className="accent-primary-500 w-3 h-3 rounded" />
-                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">Pagamento no Local</span>
-                                            </label>
+                                        <div className="flex flex-col gap-3">
+                                            <Checkbox checked={formData.needsInspection} onChange={(checked) => setFormData({...formData, needsInspection: checked})}>
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Necessita Vistoria</span>
+                                            </Checkbox>
+                                            <Checkbox checked={formData.paymentOnSite} onChange={(checked) => setFormData({...formData, paymentOnSite: checked})}>
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Pagamento no Local</span>
+                                            </Checkbox>
                                         </div>
                                     </div>
 
@@ -781,14 +782,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
                                 {/* LOCAL DISTANTE & ORÇAMENTO */}
                                 <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-3xl border border-amber-100 dark:border-amber-900/20">
-                                    <label className="flex items-center gap-3 cursor-pointer">
-                                        <div className="relative">
-                                            <input type="checkbox" className="sr-only peer" checked={formData.isRemoteLocation} onChange={e => setFormData({...formData, isRemoteLocation: e.target.checked})} />
-                                            <div className="w-10 h-6 bg-zinc-200 dark:bg-zinc-800 rounded-full peer-checked:bg-amber-500 transition-all"></div>
-                                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-4 transition-all shadow-sm"></div>
-                                        </div>
+                                    <Checkbox checked={formData.isRemoteLocation} onChange={checked => setFormData({...formData, isRemoteLocation: checked})}>
                                         <span className="text-[10px] font-black uppercase text-amber-700 dark:text-amber-400 tracking-widest flex items-center gap-2"><Milestone size={14}/> Local Distante (Ativar Orçamento)</span>
-                                    </label>
+                                    </Checkbox>
 
                                     {formData.isRemoteLocation && (
                                         <div className="grid grid-cols-2 gap-4 mt-4 animate-in slide-in-from-top-2">
@@ -831,14 +827,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                     {/* Pagamento ao Técnico */}
                                     {formData.technicianId && (
                                         <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/20">
-                                            <label className="flex items-center gap-3 cursor-pointer">
-                                                <div className="relative">
-                                                    <input type="checkbox" className="sr-only peer" checked={formData.amountReceivedByTechnician > 0} onChange={e => setFormData({...formData, amountReceivedByTechnician: e.target.checked ? (formData.amountReceivedByTechnician || 1) : 0})} />
-                                                    <div className="w-10 h-6 bg-zinc-200 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
-                                                    <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-4 transition-all shadow-sm"></div>
-                                                </div>
+                                            <Checkbox checked={formData.amountReceivedByTechnician > 0} onChange={checked => setFormData({...formData, amountReceivedByTechnician: checked ? (formData.amountReceivedByTechnician || 1) : 0})}>
                                                 <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-widest flex items-center gap-2"><Wallet size={14}/> Pagamento ao Técnico</span>
-                                            </label>
+                                            </Checkbox>
 
                                             {formData.amountReceivedByTechnician > 0 && (
                                                 <div className="grid grid-cols-2 gap-4 mt-4 animate-in slide-in-from-top-2">
@@ -952,17 +943,46 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                             )}
                                         </div>
 
-                                        {/* AÇÕES DESTRUTIVAS E GERAIS */}
-                                        <div className="flex gap-2 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                                            <button onClick={handleAdminDataSave} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2">
-                                                <Save size={14}/> Salvar Dados
-                                            </button>
-                                            
-                                            {schedule.status !== 'Cancelada' && schedule.status !== 'Concluída' && (
-                                                <button onClick={() => handleWorkflowAction('cancel')} className="flex-1 py-3 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-200 dark:hover:bg-red-900/40 transition-all flex items-center justify-center gap-2">
-                                                    <AlertTriangle size={14}/> Cancelar Serviço
-                                                </button>
+                                            {/* 5. Ações para Aguardando Vínculo (Admin) */}
+                                            {schedule.status === 'Aguardando Vínculo' && (
+                                                <div className="mt-4 p-4 border border-violet-200 dark:border-violet-900/30 bg-violet-50 dark:bg-violet-900/10 rounded-2xl flex flex-col gap-3">
+                                                    <div className="flex items-start gap-3">
+                                                        <Activity className="text-violet-500 mt-0.5" size={16} />
+                                                        <div>
+                                                            <h4 className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-400 tracking-widest">Aguardando Vínculo</h4>
+                                                            <p className="text-xs font-medium text-violet-600 dark:text-violet-300 mt-1">O técnico finalizou o serviço. Confirme o vínculo do equipamento ao veículo.</p>
+                                                        </div>
+                                                    </div>
+                                                    <button onClick={() => {
+                                                        const updated = {
+                                                            ...schedule,
+                                                            status: 'Concluída' as const,
+                                                            history: [...schedule.history, { 
+                                                                action: 'Vínculo Confirmado', 
+                                                                actionBy: currentUser?.name || 'Consultor', 
+                                                                timestamp: Date.now(), 
+                                                                details: 'Vínculo de equipamento confirmado pelo consultor, finalizando serviço' 
+                                                            }]
+                                                        };
+                                                        onUpdate(updated);
+                                                        addNotification('success', 'Vínculo Confirmado', 'Serviço concluído com sucesso.');
+                                                    }} className="py-3 bg-violet-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-violet-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20">
+                                                        <CheckCircle2 size={16}/> Confirmar Equipamento Vinculado
+                                                    </button>
+                                                </div>
                                             )}
+
+                                            {/* AÇÕES DESTRUTIVAS E GERAIS */}
+                                            <div className="flex gap-2 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                                                <button onClick={handleAdminDataSave} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all flex items-center justify-center gap-2">
+                                                    <Save size={14}/> Salvar Dados
+                                                </button>
+                                                
+                                                {schedule.status !== 'Cancelada' && schedule.status !== 'Concluída' && schedule.status !== 'Aguardando Vínculo' && (
+                                                    <button onClick={() => handleWorkflowAction('cancel')} className="flex-1 py-3 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-200 dark:hover:bg-red-900/40 transition-all flex items-center justify-center gap-2">
+                                                        <AlertTriangle size={14}/> Cancelar Serviço
+                                                    </button>
+                                                )}
                                             
                                             {onDelete && (
                                                 <button onClick={() => handleWorkflowAction('delete')} className="p-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all" title="Excluir Registro">
@@ -1194,14 +1214,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                             <span className="text-[9px] font-black uppercase tracking-widest">Pagamento ao Técnico</span>
                                         </div>
                                         <div className="space-y-3">
-                                            <label className="flex items-center gap-3 cursor-pointer">
-                                                <div className="relative">
-                                                    <input type="checkbox" className="sr-only peer" checked={formData.amountReceivedByTechnician > 0} onChange={e => setFormData({...formData, amountReceivedByTechnician: e.target.checked ? (formData.amountReceivedByTechnician || 1) : 0})} />
-                                                    <div className="w-8 h-5 bg-zinc-200 dark:bg-zinc-800 rounded-full peer-checked:bg-emerald-500 transition-all"></div>
-                                                    <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full peer-checked:translate-x-3 transition-all shadow-sm"></div>
-                                                </div>
+                                            <Checkbox checked={formData.amountReceivedByTechnician > 0} onChange={checked => setFormData({...formData, amountReceivedByTechnician: checked ? (formData.amountReceivedByTechnician || 1) : 0})}>
                                                 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">Pago</span>
-                                            </label>
+                                            </Checkbox>
                                             
                                             {formData.amountReceivedByTechnician > 0 && (
                                                 <div className="grid grid-cols-1 gap-2">
@@ -1308,6 +1323,35 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                 )}
                             </div>
 
+                            {/* Aguardando Vínculo Action */}
+                            {schedule.status === 'Aguardando Vínculo' && currentUser?.role !== 'technician' && (
+                                <div className="mb-4 p-4 border border-violet-200 dark:border-violet-900/30 bg-violet-50 dark:bg-violet-900/10 rounded-2xl flex flex-col gap-3">
+                                    <div className="flex items-start gap-3">
+                                        <Activity className="text-violet-500 mt-0.5" size={16} />
+                                        <div>
+                                            <h4 className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-400 tracking-widest">Aguardando Vínculo</h4>
+                                            <p className="text-xs font-medium text-violet-600 dark:text-violet-300 mt-1">O técnico finalizou o serviço. Confirme o vínculo do equipamento ao veículo.</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => {
+                                        const updated = {
+                                            ...schedule,
+                                            status: 'Concluída' as const,
+                                            history: [...schedule.history, { 
+                                                action: 'Vínculo Confirmado', 
+                                                actionBy: currentUser?.name || 'Consultor', 
+                                                timestamp: Date.now(), 
+                                                details: 'Vínculo de equipamento confirmado pelo consultor, finalizando serviço' 
+                                            }]
+                                        };
+                                        onUpdate(updated);
+                                        addNotification('success', 'Vínculo Confirmado', 'Serviço concluído com sucesso.');
+                                    }} className="py-3 bg-violet-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-violet-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20">
+                                        <CheckCircle2 size={16}/> Confirmar Equipamento Vinculado
+                                    </button>
+                                </div>
+                            )}
+
                             {/* 4. Notes */}
                             {schedule.notes && (
                                 <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 rounded-2xl">
@@ -1329,7 +1373,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                             <div className="flex flex-col gap-0.5">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-[10px] font-black uppercase text-zinc-900 dark:text-white">{h.action}</span>
-                                                    <span className="text-[9px] font-mono text-zinc-400">{new Date(h.timestamp).toLocaleDateString()}</span>
+                                                    <span className="text-[9px] font-mono text-zinc-400">{new Date(h.timestamp).toLocaleDateString()} às {new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                                 </div>
                                                 <span className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">Por: {h.actionBy}</span>
                                             </div>
@@ -1339,8 +1383,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                             </div>
 
                             {/* Edit Button (Conditional) */}
-                            {['Solicitada', 'Em análise'].includes(schedule.status) && currentUser?.role !== 'technician' && (
-                                <button onClick={() => setIsUserEditing(true)} className="w-full py-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-xs font-black uppercase text-zinc-500 hover:text-primary-500 hover:border-primary-500 transition-all flex items-center justify-center gap-2">
+                            {['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada', 'Confirmada'].includes(schedule.status) && currentUser?.role !== 'technician' && (
+                                <button onClick={() => {
+                                    onClose();
+                                    navigate('/schedule/new', { state: { editSchedule: schedule } });
+                                }} className="w-full py-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-xs font-black uppercase text-zinc-500 hover:text-primary-500 hover:border-primary-500 transition-all flex items-center justify-center gap-2">
                                     <Edit2 size={16}/> Editar Informações
                                 </button>
                             )}
@@ -1468,14 +1515,14 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
                                                                 const updated = {
                                                                     ...schedule,
-                                                                    status: 'Concluída' as const,
+                                                                    status: 'Aguardando Vínculo' as const,
                                                                     installedImei: formData.installedImei,
                                                                     installedTagImei: formData.installedTagImei,
                                                                     osNumber: formData.osNumber,
                                                                     osDetails: formData.osDetails,
                                                                     osSignature: formData.osSignature,
                                                                     checklist: formData.checklist,
-                                                                    history: [...schedule.history, { action: 'Finalizou', actionBy: currentUser?.name || 'Técnico', timestamp: Date.now(), details: 'Técnico finalizou o serviço' }]
+                                                                    history: [...schedule.history, { action: 'Finalizou', actionBy: currentUser?.name || 'Técnico', timestamp: Date.now(), details: 'Técnico finalizou o serviço, aguardando vínculo' }]
                                                                 };
                                                                 onUpdate(updated);
                                                                 setIsFinishing(false);

@@ -1,12 +1,15 @@
 
 import { useState, useCallback } from 'react';
-import { Tag, LocationHistory } from '../../../types';
+import { Tag, LocationHistory, Vehicle } from '../../../types';
 import { xadtagService } from '../../../services/xadtag';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { db } from '../../../services/firebase';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 
 export const useTagHistory = (
     selectedTagId: string, 
     tags: Tag[], 
+    vehicles: Vehicle[],
     currentFleetLocations: LocationHistory[],
     onResolveAddresses: (items: LocationHistory[]) => void
 ) => {
@@ -35,22 +38,36 @@ export const useTagHistory = (
               id: `${tag.id}-hist-${idx}`, 
               tagId: tag.id 
             })) as LocationHistory[];
+            
+            // Reordena para ficar cronológico (do mais novo para o mais antigo) - FIM para INICIO
+            results.sort((a, b) => b.timestamp - a.timestamp);
         } else {
-            // Mock para K-TAG se não houver backend real de histórico
-            const last = currentFleetLocations.find(l => l.tagId === selectedTagId);
-            if (last) {
-                // Simula alguns pontos anteriores
-                results = [last];
-                for(let i=1; i<=10; i++) {
-                    results.push({ 
-                        ...last, 
-                        lat: last.lat + (Math.random() * 0.002 - 0.001), 
-                        lon: last.lon + (Math.random() * 0.002 - 0.001), 
-                        timestamp: last.timestamp - (i * 3600000), // -1 hora cada
-                        id: `hist-${i}` 
-                    });
-                }
+            // Busca dos históricos persistidos no banco de dados
+            const vehicle = vehicles.find(v => v.tagId === selectedTagId);
+            if (vehicle && db) {
+                const q = query(
+                    collection(db, `ktag_vehicles/${vehicle.id}/history`),
+                    orderBy('timestamp', 'desc')
+                );
+                const snapshot = await getDocs(q);
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data() as LocationHistory;
+                    // Filtra últimas 24h
+                    if (data.timestamp >= startTime) {
+                        results.push(data);
+                    }
+                });
             }
+
+            // Garante que o último ponto atual também seja exibido caso não esteja salvo ainda
+            const last = currentFleetLocations.find(l => l.tagId === selectedTagId);
+            if (last && !results.some(r => r.timestamp === last.timestamp)) {
+                results.unshift(last);
+            }
+            
+            // Reordena do mais novo para o mais antigo
+            results.sort((a, b) => b.timestamp - a.timestamp);
         }
         
         // Resolve endereços dos 3 primeiros
@@ -59,11 +76,12 @@ export const useTagHistory = (
 
         setHistoryItems(results);
     } catch (e) {
+        console.error('Error fetching history:', e);
         addNotification('error', 'Erro', 'Falha ao recuperar trajetória.');
     } finally {
         setHistoryLoading(false);
     }
-  }, [selectedTagId, tags, currentFleetLocations, onResolveAddresses, addNotification]);
+  }, [selectedTagId, tags, vehicles, currentFleetLocations, onResolveAddresses, addNotification]);
 
   const closeHistory = () => setShowHistoryList(false);
 

@@ -8,6 +8,7 @@ import { useNotification } from '../../contexts/NotificationContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { securityService } from '../../services/security';
+import { Checkbox } from '../ui/checkbox';
 import { 
   Save, Settings as SettingsIcon, Database, Globe, Key, 
   Languages, Trash2, Plus, ShieldAlert, 
@@ -15,7 +16,7 @@ import {
   User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
   UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
   MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X, Bell,
-  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck, Box
+  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck, Box, Palette
 } from 'lucide-react';
 
 export const SystemApisModule = () => {
@@ -342,6 +343,40 @@ export const SystemApisModule = () => {
       </div>
 
       <div className="space-y-6 md:space-y-10">
+
+              {/* APARÊNCIA */}
+              {isAdmin && (
+                  <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                    <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                      <Palette size={24} />
+                      <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Aparência do Sistema</h2>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Sistema Módulo/Prefixo (K)</label>
+                            <input 
+                                type="text" 
+                                value={settings.customAppName || ''} 
+                                onChange={e => setSettings({...settings, customAppName: e.target.value})}
+                                placeholder="Manager Pro"
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-400"
+                            />
+                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Ex: Manager Pro. Se vazio o padrão atual será usado.</p>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Logo (URL ou Base64)</label>
+                            <input 
+                                type="text" 
+                                value={settings.customLogoUrl || ''} 
+                                onChange={e => setSettings({...settings, customLogoUrl: e.target.value})}
+                                placeholder="https://..."
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-400"
+                            />
+                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Substitui o quadrado com um "K" na barra lateral e login.</p>
+                        </div>
+                    </div>
+                  </div>
+              )}
           
               {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
@@ -505,12 +540,9 @@ export const SystemApisModule = () => {
                     <MessageSquare size={24} />
                     <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">WhatsApp / Evolution API</h2>
                   </div>
-                  <label className="flex items-center cursor-pointer">
-                    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.enableWhatsAppNotifications ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-800'}`}>
-                      <span className={`inline-block h-5 w-5 transform rounded-full shadow-sm transition-transform ${settings.enableWhatsAppNotifications ? 'translate-x-5 bg-white' : 'translate-x-1 bg-white dark:bg-zinc-400'}`} />
-                    </div>
-                    <input type="checkbox" disabled={!isAdmin} checked={settings.enableWhatsAppNotifications || false} onChange={e => setSettings({...settings, enableWhatsAppNotifications: e.target.checked})} className="sr-only" />
-                  </label>
+                  <Checkbox checked={settings.enableWhatsAppNotifications || false} disabled={!isAdmin} onChange={checked => setSettings({...settings, enableWhatsAppNotifications: checked})}>
+                     <span className={`text-[10px] font-black uppercase tracking-wider ${settings.enableWhatsAppNotifications ? 'text-emerald-500' : 'text-zinc-500'}`}>{settings.enableWhatsAppNotifications ? 'Ativado' : 'Habilitar'}</span>
+                  </Checkbox>
                 </div>
                 <div className="space-y-6">
                   <div className="space-y-2">
@@ -850,11 +882,10 @@ export const SystemApisModule = () => {
                         </div>
                       )}
                       {isAdmin && (
-                        <div className="flex items-center gap-2 mb-2">
-                            <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 cursor-pointer">
-                                <input type="checkbox" checked={newCompany.hasSgaIntegration} onChange={e => setNewCompany({...newCompany, hasSgaIntegration: e.target.checked})} className="accent-emerald-500 w-4 h-4 rounded" />
-                                Integração com SGA Ativa
-                            </label>
+                        <div className="flex items-center gap-2 mb-2 pt-2">
+			  <Checkbox checked={newCompany.hasSgaIntegration} onChange={checked => setNewCompany({...newCompany, hasSgaIntegration: checked})}>
+                             <span className="text-[10px] font-bold text-zinc-500 uppercase">Integração com SGA Ativa</span>
+                          </Checkbox>
                         </div>
                       )}
                       

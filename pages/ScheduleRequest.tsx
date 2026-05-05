@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { LocationPicker } from '../components/LocationPicker';
 import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X, Tag, MapPin } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
 
 
@@ -15,6 +15,9 @@ export const ScheduleRequest = () => {
   const { user } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
+  const editSchedule = location.state?.editSchedule as Schedule | undefined;
+  
   const [loading, setLoading] = useState(false);
   const [vehicleDb, setVehicleDb] = useState<Vehicle[]>([]);
   const [usersDb, setUsersDb] = useState<User[]>([]);
@@ -26,9 +29,9 @@ export const ScheduleRequest = () => {
   const [isUserSelectOpen, setIsUserSelectOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  const [isPontoFixo, setIsPontoFixo] = useState<boolean | null>(null);
+  const [isPontoFixo, setIsPontoFixo] = useState<boolean | null>(editSchedule ? (editSchedule.technicianId ? true : false) : null);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
-  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>('');
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>(editSchedule?.technicianId || '');
 
   useEffect(() => {
     if (isPontoFixo) {
@@ -36,7 +39,7 @@ export const ScheduleRequest = () => {
             const techs = await storage.getTechnicians();
             const available = techs.filter(t => t.serviceLocationType === 'Ponto Fixo' && t.active);
             setAvailableTechnicians(available);
-            if (available.length > 0) {
+            if (available.length > 0 && !selectedTechnicianId) {
                 setSelectedTechnicianId(available[0].id);
             }
         };
@@ -47,8 +50,10 @@ export const ScheduleRequest = () => {
     }
   }, [isPontoFixo]);
 
-  const [formData, setFormData] = useState<Partial<Schedule>>({
-    deviceType: undefined, // Removida pré-seleção conforme solicitado
+  const [formData, setFormData] = useState<Partial<Schedule>>(editSchedule ? {
+    ...editSchedule
+  } : {
+    deviceType: undefined,
     serviceType: 'Instalação',
     fipeValue: '',
     notes: '',
@@ -224,6 +229,44 @@ export const ScheduleRequest = () => {
         const finalRequesterId = formData.requesterId || user.id;
         const finalRequesterName = formData.requesterName || user.name;
 
+        if (editSchedule) {
+            const schedule: Schedule = {
+                ...editSchedule,
+                requesterId: finalRequesterId,
+                requesterName: finalRequesterName,
+                clientName: formData.clientName,
+                clientPhone: formData.clientPhone,
+                vehiclePlate: formData.vehiclePlate?.toUpperCase() || '',
+                vehicleModel: formData.vehicleModel || '',
+                fipeValue: formData.fipeValue || 'Não informado',
+                deviceType: formData.deviceType as DeviceType,
+                serviceType: formData.serviceType as ServiceType,
+                companyId: formData.companyId,
+                preferredDate: formData.preferredDate || '',
+                preferredTime: formData.preferredTime || '',
+                notes: formData.notes,
+                needsInspection: formData.needsInspection,
+                paymentOnSite: formData.paymentOnSite,
+                locationAddress: isPontoFixo ? 'Ponto Fixo' : (formData.locationAddress || ''),
+                locationLat: isPontoFixo ? 0 : (formData.locationLat || 0),
+                locationLng: isPontoFixo ? 0 : (formData.locationLng || 0),
+                isRemoteLocation: !isPontoFixo,
+                technicianId: isPontoFixo ? selectedTechnicianId : editSchedule.technicianId,
+            };
+            
+            schedule.history.push({
+                action: 'Editou',
+                actionBy: user.name,
+                timestamp: Date.now(),
+                details: 'Agendamento editado pelo administrador/consultor.'
+            });
+
+            await storage.saveSchedule(schedule);
+            addNotification('success', 'Agendamento Editado', `Edição salva com sucesso.`);
+            navigate('/schedules'); 
+            return;
+        }
+
         // Generate OS Number
         const company = companies.find(c => c.id === formData.companyId);
         const prefix = company?.prefix || 'GEN';
@@ -295,8 +338,8 @@ export const ScheduleRequest = () => {
     <div className="max-w-4xl mx-auto space-y-6 md:space-y-8 pb-24">
         <div className="bg-zinc-900 text-white p-6 md:p-8 rounded-[32px] md:rounded-[40px] shadow-2xl relative overflow-hidden border border-zinc-800">
             <div className="relative z-10">
-                <h1 className="text-2xl md:text-3xl font-display font-black uppercase tracking-tight">Nova Solicitação</h1>
-                <p className="text-zinc-400 mt-2 font-medium text-xs md:text-sm pr-10">Preencha os dados abaixo para agendar um serviço técnico.</p>
+                <h1 className="text-2xl md:text-3xl font-display font-black uppercase tracking-tight">{editSchedule ? 'Editar Solicitação' : 'Nova Solicitação'}</h1>
+                <p className="text-zinc-400 mt-2 font-medium text-xs md:text-sm pr-10">{editSchedule ? 'Altere os dados do agendamento técnico.' : 'Preencha os dados abaixo para agendar um serviço técnico.'}</p>
             </div>
             <div className="absolute top-0 right-0 p-6 md:p-10 opacity-10 pointer-events-none">
                 <Calendar size={100} />
@@ -573,7 +616,7 @@ export const ScheduleRequest = () => {
                 className="w-full py-6 bg-emerald-500 hover:bg-emerald-400 text-white rounded-[28px] font-black uppercase text-sm tracking-[0.2em] shadow-2xl shadow-emerald-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-70 disabled:grayscale"
             >
                 {loading ? <Loader2 className="animate-spin" size={24}/> : <Send size={24}/>} 
-                {loading ? 'Enviando...' : 'ENVIAR SOLICITAÇÃO'}
+                {loading ? 'Processando...' : (editSchedule ? 'SALVAR EDIÇÃO' : 'ENVIAR SOLICITAÇÃO')}
             </button>
         </form>
     </div>

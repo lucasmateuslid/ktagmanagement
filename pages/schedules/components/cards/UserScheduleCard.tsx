@@ -11,6 +11,7 @@ const UserStepper = ({ status }: { status: string }) => {
       { id: 'Solicitada', label: 'Solicitado' },
       { id: 'Em análise', label: 'Análise' },
       { id: 'Confirmada', label: 'Agendado' },
+      { id: 'Aguardando Vínculo', label: 'Vínculo' },
       { id: 'Concluída', label: 'Concluído' }
   ];
 
@@ -18,7 +19,8 @@ const UserStepper = ({ status }: { status: string }) => {
   if (status === 'Solicitada') activeIndex = 0;
   else if (['Em análise', 'Em orçamento'].includes(status)) activeIndex = 1;
   else if (['Autorizada', 'Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(status)) activeIndex = 2;
-  else if (status === 'Concluída') activeIndex = 3;
+  else if (status === 'Aguardando Vínculo') activeIndex = 3;
+  else if (status === 'Concluída') activeIndex = 4;
   else if (['Cancelada', 'Frustrada'].includes(status)) activeIndex = -1;
 
   if (['Cancelada', 'Frustrada'].includes(status)) {

@@ -234,8 +234,23 @@ export const useScheduleNotifications = () => {
                     addNotification('info', 'Solicitação Assumida', `${whoAssumed} assumiu o agendamento de ${schedule.vehiclePlate}.`, true);
                 }
                 
+                // Tratar Aguardando Vínculo com Voz
+                if (prevSchedule.status !== 'Aguardando Vínculo' && schedule.status === 'Aguardando Vínculo') {
+                    const lastHistory = schedule.history[schedule.history.length - 1];
+                    const whoChanged = lastHistory?.actionBy || 'O Técnico';
+                    playSound('admin');
+                    
+                    if ('speechSynthesis' in window && user?.id === schedule.requesterId) {
+                        const utterance = new SpeechSynthesisUtterance(`Agendamento de ${schedule.vehiclePlate}, foi finalizado pelo técnico, aguardando a confirmação de vínculo!`);
+                        utterance.lang = 'pt-BR';
+                        utterance.rate = 1.0;
+                        window.speechSynthesis.speak(utterance);
+                    }
+                    
+                    addNotification('info', 'Serviço finalizado aguardando vínculo', `Placa ${schedule.vehiclePlate}: Técnico finalizou o serviço, confirme o vínculo.`, true);
+                }
                 // Se mudou para qualquer outro status importante (Confirmada, Concluída, etc)
-                if (prevSchedule.status !== schedule.status && !['Solicitada', 'Em análise'].includes(schedule.status)) {
+                else if (prevSchedule.status !== schedule.status && !['Solicitada', 'Em análise'].includes(schedule.status)) {
                     const lastHistory = schedule.history[schedule.history.length - 1];
                     const whoChanged = lastHistory?.actionBy || 'Alguém';
                     playSound('admin');
