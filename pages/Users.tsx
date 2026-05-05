@@ -8,6 +8,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { securityService } from '../services/security';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { DataTable, DataTableColumn } from '../components/ui/basic-data-table';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
@@ -188,7 +189,7 @@ export const Users = () => {
     if (customRoleId) {
         const customRole = customRoles.find(r => r.id === customRoleId);
         if (customRole) {
-            return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-purple-500/10 text-purple-500 border-purple-500/20`}>{customRole.name}</span>;
+            return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border bg-purple-500/10 text-purple-500 border-purple-500/20 max-w-full`} title={customRole.name}><span className="truncate">{customRole.name}</span></span>;
         }
     }
     let style = '';
@@ -216,8 +217,64 @@ export const Users = () => {
             label = 'Usuário';
     }
 
-    return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${style}`}>{label}</span>;
+    return <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${style} max-w-full`} title={label}><span className="truncate">{label}</span></span>;
   };
+
+  const userTableColumns: DataTableColumn<User>[] = [
+    {
+      key: 'name',
+      header: 'Perfil',
+      sortable: true,
+      width: '40%',
+      render: (_, user) => (
+        <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black overflow-hidden shrink-0">
+                {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                    user.name?.charAt(0) || '?'
+                )}
+            </div>
+            <div className="min-w-0">
+                <div className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight truncate">{user.name}</div>
+                <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1 truncate"><Mail size={10} className="shrink-0"/> <span className="truncate">{user.email}</span></div>
+            </div>
+        </div>
+      )
+    },
+    {
+      key: 'role',
+      header: 'Cargo / Role',
+      sortable: true,
+      width: '25%',
+      render: (_, user) => getRoleBadge(user.role, user.customRoleId)
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      width: '20%',
+      render: (_, user) => (
+        <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>
+            {user.status}
+        </span>
+      )
+    },
+    {
+      key: 'id',
+      header: 'Gestão',
+      width: '15%',
+      render: (_, user) => (
+        <div className="flex justify-end gap-2">
+            <button onClick={() => { setUserToManage(user); setIsConfirmResetOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
+            <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
+            {user.id !== currentUser?.id && (
+                <button onClick={() => { setUserToManage(user); setIsConfirmDeleteOpen(true); }} className="p-2.5 bg-red-50 dark:bg-red-900/10 text-red-400 hover:text-red-600 rounded-xl transition-all" title="Excluir Usuário"><Trash2 size={16}/></button>
+            )}
+        </div>
+      )
+    }
+  ];
 
   const renderUserTable = (usersList: User[], title: string, icon: React.ReactNode) => (
     <div className="space-y-4">
@@ -231,17 +288,29 @@ export const Users = () => {
         <div className="grid grid-cols-1 gap-4 md:hidden">
             {usersList.map(user => (
             <div key={user.id} className="bg-white dark:bg-zinc-900 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center font-black text-lg border border-primary-500/20">
-                        {user.name?.charAt(0)}
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center font-black text-lg border border-primary-500/20 overflow-hidden shrink-0">
+                            {user.avatarUrl ? (
+                                <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                            ) : (
+                                user.name?.charAt(0)
+                            )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight truncate">{user.name}</h3>
+                            <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1 truncate mt-0.5">
+                                <Mail size={10} className="shrink-0"/> 
+                                <span className="truncate">{user.email}</span>
+                            </div>
+                            <div className="mt-2 sm:hidden inline-flex">
+                                {getRoleBadge(user.role, user.customRoleId)}
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</h3>
-                        <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
+                    <div className="shrink-0 hidden sm:block">
+                        {getRoleBadge(user.role, user.customRoleId)}
                     </div>
-                    </div>
-                    {getRoleBadge(user.role, user.customRoleId)}
                 </div>
 
                 <div className="flex items-center justify-between py-3 border-y border-zinc-50 dark:border-zinc-800/50">
@@ -261,45 +330,14 @@ export const Users = () => {
         </div>
 
         {/* VIEW DESKTOP: Table */}
-        <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-[32px] shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <table className="w-full text-left">
-            <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-400 bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-zinc-100 dark:border-zinc-800">
-                <tr>
-                <th className="px-8 py-5">Perfil</th>
-                <th className="px-8 py-5">Cargo / Role</th>
-                <th className="px-8 py-5">Status</th>
-                <th className="px-8 py-5 text-right">Gestão</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                {usersList.map(user => (
-                <tr key={user.id} className="hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
-                    <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 font-black">{user.name?.charAt(0) || '?'}</div>
-                        <div>
-                        <div className="font-black text-zinc-900 dark:text-white uppercase text-sm tracking-tight">{user.name}</div>
-                        <div className="text-[10px] font-bold text-zinc-500 flex items-center gap-1"><Mail size={10}/> {user.email}</div>
-                        </div>
-                    </div>
-                    </td>
-                    <td className="px-8 py-5">{getRoleBadge(user.role, user.customRoleId)}</td>
-                    <td className="px-8 py-5">
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'approved' ? 'text-emerald-500' : 'text-amber-500'}`}>{user.status}</span>
-                    </td>
-                    <td className="px-8 py-5 text-right">
-                    <div className="flex justify-end gap-2">
-                        <button onClick={() => { setUserToManage(user); setIsConfirmResetOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-amber-500 rounded-xl transition-all" title="Gerar Nova Senha Aleatória"><Key size={16} /></button>
-                        <button onClick={() => { setSelectedUser(user); setFormData(user); setIsModalOpen(true); }} className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-primary-500 rounded-xl transition-all"><Edit2 size={16} /></button>
-                        {user.id !== currentUser?.id && (
-                            <button onClick={() => { setUserToManage(user); setIsConfirmDeleteOpen(true); }} className="p-2.5 bg-red-50 dark:bg-red-900/10 text-red-400 hover:text-red-600 rounded-xl transition-all" title="Excluir Usuário"><Trash2 size={16}/></button>
-                        )}
-                    </div>
-                    </td>
-                </tr>
-                ))}
-            </tbody>
-            </table>
+        <div className="hidden md:block">
+            <DataTable 
+              data={usersList} 
+              columns={userTableColumns} 
+              searchable={false}
+              itemsPerPage={10}
+              className="border-none shadow-sm dark:bg-zinc-900/50"
+            />
         </div>
     </div>
   );
@@ -350,8 +388,12 @@ export const Users = () => {
                       <div key={user.id} className="bg-white dark:bg-zinc-900 p-5 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-4">
                           <div className="flex items-start justify-between">
                               <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-black text-zinc-400">
-                                      {user.name.charAt(0)}
+                                  <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-black text-zinc-400 overflow-hidden shrink-0">
+                                      {user.avatarUrl ? (
+                                          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                                      ) : (
+                                          user.name.charAt(0)
+                                      )}
                                   </div>
                                   <div>
                                       <p className="text-xs font-black text-zinc-900 dark:text-white uppercase">{user.name}</p>

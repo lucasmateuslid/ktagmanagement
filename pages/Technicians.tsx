@@ -41,7 +41,7 @@ const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: 
     const stats = useMemo(() => {
         return {
             total: filteredSchedules.length,
-            active: filteredSchedules.filter(s => ['Confirmada', 'Reagendada', 'Em análise'].includes(s.status)).length,
+            active: filteredSchedules.filter(s => !['Concluída', 'Cancelada', 'Frustrada'].includes(s.status)).length,
             completed: filteredSchedules.filter(s => s.status === 'Concluída').length,
             canceled: filteredSchedules.filter(s => s.status === 'Cancelada').length,
             // Breakdown

@@ -31,7 +31,7 @@ export const TechnicianDashboard = () => {
   }, [schedules, user?.id, technicians, user?.email, searchTerm]);
 
   const agendados = mySchedules.filter(s => ['Confirmada', 'Reagendada', 'Autorizada'].includes(s.status));
-  const emAndamento = mySchedules.filter(s => s.status === 'Técnico no local' || s.status === 'Cliente no local');
+  const emAndamento = mySchedules.filter(s => ['Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
   const concluidos = mySchedules.filter(s => s.status === 'Concluída');
 
   const totalServices = mySchedules.length;

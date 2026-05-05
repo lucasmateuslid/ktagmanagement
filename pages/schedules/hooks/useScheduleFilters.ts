@@ -57,7 +57,7 @@ export const useScheduleFilters = (
             }
         } else {
             if (adminTab === 'pendentes') {
-                filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada'].includes(s.status));
+                filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada', 'Aguardando Vínculo'].includes(s.status));
                 // Para pendentes, filtro de data é opcional (geralmente vê tudo), mas se tiver data, filtra pela preferred
                 if (filterDate) {
                     filtered = filtered.filter(s => s.preferredDate === filterDate);

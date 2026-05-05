@@ -23,7 +23,7 @@ export const calculateServiceHistory = (scheduleList: Schedule[]) => {
 };
 
 export const calculateTopTechnicians = (scheduleList: Schedule[], techList: Technician[]) => {
-  const installSchedules = scheduleList.filter(s => ['Concluída', 'Confirmada', 'Técnico no local', 'Cliente no local'].includes(s.status));
+  const installSchedules = scheduleList.filter(s => ['Concluída', 'Confirmada', 'Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
   const techCount: Record<string, number> = {};
   installSchedules.forEach(s => {
       if (s.technicianId) techCount[s.technicianId] = (techCount[s.technicianId] || 0) + 1;
