@@ -27,6 +27,7 @@ export interface User {
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
   companySlug?: string;
+  exemptFromKtagAlert?: boolean;
   createdAt?: number;
   cpf?: string; 
   avatarInitial?: string;
@@ -338,6 +339,7 @@ export interface AppAnnouncement {
   message: string;
   isActive: boolean;
   targetRoles: string[]; // e.g. ['all'] or ['admin', 'manager', 'custom_role_id']
+  color?: string;
 }
 
 export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrada' | 'Aguardando Vínculo';

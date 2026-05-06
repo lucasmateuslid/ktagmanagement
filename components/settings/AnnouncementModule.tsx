@@ -110,6 +110,30 @@ export const AnnouncementModule = () => {
                         </div>
                     </div>
 
+                    {/* Color Selection */}
+                    <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                        <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider flex items-center gap-2">
+                            Cor do Alerta
+                        </label>
+                        <div className="flex gap-3">
+                            {[
+                                { id: 'orange', class: 'bg-orange-500', name: 'Laranja' },
+                                { id: 'red', class: 'bg-red-500', name: 'Vermelho' },
+                                { id: 'blue', class: 'bg-blue-500', name: 'Azul' },
+                                { id: 'emerald', class: 'bg-emerald-500', name: 'Verde' },
+                                { id: 'purple', class: 'bg-purple-500', name: 'Roxo' },
+                                { id: 'zinc', class: 'bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900', name: 'Escuro/Claro' }
+                            ].map(c => (
+                                <button
+                                    key={c.id}
+                                    onClick={() => setAnnouncement({...announcement, color: c.id})}
+                                    className={`w-8 h-8 rounded-full ${c.class} ring-2 ring-offset-2 dark:ring-offset-zinc-900 transition-all ${announcement.color === c.id || (!announcement.color && c.id === 'orange') ? 'ring-primary-500 scale-110' : 'ring-transparent opacity-50 hover:opacity-100 hover:scale-110'}`}
+                                    title={c.name}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Roles Selection */}
                     <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                         <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider flex items-center gap-2">

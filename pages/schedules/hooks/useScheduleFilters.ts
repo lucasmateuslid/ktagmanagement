@@ -57,13 +57,13 @@ export const useScheduleFilters = (
             }
         } else {
             if (adminTab === 'pendentes') {
-                filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada', 'Aguardando Vínculo'].includes(s.status));
+                filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada'].includes(s.status));
                 // Para pendentes, filtro de data é opcional (geralmente vê tudo), mas se tiver data, filtra pela preferred
                 if (filterDate) {
                     filtered = filtered.filter(s => s.preferredDate === filterDate);
                 }
             } else if (adminTab === 'agendados') {
-                filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local'].includes(s.status));
+                filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
                 
                 // DATE FILTER LOGIC
                 if (filterDate) {

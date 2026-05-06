@@ -82,6 +82,20 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
           >
             {section.items.map((item: any) => {
               const isActive = location.pathname === item.path;
+              if (item.disabled) {
+                return (
+                  <div 
+                    key={item.path} 
+                    className={`group flex items-center rounded-xl px-3 py-2.5 transition-all relative text-zinc-400 dark:text-zinc-600 opacity-50 cursor-not-allowed ${isCollapsed ? 'justify-center' : ''}`}
+                    title={isCollapsed ? item.label : 'Acesso bloqueado pendente de resolução K-TAG'}
+                  >
+                    <span className={`shrink-0 ${isCollapsed ? '' : 'mr-3'} flex items-center justify-center`}>
+                       <item.icon size={18} strokeWidth={2} />
+                    </span>
+                    {!isCollapsed && <span className="text-xs line-through">{item.label}</span>}
+                  </div>
+                )
+              }
               return (
                 <Link 
                   key={item.path} 
@@ -149,10 +163,18 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isUrgentPending = vehiclesReview.length > 0 && tagReviewState.urgentPendingUntil > now;
-  const isHidden = tagReviewState.hideUntil > now;
+  const isExempt = isAdmin || user?.role === 'admin_tecnico' || user?.exemptFromKtagAlert;
+  const isUrgentPending = vehiclesReview.length > 0 && tagReviewState.urgentPendingUntil > now && !isExempt;
+  const isHidden = tagReviewState.hideUntil > now || isExempt;
   // If count >= 3, they don't get the option to "Lembrar Depois" (which means wait, it should just force them to fix it. If they reach 3 delays, the next time the modal shows, there is no hide).
   const showReviewModal = vehiclesReview.length > 0 && !isUrgentPending && !isHidden;
+  const isLockedMode = isUrgentPending;
+
+  useEffect(() => {
+      if (isLockedMode && location.pathname !== '/vehicles' && location.pathname !== '/tags') {
+          navigate('/vehicles');
+      }
+  }, [isLockedMode, location.pathname, navigate]);
 
   useEffect(() => {
      let isM = true;
@@ -164,17 +186,22 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
          return () => { isM = false; };
      }
 
-     const unsubscribe = onSnapshot(doc(db, 'settings', 'config'), (snap) => {
+     const unsubscribe = onSnapshot(doc(db, 'ktag_settings_v3', 'config'), (snap) => {
          if (snap.exists() && isM) {
              const data = snap.data() as any;
              console.log("APP SETTINGS SNAPSHOT LOADED:", data);
              
              setAppSettings((prev: any) => {
-                 if (prev?.announcement?.title !== data?.announcement?.title || prev?.announcement?.message !== data?.announcement?.message || prev?.announcement?.isActive !== data?.announcement?.isActive) {
-                     setAnnouncementDismissed(false);
+                 // Check if announcement changed to reset dismissal
+                 const annPrev = prev?.announcement || {};
+                 const annNew = data?.announcement || {};
+                 if (annPrev.title !== annNew.title || annPrev.message !== annNew.message || annPrev.isActive !== annNew.isActive) {
+                     setTimeout(() => setAnnouncementDismissed(false), 0);
                  }
                  return data;
              });
+         } else if (isM && !snap.exists()) {
+             setAppSettings({});
          }
      });
 
@@ -185,7 +212,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
-     if (vehiclesReview.length > 0 && !hasPlayedAlert.current) {
+     if (vehiclesReview.length > 0 && !hasPlayedAlert.current && !isExempt) {
         hasPlayedAlert.current = true;
         // Tenta tocar um som de alerta
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
@@ -194,13 +221,13 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         
         // IA Voice (Text to Speech)
         if ('speechSynthesis' in window) {
-           const text = `Atenção ${user?.name || 'usuário'},irresponsável de uma figa. você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
+           const text = `Atenção ${user?.name || 'usuário'}. você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
            const utterance = new SpeechSynthesisUtterance(text);
            utterance.lang = 'pt-BR';
            window.speechSynthesis.speak(utterance);
         }
      }
-  }, [vehiclesReview]);
+  }, [vehiclesReview, isExempt]);
 
   useEffect(() => {
      if (user) {
@@ -350,7 +377,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
     const out: any[] = [];
     rawSections.forEach((section: any) => {
-        const allowedItems = section.items.filter((item: any) => hasPermission(user, customRoles || [], item.perm));
+        const allowedItems = section.items.filter((item: any) => hasPermission(user, customRoles || [], item.perm)).map((item: any) => ({
+            ...item,
+            disabled: isLockedMode && item.path !== '/vehicles' && item.path !== '/tags'
+        }));
         if (allowedItems.length > 0) {
             out.push({ ...section, items: allowedItems });
         }
@@ -388,14 +418,22 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
          !announcementDismissed && 
          ((appSettings.announcement.targetRoles || []).includes('all') || (appSettings.announcement.targetRoles || []).includes(user?.role || '') || (appSettings.announcement.targetRoles || []).includes(user?.customRoleId || '')) && (
           <MotionDiv 
+            key="announcement-banner"
             initial={{ height: 0, opacity: 0 }} 
             animate={{ height: 'auto', opacity: 1 }} 
             exit={{ height: 0, opacity: 0 }}
-            className="bg-orange-500 text-white z-[9998] flex items-center justify-between px-4 py-3 shadow-sm relative shrink-0"
+            className={`z-[9998] flex items-center justify-between px-4 py-3 shadow-sm relative shrink-0 ${
+                appSettings.announcement.color === 'red' ? 'bg-red-500 text-white' :
+                appSettings.announcement.color === 'blue' ? 'bg-blue-500 text-white' :
+                appSettings.announcement.color === 'emerald' ? 'bg-emerald-500 text-white' :
+                appSettings.announcement.color === 'purple' ? 'bg-purple-500 text-white' :
+                appSettings.announcement.color === 'zinc' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' :
+                'bg-orange-500 text-white'
+            }`}
           >
              <div className="flex items-center gap-3 w-full max-w-7xl mx-auto">
-                 <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center shrink-0">
-                     <Megaphone size={16} className="text-white" />
+                 <div className="w-8 h-8 bg-black/10 dark:bg-black/5 rounded-full flex items-center justify-center shrink-0">
+                     <Megaphone size={16} className="text-current" />
                  </div>
                  <div className="flex-1">
                      <h4 className="font-black uppercase text-[10px] tracking-widest mb-0.5 opacity-90">{appSettings.announcement.title}</h4>
@@ -500,10 +538,17 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               </motion.nav>
 
               <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-                <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
-                    <Settings size={20} />
-                    {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Preferências</span>}
-                </Link>
+                {isLockedMode ? (
+                  <div className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-400 dark:text-zinc-600 opacity-50 cursor-not-allowed transition-all ${isCollapsed ? 'justify-center' : ''}`} title="Acesso bloqueado pendente resolução K-TAG">
+                      <Settings size={20} />
+                      {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest line-through">Preferências</span>}
+                  </div>
+                ) : (
+                  <Link to="/settings" className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
+                      <Settings size={20} />
+                      {!isCollapsed && <span className="text-[11px] font-black uppercase tracking-widest">Preferências</span>}
+                  </Link>
+                )}
                 
                 <button onClick={handleLogout} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all ${isCollapsed ? 'justify-center' : ''}`}>
                     <LogOut size={20} />
@@ -724,10 +769,16 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   {location.pathname === '/vehicles' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>}
               </Link>
               <div className="w-px h-6 bg-zinc-800 opacity-50"></div>
-              <Link to="/map" className={`relative p-2 transition-all group flex flex-col items-center gap-1`}>
-                  <MapPin size={22} className={`transition-colors duration-300 ${location.pathname === '/map' ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname === '/map' ? 2.5 : 2}/>
-                  {location.pathname === '/map' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>}
-              </Link>
+              {isLockedMode ? (
+                  <div className={`relative p-2 transition-all flex flex-col items-center gap-1 opacity-50 cursor-not-allowed`} title="Bloqueado">
+                      <MapPin size={22} className={`text-zinc-600`} strokeWidth={2}/>
+                  </div>
+              ) : (
+                  <Link to="/map" className={`relative p-2 transition-all group flex flex-col items-center gap-1`}>
+                      <MapPin size={22} className={`transition-colors duration-300 ${location.pathname === '/map' ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname === '/map' ? 2.5 : 2}/>
+                      {location.pathname === '/map' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>}
+                  </Link>
+              )}
           </div>
 
           {/* MENU LATERAL MOBILE CLIENTE */}
@@ -742,8 +793,23 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   </div>
                   <div className="space-y-2 flex-1">
                       <Link to="/vehicles" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><CarFront size={18} className="text-primary-500"/> Minha Frota</Link>
-                      <Link to="/map" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Map size={18} className="text-primary-500"/> Mapa ao Vivo</Link>
-                      <Link to="/settings" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Settings size={18} className="text-zinc-400"/> Configurações</Link>
+                      
+                      {isLockedMode ? (
+                          <div className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/20 border border-zinc-800/50 text-zinc-600 font-bold text-sm opacity-50 cursor-not-allowed">
+                              <Map size={18} className="text-zinc-600"/> <span className="line-through">Mapa ao Vivo</span>
+                          </div>
+                      ) : (
+                          <Link to="/map" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Map size={18} className="text-primary-500"/> Mapa ao Vivo</Link>
+                      )}
+
+                      {isLockedMode ? (
+                          <div className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/20 border border-zinc-800/50 text-zinc-600 font-bold text-sm opacity-50 cursor-not-allowed">
+                              <Settings size={18} className="text-zinc-600"/> <span className="line-through">Configurações</span>
+                          </div>
+                      ) : (
+                          <Link to="/settings" onClick={() => setIsClientMenuOpen(false)} className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all"><Settings size={18} className="text-zinc-400"/> Configurações</Link>
+                      )}
+
                       <button onClick={() => { toggleTheme(); setIsClientMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all text-left">
                         {theme === 'dark' ? <Sun size={18} className="text-yellow-500"/> : <Moon size={18} className="text-blue-300"/>} 
                         <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>

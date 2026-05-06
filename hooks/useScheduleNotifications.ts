@@ -22,7 +22,7 @@ const getAudioContext = () => {
 };
 
 export const useScheduleNotifications = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addNotification, setCriticalAlerts } = useNotification();
   
   // Refs para rastrear estado anterior (para comparar mudanças)
@@ -124,9 +124,9 @@ export const useScheduleNotifications = () => {
       }
   };
 
-  // Lógica para USUÁRIO COMUM
+  // Lógica para USUÁRIO COMUM E CLIENTES
   useEffect(() => {
-    if (!user || user.role !== 'user') return;
+    if (!user || (!['user', 'client'].includes(user.role || ''))) return;
 
     const unsubscribe = storage.subscribeToSchedules('user', user.id, (schedules) => {
       schedules.forEach(schedule => {
@@ -191,7 +191,7 @@ export const useScheduleNotifications = () => {
 
   // Lógica para ADMIN / MODERADOR (Monitoramento Geral & Lembretes Pessoais)
   useEffect(() => {
-    if (!user || !db || (user.role !== 'admin' && user.role !== 'moderator')) return;
+    if (!user || !db || (!isAdmin && user.role !== 'moderator')) return;
 
     // Escuta agendamentos recentes
     const q = query(collection(db, 'ktag_schedules'), orderBy('createdAt', 'desc'), limit(50));
