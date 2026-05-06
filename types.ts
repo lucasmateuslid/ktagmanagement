@@ -328,6 +328,16 @@ export interface AppSettings {
   // Shipping Preferences
   melhorEnvioSenderAddress?: ShippingAddress;
   melhorEnvioPackages?: ShippingPackage[];
+  
+  // App Announcement
+  announcement?: AppAnnouncement;
+}
+
+export interface AppAnnouncement {
+  title: string;
+  message: string;
+  isActive: boolean;
+  targetRoles: string[]; // e.g. ['all'] or ['admin', 'manager', 'custom_role_id']
 }
 
 export type ScheduleStatus = 'Solicitada' | 'Em análise' | 'Em orçamento' | 'Autorizada' | 'Confirmada' | 'Reagendada' | 'Técnico no local' | 'Cliente no local' | 'Em andamento' | 'Cancelada' | 'Concluída' | 'Frustrada' | 'Aguardando Vínculo';

@@ -15,9 +15,7 @@ let lastRequestTime = 0;
 const MIN_REQUEST_INTERVAL = 800; // 800ms entre requisições para evitar 429
 
 const FALLBACK_PROXIES = [
-    'https://corsproxy.io/?',
-    'https://api.allorigins.win/raw?url=',
-    'https://thingproxy.freeboard.io/fetch/'
+    '/api/proxy'
 ];
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -39,6 +37,7 @@ const executeRequest = async (settings: AppSettings, targetUrl: string, method: 
     };
 
     // Se houver um proxy configurado ou estivermos usando fallback
+    let usingCustomPayload = false;
     if (proxyUrl) {
         if (proxyUrl.includes('corsproxy.io') || proxyUrl.includes('cors-anywhere') || proxyUrl.includes('allorigins') || proxyUrl.endsWith('?') || proxyUrl.endsWith('=')) {
             // Proxies públicos baseados em querystring
@@ -46,22 +45,27 @@ const executeRequest = async (settings: AppSettings, targetUrl: string, method: 
                 ? `${proxyUrl}${encodeURIComponent(targetUrl)}` 
                 : `${proxyUrl}?${encodeURIComponent(targetUrl)}`;
         } else {
-            // Proxy customizado (ex: Firebase Functions)
+            // Proxy customizado (ex: /api/proxy ou Firebase Functions)
             fetchUrl = proxyUrl;
-            fetchOptions = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: targetUrl,
-                    method,
-                    headers,
-                    body
-                })
-            };
+            usingCustomPayload = true;
         }
     } else {
         // Fallback padrão se nenhum proxy for informado
-        fetchUrl = `${FALLBACK_PROXIES[0]}${encodeURIComponent(targetUrl)}`;
+        fetchUrl = '/api/proxy';
+        usingCustomPayload = true;
+    }
+
+    if (usingCustomPayload) {
+        fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: targetUrl,
+                method,
+                headers,
+                body
+            })
+        };
     }
 
     try {

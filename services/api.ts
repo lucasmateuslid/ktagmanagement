@@ -91,17 +91,12 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
 
   const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
   
-  const FALLBACK_PROXIES = [
-      'https://corsproxy.io/?',
-      'https://api.allorigins.win/raw?url='
-  ];
-
   let response: Response | null = null;
   let lastError: any = null;
 
-  if (settings.customProxyUrl) {
-    try {
-      response = await fetch(settings.customProxyUrl, {
+  try {
+      const proxyUrl = settings.customProxyUrl || '/api/proxy';
+      response = await fetch(proxyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -111,32 +106,32 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
           body: payload
         })
       });
-    } catch (e: any) {
-      console.warn("Custom proxy failed:", e.message);
+  } catch (e: any) {
+      console.warn(`Proxy ${settings.customProxyUrl || '/api/proxy'} failed:`, e.message);
       lastError = e;
-    }
-  }
-
-  // Se o proxy primário falhou ou não existe, usa fallback
-  if (!response || !response.ok) {
-    for (const proxyBase of FALLBACK_PROXIES) {
-       try {
-           const fallbackUrl = `${proxyBase}${encodeURIComponent(settings.ktagUrl)}`;
-           response = await fetch(fallbackUrl, {
+      
+      if (settings.customProxyUrl) {
+          console.log("Falling back to /api/proxy...");
+          try {
+             response = await fetch('/api/proxy', {
                method: 'POST',
-               headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-               body: JSON.stringify(payload)
-           });
-           if (response.ok) break;
-       } catch (e: any) {
-           console.warn(`Fallback proxy ${proxyBase} failed:`, e.message);
-           lastError = e;
-       }
-    }
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                 url: settings.ktagUrl,
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+                 body: payload
+               })
+             });
+          } catch (fallbackErr: any) {
+             console.warn("Fallback /api/proxy failed:", fallbackErr.message);
+             lastError = fallbackErr;
+          }
+      }
   }
 
   if (!response) {
-      throw new Error(lastError?.message || "Falha ao conectar via proxies de rastreio.");
+      throw new Error(lastError?.message || "Falha ao conectar via proxy de rastreio.");
   }
 
   if (!response.ok) {

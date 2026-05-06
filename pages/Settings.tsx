@@ -7,12 +7,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { SystemApisModule } from '../components/settings/SystemApisModule';
 import { ProfileModule } from '../components/settings/ProfileModule';
 import { PermissionsModule } from '../components/settings/PermissionsModule';
+import { AnnouncementModule } from '../components/settings/AnnouncementModule';
 import { Users as UsersModule } from './Users';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Settings = () => {
     const { isAdmin } = useAuth();
-    const [activeModule, setActiveModule] = useState<'profile' | 'system' | 'roles' | 'users' | null>(null);
+    const [activeModule, setActiveModule] = useState<'profile' | 'system' | 'roles' | 'users' | 'announcement' | null>(null);
 
     // Filter out cards that shouldn't be accessible
     // Actually the logic is inside render, let's keep it
@@ -31,6 +32,7 @@ export const Settings = () => {
                    {activeModule === 'profile' && <ProfileModule />}
                    {activeModule === 'system' && isAdmin && <SystemApisModule />}
                    {activeModule === 'roles' && isAdmin && <PermissionsModule />}
+                   {activeModule === 'announcement' && isAdmin && <AnnouncementModule />}
                    {activeModule === 'users' && isAdmin && (
                        <div className="h-full overflow-y-auto">
                            <UsersModule />
@@ -98,6 +100,27 @@ export const Settings = () => {
 
                 {isAdmin && (
                     <>
+                        {/* ANNOUNCEMENT CARD */}
+                        <motion.div 
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setActiveModule('announcement')}
+                        className="bg-orange-500 rounded-[32px] p-8 shadow-sm cursor-pointer hover:bg-orange-600 transition-all flex flex-col justify-between group md:col-span-1 lg:col-span-2 text-white"
+                        >
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="w-14 h-14 bg-white/20 text-white rounded-2xl flex items-center justify-center">
+                                    <Bell size={28} />
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <ChevronLeft size={16} className="rotate-180 text-white" />
+                                </div>
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black uppercase tracking-tight mb-2 text-white">Alertas do Sistema</h2>
+                                <p className="text-xs text-white/80 font-medium">Crie anúncios globais que aparecem na tela dos usuários.</p>
+                            </div>
+                        </motion.div>
+
                         {/* ROLES & PERMISSIONS CARD */}
                         <motion.div 
                         whileHover={{ scale: 1.02 }}

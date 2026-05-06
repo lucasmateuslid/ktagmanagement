@@ -19,6 +19,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { AvatarSelector } from './AvatarSelector';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase';
 import { storage } from '../services/storage';
 
 const MotionDiv = motion.div as any;
@@ -141,7 +143,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
      setTagReviewState(next);
      localStorage.setItem('ktag_tag_review_state', JSON.stringify(next));
   };
-  const [appSettings, setAppSettings] = useState<{appName?: string, appLogo?: string} | null>(null);
+  const [appSettings, setAppSettings] = useState<any>(null);
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const hasPlayedAlert = React.useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -152,18 +155,33 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const showReviewModal = vehiclesReview.length > 0 && !isUrgentPending && !isHidden;
 
   useEffect(() => {
-     const loadSettings = async () => {
-         try {
-             const settings = await storage.getSettings();
-             setAppSettings({
-                 appName: settings.customAppName,
-                 appLogo: settings.customLogoUrl
+     let isM = true;
+     
+     if (!db) {
+         storage.getSettings().then(s => {
+             if (isM) setAppSettings(s);
+         });
+         return () => { isM = false; };
+     }
+
+     const unsubscribe = onSnapshot(doc(db, 'settings', 'config'), (snap) => {
+         if (snap.exists() && isM) {
+             const data = snap.data() as any;
+             console.log("APP SETTINGS SNAPSHOT LOADED:", data);
+             
+             setAppSettings((prev: any) => {
+                 if (prev?.announcement?.title !== data?.announcement?.title || prev?.announcement?.message !== data?.announcement?.message || prev?.announcement?.isActive !== data?.announcement?.isActive) {
+                     setAnnouncementDismissed(false);
+                 }
+                 return data;
              });
-         } catch(e) {
-             console.log(e);
          }
+     });
+
+     return () => { 
+         isM = false; 
+         unsubscribe(); 
      };
-     loadSettings();
   }, []);
 
   useEffect(() => {
@@ -176,7 +194,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         
         // IA Voice (Text to Speech)
         if ('speechSynthesis' in window) {
-           const text = `Atenção responsável, você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
+           const text = `Atenção ${user?.name || 'usuário'},irresponsável de uma figa. você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
            const utterance = new SpeechSynthesisUtterance(text);
            utterance.lang = 'pt-BR';
            window.speechSynthesis.speak(utterance);
@@ -360,6 +378,36 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                    <AlertTriangle size={16} /> {msg}
                 </div>
              ))}
+          </MotionDiv>
+        )}
+      </AnimatePresence>
+
+      {/* ANNOUNCEMENT BANNER */}
+      <AnimatePresence>
+        {appSettings?.announcement?.isActive && 
+         !announcementDismissed && 
+         ((appSettings.announcement.targetRoles || []).includes('all') || (appSettings.announcement.targetRoles || []).includes(user?.role || '') || (appSettings.announcement.targetRoles || []).includes(user?.customRoleId || '')) && (
+          <MotionDiv 
+            initial={{ height: 0, opacity: 0 }} 
+            animate={{ height: 'auto', opacity: 1 }} 
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-orange-500 text-white z-[9998] flex items-center justify-between px-4 py-3 shadow-sm relative shrink-0"
+          >
+             <div className="flex items-center gap-3 w-full max-w-7xl mx-auto">
+                 <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center shrink-0">
+                     <Megaphone size={16} className="text-white" />
+                 </div>
+                 <div className="flex-1">
+                     <h4 className="font-black uppercase text-[10px] tracking-widest mb-0.5 opacity-90">{appSettings.announcement.title}</h4>
+                     <p className="text-sm font-medium leading-snug">{appSettings.announcement.message}</p>
+                 </div>
+                 <button 
+                     onClick={() => setAnnouncementDismissed(true)} 
+                     className="w-8 h-8 hover:bg-black/10 rounded-full flex items-center justify-center shrink-0 transition-colors"
+                 >
+                     <X size={18} />
+                 </button>
+             </div>
           </MotionDiv>
         )}
       </AnimatePresence>

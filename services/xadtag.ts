@@ -117,9 +117,11 @@ const callApi = async (
     const headers = await getHeaders();
     const targetUrl = buildUrl(path, params);
 
-    const response = await rateLimitedFetch(() => {
-        if (settings.customProxyUrl) {
-            return fetchWithTimeout(settings.customProxyUrl, {
+    const response = await rateLimitedFetch(async () => {
+        let proxyUrl = settings.customProxyUrl || '/api/proxy';
+        
+        try {
+            return await fetchWithTimeout(proxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -129,12 +131,21 @@ const callApi = async (
                     body: body ? JSON.stringify(body) : undefined
                 })
             });
-        } else {
-            return fetchWithTimeout(targetUrl, {
-                method,
-                headers,
-                body: body ? JSON.stringify(body) : undefined
-            });
+        } catch (err: any) {
+             if (settings.customProxyUrl) {
+                 console.warn(`[XADTAG] customProxyUrl failed (${err.message}). Falling back to /api/proxy.`);
+                 return await fetchWithTimeout('/api/proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: targetUrl,
+                        method,
+                        headers,
+                        body: body ? JSON.stringify(body) : undefined
+                    })
+                 });
+             }
+             throw err;
         }
     });
 

@@ -247,6 +247,61 @@ async function startServer() {
     }
   });
 
+  app.post("/api/proxy", async (req, res) => {
+    try {
+      const { url, method, headers, body } = req.body;
+      if (!url) return res.status(400).json({ error: "Missing 'url' in request body" });
+
+      console.log(`[PROXY] Proxying request to: ${url}`);
+
+      const safeHeaders: Record<string, string> = { ...headers };
+      delete safeHeaders['host'];
+      delete safeHeaders['content-length'];
+      delete safeHeaders['connection'];
+      delete safeHeaders['origin'];
+      delete safeHeaders['referer'];
+      delete safeHeaders['accept-encoding'];
+
+      if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
+        safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      }
+
+      const options: RequestInit = {
+        method: method || 'GET',
+        headers: safeHeaders,
+      };
+
+      if (body && method !== 'GET' && method !== 'HEAD') {
+        options.body = typeof body === 'object' ? JSON.stringify(body) : body;
+        if (!safeHeaders['Content-Type'] && !safeHeaders['content-type']) {
+           if (typeof body === 'object') {
+             safeHeaders['Content-Type'] = 'application/json';
+           }
+        }
+      }
+
+      const response = await fetch(url, options);
+      
+      const responseBody = await response.text();
+      
+      let parsedBody;
+      try {
+        parsedBody = JSON.parse(responseBody);
+      } catch (e) {
+        parsedBody = responseBody;
+      }
+      
+      res.status(response.status).json(parsedBody);
+    } catch (error: any) {
+      console.error("[PROXY Error]", error.message);
+      let errorMsg = error.message;
+      if (typeof errorMsg === 'object') {
+          try { errorMsg = JSON.stringify(errorMsg); } catch(e){}
+      }
+      res.status(500).json({ error: errorMsg, proxyError: true });
+    }
+  });
+
   app.post("/api/track", async (req, res) => {
     try {
       const { code, apiKey } = req.body;
