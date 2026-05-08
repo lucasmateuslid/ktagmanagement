@@ -189,7 +189,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     <AuthContext.Provider value={{ 
       user, customRoles, login, register, updateProfile, logout, 
       isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin' || user?.role === 'admin_tecnico' || (user?.customRoleId && customRoles.find(r => r.id === user?.customRoleId)?.isSystem) || false,
+      isAdmin: user?.role === 'admin' || user?.role === 'sysadmin' || false,
       loading
     }}>
       {children}

@@ -110,7 +110,7 @@ const EventCard: React.FC<EventCardProps> = ({ ev, mode, technicians, onSelect }
     return (
         <div 
           onClick={(e) => { e.stopPropagation(); onSelect(ev); }} 
-          className={`relative rounded-2xl shadow-sm border cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all p-4 flex flex-col justify-between h-full min-w-[280px] ${style.bg} ${style.border}`}
+          className={`relative rounded-2xl shadow-sm border cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all p-3 sm:p-4 flex flex-col justify-between h-full w-full min-w-0 md:min-w-[280px] ${style.bg} ${style.border}`}
         >
             {/* Faixa lateral do técnico */}
             <div className="absolute left-0 top-4 bottom-4 w-1 rounded-r-full" style={{ backgroundColor: techColor }} />
@@ -313,7 +313,7 @@ export const Calendar = () => {
     const cells = [];
     
     for (let i = 0; i < firstDay; i++) {
-        cells.push(<div key={`empty-${i}`} className="bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-r border-zinc-100 dark:border-zinc-800 min-h-[140px]"></div>);
+        cells.push(<div key={`empty-${i}`} className="bg-zinc-50/50 dark:bg-zinc-950/30 border-b border-r border-zinc-100 dark:border-zinc-800 min-h-[60px] sm:min-h-[140px]"></div>);
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -329,26 +329,26 @@ export const Calendar = () => {
                 key={d} 
                 ref={isToday ? todayRef : null}
                 className={`
-                    border-b border-r border-zinc-100 dark:border-zinc-800 p-1 sm:p-2 min-h-[100px] sm:min-h-[160px] flex flex-col relative group transition-colors
+                    border-b border-r border-zinc-100 dark:border-zinc-800 p-1 sm:p-2 min-h-[60px] sm:min-h-[160px] flex flex-col relative group transition-colors
                     ${isToday ? 'bg-white dark:bg-zinc-900 ring-2 ring-inset ring-primary-500 z-10' : 'bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-900/80'}
                 `}
                 onClick={() => goToDayView(dateStr)}
             >
                 <div className="flex justify-between items-start mb-1 sm:mb-2">
                     <span className={`
-                        text-[10px] sm:text-xs font-black w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg sm:rounded-xl transition-colors
+                        text-[10px] sm:text-xs font-black w-5 h-5 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg sm:rounded-xl transition-colors
                         ${isToday ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30' : 'text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800'}
                     `}>
                         {d}
                     </span>
                     {dayEvents.length > 0 && (
-                        <span className="text-[8px] sm:text-[9px] font-bold text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-zinc-100 dark:border-zinc-700">
+                        <span className="hidden sm:block text-[8px] sm:text-[9px] font-bold text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-1.5 sm:px-2 py-0.5 rounded-md sm:rounded-lg border border-zinc-100 dark:border-zinc-700">
                             {dayEvents.length}
                         </span>
                     )}
                 </div>
                 
-                <div className="flex-1 w-full flex flex-col gap-1">
+                <div className="flex-1 w-full flex flex-row sm:flex-col flex-wrap gap-1 content-start">
                     {visibleEvents.map(ev => (
                         <EventCard key={ev.id} ev={ev} mode="month" technicians={technicians} onSelect={setSelectedSchedule} />
                     ))}
@@ -368,9 +368,9 @@ export const Calendar = () => {
 
     return (
         <div ref={containerRef} className="flex-1 overflow-auto custom-scrollbar bg-white dark:bg-zinc-950">
-            <div className="grid grid-cols-7 min-w-[800px] lg:min-w-0 bg-zinc-50 dark:bg-zinc-950 border-t border-l border-zinc-100 dark:border-zinc-800">
+            <div className="grid grid-cols-7 w-full bg-zinc-50 dark:bg-zinc-950 border-t border-l border-zinc-100 dark:border-zinc-800">
                 {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'].map(day => (
-                    <div key={day} className="py-4 text-center text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-r border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 sticky top-0 z-20">{day}</div>
+                    <div key={day} className="py-2 sm:py-4 text-center text-[8px] sm:text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-r border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 sticky top-0 z-20">{day}</div>
                 ))}
                 {cells}
             </div>
@@ -431,18 +431,18 @@ export const Calendar = () => {
                   const hourEvents = events.filter(ev => parseInt(ev.confirmedTime?.split(':')[0] || '0') === hour);
                   
                   return (
-                    <div key={hour} className="flex border-b border-zinc-100 dark:border-zinc-800 min-h-[160px] group">
-                        <div className="w-20 flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 p-4 text-right bg-zinc-50/30 dark:bg-zinc-950/20">
-                            <span className="text-sm font-mono text-zinc-400 font-bold">{String(hour).padStart(2, '0')}:00</span>
+                    <div key={hour} className="flex flex-col md:flex-row border-b border-zinc-100 dark:border-zinc-800 md:min-h-[160px] group">
+                        <div className="w-full md:w-20 flex-shrink-0 border-b md:border-b-0 md:border-r border-zinc-100 dark:border-zinc-800 py-1 px-4 md:p-4 text-left md:text-right bg-zinc-50/30 dark:bg-zinc-950/20">
+                            <span className="text-[10px] md:text-sm font-mono text-zinc-400 font-bold">{String(hour).padStart(2, '0')}:00</span>
                         </div>
-                        <div className="flex-1 p-4 flex gap-4 overflow-x-auto no-scrollbar items-start">
+                        <div className="flex-1 p-2 md:p-4 flex flex-col md:flex-row gap-2 md:gap-4 overflow-x-auto no-scrollbar items-stretch md:items-start min-h-[40px] md:min-h-0">
                             {hourEvents.length === 0 ? (
-                                <div className="w-full h-full flex items-center">
+                                <div className="w-full h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <div className="w-full border-t-2 border-dashed border-zinc-100 dark:border-zinc-800/50"></div>
                                 </div>
                             ) : (
                                 hourEvents.map(ev => (
-                                    <div key={ev.id} className="min-w-[300px] h-full">
+                                    <div key={ev.id} className="w-full md:min-w-[300px] md:w-auto h-auto md:h-full">
                                         <EventCard ev={ev} mode="day" technicians={technicians} onSelect={setSelectedSchedule} />
                                     </div>
                                 ))

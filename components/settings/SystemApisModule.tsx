@@ -19,6 +19,9 @@ import {
   Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck, Box, Palette
 } from 'lucide-react';
 
+import { GeocodingConfigModule } from './GeocodingConfigModule';
+import { WhitelabelModule } from './WhitelabelModule';
+
 export const SystemApisModule = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -40,7 +43,6 @@ export const SystemApisModule = () => {
   const [showHinovaPass, setShowHinovaPass] = useState(false);
   const [showKTagPass, setShowKTagPass] = useState(false);
   const [showTraqToken, setShowTraqToken] = useState(false);
-  const [showGoogleKey, setShowGoogleKey] = useState(false);
   
   const [notificationPrefs, setNotificationPrefs] = useState({
     newTechnicalRequest: true,
@@ -344,40 +346,6 @@ export const SystemApisModule = () => {
 
       <div className="space-y-6 md:space-y-10">
 
-              {/* APARÊNCIA */}
-              {isAdmin && (
-                  <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
-                    <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
-                      <Palette size={24} />
-                      <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Aparência do Sistema</h2>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome do Sistema Módulo/Prefixo (K)</label>
-                            <input 
-                                type="text" 
-                                value={settings.customAppName || ''} 
-                                onChange={e => setSettings({...settings, customAppName: e.target.value})}
-                                placeholder="Manager Pro"
-                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-400"
-                            />
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Ex: Manager Pro. Se vazio o padrão atual será usado.</p>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Logo (URL ou Base64)</label>
-                            <input 
-                                type="text" 
-                                value={settings.customLogoUrl || ''} 
-                                onChange={e => setSettings({...settings, customLogoUrl: e.target.value})}
-                                placeholder="https://..."
-                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-5 py-4 text-sm font-bold outline-none focus:border-primary-500 transition-colors placeholder:text-zinc-400"
-                            />
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Substitui o quadrado com um "K" na barra lateral e login.</p>
-                        </div>
-                    </div>
-                  </div>
-              )}
-          
               {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
                 <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
@@ -430,44 +398,9 @@ export const SystemApisModule = () => {
                 </div>
               </div>
 
-              {/* GOOGLE MAPS API */}
-              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
-                <div className="flex items-center gap-3 text-red-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
-                  <MapPin size={24} />
-                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Geocodificação e Mapas</h2>
-                </div>
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Provedor Principal de Geocodificação</label>
-                    <select
-                      disabled={!isAdmin}
-                      value={settings.geocodingProvider || 'osm'}
-                      onChange={e => setSettings({...settings, geocodingProvider: e.target.value as 'osm' | 'google'})}
-                      className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500 disabled:opacity-50"
-                    >
-                      <option value="osm">OpenStreetMap (Gratuito - Recomendado)</option>
-                      <option value="google">Google Maps (Pago)</option>
-                    </select>
-                    <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-tight">Define qual serviço será tentado primeiro. O outro será usado como plano B (fallback).</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Chave da API Google Maps (Places & Geocoding)</label>
-                    <div className="relative">
-                      <input 
-                        type={showGoogleKey ? 'text' : 'password'} 
-                        disabled={!isAdmin}
-                        value={isAdmin ? settings.googleMapsKey : '••••••••••••••••'} 
-                        onChange={e => setSettings({...settings, googleMapsKey: e.target.value})} 
-                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-red-500 pr-12 disabled:opacity-50" 
-                        placeholder="AIza..."
-                      />
-                      {isAdmin && <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showGoogleKey ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
-                    </div>
-                    <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-tight">Necessário habilitar: Maps JavaScript API, Places API, Geocoding API.</p>
-                  </div>
-                </div>
-              </div>
+              <WhitelabelModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+              
+              <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
 
               {/* CONFIGURAÇÃO API K-TAG */}
               <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">

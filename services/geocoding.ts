@@ -119,17 +119,21 @@ export const geocodingService = {
     const fetchPromise = (async () => {
       try {
         const settings = await storage.getSettings();
-        const providerPreference = settings.geocodingProvider || 'osm';
+        const geocoderPreferences = settings.geocoderPreferences;
 
         const res = await fetch('/api/reverse-geocode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat, lng: lon, providerPreference })
+          body: JSON.stringify({ lat, lng: lon, geocoderPreferences })
         });
         
         if (res.ok) {
           const data = await res.json();
-          if (data && data.displayName) {
+          if (data && data.result?.address) {
+            setToCache(cacheKey, data.result.address);
+            return data.result.address;
+          } else if (data && data.displayName) {
+            // Backward compatibility
             setToCache(cacheKey, data.displayName);
             return data.displayName;
           }
@@ -146,23 +150,32 @@ export const geocodingService = {
     return fetchPromise;
   },
 
-  geocode: async (query: string): Promise<{lat: number, lon: number, address: string}[]> => {
+  geocode: async (query: string): Promise<{lat: number, lon: number, address: string, confidence?: number}[]> => {
     try {
       const settings = await storage.getSettings();
-      const providerPreference = settings.geocodingProvider || 'osm';
+      const geocoderPreferences = settings.geocoderPreferences;
 
       const res = await fetch('/api/geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: query, providerPreference })
+        body: JSON.stringify({ address: query, geocoderPreferences })
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.lat !== undefined && data.lng !== undefined) {
+        if (data && data.result && data.result.lat !== undefined && data.result.lng !== undefined) {
           return [{
+            lat: data.result.lat,
+            lon: data.result.lng,
+            address: data.result.address || data.displayName,
+            confidence: data.result.confidence
+          }];
+        } else if (data && data.lat !== undefined && data.lng !== undefined) {
+           // Backward compatibility
+           return [{
             lat: data.lat,
             lon: data.lng,
-            address: data.displayName
+            address: data.displayName,
+            confidence: data.confidence
           }];
         }
       }

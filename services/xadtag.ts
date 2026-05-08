@@ -199,8 +199,8 @@ export const xadtagService = {
                 conf: 100,
                 status: 1,
                 battery: batteryToInfo(loc.battery),
-                timestamp: loc.timestamp * 1000,
-                isodatetime: new Date(loc.timestamp * 1000).toISOString()
+                timestamp: loc.timestamp ? loc.timestamp * 1000 : Date.now(),
+                isodatetime: loc.timestamp ? new Date(loc.timestamp * 1000).toISOString() : new Date().toISOString()
             }));
 
         } catch (err) {
@@ -238,8 +238,8 @@ export const xadtagService = {
                 status: 1,
                 distance: p.distance ?? 0,
                 battery: { level: 0, label: 'Histórico', color: '#71717a' },
-                timestamp: p.timestamp * 1000,
-                isodatetime: new Date(p.timestamp * 1000).toISOString()
+                timestamp: p.timestamp ? p.timestamp * 1000 : Date.now(),
+                isodatetime: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : new Date().toISOString()
             }));
 
         } catch (err) {

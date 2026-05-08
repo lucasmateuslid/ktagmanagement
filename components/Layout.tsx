@@ -171,7 +171,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const isLockedMode = isUrgentPending;
 
   useEffect(() => {
-      if (isLockedMode && location.pathname !== '/vehicles' && location.pathname !== '/tags') {
+      if (isLockedMode && location.pathname !== '/vehicles' && location.pathname !== '/tags' && location.pathname !== '/schedules') {
           navigate('/vehicles');
       }
   }, [isLockedMode, location.pathname, navigate]);
@@ -354,7 +354,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         title: 'AGENDAMENTOS',
         items: [
           { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus, perm: 'ROUTE_SCHEDULE_NEW' },
-          { label: 'CENTRAL DE AGENDA', path: '/schedules', icon: Calendar, perm: 'ROUTE_SCHEDULES' },
+          { label: (user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'moderator' || user?.role === 'admin_tecnico') ? 'CENTRAL DE AGENDA' : 'MINHAS SOLICITAÇÕES', path: '/schedules', icon: Calendar, perm: 'ROUTE_SCHEDULES' },
           { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar, perm: 'ROUTE_CALENDAR' },
           { label: 'TÉCNICOS', path: '/technicians', icon: Wrench, perm: 'ROUTE_TECHNICIANS' }
         ]
@@ -379,7 +379,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
     rawSections.forEach((section: any) => {
         const allowedItems = section.items.filter((item: any) => hasPermission(user, customRoles || [], item.perm)).map((item: any) => ({
             ...item,
-            disabled: isLockedMode && item.path !== '/vehicles' && item.path !== '/tags'
+            disabled: isLockedMode && item.path !== '/vehicles' && item.path !== '/tags' && item.path !== '/schedules'
         }));
         if (allowedItems.length > 0) {
             out.push({ ...section, items: allowedItems });
@@ -593,15 +593,17 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Menu size={24} /></button>
                   
                   <div className="hidden md:flex items-center gap-4 h-10">
-                    {appSettings?.appLogo ? (
-                        <img src={appSettings.appLogo} alt="Logo" className="w-10 h-10 object-contain" />
+                    {theme === 'dark' && appSettings?.customLogoUrlDark ? (
+                        <img src={appSettings.customLogoUrlDark} alt="Logo" className="w-10 h-10 object-contain" />
+                    ) : theme === 'light' && appSettings?.customLogoUrlLight ? (
+                        <img src={appSettings.customLogoUrlLight} alt="Logo" className="w-10 h-10 object-contain" />
                     ) : (
                         <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-800 dark:border-zinc-200">
                           <span className="font-display font-black text-white dark:text-black text-lg">K</span>
                         </div>
                     )}
                     <div className="flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 justify-center">
-                        <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.appName || 'Manager Pro'}</span>
+                        <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.customAppName || appSettings?.appName || 'Manager Pro'}</span>
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                           <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>

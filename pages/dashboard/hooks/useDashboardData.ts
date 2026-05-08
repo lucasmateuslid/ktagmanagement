@@ -18,6 +18,8 @@ export const useDashboardData = () => {
 
   useEffect(() => {
     if (!user) return;
+    
+    let unsubscribeSchedules = () => {};
 
     const loadData = async () => {
       setLoading(true);
@@ -26,24 +28,30 @@ export const useDashboardData = () => {
         
         let queryId = user.id;
         if (user.role === 'technician' || user.role === 'admin_tecnico') {
-            const tech = loadedTechs.find(t => t.email?.toLowerCase() === user.email.toLowerCase());
+            const tech = user.technicianId ? loadedTechs.find(t => t.id === user.technicianId) : loadedTechs.find(t => t.email?.toLowerCase() === user.email.toLowerCase());
             if (tech) queryId = tech.id;
         }
+
+        unsubscribeSchedules = storage.subscribeToSchedules(
+            (user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico' ? 'admin' : user.role) || 'user', 
+            queryId, 
+            (data) => {
+                setSchedules(data);
+            }
+        );
 
         const [
           loadedTags, 
           loadedVehicles, 
           loadedCompanies, 
           loadedCategories, 
-          loadedSettings, 
-          loadedSchedules
+          loadedSettings
         ] = await Promise.all([
           storage.getTags(),
           storage.getVehicles(),
           storage.getCompanies(),
           storage.getCategories(),
-          storage.getSettings(),
-          storage.getSchedules((user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico' ? 'admin' : user.role) || 'user', queryId)
+          storage.getSettings()
         ]);
 
         setTags(loadedTags);
@@ -51,7 +59,6 @@ export const useDashboardData = () => {
         setCompanies(loadedCompanies);
         setCategories(loadedCategories);
         setSettings(loadedSettings);
-        setSchedules(loadedSchedules);
         setTechnicians(loadedTechs);
       } catch (error) {
         console.error("Failed to load dashboard data", error);
@@ -61,6 +68,10 @@ export const useDashboardData = () => {
     };
 
     loadData();
+
+    return () => {
+        unsubscribeSchedules();
+    };
   }, [user]);
 
   return {

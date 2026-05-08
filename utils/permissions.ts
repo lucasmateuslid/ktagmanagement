@@ -15,7 +15,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   'admin_tecnico': [...Object.values(SYSTEM_PERMISSIONS).flat()],
   'moderator': ['ROUTE_DASHBOARD', 'ROUTE_MAP', 'ROUTE_SECURITY', 'ROUTE_VEHICLES', 'ROUTE_SHIPMENTS', 'ROUTE_CLIENTS', 'ROUTE_TAGS', 'ROUTE_SCHEDULE_NEW', 'ROUTE_SCHEDULES', 'ROUTE_CALENDAR', 'ROUTE_FEEDBACK', 'ROUTE_REPORTS'],
   'user': ['ROUTE_DASHBOARD', 'ROUTE_MAP', 'ROUTE_SECURITY', 'ROUTE_VEHICLES', 'ROUTE_SHIPMENTS', 'ROUTE_SCHEDULE_NEW', 'ROUTE_SCHEDULES', 'ROUTE_CALENDAR', 'ROUTE_FEEDBACK'],
-  'technician': ['ROUTE_DASHBOARD', 'ROUTE_CALENDAR', 'ROUTE_SHIPMENTS'],
+  'technician': ['ROUTE_DASHBOARD', 'ROUTE_CALENDAR', 'ROUTE_SHIPMENTS', 'ROUTE_SCHEDULES'],
   'client': ['ROUTE_VEHICLES', 'ROUTE_MAP']
 };
 
@@ -29,7 +29,14 @@ export const hasPermission = (user: User | null, customRoles: CustomRole[], perm
     }
   }
   
-  // Fallback to base role
+  if (user.role) {
+    const role = customRoles.find(r => r.id === user.role);
+    if (role) {
+      return role.permissions.includes(permission);
+    }
+  }
+  
+  // Fallback to base role dictionary
   const role = user.role || 'user';
   return DEFAULT_ROLE_PERMISSIONS[role]?.includes(permission) || false;
 };

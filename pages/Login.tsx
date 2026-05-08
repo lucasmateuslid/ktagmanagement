@@ -94,7 +94,7 @@ export const Login = () => {
              const settings = await storage.getSettings();
              setAppSettings({
                  appName: settings.customAppName,
-                 appLogo: settings.customLogoUrl
+                 appLogo: settings.customLogoUrlDark || settings.customLogoUrlLight
              });
          } catch(e) {
              console.log(e);

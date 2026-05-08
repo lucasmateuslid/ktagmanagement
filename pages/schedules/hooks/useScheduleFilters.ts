@@ -1,6 +1,7 @@
 
 import { useState, useMemo } from 'react';
 import { Schedule, Technician, User } from '../../../types';
+import { useAuth } from '../../../contexts/AuthContext';
 
 export const useScheduleFilters = (
   schedules: Schedule[],
@@ -8,7 +9,8 @@ export const useScheduleFilters = (
   user: User | null,
   viewDate: Date
 ) => {
-  const isPrivileged = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
+  const { isAdmin } = useAuth();
+  const isPrivileged = isAdmin || user?.role === 'moderator' || user?.role === 'admin_tecnico';
 
   // State
   const [searchTerm, setSearchTerm] = useState('');

@@ -24,6 +24,7 @@ export interface User {
   password?: string;
   role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | string;
   customRoleId?: string;
+  technicianId?: string;
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
   companySlug?: string;
@@ -282,11 +283,41 @@ export interface ShippingAddress {
   email?: string;
 }
 
+export interface GeocoderProviderConfig {
+  enabled: boolean;
+  api_key: string | null;
+}
+
+export interface GeocoderPreferences {
+  priority_order: string[];
+  providers: Record<string, GeocoderProviderConfig>;
+  confidence_threshold: number;
+  fallback_on_empty: boolean;
+  fallback_on_low_confidence: boolean;
+  country_filter: string;
+  default_language: string;
+}
+
+export interface ThemeColors {
+  primaryColor?: string;
+  titleColorLight?: string;
+  titleColorDark?: string;
+  buttonTextColor?: string;
+  cardBgLight?: string;
+  cardBgDark?: string;
+  pageBgLight?: string;
+  pageBgDark?: string;
+  chartColors?: string;
+}
+
 export interface AppSettings {
   language: 'pt' | 'en';
   customProxyUrl: string;
+  geocoderPreferences?: GeocoderPreferences;
   customAppName?: string;
-  customLogoUrl?: string;
+  customLogoUrlLight?: string;
+  customLogoUrlDark?: string;
+  themeColors?: ThemeColors;
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;

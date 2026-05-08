@@ -34,12 +34,12 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 // --- CORES PREMIUM (C6 STYLE) --- // Cache invalidation
 const COLORS = {
-  primary: '#f59e0b',   // Amber 500 (Destaque Principal)
-  darkBase: '#18181b',  // Zinc 900
-  lightBase: '#ffffff', // White
+  primary: 'var(--theme-primary, #f59e0b)',   // Amber 500 (Destaque Principal)
+  darkBase: 'var(--theme-card-dark, #18181b)',  // Zinc 900
+  lightBase: 'var(--theme-card-light, #ffffff)', // White
   gridLine: '#3f3f46',  // Zinc 700
   // Gradação Monocromática para Gráficos
-  chartPalette: ['#f59e0b', '#52525b', '#71717a', '#a1a1aa', '#d4d4d8']
+  chartPalette: ['var(--theme-chart-0, #f59e0b)', 'var(--theme-chart-1, #52525b)', 'var(--theme-chart-2, #71717a)', 'var(--theme-chart-3, #a1a1aa)', 'var(--theme-chart-4, #d4d4d8)']
 };
 
 export const Dashboard = () => {

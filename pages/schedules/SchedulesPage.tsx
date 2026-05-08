@@ -28,7 +28,7 @@ import { UserScheduleCard } from './components/cards/UserScheduleCard';
 import { EmptyState } from './components/EmptyState';
 
 export const SchedulesPage = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { addNotification } = useNotification();
   
@@ -43,6 +43,8 @@ export const SchedulesPage = () => {
 
   // --- DATA LOADING ---
   useEffect(() => {
+    let unsubscribe = () => {};
+
     const init = async () => {
         setLoading(true);
         const [techs, comps] = await Promise.all([
@@ -52,20 +54,29 @@ export const SchedulesPage = () => {
         setTechnicians(techs);
         setCompanies(comps);
         setLoading(false);
+
+        if (user) {
+            let queryId = user.technicianId || user.id;
+            if (user.role === 'technician' || user.role === 'admin_tecnico') {
+                const tech = user.technicianId ? techs.find(t => t.id === user.technicianId) : techs.find(t => t.email?.toLowerCase() === user.email?.toLowerCase());
+                if (tech) queryId = tech.id;
+            }
+
+            unsubscribe = storage.subscribeToSchedules(
+                (isAdmin || user.role === 'moderator') ? 'admin' : (user.role === 'client' ? 'user' : (user.role === 'technician' ? 'technician' : 'user')), 
+                queryId, 
+                (data) => {
+                    setSchedules(data.sort((a, b) => b.createdAt - a.createdAt));
+                }
+            );
+        }
     };
     init();
 
-    if (user) {
-        const unsubscribe = storage.subscribeToSchedules(
-            (user.role === 'admin' || user.role === 'moderator' || user.role === 'admin_tecnico') ? 'admin' : 'user', 
-            user.id, 
-            (data) => {
-                setSchedules(data.sort((a, b) => b.createdAt - a.createdAt));
-            }
-        );
-        return () => unsubscribe();
-    }
-  }, [user]);
+    return () => {
+        unsubscribe();
+    };
+  }, [user, isAdmin]);
 
   // --- HOOKS ---
   const { 

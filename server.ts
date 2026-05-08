@@ -25,188 +25,201 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function performGeocoding(address: string, providerPreference: 'osm' | 'google' = 'osm') {
-  const userAgent = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/1.0';
-  const googleKey = process.env.GEOCODING_GOOGLE_API_KEY;
 
-  let usedFallback = false;
-  let fallbacksCount = 0;
+// --- MULTI-PROVIDER GEOCODING LOGIC ---
+const DEFAULT_GEOCODER_PREFS = {
+  priority_order: ['geoapify', 'here', 'photon', 'google_maps', 'radar', 'openstreetmap'],
+  providers: {
+    geoapify: { enabled: false, api_key: null },
+    here: { enabled: false, api_key: null },
+    photon: { enabled: true, api_key: null },
+    google_maps: { enabled: false, api_key: null },
+    radar: { enabled: false, api_key: null },
+    openstreetmap: { enabled: true, api_key: null }
+  },
+  confidence_threshold: 0.7,
+  fallback_on_empty: true,
+  fallback_on_low_confidence: true,
+  country_filter: 'br',
+  default_language: 'pt'
+};
 
-  const tryOSM = async () => {
+const USER_AGENT = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/1.0';
+
+async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: any, prefs: any) {
+  const preferences = prefs && prefs.priority_order ? prefs : DEFAULT_GEOCODER_PREFS;
+  const order = preferences.priority_order || [];
+  const providers = preferences.providers || {};
+  const threshold = preferences.confidence_threshold || 0.7;
+
+  let providers_tried = [];
+  let fallback_used = false;
+
+  for (let i = 0; i < order.length; i++) {
+    const providerName = order[i];
+    const config = providers[providerName];
+
+    if (!config || !config.enabled) continue;
+
+    providers_tried.push(providerName);
+    if (providers_tried.length > 1) fallback_used = true;
+
     try {
-      const start = Date.now();
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&addressdetails=1&limit=1&countrycodes=br`;
-      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          const latency = Date.now() - start;
-          console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
+      let result = null;
+      const apiKey = config.api_key || '';
+
+      if (type === 'forward') {
+        const query = queryOrCoords;
+        if (providerName === 'geoapify') {
+          const res = await fetchWithTimeout(`https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(query)}&apiKey=${apiKey}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.features && data.features.length > 0) {
+              const f = data.features[0].properties;
+              result = { lat: f.lat, lng: f.lon, address: f.formatted, confidence: f.rank?.confidence || 1.0, raw: data.features[0] };
+            }
+          }
+        } else if (providerName === 'here') {
+          const res = await fetchWithTimeout(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(query)}&apiKey=${apiKey}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+              result = { lat: data.items[0].position.lat, lng: data.items[0].position.lng, address: data.items[0].address.label, confidence: 1.0, raw: data.items[0] };
+            }
+          }
+        } else if (providerName === 'photon') {
+          const res = await fetchWithTimeout(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=pt`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.features && data.features.length > 0) {
+              const f = data.features[0];
+              const addr = f.properties.name || f.properties.street || f.properties.city;
+              result = { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], address: addr, confidence: 1.0, raw: f };
+            }
+          }
+        } else if (providerName === 'google_maps' || providerName === 'google') {
+          const keyToUse = apiKey || process.env.GEOCODING_GOOGLE_API_KEY;
+          const res = await fetchWithTimeout(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&region=br&language=pt-BR&key=${keyToUse}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'OK' && data.results && data.results.length > 0) {
+              const locType = data.results[0].geometry?.location_type;
+              let conf = 1.0;
+              if (locType === 'ROOFTOP') conf = 1.0;
+              else if (locType === 'RANGE_INTERPOLATED') conf = 0.9;
+              else if (locType === 'GEOMETRIC_CENTER') conf = 0.7;
+              else if (locType === 'APPROXIMATE') conf = 0.5;
+
+              result = { lat: data.results[0].geometry.location.lat, lng: data.results[0].geometry.location.lng, address: data.results[0].formatted_address, confidence: conf, raw: data.results[0] };
+            }
+          }
+        } else if (providerName === 'radar') {
+          const res = await fetchWithTimeout(`https://api.radar.io/v1/geocode/forward?query=${encodeURIComponent(query)}`, { headers: { 'Authorization': apiKey } });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.addresses && data.addresses.length > 0) {
+              const confStr = data.addresses[0].confidence;
+              let confNum = 0.5;
+              if (confStr === 'exact') confNum = 1.0;
+              else if (confStr === 'interpolated') confNum = 0.8;
+              result = { lat: data.addresses[0].latitude, lng: data.addresses[0].longitude, address: data.addresses[0].formattedAddress, confidence: confNum, raw: data.addresses[0] };
+            }
+          }
+        } else if (providerName === 'openstreetmap' || providerName === 'osm') {
+          const res = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=br`, { headers: { 'User-Agent': USER_AGENT } });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+              // Nominatim doesn't have native confidence but importance
+              const bestMatch = data[0];
+              const parsedConfidence = bestMatch.importance ? Math.min(1.0, bestMatch.importance + 0.1) : 0.8;
+              result = { lat: parseFloat(bestMatch.lat), lng: parseFloat(bestMatch.lon), address: bestMatch.display_name, confidence: parsedConfidence, raw: bestMatch };
+            }
+          }
+        }
+      } else {
+        const { lat, lng } = queryOrCoords;
+        if (providerName === 'geoapify') {
+          const res = await fetchWithTimeout(`https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${apiKey}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.features && data.features.length > 0) {
+              const f = data.features[0].properties;
+              result = { lat: f.lat, lng: f.lon, address: f.formatted, confidence: f.rank?.confidence || 1.0, raw: data.features[0] };
+            }
+          }
+        } else if (providerName === 'here') {
+          const res = await fetchWithTimeout(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&apiKey=${apiKey}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+              result = { lat: data.items[0].position.lat, lng: data.items[0].position.lng, address: data.items[0].address.label, confidence: 1.0, raw: data.items[0] };
+            }
+          }
+        } else if (providerName === 'photon') {
+          const res = await fetchWithTimeout(`https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.features && data.features.length > 0) {
+              const f = data.features[0];
+              const addrItems = [f.properties.street, f.properties.housenumber, f.properties.city, f.properties.state].filter(Boolean);
+              const addr = addrItems.join(', ') || f.properties.name;
+              result = { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], address: addr, confidence: 1.0, raw: f };
+            }
+          }
+        } else if (providerName === 'google_maps' || providerName === 'google') {
+          const keyToUse = apiKey || process.env.GEOCODING_GOOGLE_API_KEY;
+          const res = await fetchWithTimeout(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=pt-BR&key=${keyToUse}`, {});
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'OK' && data.results && data.results.length > 0) {
+              result = { lat: data.results[0].geometry.location.lat, lng: data.results[0].geometry.location.lng, address: data.results[0].formatted_address, confidence: 1.0, raw: data.results[0] };
+            }
+          }
+        } else if (providerName === 'radar') {
+          const res = await fetchWithTimeout(`https://api.radar.io/v1/geocode/reverse?coordinates=${lat},${lng}`, { headers: { 'Authorization': apiKey } });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.addresses && data.addresses.length > 0) {
+              result = { lat: data.addresses[0].latitude, lng: data.addresses[0].longitude, address: data.addresses[0].formattedAddress, confidence: 1.0, raw: data.addresses[0] };
+            }
+          }
+        } else if (providerName === 'openstreetmap' || providerName === 'osm') {
+          const res = await fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`, { headers: { 'User-Agent': USER_AGENT } });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.display_name) {
+              result = { lat: parseFloat(data.lat), lng: parseFloat(data.lon), address: data.display_name, confidence: 1.0, raw: data };
+            }
+          }
+        }
+      }
+
+      if (result) {
+        if (result.confidence >= threshold || !preferences.fallback_on_low_confidence) {
           return {
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            displayName: data[0].display_name,
-            provider: "osm",
-            confidence: 1.0,
-            usedFallback,
-            raw: data[0]
+            provider_used: providerName,
+            providers_tried,
+            fallback_used,
+            query: type === 'forward' ? queryOrCoords : `${queryOrCoords.lat},${queryOrCoords.lng}`,
+            result
           };
         }
       }
-    } catch (e) {
-      // OSM failed
+    } catch (e: any) {
+      console.warn(`[GEOCODING] Provider ${providerName} failed: ${e.message}`);
     }
-    return null;
-  };
-
-  const tryGoogle = async () => {
-    if (!googleKey) {
-      console.log(`[GEOCODING] Google ignorado (chave ausente).`);
-      return null;
-    }
-    try {
-      const start = Date.now();
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=br&language=pt-BR&key=${googleKey}`;
-      const res = await fetchWithTimeout(url, {});
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.status === 'OK' && data.results && data.results.length > 0) {
-          const latency = Date.now() - start;
-          console.log(`[GEOCODING] Google respondeu com sucesso em ${latency}ms. Total fallbacks: ${fallbacksCount}`);
-          return {
-            lat: data.results[0].geometry.location.lat,
-            lng: data.results[0].geometry.location.lng,
-            displayName: data.results[0].formatted_address,
-            provider: "google",
-            confidence: 1.0,
-            usedFallback,
-            raw: data.results[0]
-          };
-        }
-      }
-    } catch (e) {
-      // Google failed
-    }
-    return null;
-  };
-
-  if (providerPreference === 'google') {
-    const googleResult = await tryGoogle();
-    if (googleResult) return googleResult;
-    
-    await delay(300);
-    usedFallback = true;
-    fallbacksCount++;
-    console.log(`[GEOCODING] OSM ativado como fallback #1. Motivo: Google falhou ou não encontrou.`);
-    
-    const osmResult = await tryOSM();
-    if (osmResult) return osmResult;
-  } else {
-    const osmResult = await tryOSM();
-    if (osmResult) return osmResult;
-    
-    await delay(300);
-    usedFallback = true;
-    fallbacksCount++;
-    console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
-    
-    const googleResult = await tryGoogle();
-    if (googleResult) return googleResult;
   }
 
-  throw new GeocodingError("Todos os provedores falharam");
+  throw new GeocodingError("Todos os provedores falharam: " + JSON.stringify(providers_tried));
 }
 
-async function performReverseGeocoding(lat: number, lng: number, providerPreference: 'osm' | 'google' = 'osm') {
-  const userAgent = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/1.0';
-  const googleKey = process.env.GEOCODING_GOOGLE_API_KEY;
+async function performGeocoding(address: string, geocoderPreferences: any) {
+  return await executeMultiProvider('forward', address, geocoderPreferences);
+}
 
-  let usedFallback = false;
-  let fallbacksCount = 0;
-
-  const tryOSM = async () => {
-    try {
-      const start = Date.now();
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
-      const res = await fetchWithTimeout(url, { headers: { 'User-Agent': userAgent } });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.display_name) {
-          const latency = Date.now() - start;
-          console.log(`[GEOCODING] OSM respondeu com sucesso em ${latency}ms`);
-          return {
-            lat: parseFloat(data.lat),
-            lng: parseFloat(data.lon),
-            displayName: data.display_name,
-            provider: "osm",
-            confidence: 1.0,
-            usedFallback,
-            raw: data
-          };
-        }
-      }
-    } catch (e) {
-      // OSM failed
-    }
-    return null;
-  };
-
-  const tryGoogle = async () => {
-    if (!googleKey) {
-      console.log(`[GEOCODING] Google ignorado (chave ausente).`);
-      return null;
-    }
-    try {
-      const start = Date.now();
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=pt-BR&key=${googleKey}`;
-      const res = await fetchWithTimeout(url, {});
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.status === 'OK' && data.results && data.results.length > 0) {
-          const latency = Date.now() - start;
-          console.log(`[GEOCODING] Google respondeu com sucesso em ${latency}ms. Total fallbacks: ${fallbacksCount}`);
-          return {
-            lat: data.results[0].geometry.location.lat,
-            lng: data.results[0].geometry.location.lng,
-            displayName: data.results[0].formatted_address,
-            provider: "google",
-            confidence: 1.0,
-            usedFallback,
-            raw: data.results[0]
-          };
-        }
-      }
-    } catch (e) {
-      // Google failed
-    }
-    return null;
-  };
-
-  if (providerPreference === 'google') {
-    const googleResult = await tryGoogle();
-    if (googleResult) return googleResult;
-    
-    await delay(300);
-    usedFallback = true;
-    fallbacksCount++;
-    console.log(`[GEOCODING] OSM ativado como fallback #1. Motivo: Google falhou ou não encontrou.`);
-    
-    const osmResult = await tryOSM();
-    if (osmResult) return osmResult;
-  } else {
-    const osmResult = await tryOSM();
-    if (osmResult) return osmResult;
-    
-    await delay(300);
-    usedFallback = true;
-    fallbacksCount++;
-    console.log(`[GEOCODING] Google ativado como fallback #1. Motivo: OSM falhou ou não encontrou.`);
-    
-    const googleResult = await tryGoogle();
-    if (googleResult) return googleResult;
-  }
-
-  throw new GeocodingError("Todos os provedores falharam");
+async function performReverseGeocoding(lat: number, lng: number, geocoderPreferences: any) {
+  return await executeMultiProvider('reverse', { lat, lng }, geocoderPreferences);
 }
 
 async function startServer() {
@@ -223,10 +236,10 @@ async function startServer() {
 
   app.post("/api/geocode", async (req, res) => {
     try {
-      const { address, providerPreference } = req.body;
+      const { address, geocoderPreferences } = req.body;
       if (!address) return res.status(400).json({ error: "Missing address" });
 
-      const result = await performGeocoding(address, providerPreference);
+      const result = await performGeocoding(address, geocoderPreferences);
       res.json(result);
     } catch (error: any) {
       console.error("Geocoding Error:", error.message);
@@ -236,10 +249,10 @@ async function startServer() {
 
   app.post("/api/reverse-geocode", async (req, res) => {
     try {
-      const { lat, lng, providerPreference } = req.body;
+      const { lat, lng, geocoderPreferences } = req.body;
       if (lat === undefined || lng === undefined) return res.status(400).json({ error: "Missing lat/lng" });
 
-      const result = await performReverseGeocoding(lat, lng, providerPreference);
+      const result = await performReverseGeocoding(lat, lng, geocoderPreferences);
       res.json(result);
     } catch (error: any) {
       console.error("Reverse Geocoding Error:", error.message);

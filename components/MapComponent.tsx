@@ -253,7 +253,7 @@ export const MapComponent: React.FC<MapProps> = ({
         >
           <LayersControl position="topright">
             <BaseLayer checked name="Google Maps">
-              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
+              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" className="map-light-tiles" />
             </BaseLayer>
             <BaseLayer name="Google Satélite">
               <TileLayer url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" />

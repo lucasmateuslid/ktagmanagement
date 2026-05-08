@@ -30,6 +30,8 @@ export const Users = () => {
   const [isConfirmResetOpen, setIsConfirmResetOpen] = useState(false);
   const [userToManage, setUserToManage] = useState<User | null>(null);
   
+  const [technicians, setTechnicians] = useState<any[]>([]); // New state for technicians
+
   const [selectedUser, setSelectedUser] = useState<Partial<User> | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({ role: 'user', status: 'approved' });
   
@@ -45,6 +47,8 @@ export const Users = () => {
     if (isAdmin) {
       const allUsers = await storage.getAllUsers();
       setUsers(allUsers);
+      const allTechs = await storage.getTechnicians();
+      setTechnicians(allTechs);
     }
     setLoading(false);
   };
@@ -211,6 +215,10 @@ export const Users = () => {
         case 'client':
             style = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
             label = 'Cliente';
+            break;
+        case 'technician':
+            style = 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20';
+            label = 'Técnico';
             break;
         default: // 'user'
             style = 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700';
@@ -490,6 +498,7 @@ export const Users = () => {
                                 <option value="base:moderator">Moderador</option>
                                 <option value="base:admin">Admin</option>
                                 <option value="base:admin_tecnico">Admin Técnico</option>
+                                <option value="base:technician">Técnico</option>
                                 <option value="base:client">Cliente</option>
                             </optgroup>
                             {customRoles && customRoles.length > 0 && (
@@ -510,6 +519,22 @@ export const Users = () => {
                         </select>
                     </div>
                 </div>
+
+                {formData.role === 'technician' && (
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-zinc-500">Vincular a um Perfil de Técnico</label>
+                        <select 
+                            value={formData.technicianId || ''} 
+                            onChange={e => setFormData({...formData, technicianId: e.target.value})} 
+                            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none font-bold text-[10px] uppercase tracking-widest"
+                        >
+                            <option value="">Nenhum</option>
+                            {technicians.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 <div className="flex items-center gap-2 py-2">
                     <input 

@@ -509,13 +509,13 @@ export const Reports = () => {
                          <AreaChart data={trendData}>
                              <defs>
                                 <linearGradient id="colorCount" x1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
-                                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                  <stop offset="5%" stopColor="var(--theme-primary, #f59e0b)" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="var(--theme-primary, #f59e0b)" stopOpacity={0}/>
                                 </linearGradient>
                              </defs>
                              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a' }} />
                              <Tooltip contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }} />
-                             <Area type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={4} fill="url(#colorCount)" />
+                             <Area type="monotone" dataKey="count" stroke="var(--theme-primary, #f59e0b)" strokeWidth={4} fill="url(#colorCount)" />
                          </AreaChart>
                      </ResponsiveContainer>
                  </div>
@@ -632,8 +632,8 @@ export const Reports = () => {
                                         <AreaChart data={historyData}>
                                             <defs>
                                                 <linearGradient id="colorBattery" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                                    <stop offset="5%" stopColor="var(--theme-chart-1, #10b981)" stopOpacity={0.3}/>
+                                                    <stop offset="95%" stopColor="var(--theme-chart-1, #10b981)" stopOpacity={0}/>
                                                 </linearGradient>
                                             </defs>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} opacity={0.1} />
@@ -648,7 +648,7 @@ export const Reports = () => {
                                                 contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }}
                                                 labelFormatter={(unix) => new Date(unix).toLocaleString()}
                                             />
-                                            <Area type="monotone" dataKey="battery.level" stroke="#10b981" strokeWidth={2} fill="url(#colorBattery)" name="Bateria %" />
+                                            <Area type="monotone" dataKey="battery.level" stroke="var(--theme-chart-1, #10b981)" strokeWidth={2} fill="url(#colorBattery)" name="Bateria %" />
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -671,7 +671,7 @@ export const Reports = () => {
                                                 contentStyle={{ background: '#18181b', border: 'none', borderRadius: '16px', color: '#fff' }}
                                                 labelFormatter={(unix) => new Date(unix).toLocaleString()}
                                             />
-                                            <Bar dataKey="conf" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Confiança" />
+                                            <Bar dataKey="conf" fill="var(--theme-chart-2, #3b82f6)" radius={[4, 4, 0, 0]} name="Confiança" />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
