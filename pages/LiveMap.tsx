@@ -21,6 +21,7 @@ import { DetailsSheet } from './livemap/components/DetailsSheet';
 import { HistoryOverlay } from './livemap/components/HistoryOverlay';
 import { UpdateTagsModal } from '../components/UpdateTagsModal';
 import { DisplayLimit } from '../types';
+import { storage } from '../services/storage';
 
 type FleetFilter = 'all' | 'online' | 'offline';
 
@@ -41,6 +42,13 @@ export const LiveMap = () => {
   // Export State
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [mapProvider, setMapProvider] = useState<'osm' | 'google'>('osm');
+
+  useEffect(() => {
+    storage.getSettings().then(s => {
+      setMapProvider(s.livemapMapProvider || s.geocodingProvider || 'osm');
+    });
+  }, []);
 
   // 1. Data Layer
   const { tags, vehicles, categories, clients } = useFleetData(user);
@@ -154,6 +162,7 @@ export const LiveMap = () => {
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
+            mapProvider={mapProvider}
         />
       </div>
 

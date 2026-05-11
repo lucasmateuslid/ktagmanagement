@@ -103,8 +103,8 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
                   onClick={() => setIsSidebarOpen(false)}
                   className={`group flex items-center rounded-xl px-3 py-2.5 transition-all relative ${
                     isActive 
-                      ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500 font-bold' 
-                      : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white font-medium'
+                      ? 'bg-primary-500/5 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 font-bold' 
+                      : 'text-zinc-500 hover:bg-primary-500/5 dark:hover:bg-primary-500/5 hover:text-primary-600 dark:hover:text-primary-400 font-medium'
                   } ${isCollapsed ? 'justify-center' : ''}`}
                   title={isCollapsed ? item.label : ''}
                 >

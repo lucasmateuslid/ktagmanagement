@@ -43,21 +43,23 @@ const LocationMarker = ({ position, setPosition, onSelect }: any) => {
 };
 
 // Coordenadas padrão atualizadas para Natal/RN
-export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect, initialLat = -5.79448, initialLng = -35.211, tileProvider = 'osm' }) => {
+export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect, initialLat = -5.79448, initialLng = -35.211 }) => {
   const [address, setAddress] = useState('');
   const [position, setPosition] = useState<{ lat: number; lng: number }>({ lat: initialLat, lng: initialLng });
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<{lat: number, lon: number, address: string, confidence?: number}[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
-  const [provider, setProvider] = useState<'osm' | 'google'>('osm');
+  const [tileProvider, setTileProvider] = useState<'osm' | 'google'>('osm');
   const [geocoderPrefs, setGeocoderPrefs] = useState<any>(null);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     storage.getSettings().then(s => {
-      if (s.geocodingProvider) {
-        setProvider(s.geocodingProvider);
+      if (s.schedulingMapProvider) {
+        setTileProvider(s.schedulingMapProvider);
+      } else if (s.geocodingProvider) {
+        setTileProvider(s.geocodingProvider);
       }
       if (s.geocoderPreferences) {
         setGeocoderPrefs(s.geocoderPreferences);
@@ -66,26 +68,34 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
   }, []);
 
   const handleActiveProviderChange = (selected: string) => {
+    setProviderMenuOpen(false);
     if (!geocoderPrefs) return;
-    const newOrder = [selected, ...geocoderPrefs.priority_order.filter((p: string) => p !== selected)];
+    
+    // Ensure priority_order exists to prevent .filter error on older settings
+    const currentOrder = geocoderPrefs.priority_order || ['geoapify', 'here', 'photon', 'google_maps', 'radar', 'openstreetmap'];
+    
+    const newOrder = [selected, ...currentOrder.filter((p: string) => p !== selected)];
     const newPrefs = { ...geocoderPrefs, priority_order: newOrder };
     setGeocoderPrefs(newPrefs);
     storage.getSettings().then(s => {
         storage.saveSettings({ ...s, geocoderPreferences: newPrefs });
     });
-    setProviderMenuOpen(false);
   };
 
   const getAvailableProviders = () => {
     if (!geocoderPrefs) return [{ id: 'openstreetmap', label: 'OpenStreetMap' }];
     const available = [];
-    for (const [key, conf] of Object.entries(geocoderPrefs.providers) as any) {
-        if (conf.enabled) {
-            // Free providers don't need API key check here.
-            // But others do. Let's simplify and show enabled ones.
-            available.push({ id: key, label: getProviderLabel(key) });
+    
+    if (geocoderPrefs.providers) {
+        for (const [key, conf] of Object.entries(geocoderPrefs.providers) as any) {
+            if (conf.enabled) {
+                // Free providers don't need API key check here.
+                // But others do. Let's simplify and show enabled ones.
+                available.push({ id: key, label: getProviderLabel(key) });
+            }
         }
     }
+    
     // Also include free ones if not in list
     if (!available.find(a => a.id === 'openstreetmap')) available.unshift({ id: 'openstreetmap', label: 'OpenStreetMap' });
     if (!available.find(a => a.id === 'photon')) available.push({ id: 'photon', label: 'Photon' });
@@ -163,13 +173,17 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
   return (
     <div className="space-y-4 relative z-[1000]">
       <div className="relative">
-        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex justify-between items-center mb-1">
+        <div className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex justify-between items-center mb-1">
             <span>Endereço de Instalação</span>
             
             <div className="relative">
                 <button 
                   type="button"
-                  onClick={() => setProviderMenuOpen(!providerMenuOpen)}
+                  onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setProviderMenuOpen(!providerMenuOpen);
+                  }}
                   className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-lg transition-colors"
                   title="Selecionar provedor de busca ativo"
                 >
@@ -179,7 +193,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
 
                 {providerMenuOpen && (
                     <>
-                        <div className="fixed inset-0 z-[2000]" onClick={() => setProviderMenuOpen(false)}></div>
+                        <div className="fixed inset-0 z-[2000]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setProviderMenuOpen(false); }}></div>
                         <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[2010] overflow-hidden flex flex-col py-1 animate-in fade-in zoom-in duration-200 origin-top-right">
                            <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
                                <p className="text-[10px] font-black text-zinc-400">PROVEDORES ATIVOS</p>
@@ -188,7 +202,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
                                {availableProviders.map(p => (
                                    <div 
                                       key={p.id}
-                                      onClick={() => handleActiveProviderChange(p.id)}
+                                      onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          handleActiveProviderChange(p.id);
+                                      }}
                                       className={`px-3 py-2 text-xs font-bold cursor-pointer transition-colors flex items-center justify-between ${
                                           p.id === activeProviderId 
                                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
@@ -204,7 +222,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({ onLocationSelect
                     </>
                 )}
             </div>
-        </label>
+        </div>
         <div className="relative">
             <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
             <input 

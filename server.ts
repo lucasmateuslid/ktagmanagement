@@ -54,6 +54,7 @@ async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: 
 
   let providers_tried = [];
   let fallback_used = false;
+  let bestResult: any = null;
 
   for (let i = 0; i < order.length; i++) {
     const providerName = order[i];
@@ -88,13 +89,14 @@ async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: 
             }
           }
         } else if (providerName === 'photon') {
-          const res = await fetchWithTimeout(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=pt`, {});
+          const res = await fetchWithTimeout(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`, {});
           if (res.ok) {
             const data = await res.json();
             if (data.features && data.features.length > 0) {
               const f = data.features[0];
-              const addr = f.properties.name || f.properties.street || f.properties.city;
-              result = { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], address: addr, confidence: 1.0, raw: f };
+              const addrItems = [f.properties.street, f.properties.housenumber, f.properties.city, f.properties.state].filter(Boolean);
+              const addrStr = addrItems.join(', ') || f.properties.name;
+              result = { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], address: addrStr, confidence: 1.0, raw: f };
             }
           }
         } else if (providerName === 'google_maps' || providerName === 'google') {
@@ -132,7 +134,7 @@ async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: 
             if (data && data.length > 0) {
               // Nominatim doesn't have native confidence but importance
               const bestMatch = data[0];
-              const parsedConfidence = bestMatch.importance ? Math.min(1.0, bestMatch.importance + 0.1) : 0.8;
+              const parsedConfidence = bestMatch.importance ? Math.min(1.0, (bestMatch.importance * 1.5) + 0.3) : 0.8;
               result = { lat: parseFloat(bestMatch.lat), lng: parseFloat(bestMatch.lon), address: bestMatch.display_name, confidence: parsedConfidence, raw: bestMatch };
             }
           }
@@ -196,6 +198,16 @@ async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: 
       }
 
       if (result) {
+        if (!bestResult || result.confidence > bestResult.result.confidence) {
+          bestResult = {
+            provider_used: providerName,
+            providers_tried,
+            fallback_used,
+            query: type === 'forward' ? queryOrCoords : `${queryOrCoords.lat},${queryOrCoords.lng}`,
+            result
+          };
+        }
+
         if (result.confidence >= threshold || !preferences.fallback_on_low_confidence) {
           return {
             provider_used: providerName,
@@ -209,6 +221,10 @@ async function executeMultiProvider(type: 'forward' | 'reverse', queryOrCoords: 
     } catch (e: any) {
       console.warn(`[GEOCODING] Provider ${providerName} failed: ${e.message}`);
     }
+  }
+
+  if (bestResult) {
+    return bestResult;
   }
 
   throw new GeocodingError("Todos os provedores falharam: " + JSON.stringify(providers_tried));

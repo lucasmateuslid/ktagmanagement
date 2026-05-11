@@ -138,6 +138,7 @@ interface MapProps {
   highlightedTagId?: string;
   showPlates?: boolean; // Nova prop
   onMarkerClick?: (tagId: string) => void;
+  mapProvider?: 'osm' | 'google';
 }
 
 export const MapComponent: React.FC<MapProps> = ({ 
@@ -148,7 +149,8 @@ export const MapComponent: React.FC<MapProps> = ({
   categories = [],
   highlightedTagId, 
   showPlates = false, // Default false
-  onMarkerClick 
+  onMarkerClick,
+  mapProvider = 'osm'
 }) => {
   const { theme } = useTheme();
   
@@ -252,7 +254,10 @@ export const MapComponent: React.FC<MapProps> = ({
           className="h-full w-full"
         >
           <LayersControl position="topright">
-            <BaseLayer checked name="Google Maps">
+            <BaseLayer checked={mapProvider === 'osm'} name="OpenStreetMap">
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" className="map-light-tiles" />
+            </BaseLayer>
+            <BaseLayer checked={mapProvider === 'google'} name="Google Maps">
               <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" className="map-light-tiles" />
             </BaseLayer>
             <BaseLayer name="Google Satélite">

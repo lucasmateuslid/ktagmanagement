@@ -238,6 +238,36 @@ export const GeocodingConfigModule: React.FC<Props> = ({ settings, setSettings, 
           );
         })}
       </div>
+
+      <div className="pt-8 border-t border-zinc-100 dark:border-zinc-800">
+        <h3 className="text-sm font-black uppercase tracking-tight mb-4">Provedores de Mapas (Visualização)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Agendamento & Formulários</label>
+            <select
+              value={settings.schedulingMapProvider || settings.geocodingProvider || 'osm'}
+              onChange={(e) => setSettings({ ...settings, schedulingMapProvider: e.target.value as 'osm' | 'google' })}
+              disabled={!isAdmin}
+              className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none font-bold text-xs"
+            >
+              <option value="osm">OpenStreetMap (Gratuito)</option>
+              <option value="google">Google Maps</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Carros no LiveMap</label>
+            <select
+              value={settings.livemapMapProvider || settings.geocodingProvider || 'osm'}
+              onChange={(e) => setSettings({ ...settings, livemapMapProvider: e.target.value as 'osm' | 'google' })}
+              disabled={!isAdmin}
+              className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none font-bold text-xs"
+            >
+              <option value="osm">OpenStreetMap (Gratuito)</option>
+              <option value="google">Google Maps</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

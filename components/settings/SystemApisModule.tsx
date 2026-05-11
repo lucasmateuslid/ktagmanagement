@@ -21,6 +21,7 @@ import {
 
 import { GeocodingConfigModule } from './GeocodingConfigModule';
 import { WhitelabelModule } from './WhitelabelModule';
+import { AiConfigModule } from './AiConfigModule';
 
 export const SystemApisModule = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -399,6 +400,8 @@ export const SystemApisModule = () => {
               </div>
 
               <WhitelabelModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+              
+              <AiConfigModule />
               
               <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
 

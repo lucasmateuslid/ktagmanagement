@@ -294,7 +294,19 @@ DIRETRIZES DE PERSONA:
     setStatus('Inspecionando Lógica Cognitiva...');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const settings = await storage.getSettings();
+      let keyToUse = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+      
+      if (settings.aiProvider && settings.aiProvider !== 'gemini' && !keyToUse) {
+         // Se escolheu outro provedor e não configurou key do gemini, avisar que no modo de agente precisa do Gemini ou adaptar (aqui podemos futuramente adicionar chamadas a outros SDKs)
+         throw new Error("O Kernel Agente Autônomo K-TAG requer o provedor GEMINI para uso estruturado de Ferramentas (Tool Calling). Configure a API Key do Gemini nas Configurações, ou use as respostas básicas (sem rastreamento) com o " + settings.aiProvider + ".");
+      }
+      
+      if (!keyToUse) {
+          throw new Error("Nenhuma Chave de API Google configurada. Acesse as Configurações de API e insira sua API Key do Gemini.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey: keyToUse });
       
       const formattedHistory: any[] = messages.filter(m => m.role !== 'tool').map(m => ({
           role: m.role,
@@ -304,7 +316,7 @@ DIRETRIZES DE PERSONA:
       formattedHistory.push({ role: 'user', parts: [{ text: userMessage }] });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.5-flash',
         contents: formattedHistory,
         config: {
             tools: tools as any,
@@ -337,7 +349,7 @@ DIRETRIZES DE PERSONA:
             formattedHistory.push({ role: 'function', parts: [{ functionResponse: { name: call.name, response: { result: textual }}}]});
             
             const secondResponse = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
+                model: 'gemini-2.5-flash',
                 contents: formattedHistory,
                 config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.3 }
             });
@@ -362,11 +374,27 @@ DIRETRIZES DE PERSONA:
     } catch (err) {
       console.error(err);
       setStatus('Sinal da Conexão Rompido');
+      
+      let errorMessage = err instanceof Error ? err.message : 'Timeout ou Limite de API Alcançado. Verifique suas configurações de API.';
+      
+      if (errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('429')) {
+         errorMessage = "Limite de cota ou faturamento da API excedido. Por favor, acesse o menu Configurações > Provedores de Inteligência Artificial e insira sua própria chave de API (Google Gemini, OpenAI, etc) para continuar usando o assistente.";
+      } else if (errorMessage.startsWith('{')) {
+          try {
+              const parsed = JSON.parse(errorMessage);
+              if (parsed.error && parsed.error.message) {
+                  errorMessage = parsed.error.message;
+              }
+          } catch (e) {
+              // Not valid JSON, keep as is
+          }
+      }
+
       setMessages(prev => [...prev, {
           id: Date.now().toString() + '_err',
           role: 'model',
           rawText: 'Falha.',
-          content: <div className="text-red-500 font-mono text-[10px]">Exceção Crítica I/O: Timeout alcançado. Seu Kernel de Chaves de IA pode ter recusado processar devido a limites do servidor da Google.</div>
+          content: <div className="text-red-500 font-mono text-[10px]">Falha Cognitiva: {errorMessage}</div>
       }]);
     } finally {
       setLoading(false);
