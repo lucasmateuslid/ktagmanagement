@@ -189,7 +189,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
      const unsubscribe = onSnapshot(doc(db, 'ktag_settings_v3', 'config'), (snap) => {
          if (snap.exists() && isM) {
              const data = snap.data() as any;
-             console.log("APP SETTINGS SNAPSHOT LOADED:", data);
+             // Remove the log because of token vulnerabilities
              
              setAppSettings((prev: any) => {
                  // Check if announcement changed to reset dismissal

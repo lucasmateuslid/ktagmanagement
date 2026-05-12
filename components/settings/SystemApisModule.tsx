@@ -632,7 +632,7 @@ export const SystemApisModule = () => {
                               });
                               const data = await res.json();
                               if (!res.ok) throw new Error(data.error || 'Erro ao carregar');
-                              console.log('Transportadoras:', data);
+                              // Removed console.log due to vulnerability
                               addNotification('success', 'Conectado', `Encontrou ${data.length} transportadoras. Verifique o console.`);
                             } catch (e: any) {
                               addNotification('error', 'Erro', e.message);
