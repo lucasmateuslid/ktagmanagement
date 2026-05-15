@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { AiAssistant } from './AiAssistant';
@@ -131,6 +132,7 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const { user, customRoles, logout, isAdmin, updateProfile } = useAuth();
+  const { tenantId } = useTenant();
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast, addNotification } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -295,10 +297,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    if (user) {
-        pushService.register(user.id);
+    if (user && tenantId) {
+        pushService.register(user.id, tenantId);
     }
-  }, [user]);
+  }, [user, tenantId]);
 
   const isMapPage = location.pathname === '/map';
   const isClient = user?.role === 'client';

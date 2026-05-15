@@ -2,6 +2,7 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { TenantProvider } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { ConnectionProvider } from './contexts/ConnectionContext';
@@ -110,6 +111,7 @@ function App() {
     <NotificationProvider>
       <ConnectionProvider>
         <LanguageProvider>
+          <TenantProvider>
           <AuthProvider>
             <ThemeProvider>
               <WhitelabelStyles />
@@ -157,6 +159,7 @@ function App() {
               </HashRouter>
             </ThemeProvider>
           </AuthProvider>
+          </TenantProvider>
         </LanguageProvider>
       </ConnectionProvider>
     </NotificationProvider>

@@ -1,8 +1,10 @@
-
+/**
+ * @deprecated Fase 2 (Firebase Auth) substituiu esta implementação. Nenhum
+ * código novo deve importar daqui. Mantido apenas para evitar build break
+ * caso algum caller residual ainda referencie. Será removido em PR seguinte.
+ */
 import { User } from '../types';
 
-// Em produção, esta chave deve vir de variáveis de ambiente ou ser gerada no backend.
-// Para esta arquitetura client-side/firebase, usamos uma chave forte interna.
 const JWT_SECRET = 'ktag-pro-super-secret-key-2025-v3';
 
 function base64UrlEncode(str: string): string {
@@ -46,7 +48,7 @@ export const jwtService = {
       email: user.email,
       role: user.role,
       status: user.status,
-      companySlug: user.companySlug,
+      tenantId: user.tenantId,
       avatarInitial: user.avatarInitial,
       iat: now,
       exp: now + (12 * 60 * 60) // 12 horas
@@ -107,7 +109,7 @@ export const jwtService = {
         email: payload.email,
         role: payload.role,
         status: payload.status,
-        companySlug: payload.companySlug,
+        tenantId: payload.tenantId,
         avatarInitial: payload.avatarInitial
       } as User;
 

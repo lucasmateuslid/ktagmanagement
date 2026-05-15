@@ -38,32 +38,44 @@ try {
   console.warn("VAPID Keys not configured properly.");
 }
 
-// --- HELPERS PARA NOTIFICAÇÕES PUSH ---
+// --- HELPERS TENANT-AWARE ---
+//
+// Convenção: todas as funções abaixo recebem tenantId como 1º arg. Coleções
+// de domínio vivem em /tenants/{tenantId}/<entity>. push_subscriptions é a
+// única coleção flat (cross-tenant) e cada doc carrega seu próprio tenantId.
 
-async function getUserInfo(userId) {
+async function getUserInfo(tenantId, userId) {
   if (!userId || userId === 'SYSTEM') {
     return { name: 'Sistema', email: 'system@ktag.com' };
   }
+  if (!tenantId) {
+    return { name: 'Usuário', email: '' };
+  }
   try {
-    const userDoc = await admin.firestore().collection('ktag_users_db').doc(userId).get();
+    const userDoc = await admin.firestore()
+      .collection('tenants').doc(tenantId)
+      .collection('users').doc(userId)
+      .get();
     if (userDoc.exists) {
       const data = userDoc.data();
-      return { 
-        name: data.name || 'Usuário', 
-        email: data.email || '' 
+      return {
+        name: data.name || 'Usuário',
+        email: data.email || ''
       };
     }
   } catch (e) {
-    console.error("Error fetching user info:", e);
+    console.error('Error fetching user info:', e);
   }
   return { name: 'Usuário', email: '' };
 }
 
-async function sendNotificationToUser(userId, payload) {
+async function sendNotificationToUser(tenantId, userId, payload) {
   try {
+    // push_subscriptions é flat; filtra por userId + tenantId.
     const subscriptionsSnapshot = await admin.firestore()
-      .collection('ktag_push_subscriptions')
+      .collection('push_subscriptions')
       .where('userId', '==', userId)
+      .where('tenantId', '==', tenantId)
       .get();
 
     if (subscriptionsSnapshot.empty) return;
@@ -89,21 +101,26 @@ async function sendNotificationToUser(userId, payload) {
 
     await Promise.all(notifications);
   } catch (error) {
-    console.error(`Error sending notification to user ${userId}:`, error);
+    console.error(`Error sending notification to user ${userId}@${tenantId}:`, error);
   }
 }
 
-async function sendNotificationToPref(prefKey, payload, excludeUserId = null) {
+async function sendNotificationToPref(tenantId, prefKey, payload, excludeUserId = null) {
+  if (!tenantId) {
+    console.warn('sendNotificationToPref chamado sem tenantId — abortando.');
+    return;
+  }
   try {
-    const usersSnapshot = await admin.firestore().collection('ktag_users_db').get();
+    const usersSnapshot = await admin.firestore()
+      .collection('tenants').doc(tenantId)
+      .collection('users').get();
     const targetUserIds = [];
-    
+
     usersSnapshot.forEach(doc => {
       const user = doc.data();
       if (user.id === excludeUserId) return;
-      
       const prefs = user.notificationPreferences || {};
-      // Se não estiver definido, assume true como padrão
+      // Default true se não definido (mesmo comportamento anterior).
       if (prefs[prefKey] !== false) {
         targetUserIds.push(user.id);
       }
@@ -111,9 +128,12 @@ async function sendNotificationToPref(prefKey, payload, excludeUserId = null) {
 
     if (targetUserIds.length === 0) return;
 
-    // Busca inscrições em lotes de 30 (limite do 'in' no firestore) ou busca todas e filtra
-    const subscriptionsSnapshot = await admin.firestore().collection('ktag_push_subscriptions').get();
-    
+    // Subs do tenant inteiro (flat, filtradas por tenantId).
+    const subscriptionsSnapshot = await admin.firestore()
+      .collection('push_subscriptions')
+      .where('tenantId', '==', tenantId)
+      .get();
+
     const notifications = [];
     const pushPayload = JSON.stringify({
       title: payload.title,
@@ -137,7 +157,7 @@ async function sendNotificationToPref(prefKey, payload, excludeUserId = null) {
 
     await Promise.all(notifications);
   } catch (error) {
-    console.error(`Error sending notification for pref ${prefKey}:`, error);
+    console.error(`Error sending notification for pref ${prefKey} (${tenantId}):`, error);
   }
 }
 
@@ -251,11 +271,13 @@ exports.proxyApi = onRequest((req, res) => {
 });
 
 /**
- * Helper para registrar logs de auditoria no Firestore
+ * Helper tenant-aware para registrar audit logs em /tenants/{tid}/audit_logs.
+ * Se tenantId não estiver disponível (chamadores antigos), faz fallback em
+ * /system_audit_logs (coleção de sistema usada pelo painel super admin).
  */
-async function logAudit(action, entity, details, entityId = null, userId = 'SYSTEM') {
+async function logAudit(tenantId, action, entity, details, entityId = null, userId = 'SYSTEM') {
   try {
-    const userInfo = await getUserInfo(userId);
+    const userInfo = await getUserInfo(tenantId, userId);
 
     const logEntry = {
       id: Math.random().toString(36).substring(2, 15),
@@ -269,7 +291,10 @@ async function logAudit(action, entity, details, entityId = null, userId = 'SYST
       timestamp: Date.now()
     };
 
-    await admin.firestore().collection('ktag_audit_logs').add(logEntry);
+    const target = tenantId
+      ? admin.firestore().collection('tenants').doc(tenantId).collection('audit_logs')
+      : admin.firestore().collection('system_audit_logs');
+    await target.add(logEntry);
   } catch (error) {
     console.error('Erro ao registrar auditoria:', error);
   }
@@ -279,17 +304,23 @@ async function logAudit(action, entity, details, entityId = null, userId = 'SYST
  * TRIGGER AUTOMÁTICO: Criação de Agendamento
  */
 exports.onScheduleCreate = onDocumentCreated(
-  'ktag_schedules/{scheduleId}',
+  'tenants/{tenantId}/schedules/{scheduleId}',
   async (event) => {
     const schedule = event.data.data();
     if (!schedule) return null;
-    const scheduleId = event.params.scheduleId;
+    const { tenantId, scheduleId } = event.params;
 
-    // Auditoria
-    await logAudit('CREATE', 'Schedule', `Nova solicitação de agendamento: ${schedule.serviceType} para ${schedule.vehiclePlate}`, scheduleId, schedule.requesterId);
+    await logAudit(
+      tenantId,
+      'CREATE',
+      'Schedule',
+      `Nova solicitação de agendamento: ${schedule.serviceType} para ${schedule.vehiclePlate}`,
+      scheduleId,
+      schedule.requesterId
+    );
 
     try {
-      await sendNotificationToPref('newTechnicalRequest', {
+      await sendNotificationToPref(tenantId, 'newTechnicalRequest', {
         title: 'Nova Solicitação Técnica 🛠️',
         body: `Placa ${schedule.vehiclePlate} (${schedule.serviceType}) solicitada por ${schedule.requesterName}`,
         url: '/schedules'
@@ -306,93 +337,88 @@ exports.onScheduleCreate = onDocumentCreated(
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
  */
 exports.onScheduleUpdate = onDocumentUpdated(
-  'ktag_schedules/{scheduleId}',
+  'tenants/{tenantId}/schedules/{scheduleId}',
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
-    const scheduleId = event.params.scheduleId;
+    const { tenantId, scheduleId } = event.params;
 
     if (!newData || !previousData) return null;
 
-    // Auditoria geral de alteração
-    await logAudit('UPDATE', 'Schedule', `Agendamento alterado: ${newData.vehiclePlate}`, scheduleId, newData.updatedBy || 'SYSTEM');
+    await logAudit(tenantId, 'UPDATE', 'Schedule', `Agendamento alterado: ${newData.vehiclePlate}`, scheduleId, newData.updatedBy || 'SYSTEM');
 
-    // Auditoria de mudança de status
-    if (newData.status !== previousData.status) {
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await logAudit('UPDATE', 'Schedule', `Status alterado de "${previousData.status}" para "${newData.status}" por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
-        
-        // Notifica administradores sobre qualquer mudança de status importante
-        await sendNotificationToPref('schedulingUpdates', {
+    const status = newData.status;
+    const plate = newData.vehiclePlate;
+
+    if (status !== previousData.status) {
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await logAudit(tenantId, 'UPDATE', 'Schedule', `Status alterado de "${previousData.status}" para "${status}" por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
+
+        await sendNotificationToPref(tenantId, 'schedulingUpdates', {
           title: 'Atualização de Agendamento 📋',
           body: `Placa ${plate}: Status alterado para "${status}" por ${updaterInfo.name}`,
           url: '/schedules'
         }, newData.updatedBy);
     }
 
-    if (newData.status === previousData.status) return null;
+    if (status === previousData.status) return null;
 
     const requesterId = newData.requesterId;
     if (!requesterId) return null;
 
-    const status = newData.status;
-    const plate = newData.vehiclePlate;
-
     try {
       if (status === 'Concluída') {
-        // Auditoria de conclusão
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await logAudit('UPDATE', 'Schedule', `Agendamento concluído: ${plate} por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await logAudit(tenantId, 'UPDATE', 'Schedule', `Agendamento concluído: ${plate} por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
 
-        await sendNotificationToUser(requesterId, {
+        await sendNotificationToUser(tenantId, requesterId, {
           title: 'Serviço Concluído 🎉',
           body: `O serviço no veículo ${plate} foi finalizado por ${updaterInfo.name}.`,
           url: '/schedules'
         });
-        await sendNotificationToPref('serviceCompleted', {
+        await sendNotificationToPref(tenantId, 'serviceCompleted', {
           title: 'Serviço Concluído 🎉',
           body: `O serviço no veículo ${plate} foi finalizado por ${updaterInfo.name}.`,
           url: '/schedules'
         }, requesterId);
       } else if (status === 'Autorizada' || status === 'Em orçamento') {
-        await sendNotificationToPref('schedulingNeedsConfirmation', {
+        await sendNotificationToPref(tenantId, 'schedulingNeedsConfirmation', {
           title: 'Aguardando Confirmação ⏳',
           body: `O agendamento para ${plate} (${status}) precisa ser confirmado.`,
           url: '/schedules'
         });
       } else if (status === 'Técnico no local' || status === 'Cliente no local') {
-        await sendNotificationToPref('schedulingNeedsCompletion', {
+        await sendNotificationToPref(tenantId, 'schedulingNeedsCompletion', {
           title: status === 'Cliente no local' ? 'Cliente no Local 📍' : 'Técnico no Local 📍',
           body: status === 'Cliente no local' ? `O técnico informou que o cliente chegou para o veículo ${plate}.` : `O técnico informou chegada para atender o veículo ${plate}.`,
           url: '/schedules'
         });
       } else if (status === 'Cancelada') {
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await sendNotificationToUser(requesterId, {
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await sendNotificationToUser(tenantId, requesterId, {
           title: 'Solicitação Cancelada ❌',
           body: `O serviço para ${plate} foi cancelado por ${updaterInfo.name}. Motivo: ${newData.cancellationReason || 'Não informado'}`,
           url: '/schedules'
         });
       } else if (status === 'Confirmada') {
-        // Auditoria de confirmação
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await logAudit('UPDATE', 'Schedule', `Agendamento confirmado para ${newData.confirmedDate} às ${newData.confirmedTime} por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await logAudit(tenantId, 'UPDATE', 'Schedule', `Agendamento confirmado para ${newData.confirmedDate} às ${newData.confirmedTime} por ${updaterInfo.name}`, scheduleId, newData.updatedBy || 'SYSTEM');
 
-        await sendNotificationToUser(requesterId, {
+        await sendNotificationToUser(tenantId, requesterId, {
           title: 'Agendamento Confirmado! ✅',
           body: `Sua solicitação para a placa ${plate} foi agendada para ${newData.confirmedDate} às ${newData.confirmedTime}.`,
           url: '/schedules'
         });
       } else if (status === 'Reagendada') {
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await sendNotificationToUser(requesterId, {
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await sendNotificationToUser(tenantId, requesterId, {
           title: 'Agendamento Alterado 🕒',
           body: `Nova data/hora definida para o veículo ${plate} por ${updaterInfo.name}: ${newData.confirmedDate} às ${newData.confirmedTime}.`,
           url: '/schedules'
         });
       } else if (status === 'Em análise') {
-        const updaterInfo = await getUserInfo(newData.updatedBy);
-        await sendNotificationToUser(requesterId, {
+        const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+        await sendNotificationToUser(tenantId, requesterId, {
           title: 'Em Análise 🔍',
           body: `${updaterInfo.name} está analisando sua solicitação para ${plate}.`,
           url: '/schedules'
@@ -410,24 +436,22 @@ exports.onScheduleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Atualização de Veículo (Roubo)
  */
 exports.onVehicleUpdate = onDocumentUpdated(
-  'ktag_vehicles/{vehicleId}',
+  'tenants/{tenantId}/vehicles/{vehicleId}',
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
-    const vehicleId = event.params.vehicleId;
+    const { tenantId, vehicleId } = event.params;
 
     if (!newData || !previousData) return null;
 
-    // Auditoria geral de alteração
-    const updaterInfo = await getUserInfo(newData.updatedBy);
-    await logAudit('UPDATE', 'Vehicle', `Veículo alterado: ${newData.plate} por ${updaterInfo.name}`, vehicleId, newData.updatedBy || 'SYSTEM');
+    const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
+    await logAudit(tenantId, 'UPDATE', 'Vehicle', `Veículo alterado: ${newData.plate} por ${updaterInfo.name}`, vehicleId, newData.updatedBy || 'SYSTEM');
 
     if (newData.status === 'stolen' && previousData.status !== 'stolen') {
-      // Auditoria de sinistro
-      await logAudit('REPORT', 'Vehicle', `ALERTA: Veículo marcado como roubado/furtado: ${newData.plate} por ${updaterInfo.name}`, vehicleId, newData.updatedBy || 'SYSTEM');
+      await logAudit(tenantId, 'REPORT', 'Vehicle', `ALERTA: Veículo marcado como roubado/furtado: ${newData.plate} por ${updaterInfo.name}`, vehicleId, newData.updatedBy || 'SYSTEM');
 
       try {
-        await sendNotificationToPref('theftRegistered', {
+        await sendNotificationToPref(tenantId, 'theftRegistered', {
           title: '🚨 Roubo Cadastrado',
           body: `O veículo ${newData.plate} foi marcado como roubado por ${updaterInfo.name}!`,
           url: '/security'
@@ -446,17 +470,16 @@ exports.onVehicleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Criação de Feedback/Comentário
  */
 exports.onFeedbackCreate = onDocumentCreated(
-  'ktag_feedbacks/{feedbackId}',
+  'tenants/{tenantId}/feedbacks/{feedbackId}',
   async (event) => {
     const feedback = event.data.data();
     if (!feedback) return null;
-    const feedbackId = event.params.feedbackId;
+    const { tenantId, feedbackId } = event.params;
 
-    // Auditoria
-    await logAudit('CREATE', 'Feedback', `Novo feedback enviado por ${feedback.userName}: ${feedback.type}`, feedbackId, feedback.userId);
+    await logAudit(tenantId, 'CREATE', 'Feedback', `Novo feedback enviado por ${feedback.userName}: ${feedback.type}`, feedbackId, feedback.userId);
 
     try {
-      await sendNotificationToPref('newComment', {
+      await sendNotificationToPref(tenantId, 'newComment', {
         title: 'Novo Comentário/Feedback 💬',
         body: `${feedback.userName} enviou um novo comentário.`,
         url: '/feedback'
@@ -572,80 +595,319 @@ async function fetchXadtagLocation(tag, settings) {
 }
 
 /**
- * RASTREIO AGENDADO: Atualiza todos os equipamentos a cada 3 horas
+ * RASTREIO AGENDADO: Atualiza equipamentos a cada 3h.
+ *
+ * Tenant-aware: itera /tenants/* ativos e, para cada um, lê settings/tags/vehicles
+ * do PRÓPRIO tenant. Credenciais K-TAG/XADTAG nunca vazam entre tenants.
+ *
+ * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write).
+ * 3h é confortável até ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
  */
 exports.scheduledTagUpdate = onSchedule("every 3 hours", async (event) => {
   const db = admin.firestore();
-  
-  try {
-    // 1. Get Settings
-    const settingsDoc = await db.collection('ktag_settings_v3').doc('config').get();
-    if (!settingsDoc.exists) {
-      console.warn("Settings not found. Skipping scheduled update.");
-      return;
-    }
-    const settings = settingsDoc.data();
-    
-    // 2. Get All Tags
-    const tagsSnapshot = await db.collection('ktag_tags').get();
-    const allTags = [];
-    tagsSnapshot.forEach(doc => allTags.push({ ...doc.data(), id: doc.id }));
-    
-    if (allTags.length === 0) {
-      console.log("No tags found to update.");
-      return;
-    }
-    
-    console.log(`[Scheduled Update] Updating ${allTags.length} tags`);
-    
-    // 3. Fetch and Update all tags
-    let updatedCount = 0;
-    for (const tag of allTags) {
-      try {
-        let locationResult = null;
-        
-        if (tag.type === 'XADTAG') {
-          locationResult = await fetchXadtagLocation(tag, settings);
-        } else {
-          locationResult = await fetchKtagLocation(tag, settings);
-        }
-        
-        if (locationResult) {
-          // Find vehicle associated with this tag
-          const vehiclesSnapshot = await db.collection('ktag_vehicles')
-            .where('tagId', '==', tag.id)
-            .limit(1)
-            .get();
-            
-          if (!vehiclesSnapshot.empty) {
-            const vehicleDoc = vehiclesSnapshot.docs[0];
-            await vehicleDoc.ref.update({ lastPosition: locationResult });
-            
-            // Add to history subcollection
-            await vehicleDoc.ref.collection('history').doc(locationResult.id || Math.random().toString(36).substring(2, 15)).set({
-                ...locationResult,
-                tagId: tag.id,
-                vehicleId: vehicleDoc.id,
-                savedAt: Date.now()
-            });
 
-            updatedCount++;
-          }
-        }
-        
-        // Delay de 2 segundos entre requisições para evitar 429
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-      } catch (error) {
-        console.error(`Error updating tag ${tag.accessoryId || tag.traqcareId}:`, error.message);
+  let totalUpdated = 0;
+  let totalTenantsProcessed = 0;
+
+  try {
+    const tenantsSnap = await db.collection('tenants').where('active', '==', true).get();
+    if (tenantsSnap.empty) {
+      console.log('[Scheduled Update] Nenhum tenant ativo. Encerrando.');
+      return;
+    }
+
+    for (const tenantDoc of tenantsSnap.docs) {
+      const tenantId = tenantDoc.id;
+      try {
+        const tenantUpdated = await updateTagsForTenant(db, tenantId);
+        totalUpdated += tenantUpdated;
+        totalTenantsProcessed++;
+      } catch (e) {
+        console.error(`[Scheduled Update] tenant=${tenantId} falhou:`, e.message);
       }
     }
-    
-    console.log(`[Scheduled Update] Successfully updated ${updatedCount} vehicles.`);
-    
+
+    console.log(`[Scheduled Update] ${totalUpdated} veículos atualizados em ${totalTenantsProcessed} tenants.`);
   } catch (error) {
     console.error('Critical error in scheduledTagUpdate:', error);
   }
+});
+
+async function updateTagsForTenant(db, tenantId) {
+  const tenantRef = db.collection('tenants').doc(tenantId);
+
+  // 1. Settings do tenant — credenciais K-TAG/XADTAG isoladas.
+  const settingsDoc = await tenantRef.collection('settings').doc('config').get();
+  if (!settingsDoc.exists) {
+    console.log(`[${tenantId}] settings/config ausente — pulando.`);
+    return 0;
+  }
+  const settings = settingsDoc.data();
+
+  // 2. Tags do tenant.
+  const tagsSnapshot = await tenantRef.collection('tags').get();
+  if (tagsSnapshot.empty) {
+    return 0;
+  }
+  const allTags = [];
+  tagsSnapshot.forEach(doc => allTags.push({ ...doc.data(), id: doc.id }));
+
+  console.log(`[${tenantId}] Atualizando ${allTags.length} tags`);
+
+  let updatedCount = 0;
+  for (const tag of allTags) {
+    try {
+      let locationResult = null;
+      if (tag.type === 'XADTAG') {
+        if (!settings.traqcareToken) continue;
+        locationResult = await fetchXadtagLocation(tag, settings);
+      } else {
+        if (!settings.ktagUrl || !settings.ktagUser) continue;
+        locationResult = await fetchKtagLocation(tag, settings);
+      }
+
+      if (locationResult) {
+        const vehiclesSnapshot = await tenantRef
+          .collection('vehicles')
+          .where('tagId', '==', tag.id)
+          .limit(1)
+          .get();
+
+        if (!vehiclesSnapshot.empty) {
+          const vehicleDoc = vehiclesSnapshot.docs[0];
+          await vehicleDoc.ref.update({ lastPosition: locationResult });
+
+          await vehicleDoc.ref.collection('history')
+            .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
+            .set({
+              ...locationResult,
+              tagId: tag.id,
+              vehicleId: vehicleDoc.id,
+              tenantId,
+              savedAt: Date.now()
+            });
+
+          updatedCount++;
+        }
+      }
+
+      // Throttle 2s entre requests externos (rate-limit das APIs K-TAG/XADTAG).
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error) {
+      console.error(`[${tenantId}] tag ${tag.accessoryId || tag.traqcareId} falhou:`, error.message);
+    }
+  }
+
+  return updatedCount;
+}
+
+// ============================================================
+// Multi-tenant: sync de custom claims + admin user provisioning
+// ============================================================
+
+/**
+ * Sincroniza customClaims do Firebase Auth com o doc do usuário no tenant.
+ * Roda em CREATE e UPDATE de /tenants/{tenantId}/users/{uid}.
+ *
+ * Por que precisa: as Firestore Rules e qualquer middleware server-side
+ * usam request.auth.token.tenantId / token.role como atalho barato (sem
+ * get() do user doc a cada read). Este trigger mantém o token sincronizado
+ * com o estado canônico do banco.
+ */
+async function syncUserClaims(uid, tenantId, role, status) {
+  if (!uid || !tenantId) return;
+  try {
+    const isApproved = status === 'approved';
+    await admin.auth().setCustomUserClaims(uid, {
+      tenantId,
+      role: role || 'user',
+      approved: isApproved,
+    });
+  } catch (e) {
+    console.error('Falha ao setar customClaims', { uid, tenantId, role, error: e.message });
+  }
+}
+
+exports.onTenantUserCreate = onDocumentCreated(
+  'tenants/{tenantId}/users/{uid}',
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return null;
+    await syncUserClaims(event.params.uid, event.params.tenantId, data.role, data.status);
+    await logAudit(event.params.tenantId, 'CREATE', 'User', `Usuário provisionado: ${data.email}`, event.params.uid, data.id || 'SYSTEM');
+    return null;
+  }
+);
+
+exports.onTenantUserUpdate = onDocumentUpdated(
+  'tenants/{tenantId}/users/{uid}',
+  async (event) => {
+    const after = event.data?.after?.data();
+    const before = event.data?.before?.data();
+    if (!after) return null;
+
+    const roleChanged = before?.role !== after.role;
+    const statusChanged = before?.status !== after.status;
+    if (roleChanged || statusChanged) {
+      await syncUserClaims(event.params.uid, event.params.tenantId, after.role, after.status);
+      await logAudit(
+        event.params.tenantId,
+        'UPDATE',
+        'User',
+        `Permissões atualizadas: role=${after.role}, status=${after.status}`,
+        event.params.uid,
+        after.updatedBy || 'SYSTEM'
+      );
+    }
+    return null;
+  }
+);
+
+/**
+ * Resolve quem é o caller e em que tenant ele está, validando que é admin
+ * daquele tenant. Throws HttpsError se não autorizado.
+ */
+async function requireTenantAdmin(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Login obrigatório.');
+  }
+  const callerUid = request.auth.uid;
+  const tenantId = request.data?.tenantId || request.auth.token?.tenantId;
+  if (!tenantId) {
+    throw new HttpsError('invalid-argument', 'tenantId não informado.');
+  }
+  const callerDocRef = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(callerUid);
+  const snap = await callerDocRef.get();
+  if (!snap.exists) {
+    throw new HttpsError('permission-denied', 'Usuário não pertence a este tenant.');
+  }
+  const data = snap.data();
+  if (!['admin', 'admin_tecnico', 'superadmin'].includes(data.role)) {
+    throw new HttpsError('permission-denied', 'Apenas administradores podem executar esta operação.');
+  }
+  return { tenantId, callerUid };
+}
+
+function generateRandomPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz!@#$%';
+  let result = '';
+  for (let i = 0; i < 14; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * Admin do tenant cria um novo usuário (Auth + doc) com senha temporária.
+ * Retorna { uid, email, password } — frontend exibe e envia ao colaborador.
+ */
+exports.createTenantUser = onCall(async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+
+  const { email, name, role, customRoleId, cpf, phone, pixKey, technicianId } = request.data || {};
+  if (!email || !name) {
+    throw new HttpsError('invalid-argument', 'email e name são obrigatórios.');
+  }
+  const cleanEmail = String(email).toLowerCase().trim();
+  const password = generateRandomPassword();
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().createUser({
+      email: cleanEmail,
+      password,
+      displayName: name,
+    });
+  } catch (e) {
+    if (e.code === 'auth/email-already-exists') {
+      throw new HttpsError('already-exists', 'Já existe uma conta com este e-mail.');
+    }
+    throw new HttpsError('internal', `Falha ao criar usuário: ${e.message}`);
+  }
+
+  const uid = userRecord.uid;
+  const userDoc = {
+    id: uid,
+    email: cleanEmail,
+    name, // O frontend criptografa name antes do write em fluxo normal, mas aqui
+          // é escrito em texto e o trigger onTenantUserCreate ainda assim funciona
+          // pois apenas lê role/status. UI deve criptografar via updateProfile
+          // logo após onboarding ou o admin deve editar e re-salvar.
+          // TODO: mover criptografia para Cloud Function (admin SDK) — requer
+          // chave por tenant em Secret Manager. Fora de escopo Fase 2.
+    role: role || 'user',
+    status: 'approved',
+    tenantId,
+    customRoleId: customRoleId || undefined,
+    cpf: cpf || undefined,
+    phone: phone || undefined,
+    pixKey: pixKey || undefined,
+    technicianId: technicianId || undefined,
+    createdAt: Date.now(),
+  };
+  Object.keys(userDoc).forEach((k) => userDoc[k] === undefined && delete userDoc[k]);
+
+  await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid).set(userDoc);
+
+  // syncUserClaims roda via trigger, mas chamamos aqui para garantir que o token
+  // já esteja válido caso o admin precise impersonate em seguida.
+  await syncUserClaims(uid, tenantId, userDoc.role, userDoc.status);
+
+  await logAudit(tenantId, 'CREATE', 'User', `Admin criou usuário ${cleanEmail} (${userDoc.role})`, uid, request.auth.uid);
+
+  return { uid, email: cleanEmail, password };
+});
+
+/**
+ * Admin do tenant reseta a senha de um usuário do mesmo tenant.
+ */
+exports.resetTenantUserPassword = onCall(async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+  const { userId } = request.data || {};
+  if (!userId) {
+    throw new HttpsError('invalid-argument', 'userId é obrigatório.');
+  }
+
+  const targetSnap = await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId).get();
+  if (!targetSnap.exists) {
+    throw new HttpsError('not-found', 'Usuário não encontrado neste tenant.');
+  }
+
+  const password = generateRandomPassword();
+  try {
+    await admin.auth().updateUser(userId, { password });
+  } catch (e) {
+    throw new HttpsError('internal', `Falha ao atualizar senha: ${e.message}`);
+  }
+
+  await logAudit(tenantId, 'UPDATE', 'User', `Admin resetou senha de ${targetSnap.data().email}`, userId, request.auth.uid);
+
+  return { userId, email: targetSnap.data().email, password };
+});
+
+/**
+ * Admin do tenant remove um usuário (Auth + doc).
+ */
+exports.deleteTenantUser = onCall(async (request) => {
+  const { tenantId, callerUid } = await requireTenantAdmin(request);
+  const { userId } = request.data || {};
+  if (!userId) {
+    throw new HttpsError('invalid-argument', 'userId é obrigatório.');
+  }
+  if (userId === callerUid) {
+    throw new HttpsError('failed-precondition', 'Você não pode excluir sua própria conta.');
+  }
+  try {
+    await admin.auth().deleteUser(userId);
+  } catch (e) {
+    // Se o usuário já não existe no Auth, segue para apagar o doc.
+    if (e.code !== 'auth/user-not-found') {
+      console.warn('deleteUser auth error:', e.message);
+    }
+  }
+  await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId).delete();
+  await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId}`, userId, callerUid);
+  return { ok: true };
 });
 
 exports.sendPushNotification = onCall(
@@ -657,46 +919,56 @@ exports.sendPushNotification = onCall(
       vapidKeys.privateKey
     );
 
-    const { userId, title, body, url } = request.data;
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Login obrigatório.');
+    }
 
+    const tenantId = request.data?.tenantId || request.auth.token?.tenantId;
+    if (!tenantId) {
+      throw new HttpsError('invalid-argument', 'tenantId não informado.');
+    }
+
+    const { userId, title, body, url } = request.data;
     if (!userId || !title || !body) {
       throw new HttpsError("invalid-argument", "Missing userId, title or body");
     }
 
-  try {
-    const subscriptionsSnapshot = await admin.firestore()
-      .collection('ktag_push_subscriptions')
-      .where('userId', '==', userId)
-      .get();
+    try {
+      // Filtra por tenantId para evitar push de um tenant para outro.
+      const subscriptionsSnapshot = await admin.firestore()
+        .collection('push_subscriptions')
+        .where('userId', '==', userId)
+        .where('tenantId', '==', tenantId)
+        .get();
 
-    if (subscriptionsSnapshot.empty) {
-      return { success: false, message: 'User has no push subscriptions' };
+      if (subscriptionsSnapshot.empty) {
+        return { success: false, message: 'User has no push subscriptions' };
+      }
+
+      const notifications = [];
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: url || '/',
+        icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
+      });
+
+      subscriptionsSnapshot.forEach(doc => {
+        const subscription = doc.data().subscription;
+        const pushPromise = webpush.sendNotification(subscription, payload)
+          .catch(err => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              return doc.ref.delete();
+            }
+          });
+        notifications.push(pushPromise);
+      });
+
+      await Promise.all(notifications);
+      return { success: true, count: notifications.length };
+
+    } catch (error) {
+      console.error('Error in sendPushNotification:', error);
+      throw new HttpsError('internal', 'Error sending notifications');
     }
-
-    const notifications = [];
-    const payload = JSON.stringify({
-      title: title,
-      body: body,
-      url: url || '/',
-      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png'
-    });
-
-    subscriptionsSnapshot.forEach(doc => {
-      const subscription = doc.data().subscription;
-      const pushPromise = webpush.sendNotification(subscription, payload)
-        .catch(err => {
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            return doc.ref.delete();
-          }
-        });
-      notifications.push(pushPromise);
-    });
-
-    await Promise.all(notifications);
-    return { success: true, count: notifications.length };
-
-  } catch (error) {
-    console.error('Error in sendPushNotification:', error);
-    throw new HttpsError('internal', 'Error sending notifications');
-  }
 });

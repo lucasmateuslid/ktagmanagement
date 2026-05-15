@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment files (mantém apenas o .example)
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log
+firebase-debug.*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase
+.firebase/
+firebase-service-account*.json

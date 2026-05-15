@@ -21,20 +21,48 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  /** @deprecated A senha é gerenciada pelo Firebase Auth desde a Fase 2 — nunca persistir no Firestore. */
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | string;
+  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | 'superadmin' | string;
   customRoleId?: string;
   technicianId?: string;
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
-  companySlug?: string;
+  tenantId?: string;
+  companySlug?: string; // @deprecated — substituído por tenantId; mantido por compat até migração concluir
   exemptFromKtagAlert?: boolean;
   createdAt?: number;
-  cpf?: string; 
+  cpf?: string;
   avatarInitial?: string;
   avatarUrl?: string;
   pixKey?: string;
   notificationPreferences?: UserNotificationPreferences;
+}
+
+export type TenantPlan = 'basic' | 'pro' | 'enterprise';
+
+export interface TenantIntegrationFlags {
+  ktag?: { enabled: boolean };
+  hinova?: { enabled: boolean };
+  melhorEnvio?: { enabled: boolean };
+  ai?: { provider?: string };
+}
+
+export interface TenantSettings {
+  maxUsers?: number;
+  features?: string[];
+  integrations?: TenantIntegrationFlags;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  plan: TenantPlan;
+  active: boolean;
+  ownerUserId?: string;
+  createdAt: number;
+  settings?: TenantSettings;
 }
 
 export interface Company {

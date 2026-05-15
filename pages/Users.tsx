@@ -6,7 +6,10 @@ import { User } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
 import { securityService } from '../services/security';
+import { functions } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DataTable, DataTableColumn } from '../components/ui/basic-data-table';
 import { 
@@ -41,6 +44,7 @@ export const Users = () => {
   const { addNotification } = useNotification();
   const { t } = useLanguage();
   const { isAdmin, user: currentUser, customRoles } = useAuth();
+  const { tenantId } = useTenant();
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -92,67 +96,75 @@ export const Users = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) {
-        addNotification('error', 'Erro', 'Nome e E-mail são obrigatórios.');
-        return;
+      addNotification('error', 'Erro', 'Nome e E-mail são obrigatórios.');
+      return;
     }
 
     try {
       const isEdit = !!selectedUser;
-      const userId = isEdit ? selectedUser!.id! : crypto.randomUUID();
-      
-      let generatedPassword = '';
-      let hashedPassword = '';
-
-      // Se for novo usuário, gera senha e hash
-      if (!isEdit) {
-          generatedPassword = securityService.generateStrongPassword();
-          hashedPassword = await securityService.hashPassword(generatedPassword);
-      }
-
-      const userToSave: User = { 
-        ...formData as User, 
-        id: userId, 
-        createdAt: formData.createdAt || Date.now(), 
-        status: formData.status || 'approved',
-        email: formData.email!.toLowerCase().trim()
-      };
+      const cleanEmail = formData.email!.toLowerCase().trim();
 
       if (isEdit) {
+        // Edit: doc já existe, uid permanece. Apenas atualiza campos do doc.
+        const userId = selectedUser!.id!;
+        const userToSave: Partial<User> = { ...formData };
+        delete (userToSave as any).password;
         await storage.updateUserProfile(userId, userToSave);
-        await storage.updateUserStatus(userId, userToSave.status!);
+        if (userToSave.status) await storage.updateUserStatus(userId, userToSave.status);
+        addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso.');
       } else {
-        userToSave.password = hashedPassword; // Salva o Hash
-        await storage.registerUserRequest(userToSave);
-        
-        // Abre modal de credenciais
-        setNewCredentials({ email: userToSave.email, password: generatedPassword });
+        // Create: precisa de Firebase Auth user → Cloud Function callable.
+        if (!functions) {
+          addNotification('error', 'Indisponível', 'Serviço de criação de usuários offline.');
+          return;
+        }
+        const createFn = httpsCallable<any, { uid: string; email: string; password: string }>(
+          functions,
+          'createTenantUser'
+        );
+        const res = await createFn({
+          tenantId,
+          email: cleanEmail,
+          name: formData.name,
+          role: formData.role || 'user',
+          customRoleId: formData.customRoleId,
+          cpf: formData.cpf,
+          phone: formData.phone,
+          pixKey: formData.pixKey,
+          technicianId: formData.technicianId,
+        });
+        setNewCredentials({ email: res.data.email, password: res.data.password });
         setIsCredentialsModalOpen(true);
+        addNotification('success', 'Usuário Criado', 'Credenciais geradas — envie ao colaborador.');
       }
-      
-      storage.logAction(currentUser, isEdit ? 'UPDATE' : 'CREATE', 'User', `${isEdit ? 'Editou' : 'Criou'} o colaborador ${userToSave.name}`, userId);
-      
-      addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso.');
+
       setIsModalOpen(false);
       loadData(true);
-    } catch (err) { 
-        addNotification('error', 'Erro', 'Falha ao salvar o colaborador.'); 
+    } catch (err: any) {
+      const msg = err?.message || 'Falha ao salvar o colaborador.';
+      addNotification('error', 'Erro', msg);
     }
   };
 
   const handleDeleteUser = async (userToDelete: User) => {
-      if (userToDelete.id === currentUser?.id) {
-          addNotification('error', 'Ação Bloqueada', 'Você não pode excluir sua própria conta administrativa.');
-          return;
-      }
+    if (userToDelete.id === currentUser?.id) {
+      addNotification('error', 'Ação Bloqueada', 'Você não pode excluir sua própria conta administrativa.');
+      return;
+    }
 
-      try {
-          await storage.deleteUser(userToDelete.id);
-          storage.logAction(currentUser, 'DELETE', 'User', `Excluiu o usuário ${userToDelete.name}`, userToDelete.id);
-          addNotification('success', 'Usuário Excluído', 'O registro foi removido com sucesso.');
-          loadData(true);
-      } catch (err) {
-          addNotification('error', 'Erro', 'Falha ao excluir usuário.');
+    try {
+      if (functions) {
+        const deleteFn = httpsCallable<any, { ok: boolean }>(functions, 'deleteTenantUser');
+        await deleteFn({ tenantId, userId: userToDelete.id });
+      } else {
+        // Fallback degradado: apaga só o doc (Auth user fica órfão).
+        await storage.deleteUser(userToDelete.id);
       }
+      addNotification('success', 'Usuário Excluído', 'O registro foi removido com sucesso.');
+      loadData(true);
+    } catch (err: any) {
+      addNotification('error', 'Erro', err?.message || 'Falha ao excluir usuário.');
+    }
   };
 
   const handleApproveUser = async (userToApprove: User) => {
@@ -167,20 +179,21 @@ export const Users = () => {
   };
 
   const handleResetPassword = async (userId: string, userName: string, userEmail: string) => {
+    if (!functions) {
+      addNotification('error', 'Indisponível', 'Serviço offline.');
+      return;
+    }
     try {
-        const newPassword = securityService.generateStrongPassword();
-        const newHash = await securityService.hashPassword(newPassword);
-
-        await storage.updateUserProfile(userId, { password: newHash });
-        storage.logAction(currentUser, 'UPDATE', 'User', `Resetou a senha do usuário ${userName}`, userId);
-        
-        // Mostra credenciais
-        setNewCredentials({ email: userEmail, password: newPassword });
-        setIsCredentialsModalOpen(true);
-
-        loadData(true);
-    } catch (e) {
-        addNotification('error', 'Erro', 'Falha ao resetar senha.');
+      const resetFn = httpsCallable<any, { userId: string; email: string; password: string }>(
+        functions,
+        'resetTenantUserPassword'
+      );
+      const res = await resetFn({ tenantId, userId });
+      setNewCredentials({ email: res.data.email, password: res.data.password });
+      setIsCredentialsModalOpen(true);
+      loadData(true);
+    } catch (e: any) {
+      addNotification('error', 'Erro', e?.message || 'Falha ao resetar senha.');
     }
   };
 

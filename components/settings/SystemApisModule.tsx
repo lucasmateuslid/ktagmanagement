@@ -222,23 +222,28 @@ export const SystemApisModule = () => {
     
     setPwdLoading(true);
     try {
-        const dbUser = await storage.findUserByEmail(currentUser.email);
-        if (!dbUser) return;
-
-        const isCurrentValid = await securityService.verifyPassword(pwdForm.current, dbUser.password || '');
-        const isLegacyValid = !isCurrentValid && (dbUser.password === pwdForm.current);
-
-        if (!isCurrentValid && !isLegacyValid) {
-             addNotification('error', 'Erro', 'Senha atual incorreta.'); 
-             return; 
+        // Firebase Auth exige reauthenticate antes de updatePassword. Aqui fazemos
+        // tudo em uma única tentativa: signIn dispara verificação de senha atual,
+        // e updateProfile chama updatePassword na sequência.
+        const { signInWithEmailAndPassword } = await import('firebase/auth');
+        const { auth } = await import('../../services/firebase');
+        if (!auth) {
+          addNotification('error', 'Erro', 'Serviço de autenticação indisponível.');
+          return;
+        }
+        try {
+          await signInWithEmailAndPassword(auth, currentUser.email, pwdForm.current);
+        } catch (e: any) {
+          addNotification('error', 'Erro', 'Senha atual incorreta.');
+          return;
         }
 
         await updateProfile({ password: pwdForm.new });
 
         addNotification('success', 'Sucesso', 'Sua senha foi alterada com segurança.');
         setPwdForm({ current: '', new: '', confirm: '' });
-    } catch (e) {
-        addNotification('error', 'Erro', 'Falha ao atualizar senha.');
+    } catch (e: any) {
+        addNotification('error', 'Erro', e?.message || 'Falha ao atualizar senha.');
     } finally { setPwdLoading(false); }
   };
 
