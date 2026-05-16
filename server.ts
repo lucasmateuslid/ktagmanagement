@@ -238,16 +238,72 @@ async function performReverseGeocoding(lat: number, lng: number, geocoderPrefere
   return await executeMultiProvider('reverse', { lat, lng }, geocoderPreferences);
 }
 
+// ---------------------------------------------------------------
+// Tenant resolution middleware (Fase 5)
+// Extrai o tenant a partir do hostname (subdomínio). Em dev (localhost),
+// aceita header X-Tenant-Id ou query ?tenant=. Não consulta Firestore — apenas
+// popula req.tenantId. Rotas que precisam de credenciais por-tenant podem
+// fazer o lookup adicional sob demanda (cache server-side recomendado).
+// ---------------------------------------------------------------
+
+const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth']);
+
+function extractTenantFromHostname(hostname: string): string {
+  if (!hostname) return 'default';
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost')) {
+    return 'localhost';
+  }
+  const parts = hostname.split('.');
+  if (parts.length < 3) return 'default';
+  return parts[0].toLowerCase();
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      tenantId?: string;
+      isAdminPanel?: boolean;
+    }
+  }
+}
+
+function resolveTenant(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const headerTenant = (req.headers['x-tenant-id'] as string | undefined)?.trim().toLowerCase();
+  const queryTenant = (req.query.tenant as string | undefined)?.trim().toLowerCase();
+  const hostTenant = extractTenantFromHostname(req.hostname || (req.headers.host as string) || '');
+
+  let tenantId = hostTenant;
+  if (tenantId === 'localhost') {
+    tenantId = headerTenant || queryTenant || (process.env.DEFAULT_DEV_TENANT || 'dev-tenant');
+  }
+
+  req.tenantId = tenantId;
+  req.isAdminPanel = tenantId === 'admin';
+
+  // Bloqueia subdomínios reservados (exceto 'admin', que tem rota própria).
+  if (RESERVED_SUBDOMAINS.has(tenantId) && tenantId !== 'admin') {
+    return res.status(403).json({ error: `Subdomínio reservado: ${tenantId}` });
+  }
+  next();
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 3000.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
   app.use(express.json());
 
-  // API routes FIRST
+  // Importante: trust proxy para que req.hostname respeite o X-Forwarded-Host
+  // do Cloud Run / load balancer.
+  app.set('trust proxy', true);
+
+  app.use(resolveTenant);
+
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+    res.json({ status: "ok", tenantId: req.tenantId });
   });
 
   app.post("/api/geocode", async (req, res) => {

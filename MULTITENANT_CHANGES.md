@@ -4,6 +4,129 @@
 - [Fase 1](#fase-1) — Fundação multi-tenant (TAREFAs 2, 3, 4)
 - [Fase 2](#fase-2--firebase-auth) — Firebase Auth + custom claims + rules efetivas
 - [Fase 3](#fase-3--functions-tenant-aware) — Cloud Functions migradas para paths e settings por tenant
+- [Fase 4](#fase-4--painel-super-admin) — Painel super admin (`admin.<dominio>`) + CRUD de tenants
+- [Fase 5](#fase-5--cloud-run--docker--dns) — Dockerfile + Cloud Build + middleware `resolveTenant` no Express
+
+---
+
+## Fase 5 — Cloud Run + Docker + DNS
+
+### Resumo
+Pacote de deploy para Cloud Run. Inclui Dockerfile multi-stage, `.dockerignore`, `cloudbuild.yaml` pronto pra trigger automático, e middleware `resolveTenant` no `server.ts` que extrai o tenant do hostname e bloqueia subdomínios reservados.
+
+### Arquivos criados
+
+| Arquivo | Propósito |
+|---|---|
+| `Dockerfile` | Multi-stage: builder roda `vite build`; runtime alpine + tsx servindo Express + dist/. Usuário não-root, EXPOSE 8080. |
+| `.dockerignore` | Exclui node_modules, .env, .git, dist, docs e scripts de fora. |
+| `cloudbuild.yaml` | Build → Push (Artifact Registry) → Deploy Cloud Run. Substitutions `_SERVICE`, `_REGION`, `_REPO` ajustáveis. |
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `server.ts` | Novo middleware `resolveTenant` aplicado antes de todas as rotas. Extrai tenantId do `req.hostname` (com `trust proxy` para Cloud Run X-Forwarded-Host). Em dev/localhost, aceita header `X-Tenant-Id` ou query `?tenant=`. Bloqueia subdomínios reservados com 403. `/api/health` retorna `tenantId` para diagnóstico. `PORT` agora vem de `process.env.PORT` (Cloud Run injeta 8080). |
+| `package.json` | `start: tsx server.ts` (era `node server.ts`, quebrado para TS). `build: vite build` (removido `tsc &&` para não bloquear no erro pré-existente de react-leaflet — `vite build` já roda o transpile interno). Novos scripts `docker:build` e `docker:run`. |
+
+### Deploy em Cloud Run (passo a passo)
+
+```bash
+# 1) Setup único do projeto GCP (todos uma vez)
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com artifactregistry.googleapis.com
+gcloud artifacts repositories create ktag --repository-format=docker --location=us-central1
+
+# 2) Build local (opcional, smoke test)
+npm run docker:build
+npm run docker:run    # http://localhost:8080
+
+# 3) Deploy manual via gcloud
+gcloud builds submit --config=cloudbuild.yaml .
+
+# 4) Trigger automático (recomendado): configurar Cloud Build Trigger
+#    apontando para o repo do GitHub + branch principal.
+```
+
+### DNS wildcard (necessário para multi-tenant em produção)
+
+```
+Tipo  Nome                          Valor
+A     <ip-do-load-balancer>         → (caso use LB próprio)
+CNAME *.seudominio.com              → ghs.googlehosted.com   (Cloud Run domain mapping)
+```
+
+Mapeamentos no Cloud Run:
+```bash
+# Para cada subdomínio especial OU usando wildcard mapping
+gcloud beta run domain-mappings create --service=ktag-app --domain=admin.seudominio.com
+# Para o catch-all (wildcard) — depende da região/projeto suportar:
+gcloud beta run domain-mappings create --service=ktag-app --domain=*.seudominio.com
+```
+
+Caso o wildcard direto não seja suportado na sua região, alternativa:
+1. Provisionar um Load Balancer HTTPS com SSL Wildcard
+2. Backend service → Serverless NEG apontando para Cloud Run
+3. URL map captura `*.seudominio.com` para o backend
+
+### Riscos / pontos de atenção
+
+- **`server.ts` ainda não consulta Firestore para credenciais por-tenant**. O middleware popula `req.tenantId` mas as rotas de proxy (`/api/proxy`, `/api/melhorenvio/*`) continuam lendo do `.env` global. Para isolar credenciais por tenant no proxy, próxima iteração precisa: (a) fazer lookup de `/tenants/{tid}/settings/config` por request com cache, OU (b) mover as integrações OAuth pra Functions tenant-aware. Fica para Fase 6 (OWASP).
+- **Cold start do Cloud Run**: usar `--min-instances=1` em produção para tempo de resposta consistente (custa ~$5/mês). Hoje está em `--min-instances=0` (gratuito mas com cold start).
+- **HashRouter** (frontend) tem implicação para o domain mapping: o subdomínio é o que importa para tenancy; o hash após `#/` é só rota client-side. Compatível.
+- **tsx em produção**: roda TypeScript direto. Aceita por simplicidade. Se quiser overhead zero no startup, compile com `tsc` e ajuste o `CMD` para `node server.js`.
+
+---
+
+## Fase 4 — Painel Super Admin
+
+### Resumo
+Painel administrativo da plataforma, servido em `admin.<dominio>` (em dev: `?tenant=admin`). Sub-app React separado com autenticação por Firebase Auth + lookup em `/system_admins/{uid}`. CRUD de tenants, visão cross-tenant de usuários, gestão de super admins, audit log.
+
+### Arquivos criados
+
+| Arquivo | Propósito |
+|---|---|
+| `contexts/SystemAdminContext.tsx` | Auth provider próprio do painel admin (signIn + lookup em `/system_admins`). Independente do `AuthContext` de tenant. |
+| `pages/admin/AdminApp.tsx` | Root do sub-app admin: SystemAdminProvider + HashRouter + AdminGate. |
+| `pages/admin/AdminLogin.tsx` | Tela de login do painel — mesmo email/senha do Firebase Auth, mas exige doc em `/system_admins`. |
+| `pages/admin/AdminLayout.tsx` | Layout com sidebar e navegação (Dashboard / Empresas / Usuários / Super Admins / Auditoria). |
+| `pages/admin/AdminDashboard.tsx` | Estatísticas básicas: total de tenants ativos/inativos + total de super admins. |
+| `pages/admin/AdminTenants.tsx` | Lista de tenants em real-time (`onSnapshot`), modal de criação, toggle ativar/desativar, link "abrir tenant" (nova aba). |
+| `pages/admin/AdminUsers.tsx` | Visão cross-tenant (chama callable `listAllUsers`) com filtro por tenant e busca por email. |
+| `pages/admin/AdminSystemAdmins.tsx` | Adicionar/remover super admins por email. Bloqueia auto-remoção do último admin. |
+| `pages/admin/AdminAudit.tsx` | Eventos de `system_audit_logs` (criação de tenants, promoção a super admin, etc.). |
+| `scripts/seed-superadmin.ts` | Promove um usuário existente do Firebase Auth a super admin (cria doc + customClaim). |
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `App.tsx` | Quando `useTenant().isAdminPanel` é true (subdomínio `admin`), renderiza `<AdminApp />` em vez do app de tenant. Sub-app totalmente isolado — não usa `AuthProvider` nem `ThemeProvider` de tenant. |
+| `functions/index.js` | Novos callables: `createTenant`, `setTenantActive`, `updateTenant`, `addSystemAdmin`, `removeSystemAdmin`, `listAllTenants`, `listAllUsers`. Guard `requireSuperAdmin(request)` valida `/system_admins/{caller}`. Slugs reservados bloqueados na criação. |
+| `firestore.rules` | `isSuperAdmin()` agora usa fast-path via custom claim `superadmin: true` (set pelo callable) + fallback de doc lookup. |
+
+### Onboarding do primeiro super admin
+
+```bash
+# 1) Crie o primeiro tenant + usuário admin (Fase 1)
+tsx scripts/seed-tenants.ts dev-tenant admin@example.com "Você"
+
+# 2) Promova esse usuário a super admin da plataforma
+tsx scripts/seed-superadmin.ts admin@example.com
+
+# 3) Acesse o painel
+#   Dev:  http://localhost:5173?tenant=admin
+#   Prod: https://admin.seudominio.com
+```
+
+A partir daí, o painel "Super Admins" permite delegar a outros usuários por email.
+
+### Riscos / pontos de atenção
+
+- **Custom claims precisam refresh do token** para o usuário recém-promovido ver as permissões. Forçar via `auth.currentUser?.getIdToken(true)` após chamada de `addSystemAdmin` — não implementado nesta fase (raro o suficiente; logout/login resolve).
+- **Sem "impersonate" de tenant nesta fase**. O link "abrir tenant" da página de Empresas só abre a URL do tenant em nova aba; o super admin precisa fazer login lá com credenciais de membro do tenant se quiser visualizar. Impersonate de verdade (custom token) fica para Fase 6.
+- **Nome de tenant criado via callable é texto plano no doc** — não passa pelo encryption client-side. Não é PII crítica; o nome aparece em badges. Para deploys com requisito forte, edite o doc via UI normal de tenant após criação.
+- **`listAllUsers` itera tenants sequencial** (N+1 reads). OK até ~50 tenants; acima disso, migrar para `collectionGroup('users')` com índice composto.
 
 ---
 

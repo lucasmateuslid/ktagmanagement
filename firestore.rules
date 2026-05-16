@@ -27,8 +27,11 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
+      // Fast-path via custom claim (setada por addSystemAdmin callable).
+      // Fallback via lookup do doc — útil enquanto a claim não propagou.
       return isAuthenticated()
-        && exists(/databases/$(database)/documents/system_admins/$(request.auth.uid));
+        && (request.auth.token.superadmin == true
+            || exists(/databases/$(database)/documents/system_admins/$(request.auth.uid)));
     }
 
     // Fast-path via custom claim setada por onTenantUserCreate/Update.

@@ -2,13 +2,14 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { TenantProvider } from './contexts/TenantContext';
+import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { ConnectionProvider } from './contexts/ConnectionContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { Layout } from './components/Layout';
-import { useScheduleNotifications } from './hooks/useScheduleNotifications'; // New hook import
+import { useScheduleNotifications } from './hooks/useScheduleNotifications';
+import { AdminApp } from './pages/admin/AdminApp';
 
 // Carregamento Preguiçoso (Lazy Loading) - Otimiza o bundle inicial
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -106,59 +107,74 @@ const RoleProtectedRoute = ({
 
 import { WhitelabelStyles } from './components/WhitelabelStyles';
 
+const TenantRoutes = () => (
+  <Routes>
+    <Route path="/login" element={<Login />} />
+    <Route path="/track/:token" element={<PublicTracking />} />
+    <Route path="/technician-registration" element={
+      <RoleProtectedRoute roles={['technician']}>
+        <TechnicianRegistration />
+      </RoleProtectedRoute>
+    } />
+    <Route element={<ProtectedLayout />}>
+      <Route path="/" element={<RoleProtectedRoute permission="ROUTE_DASHBOARD"><Dashboard /></RoleProtectedRoute>} />
+      <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
+      <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
+      <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
+      <Route path="/settings" element={<Settings />} />
+
+      {/* Agendamentos */}
+      <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
+      <Route path="/schedules" element={<Schedules />} />
+      <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
+      <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
+      <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
+
+      {/* Envios */}
+      <Route path="/envios" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentsList /></RoleProtectedRoute>} />
+      <Route path="/envios/:id/editar" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+      <Route path="/envios/nova" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+      <Route path="/envios/:id" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentDetails /></RoleProtectedRoute>} />
+      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentPrint /></RoleProtectedRoute>} />
+
+      {/* Feedback */}
+      <Route path="/feedback" element={<RoleProtectedRoute permission="ROUTE_FEEDBACK"><FeedbackPage /></RoleProtectedRoute>} />
+
+      <Route path="/clients" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><Clients /></RoleProtectedRoute>} />
+      <Route path="/tags" element={<RoleProtectedRoute permission="ROUTE_TAGS"><Tags /></RoleProtectedRoute>} />
+      <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
+      <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
+    </Route>
+  </Routes>
+);
+
+const TenantApp = () => (
+  <AuthProvider>
+    <ThemeProvider>
+      <WhitelabelStyles />
+      <HashRouter>
+        <Suspense fallback={<div className="h-screen w-screen bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+          <TenantRoutes />
+        </Suspense>
+      </HashRouter>
+    </ThemeProvider>
+  </AuthProvider>
+);
+
+// Quando o tenant resolvido é "admin", monta o sub-app de super admin
+// (com seu próprio Auth flow). Caso contrário, monta a app de tenant normal.
+const AppRouter = () => {
+  const { isAdminPanel } = useTenant();
+  return isAdminPanel ? <AdminApp /> : <TenantApp />;
+};
+
 function App() {
   return (
     <NotificationProvider>
       <ConnectionProvider>
         <LanguageProvider>
           <TenantProvider>
-          <AuthProvider>
-            <ThemeProvider>
-              <WhitelabelStyles />
-              <HashRouter>
-                <Suspense fallback={<div className="h-screen w-screen bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>}>
-                  <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/track/:token" element={<PublicTracking />} />
-                    <Route path="/technician-registration" element={
-                      <RoleProtectedRoute roles={['technician']}>
-                        <TechnicianRegistration />
-                      </RoleProtectedRoute>
-                    } />
-                    <Route element={<ProtectedLayout />}>
-                      <Route path="/" element={<RoleProtectedRoute permission="ROUTE_DASHBOARD"><Dashboard /></RoleProtectedRoute>} />
-                      <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
-                      <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
-                      <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
-                      <Route path="/settings" element={<Settings />} />
-                      
-                      {/* Agendamentos */}
-                      <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
-                      <Route path="/schedules" element={<Schedules />} /> {/* Acesso condicional gerido dentro da página */}
-                      <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
-                      <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
-                      <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
-
-                      {/* Envios */}
-                      <Route path="/envios" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentsList /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id/editar" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
-                      <Route path="/envios/nova" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentDetails /></RoleProtectedRoute>} />
-                      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentPrint /></RoleProtectedRoute>} />
-
-                      {/* Feedback - Available to all non-clients */}
-                      <Route path="/feedback" element={<RoleProtectedRoute permission="ROUTE_FEEDBACK"><FeedbackPage /></RoleProtectedRoute>} />
-
-                      <Route path="/clients" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><Clients /></RoleProtectedRoute>} />
-                      <Route path="/tags" element={<RoleProtectedRoute permission="ROUTE_TAGS"><Tags /></RoleProtectedRoute>} />
-                      <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
-                      <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
-                    </Route>
-                  </Routes>
-                </Suspense>
-              </HashRouter>
-            </ThemeProvider>
-          </AuthProvider>
+            <AppRouter />
           </TenantProvider>
         </LanguageProvider>
       </ConnectionProvider>

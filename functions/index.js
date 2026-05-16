@@ -910,6 +910,236 @@ exports.deleteTenantUser = onCall(async (request) => {
   return { ok: true };
 });
 
+// ============================================================
+// SUPER ADMIN (Fase 4)
+// ============================================================
+
+async function requireSuperAdmin(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Login obrigatório.');
+  }
+  const uid = request.auth.uid;
+  const snap = await admin.firestore().collection('system_admins').doc(uid).get();
+  if (!snap.exists) {
+    throw new HttpsError('permission-denied', 'Acesso restrito a super administradores.');
+  }
+  return { uid };
+}
+
+const RESERVED_TENANT_SLUGS = ['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'app', 'system', 'root', 'localhost'];
+const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
+
+function validateSlug(slug) {
+  if (!slug || typeof slug !== 'string') return 'Slug obrigatório.';
+  if (!SLUG_REGEX.test(slug)) return 'Slug deve ter 3-32 caracteres: letras minúsculas, números e hífens.';
+  if (RESERVED_TENANT_SLUGS.includes(slug)) return `Slug "${slug}" é reservado.`;
+  return null;
+}
+
+/**
+ * Cria um novo tenant + opcional admin inicial (Auth user + doc).
+ * Retorna { slug, ownerEmail?, ownerPassword? } se ownerEmail foi passado.
+ */
+exports.createTenant = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, name, plan = 'basic', active = true, ownerEmail, ownerName } = request.data || {};
+
+  const slugError = validateSlug(slug);
+  if (slugError) throw new HttpsError('invalid-argument', slugError);
+  if (!name) throw new HttpsError('invalid-argument', 'name é obrigatório.');
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const existing = await tenantRef.get();
+  if (existing.exists) {
+    throw new HttpsError('already-exists', `Tenant "${slug}" já existe.`);
+  }
+
+  await tenantRef.set({
+    id: slug,
+    name,
+    slug,
+    plan,
+    active,
+    createdAt: Date.now(),
+    settings: { maxUsers: 10, features: [], integrations: {} },
+  });
+
+  await tenantRef.collection('settings').doc('config').set(
+    { language: 'pt', customAppName: name },
+    { merge: true }
+  );
+
+  let ownerPassword = null;
+  let ownerUid = null;
+  if (ownerEmail) {
+    const cleanEmail = String(ownerEmail).toLowerCase().trim();
+    ownerPassword = generateRandomPassword();
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(cleanEmail);
+      await admin.auth().updateUser(userRecord.uid, { password: ownerPassword });
+    } catch (e) {
+      if (e.code !== 'auth/user-not-found') throw e;
+      userRecord = await admin.auth().createUser({
+        email: cleanEmail,
+        password: ownerPassword,
+        displayName: ownerName || cleanEmail,
+      });
+    }
+    ownerUid = userRecord.uid;
+    await admin.auth().setCustomUserClaims(ownerUid, { tenantId: slug, role: 'admin', approved: true });
+    await tenantRef.collection('users').doc(ownerUid).set({
+      id: ownerUid,
+      name: ownerName || cleanEmail,
+      email: cleanEmail,
+      role: 'admin',
+      status: 'approved',
+      tenantId: slug,
+      createdAt: Date.now(),
+    });
+    await tenantRef.update({ ownerUserId: ownerUid });
+  }
+
+  await logAudit(null, 'CREATE', 'Tenant', `Super admin criou tenant ${slug} (${plan})`, slug, callerUid);
+
+  return { slug, ownerEmail: ownerEmail || null, ownerPassword, ownerUid };
+});
+
+/**
+ * Ativa/desativa um tenant. Não apaga dados.
+ */
+exports.setTenantActive = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, active } = request.data || {};
+  if (!slug || typeof active !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'slug e active são obrigatórios.');
+  }
+  const ref = admin.firestore().collection('tenants').doc(slug);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  await ref.update({ active });
+  await logAudit(null, 'UPDATE', 'Tenant', `Super admin ${active ? 'ativou' : 'desativou'} tenant ${slug}`, slug, callerUid);
+  return { slug, active };
+});
+
+/**
+ * Atualiza metadata do tenant (nome, plano).
+ */
+exports.updateTenant = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, name, plan, settings } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug é obrigatório.');
+
+  const ref = admin.firestore().collection('tenants').doc(slug);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (plan !== undefined) patch.plan = plan;
+  if (settings !== undefined) patch.settings = settings;
+  if (Object.keys(patch).length === 0) {
+    return { slug, changed: false };
+  }
+  await ref.update(patch);
+  await logAudit(null, 'UPDATE', 'Tenant', `Super admin atualizou tenant ${slug}: ${Object.keys(patch).join(', ')}`, slug, callerUid);
+  return { slug, changed: true };
+});
+
+/**
+ * Adiciona um usuário ao system_admins. Caller precisa ser superadmin.
+ * O target user precisa já existir em Firebase Auth (passar uid OU email).
+ */
+exports.addSystemAdmin = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { uid, email } = request.data || {};
+  if (!uid && !email) {
+    throw new HttpsError('invalid-argument', 'uid OU email é obrigatório.');
+  }
+  let targetUid = uid;
+  if (!targetUid && email) {
+    try {
+      const rec = await admin.auth().getUserByEmail(email.toLowerCase().trim());
+      targetUid = rec.uid;
+    } catch (e) {
+      throw new HttpsError('not-found', 'Usuário não encontrado no Firebase Auth.');
+    }
+  }
+  await admin.firestore().collection('system_admins').doc(targetUid).set({
+    uid: targetUid,
+    addedBy: callerUid,
+    addedAt: Date.now(),
+  });
+  // Custom claim para fast-path em rules.
+  const existing = (await admin.auth().getUser(targetUid)).customClaims || {};
+  await admin.auth().setCustomUserClaims(targetUid, { ...existing, superadmin: true });
+
+  await logAudit(null, 'CREATE', 'SystemAdmin', `Super admin promoveu ${targetUid} a system admin`, targetUid, callerUid);
+  return { uid: targetUid };
+});
+
+/**
+ * Remove um system admin. Bloqueia self-remove se for o último.
+ */
+exports.removeSystemAdmin = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { uid } = request.data || {};
+  if (!uid) throw new HttpsError('invalid-argument', 'uid é obrigatório.');
+
+  if (uid === callerUid) {
+    const allAdmins = await admin.firestore().collection('system_admins').get();
+    if (allAdmins.size <= 1) {
+      throw new HttpsError('failed-precondition', 'Você é o último super admin — não é possível remover.');
+    }
+  }
+
+  await admin.firestore().collection('system_admins').doc(uid).delete();
+  const existing = (await admin.auth().getUser(uid)).customClaims || {};
+  delete existing.superadmin;
+  await admin.auth().setCustomUserClaims(uid, existing);
+
+  await logAudit(null, 'DELETE', 'SystemAdmin', `Super admin removeu ${uid} dos system admins`, uid, callerUid);
+  return { uid };
+});
+
+/**
+ * Lista todos os tenants (com totais agregados). Apenas super admin.
+ */
+exports.listAllTenants = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await admin.firestore().collection('tenants').get();
+  return {
+    tenants: snap.docs.map(d => ({ id: d.id, ...d.data() })),
+  };
+});
+
+/**
+ * Lista usuários cross-tenant. Apenas super admin.
+ * Implementação simples: itera tenants e concatena users. Para escalas grandes,
+ * substituir por collectionGroup + index composto.
+ */
+exports.listAllUsers = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const tenantsSnap = await admin.firestore().collection('tenants').get();
+  const users = [];
+  for (const t of tenantsSnap.docs) {
+    const usSnap = await t.ref.collection('users').get();
+    usSnap.forEach(u => {
+      const data = u.data();
+      users.push({
+        id: u.id,
+        tenantId: t.id,
+        email: data.email,
+        role: data.role,
+        status: data.status,
+        createdAt: data.createdAt,
+      });
+    });
+  }
+  return { users };
+});
+
 exports.sendPushNotification = onCall(
   async (request) => {
 
