@@ -21,20 +21,115 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  /** @deprecated A senha é gerenciada pelo Firebase Auth desde a Fase 2 — nunca persistir no Firestore. */
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | string;
+  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | 'superadmin' | string;
   customRoleId?: string;
   technicianId?: string;
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
-  companySlug?: string;
+  tenantId?: string;
+  companySlug?: string; // @deprecated — substituído por tenantId; mantido por compat até migração concluir
   exemptFromKtagAlert?: boolean;
   createdAt?: number;
-  cpf?: string; 
+  cpf?: string;
   avatarInitial?: string;
   avatarUrl?: string;
   pixKey?: string;
   notificationPreferences?: UserNotificationPreferences;
+}
+
+export type TenantPlan = 'basic' | 'pro' | 'enterprise';
+
+export interface TenantIntegrationFlags {
+  ktag?: { enabled: boolean };
+  hinova?: { enabled: boolean };
+  melhorEnvio?: { enabled: boolean };
+  ai?: { provider?: string };
+}
+
+export interface TenantSettings {
+  maxUsers?: number;
+  features?: string[];
+  integrations?: TenantIntegrationFlags;
+}
+
+export type BillingStatus =
+  | 'none'        // sem assinatura criada ainda
+  | 'trialing'    // trial, sem cobrança
+  | 'active'      // em dia
+  | 'overdue'     // tem fatura vencida
+  | 'canceled';   // cancelada
+
+export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+
+export type BillingMethod = 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'UNDEFINED';
+
+export interface TenantBilling {
+  status: BillingStatus;
+  /** Valor em centavos. Override quando definido; senão pega do plano. */
+  priceCents?: number;
+  cycle?: BillingCycle;
+  method?: BillingMethod;
+  /** Dia do mês para vencimento (1-28). */
+  dueDay?: number;
+  nextDueDate?: number;
+  /** IDs do Asaas — null indica que ainda não foi sincronizado. */
+  asaasCustomerId?: string | null;
+  asaasSubscriptionId?: string | null;
+  /** CPF/CNPJ do responsável pelo pagamento (obrigatório no Asaas). */
+  payerCpfCnpj?: string;
+  payerName?: string;
+  payerEmail?: string;
+  /** Última sync bem-sucedida com Asaas (epoch ms). */
+  lastSyncedAt?: number;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  plan: TenantPlan;
+  active: boolean;
+  ownerUserId?: string;
+  createdAt: number;
+  settings?: TenantSettings;
+  billing?: TenantBilling;
+}
+
+export type InvoiceStatus =
+  | 'PENDING'
+  | 'RECEIVED'
+  | 'CONFIRMED'
+  | 'OVERDUE'
+  | 'REFUNDED'
+  | 'CANCELED';
+
+/** Espelho de um charge (payment) do Asaas no Firestore. */
+export interface Invoice {
+  id: string;                 // = asaasPaymentId
+  tenantId: string;
+  status: InvoiceStatus;
+  /** Valor em centavos. */
+  valueCents: number;
+  dueDate: number;            // epoch ms
+  paidAt?: number;
+  billingType: BillingMethod;
+  invoiceUrl?: string;        // página de pagamento Asaas
+  bankSlipUrl?: string;       // boleto PDF
+  pixQrCode?: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Plano centralizado em /system_config/plans. */
+export interface PlanConfig {
+  id: TenantPlan;
+  name: string;
+  priceCents: number;
+  maxUsers: number;
+  features: string[];
 }
 
 export interface Company {

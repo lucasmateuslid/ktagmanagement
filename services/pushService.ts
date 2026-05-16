@@ -21,36 +21,39 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export const pushService = {
-  register: async (userId: string) => {
-    // Verificação de Segurança: Service Workers exigem contexto seguro (HTTPS)
-    // E não podem ser registrados em alguns ambientes de preview/iframe
+  register: async (userId: string, tenantId: string) => {
     if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('⚠️ Web Push ignorado: Ambiente não seguro ou navegador incompatível.');
       return;
     }
 
+    if (!tenantId) {
+      console.warn('⚠️ Web Push ignorado: tenantId ausente — Functions não conseguiria escopar destinatários.');
+      return;
+    }
+
     try {
-      // 1. Registrar o Service Worker
       const registration = await navigator.serviceWorker.register('./sw.js');
 
-      // 2. Pedir permissão ao usuário
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         return;
       }
 
-      // 3. Criar a assinatura (Subscription)
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
       });
 
-      // 4. Salvar no Firestore
-      const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, ''); 
-      
+      const subscriptionId = btoa(subscription.endpoint).slice(-20).replace(/[^\w]/g, '');
+
       if (db) {
-        await setDoc(doc(db, 'ktag_push_subscriptions', subscriptionId), {
-          userId: userId,
+        // Coleção continua flat (push_subscriptions) porque as Cloud Functions
+        // varrem cross-tenant para enviar notificações por preferência. Cada
+        // doc carrega tenantId para que a query do dispatcher filtre corretamente.
+        await setDoc(doc(db, 'push_subscriptions', subscriptionId), {
+          userId,
+          tenantId,
           subscription: subscription.toJSON(),
           updatedAt: Date.now(),
           userAgent: navigator.userAgent
