@@ -2,9 +2,11 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { Link } from 'react-router-dom';
 import { db, functions } from '../../services/firebase';
 import type { Tenant } from '../../types';
-import { Building2, Plus, Power, ExternalLink, Loader2, Copy } from 'lucide-react';
+import { Building2, Plus, Power, ExternalLink, Loader2, Copy, CreditCard } from 'lucide-react';
+import { BillingStatusBadge } from './AdminBilling';
 
 export const AdminTenants = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -66,13 +68,14 @@ export const AdminTenants = () => {
                 <th className="text-left px-5 py-3">Nome</th>
                 <th className="text-left px-5 py-3">Slug</th>
                 <th className="text-left px-5 py-3">Plano</th>
+                <th className="text-left px-5 py-3">Cobrança</th>
                 <th className="text-left px-5 py-3">Status</th>
                 <th className="text-right px-5 py-3">Ações</th>
               </tr>
             </thead>
             <tbody>
               {tenants.map((t) => (
-                <tr key={t.id} className="border-t border-zinc-800/60 hover:bg-zinc-900/30">
+                <tr key={t.id} className="border-t border-zinc-800/60 hover:bg-zinc-900/30 transition-colors">
                   <td className="px-5 py-3.5 font-bold">{t.name}</td>
                   <td className="px-5 py-3.5">
                     <code className="text-amber-500 text-xs">{t.slug}</code>
@@ -81,10 +84,20 @@ export const AdminTenants = () => {
                     <PlanBadge plan={t.plan} />
                   </td>
                   <td className="px-5 py-3.5">
+                    <BillingStatusBadge status={t.billing?.status || 'none'} />
+                  </td>
+                  <td className="px-5 py-3.5">
                     <StatusBadge active={t.active !== false} />
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <Link
+                        to="/admin/billing"
+                        className="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-amber-500 px-3 py-1.5 rounded-lg hover:bg-zinc-800"
+                        title="Gerenciar mensalidade"
+                      >
+                        <CreditCard size={14} />
+                      </Link>
                       <button
                         onClick={() => toggleActive(t.slug, !t.active)}
                         className="text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-amber-500 px-3 py-1.5 rounded-lg hover:bg-zinc-800"

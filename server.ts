@@ -290,8 +290,8 @@ function resolveTenant(req: express.Request, res: express.Response, next: expres
 
 async function startServer() {
   const app = express();
-  // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 3000.
-  const PORT = Number(process.env.PORT) || 3000;
+  // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 4000.
+  const PORT = Number(process.env.PORT) || 4000;
 
   app.use(cors());
   app.use(express.json());

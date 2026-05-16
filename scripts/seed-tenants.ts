@@ -131,7 +131,7 @@ async function main() {
   console.log(`✅ User doc criado: /tenants/${slug}/users/${uid}`);
 
   console.log('\n--- DONE ---');
-  console.log(`Login no dev:  http://localhost:5173?tenant=${slug}`);
+  console.log(`Login no dev:  http://localhost:4000?tenant=${slug}`);
   console.log(`Email:         ${adminEmail}`);
   console.log(`Senha inicial: ${adminPassword}`);
   console.log('\nLembre de trocar a senha após o primeiro login.');

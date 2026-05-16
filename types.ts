@@ -54,6 +54,37 @@ export interface TenantSettings {
   integrations?: TenantIntegrationFlags;
 }
 
+export type BillingStatus =
+  | 'none'        // sem assinatura criada ainda
+  | 'trialing'    // trial, sem cobrança
+  | 'active'      // em dia
+  | 'overdue'     // tem fatura vencida
+  | 'canceled';   // cancelada
+
+export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+
+export type BillingMethod = 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'UNDEFINED';
+
+export interface TenantBilling {
+  status: BillingStatus;
+  /** Valor em centavos. Override quando definido; senão pega do plano. */
+  priceCents?: number;
+  cycle?: BillingCycle;
+  method?: BillingMethod;
+  /** Dia do mês para vencimento (1-28). */
+  dueDay?: number;
+  nextDueDate?: number;
+  /** IDs do Asaas — null indica que ainda não foi sincronizado. */
+  asaasCustomerId?: string | null;
+  asaasSubscriptionId?: string | null;
+  /** CPF/CNPJ do responsável pelo pagamento (obrigatório no Asaas). */
+  payerCpfCnpj?: string;
+  payerName?: string;
+  payerEmail?: string;
+  /** Última sync bem-sucedida com Asaas (epoch ms). */
+  lastSyncedAt?: number;
+}
+
 export interface Tenant {
   id: string;
   name: string;
@@ -63,6 +94,42 @@ export interface Tenant {
   ownerUserId?: string;
   createdAt: number;
   settings?: TenantSettings;
+  billing?: TenantBilling;
+}
+
+export type InvoiceStatus =
+  | 'PENDING'
+  | 'RECEIVED'
+  | 'CONFIRMED'
+  | 'OVERDUE'
+  | 'REFUNDED'
+  | 'CANCELED';
+
+/** Espelho de um charge (payment) do Asaas no Firestore. */
+export interface Invoice {
+  id: string;                 // = asaasPaymentId
+  tenantId: string;
+  status: InvoiceStatus;
+  /** Valor em centavos. */
+  valueCents: number;
+  dueDate: number;            // epoch ms
+  paidAt?: number;
+  billingType: BillingMethod;
+  invoiceUrl?: string;        // página de pagamento Asaas
+  bankSlipUrl?: string;       // boleto PDF
+  pixQrCode?: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Plano centralizado em /system_config/plans. */
+export interface PlanConfig {
+  id: TenantPlan;
+  name: string;
+  priceCents: number;
+  maxUsers: number;
+  features: string[];
 }
 
 export interface Company {

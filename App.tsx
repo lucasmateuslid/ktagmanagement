@@ -23,6 +23,7 @@ const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.S
 const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
 const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const AuditLogs = lazy(() => import('./pages/AuditLogs').then(m => ({ default: m.AuditLogs })));
+const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
 const FeedbackPage = lazy(() => import('./pages/Feedback').then(m => ({ default: m.FeedbackPage }))); // New
 const PublicTracking = lazy(() => import('./pages/PublicTracking').then(m => ({ default: m.PublicTracking })));
 
@@ -144,6 +145,7 @@ const TenantRoutes = () => (
       <Route path="/tags" element={<RoleProtectedRoute permission="ROUTE_TAGS"><Tags /></RoleProtectedRoute>} />
       <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
       <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
+      <Route path="/billing" element={<RoleProtectedRoute permission="ROUTE_BILLING"><Billing /></RoleProtectedRoute>} />
     </Route>
   </Routes>
 );

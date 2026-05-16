@@ -5,6 +5,8 @@ import { AdminLogin } from './AdminLogin';
 import { AdminLayout } from './AdminLayout';
 import { AdminDashboard } from './AdminDashboard';
 import { AdminTenants } from './AdminTenants';
+import { AdminBilling } from './AdminBilling';
+import { AdminInvoices } from './AdminInvoices';
 import { AdminUsers } from './AdminUsers';
 import { AdminSystemAdmins } from './AdminSystemAdmins';
 import { AdminAudit } from './AdminAudit';
@@ -25,6 +27,8 @@ const AdminGate = () => {
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/tenants" element={<AdminTenants />} />
+        <Route path="/admin/billing" element={<AdminBilling />} />
+        <Route path="/admin/invoices" element={<AdminInvoices />} />
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="/admin/system-admins" element={<AdminSystemAdmins />} />
         <Route path="/admin/audit" element={<AdminAudit />} />

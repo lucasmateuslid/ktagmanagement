@@ -7,8 +7,14 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
+const asaas = require("./asaas");
+
+// Secrets — set with: firebase functions:secrets:set <NAME>
+const ASAAS_API_KEY = defineSecret("ASAAS_API_KEY");
+const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 const cors = require("cors")({ 
   origin: true, 
   credentials: true,
@@ -949,60 +955,92 @@ exports.createTenant = onCall(async (request) => {
   if (!name) throw new HttpsError('invalid-argument', 'name é obrigatório.');
 
   const tenantRef = admin.firestore().collection('tenants').doc(slug);
-  const existing = await tenantRef.get();
-  if (existing.exists) {
-    throw new HttpsError('already-exists', `Tenant "${slug}" já existe.`);
-  }
 
-  await tenantRef.set({
-    id: slug,
-    name,
-    slug,
-    plan,
-    active,
-    createdAt: Date.now(),
-    settings: { maxUsers: 10, features: [], integrations: {} },
-  });
-
-  await tenantRef.collection('settings').doc('config').set(
-    { language: 'pt', customAppName: name },
-    { merge: true }
-  );
-
-  let ownerPassword = null;
-  let ownerUid = null;
-  if (ownerEmail) {
-    const cleanEmail = String(ownerEmail).toLowerCase().trim();
-    ownerPassword = generateRandomPassword();
-    let userRecord;
-    try {
-      userRecord = await admin.auth().getUserByEmail(cleanEmail);
-      await admin.auth().updateUser(userRecord.uid, { password: ownerPassword });
-    } catch (e) {
-      if (e.code !== 'auth/user-not-found') throw e;
-      userRecord = await admin.auth().createUser({
-        email: cleanEmail,
-        password: ownerPassword,
-        displayName: ownerName || cleanEmail,
-      });
+  try {
+    const existing = await tenantRef.get();
+    if (existing.exists) {
+      throw new HttpsError('already-exists', `Tenant "${slug}" já existe.`);
     }
-    ownerUid = userRecord.uid;
-    await admin.auth().setCustomUserClaims(ownerUid, { tenantId: slug, role: 'admin', approved: true });
-    await tenantRef.collection('users').doc(ownerUid).set({
-      id: ownerUid,
-      name: ownerName || cleanEmail,
-      email: cleanEmail,
-      role: 'admin',
-      status: 'approved',
-      tenantId: slug,
+
+    await tenantRef.set({
+      id: slug,
+      name,
+      slug,
+      plan,
+      active,
       createdAt: Date.now(),
+      settings: { maxUsers: 10, features: [], integrations: {} },
     });
-    await tenantRef.update({ ownerUserId: ownerUid });
+
+    await tenantRef.collection('settings').doc('config').set(
+      { language: 'pt', customAppName: name },
+      { merge: true }
+    );
+
+    let ownerPassword = null;
+    let ownerUid = null;
+    if (ownerEmail) {
+      const cleanEmail = String(ownerEmail).toLowerCase().trim();
+      ownerPassword = generateRandomPassword();
+      let userRecord;
+      try {
+        userRecord = await admin.auth().getUserByEmail(cleanEmail);
+        try {
+          await admin.auth().updateUser(userRecord.uid, { password: ownerPassword });
+        } catch (e) {
+          console.error('[createTenant] updateUser falhou', { uid: userRecord.uid, code: e.code, message: e.message });
+          throw new HttpsError('internal', `Falha ao atualizar senha do admin existente: ${e.message}`);
+        }
+      } catch (e) {
+        if (e instanceof HttpsError) throw e;
+        if (e.code !== 'auth/user-not-found') {
+          console.error('[createTenant] getUserByEmail falhou', { email: cleanEmail, code: e.code, message: e.message });
+          throw new HttpsError('internal', `Falha ao buscar email no Auth: ${e.message}`);
+        }
+        try {
+          userRecord = await admin.auth().createUser({
+            email: cleanEmail,
+            password: ownerPassword,
+            displayName: ownerName || cleanEmail,
+          });
+        } catch (ce) {
+          console.error('[createTenant] createUser falhou', { email: cleanEmail, code: ce.code, message: ce.message });
+          if (ce.code === 'auth/invalid-email') {
+            throw new HttpsError('invalid-argument', 'Email do admin inválido.');
+          }
+          if (ce.code === 'auth/weak-password') {
+            throw new HttpsError('invalid-argument', 'Senha gerada não atende aos requisitos do Firebase.');
+          }
+          throw new HttpsError('internal', `Falha ao criar admin no Auth: ${ce.message}`);
+        }
+      }
+      ownerUid = userRecord.uid;
+      try {
+        await admin.auth().setCustomUserClaims(ownerUid, { tenantId: slug, role: 'admin', approved: true });
+      } catch (e) {
+        console.error('[createTenant] setCustomUserClaims falhou', { uid: ownerUid, code: e.code, message: e.message });
+        throw new HttpsError('internal', `Falha ao setar claims do admin: ${e.message}`);
+      }
+      await tenantRef.collection('users').doc(ownerUid).set({
+        id: ownerUid,
+        name: ownerName || cleanEmail,
+        email: cleanEmail,
+        role: 'admin',
+        status: 'approved',
+        tenantId: slug,
+        createdAt: Date.now(),
+      });
+      await tenantRef.update({ ownerUserId: ownerUid });
+    }
+
+    await logAudit(null, 'CREATE', 'Tenant', `Super admin criou tenant ${slug} (${plan})`, slug, callerUid);
+
+    return { slug, ownerEmail: ownerEmail || null, ownerPassword, ownerUid };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    console.error('[createTenant] erro não-tratado', { slug, code: e?.code, message: e?.message, stack: e?.stack });
+    throw new HttpsError('internal', `Falha ao criar tenant: ${e?.message || 'erro desconhecido'}`);
   }
-
-  await logAudit(null, 'CREATE', 'Tenant', `Super admin criou tenant ${slug} (${plan})`, slug, callerUid);
-
-  return { slug, ownerEmail: ownerEmail || null, ownerPassword, ownerUid };
 });
 
 /**
@@ -1014,13 +1052,19 @@ exports.setTenantActive = onCall(async (request) => {
   if (!slug || typeof active !== 'boolean') {
     throw new HttpsError('invalid-argument', 'slug e active são obrigatórios.');
   }
-  const ref = admin.firestore().collection('tenants').doc(slug);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  try {
+    const ref = admin.firestore().collection('tenants').doc(slug);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
 
-  await ref.update({ active });
-  await logAudit(null, 'UPDATE', 'Tenant', `Super admin ${active ? 'ativou' : 'desativou'} tenant ${slug}`, slug, callerUid);
-  return { slug, active };
+    await ref.update({ active });
+    await logAudit(null, 'UPDATE', 'Tenant', `Super admin ${active ? 'ativou' : 'desativou'} tenant ${slug}`, slug, callerUid);
+    return { slug, active };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    console.error('[setTenantActive] erro não-tratado', { slug, active, code: e?.code, message: e?.message, stack: e?.stack });
+    throw new HttpsError('internal', `Falha ao alterar status do tenant: ${e?.message || 'erro desconhecido'}`);
+  }
 });
 
 /**
@@ -1202,3 +1246,574 @@ exports.sendPushNotification = onCall(
       throw new HttpsError('internal', 'Error sending notifications');
     }
 });
+
+// =====================================================================
+// BILLING / ASAAS
+// =====================================================================
+//
+// Convenção: externalReference = tenantSlug (em customer e subscription).
+// Isso evita um índice reverso no Firestore: o webhook resolve o tenant
+// direto do payload.
+
+const ASAAS_SECRETS = [ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN];
+const ASAAS_OPTS = { secrets: ASAAS_SECRETS };
+
+function ensureBillingPayload(data) {
+  const slug = String(data.slug || '').toLowerCase().trim();
+  if (!slug) throw new HttpsError('invalid-argument', 'slug é obrigatório.');
+  return slug;
+}
+
+async function getTenantOrThrow(slug) {
+  const ref = admin.firestore().collection('tenants').doc(slug);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  return { ref, data: snap.data() };
+}
+
+function buildNextDueDate(dueDay) {
+  const d = new Date();
+  const day = Math.min(28, Math.max(1, Number(dueDay) || 10));
+  d.setUTCDate(day);
+  d.setUTCHours(12, 0, 0, 0);
+  if (d.getTime() < Date.now() + 24 * 3600_000) {
+    d.setUTCMonth(d.getUTCMonth() + 1);
+  }
+  return d.getTime();
+}
+
+/**
+ * Cria (ou recria) a assinatura do tenant no Asaas.
+ * Body: { slug, priceCents, cycle?, billingType?, dueDay?, payer: { name, email, cpfCnpj, phone? } }
+ */
+exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const priceCents = Number(data.priceCents);
+  if (!Number.isFinite(priceCents) || priceCents < 100) {
+    throw new HttpsError('invalid-argument', 'priceCents deve ser >= 100 (R$ 1,00).');
+  }
+  const payer = data.payer || {};
+  if (!payer.name || !payer.email || !payer.cpfCnpj) {
+    throw new HttpsError('invalid-argument', 'payer.name, payer.email e payer.cpfCnpj são obrigatórios.');
+  }
+
+  const cycle = data.cycle || 'MONTHLY';
+  const billingType = data.billingType || 'UNDEFINED';
+  const dueDay = data.dueDay || 10;
+  const nextDueDateMs = buildNextDueDate(dueDay);
+
+  const apiKey = ASAAS_API_KEY.value();
+
+  const customer = await asaas.findOrCreateCustomer(apiKey, {
+    name: payer.name,
+    email: payer.email,
+    cpfCnpj: String(payer.cpfCnpj).replace(/\D/g, ''),
+    phone: payer.phone,
+    externalReference: slug,
+  });
+
+  // Se já existe subscription para esse tenant, cancela antes de recriar.
+  const existing = tenant.billing?.asaasSubscriptionId;
+  if (existing) {
+    try { await asaas.cancelSubscription(apiKey, existing); }
+    catch (e) { console.warn('cancelSubscription falhou (ok se já cancelada):', e?.response?.data || e.message); }
+  }
+
+  const sub = await asaas.createSubscription(apiKey, {
+    customerId: customer.id,
+    valueCents: priceCents,
+    cycle,
+    billingType,
+    nextDueDateMs,
+    description: `Plataforma K-Tag — ${tenant.name} (${tenant.plan || 'basic'})`,
+    externalReference: slug,
+  });
+
+  const billing = {
+    status: 'active',
+    priceCents,
+    cycle,
+    method: billingType,
+    dueDay,
+    nextDueDate: nextDueDateMs,
+    asaasCustomerId: customer.id,
+    asaasSubscriptionId: sub.id,
+    payerCpfCnpj: payer.cpfCnpj,
+    payerName: payer.name,
+    payerEmail: payer.email,
+    lastSyncedAt: Date.now(),
+  };
+  await ref.update({ billing });
+
+  await logAudit(null, 'CREATE', 'TenantSubscription',
+    `Super admin criou assinatura Asaas (${sub.id}) para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}`,
+    slug, callerUid);
+
+  return { ok: true, billing, asaasSubscription: sub };
+});
+
+/**
+ * Atualiza preço/ciclo/método. Body: { slug, priceCents?, cycle?, billingType?, dueDay? }
+ */
+exports.updateTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const subId = tenant.billing?.asaasSubscriptionId;
+  if (!subId) throw new HttpsError('failed-precondition', `Tenant ${slug} não tem assinatura ativa.`);
+
+  const apiKey = ASAAS_API_KEY.value();
+  const patch = {};
+  if (data.priceCents !== undefined) patch.valueCents = Number(data.priceCents);
+  if (data.cycle) patch.cycle = data.cycle;
+  if (data.billingType) patch.billingType = data.billingType;
+  if (data.dueDay) patch.nextDueDateMs = buildNextDueDate(data.dueDay);
+
+  const sub = await asaas.updateSubscription(apiKey, subId, patch);
+
+  const update = { 'billing.lastSyncedAt': Date.now() };
+  if (data.priceCents !== undefined) update['billing.priceCents'] = Number(data.priceCents);
+  if (data.cycle) update['billing.cycle'] = data.cycle;
+  if (data.billingType) update['billing.method'] = data.billingType;
+  if (data.dueDay) {
+    update['billing.dueDay'] = data.dueDay;
+    update['billing.nextDueDate'] = patch.nextDueDateMs;
+  }
+  await ref.update(update);
+
+  await logAudit(null, 'UPDATE', 'TenantSubscription',
+    `Super admin alterou assinatura ${subId}: ${Object.keys(patch).join(', ')}`,
+    slug, callerUid);
+
+  return { ok: true, asaasSubscription: sub };
+});
+
+exports.cancelTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const subId = tenant.billing?.asaasSubscriptionId;
+  if (!subId) throw new HttpsError('failed-precondition', `Tenant ${slug} não tem assinatura ativa.`);
+
+  await asaas.cancelSubscription(ASAAS_API_KEY.value(), subId);
+
+  await ref.update({
+    'billing.status': 'canceled',
+    'billing.asaasSubscriptionId': null,
+    'billing.lastSyncedAt': Date.now(),
+  });
+
+  await logAudit(null, 'DELETE', 'TenantSubscription',
+    `Super admin cancelou assinatura Asaas ${subId} de ${slug}`,
+    slug, callerUid);
+
+  return { ok: true };
+});
+
+/**
+ * Faz pull do Asaas e atualiza invoices + status do tenant.
+ */
+exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
+  await requireSuperAdmin(request);
+  const slug = ensureBillingPayload(request.data || {});
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const subId = tenant.billing?.asaasSubscriptionId;
+  if (!subId) {
+    return { ok: false, reason: 'sem assinatura' };
+  }
+
+  const apiKey = ASAAS_API_KEY.value();
+  const [sub, payments] = await Promise.all([
+    asaas.getSubscription(apiKey, subId).catch(() => null),
+    asaas.listSubscriptionPayments(apiKey, subId, 50),
+  ]);
+
+  // Atualiza invoices
+  const batch = admin.firestore().batch();
+  for (const p of payments) {
+    const inv = asaas.paymentToInvoice(p, slug);
+    inv.createdAt = inv.createdAt || Date.now();
+    const invRef = ref.collection('invoices').doc(p.id);
+    batch.set(invRef, inv, { merge: true });
+  }
+  await batch.commit();
+
+  // Calcula status agregado: overdue se alguma fatura OVERDUE, senão active/canceled
+  const hasOverdue = payments.some(p => asaas.normalizeStatus(p.status) === 'OVERDUE');
+  const statusFromSub = sub?.status === 'INACTIVE' ? 'canceled' : (hasOverdue ? 'overdue' : 'active');
+
+  await ref.update({
+    'billing.status': statusFromSub,
+    'billing.lastSyncedAt': Date.now(),
+  });
+
+  return { ok: true, invoicesCount: payments.length, status: statusFromSub };
+});
+
+/**
+ * Lista invoices de um tenant. Apenas super admin (UI super-admin).
+ */
+exports.listTenantInvoices = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const slug = ensureBillingPayload(request.data || {});
+  const snap = await admin.firestore()
+    .collection('tenants').doc(slug)
+    .collection('invoices')
+    .orderBy('dueDate', 'desc')
+    .limit(60)
+    .get();
+  return { invoices: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
+});
+
+// ---------- ENDPOINTS TENANT-SCOPED (admin do próprio tenant) ----------
+//
+// Pareados com os super-admin (listTenantInvoices/syncTenantBilling) mas com
+// guard requireTenantAdmin — admin de um tenant NUNCA enxerga outro.
+
+/**
+ * Retorna o estado de billing + plano do tenant do caller.
+ * Útil pra exibir na área /billing do tenant.
+ */
+exports.getMyTenantBilling = onCall(async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+  const snap = await admin.firestore().collection('tenants').doc(tenantId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tenant não encontrado.');
+  const t = snap.data();
+  // Não vazamos asaasCustomerId/SubscriptionId — IDs internos do Asaas só pro
+  // super admin. O tenant só precisa do estado funcional.
+  const b = t.billing || {};
+  return {
+    tenant: {
+      id: tenantId,
+      name: t.name,
+      slug: t.slug || tenantId,
+      plan: t.plan || 'basic',
+      active: t.active !== false,
+    },
+    billing: {
+      status: b.status || 'none',
+      priceCents: b.priceCents,
+      cycle: b.cycle,
+      method: b.method,
+      dueDay: b.dueDay,
+      nextDueDate: b.nextDueDate,
+      lastSyncedAt: b.lastSyncedAt,
+      payerName: b.payerName,
+      payerEmail: b.payerEmail,
+    },
+  };
+});
+
+/**
+ * Lista invoices do PRÓPRIO tenant do caller (admin do tenant).
+ * Body opcional: { limit?, status? }
+ */
+exports.listMyTenantInvoices = onCall(async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+  const data = request.data || {};
+  const limit = Math.min(120, Math.max(10, Number(data.limit) || 60));
+  const status = data.status && data.status !== 'all' ? String(data.status) : null;
+
+  let q = admin.firestore()
+    .collection('tenants').doc(tenantId)
+    .collection('invoices')
+    .orderBy('dueDate', 'desc');
+  if (status) q = q.where('status', '==', status);
+
+  const snap = await q.limit(limit).get();
+  return {
+    invoices: snap.docs.map(d => {
+      const inv = d.data();
+      // Removemos campos que o tenant não precisa ver
+      delete inv.asaasCustomerId;
+      delete inv.asaasSubscriptionId;
+      return { id: d.id, ...inv };
+    }),
+  };
+});
+
+/**
+ * Permite que o admin do tenant force um sync com Asaas (mesmo callable usado
+ * pelo super admin, mas guard menos restritivo). Limita a 1 chamada a cada
+ * 60s por tenant para evitar abuse.
+ */
+const _syncCooldown = new Map();
+exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+  const last = _syncCooldown.get(tenantId) || 0;
+  if (Date.now() - last < 60_000) {
+    throw new HttpsError('resource-exhausted', 'Aguarde 1 minuto entre sincronizações.');
+  }
+  _syncCooldown.set(tenantId, Date.now());
+
+  const ref = admin.firestore().collection('tenants').doc(tenantId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tenant não encontrado.');
+  const tenant = snap.data();
+  const subId = tenant.billing?.asaasSubscriptionId;
+  if (!subId) return { ok: false, reason: 'sem assinatura' };
+
+  const apiKey = ASAAS_API_KEY.value();
+  const [sub, payments] = await Promise.all([
+    asaas.getSubscription(apiKey, subId).catch(() => null),
+    asaas.listSubscriptionPayments(apiKey, subId, 50),
+  ]);
+
+  const batch = admin.firestore().batch();
+  for (const p of payments) {
+    const inv = asaas.paymentToInvoice(p, tenant.slug || tenantId);
+    inv.createdAt = inv.createdAt || Date.now();
+    batch.set(ref.collection('invoices').doc(p.id), inv, { merge: true });
+  }
+  await batch.commit();
+
+  const hasOverdue = payments.some(p => asaas.normalizeStatus(p.status) === 'OVERDUE');
+  const statusFromSub = sub?.status === 'INACTIVE' ? 'canceled' : (hasOverdue ? 'overdue' : 'active');
+  await ref.update({
+    'billing.status': statusFromSub,
+    'billing.lastSyncedAt': Date.now(),
+  });
+
+  return { ok: true, invoicesCount: payments.length, status: statusFromSub };
+});
+
+/**
+ * Lista invoices cross-tenant para o painel global de faturas.
+ * Body: { status?, tenantSlug?, fromMs?, toMs?, limit? }
+ * Itera /tenants/* e concatena — adequado até ~200 tenants. Acima disso,
+ * trocar por collectionGroup('invoices') + índice composto em (status, dueDate).
+ */
+exports.listInvoicesGlobal = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const data = request.data || {};
+  const status = data.status && data.status !== 'all' ? String(data.status) : null;
+  const tenantSlug = data.tenantSlug ? String(data.tenantSlug) : null;
+  const fromMs = Number(data.fromMs) || null;
+  const toMs = Number(data.toMs) || null;
+  const limit = Math.min(500, Math.max(20, Number(data.limit) || 100));
+
+  const db = admin.firestore();
+  const tenantsSnap = tenantSlug
+    ? await db.collection('tenants').where('slug', '==', tenantSlug).get()
+    : await db.collection('tenants').get();
+
+  const tenantNames = {};
+  tenantsSnap.forEach(t => { tenantNames[t.id] = t.data().name || t.id; });
+
+  const all = [];
+  for (const t of tenantsSnap.docs) {
+    let q = t.ref.collection('invoices').orderBy('dueDate', 'desc');
+    if (status) q = q.where('status', '==', status);
+    if (fromMs) q = q.where('dueDate', '>=', fromMs);
+    if (toMs) q = q.where('dueDate', '<=', toMs);
+    const snap = await q.limit(limit).get();
+    snap.forEach(d => {
+      const inv = d.data();
+      all.push({
+        id: d.id,
+        ...inv,
+        tenantId: t.id,
+        tenantName: tenantNames[t.id],
+      });
+    });
+  }
+
+  all.sort((a, b) => (b.dueDate || 0) - (a.dueDate || 0));
+  return { invoices: all.slice(0, limit), total: all.length };
+});
+
+/**
+ * Agrega receita realizada (status RECEIVED/CONFIRMED) por mês nos últimos N meses.
+ * Body: { months? } — default 12.
+ * Retorna pontos no formato { month: 'YYYY-MM', revenueCents, invoicesCount, paidTenants },
+ * mais snapshot do MRR atual derivado de tenants.billing.
+ */
+exports.aggregateMRRHistory = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const months = Math.min(24, Math.max(3, Number(request.data?.months) || 12));
+
+  const db = admin.firestore();
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1, 0, 0, 0));
+
+  const buckets = {};
+  for (let i = 0; i < months; i++) {
+    const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    buckets[key] = { month: key, revenueCents: 0, invoicesCount: 0, tenants: new Set() };
+  }
+
+  const tenantsSnap = await db.collection('tenants').get();
+  let mrrCents = 0;
+  let activeTenants = 0;
+
+  for (const t of tenantsSnap.docs) {
+    const tdata = t.data();
+    const b = tdata.billing;
+    if (b && (b.status === 'active' || b.status === 'overdue') && b.priceCents) {
+      let monthly = b.priceCents;
+      if (b.cycle === 'YEARLY') monthly = Math.round(b.priceCents / 12);
+      else if (b.cycle === 'QUARTERLY') monthly = Math.round(b.priceCents / 3);
+      mrrCents += monthly;
+      activeTenants++;
+    }
+
+    const invSnap = await t.ref.collection('invoices')
+      .where('dueDate', '>=', start.getTime())
+      .get();
+    invSnap.forEach(doc => {
+      const inv = doc.data();
+      if (inv.status !== 'RECEIVED' && inv.status !== 'CONFIRMED') return;
+      const when = inv.paidAt || inv.dueDate;
+      if (!when) return;
+      const d = new Date(when);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const bucket = buckets[key];
+      if (!bucket) return;
+      bucket.revenueCents += Number(inv.valueCents || 0);
+      bucket.invoicesCount += 1;
+      bucket.tenants.add(t.id);
+    });
+  }
+
+  const history = Object.values(buckets).map(b => ({
+    month: b.month,
+    revenueCents: b.revenueCents,
+    invoicesCount: b.invoicesCount,
+    paidTenants: b.tenants.size,
+  }));
+
+  return {
+    history,
+    currentMrrCents: mrrCents,
+    activeTenants,
+  };
+});
+
+/**
+ * Webhook do Asaas.
+ *
+ * Cadastrar em https://www.asaas.com/integracoes/webhooks com:
+ *  - URL: https://<region>-<project>.cloudfunctions.net/asaasWebhook
+ *  - Token de autenticação: igual ao secret ASAAS_WEBHOOK_TOKEN
+ *  - Eventos: PAYMENT_CREATED, PAYMENT_RECEIVED, PAYMENT_CONFIRMED,
+ *    PAYMENT_OVERDUE, PAYMENT_DELETED, PAYMENT_REFUNDED, PAYMENT_UPDATED
+ *
+ * O Asaas envia o token em header 'asaas-access-token'.
+ *
+ * Política de inativação: tenant fica 'overdue' assim que PAYMENT_OVERDUE chega;
+ * a desativação automática (active=false) acontece via job diário.
+ */
+exports.asaasWebhook = onRequest(
+  { secrets: ASAAS_SECRETS, cors: false, timeoutSeconds: 30 },
+  async (req, res) => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).send('Method Not Allowed');
+      }
+      const expectedToken = ASAAS_WEBHOOK_TOKEN.value();
+      const receivedToken = req.headers['asaas-access-token'];
+      if (!expectedToken || receivedToken !== expectedToken) {
+        console.warn('asaasWebhook: token inválido', { ip: req.ip });
+        return res.status(401).send('Unauthorized');
+      }
+
+      const body = req.body || {};
+      const event = body.event;
+      const payment = body.payment;
+      if (!event || !payment) {
+        return res.status(400).send('payload inválido');
+      }
+
+      // tenantSlug vem do externalReference (definido na criação da subscription)
+      const slug = String(payment.externalReference || '').toLowerCase().trim();
+      if (!slug) {
+        console.warn('asaasWebhook: payment sem externalReference', payment.id);
+        return res.status(202).send('ignored: no externalReference');
+      }
+
+      const tenantRef = admin.firestore().collection('tenants').doc(slug);
+      const tenantSnap = await tenantRef.get();
+      if (!tenantSnap.exists) {
+        console.warn(`asaasWebhook: tenant ${slug} não existe`);
+        return res.status(202).send('ignored: tenant not found');
+      }
+
+      const invoice = asaas.paymentToInvoice(payment, slug);
+      invoice.createdAt = invoice.createdAt || Date.now();
+      await tenantRef.collection('invoices').doc(payment.id).set(invoice, { merge: true });
+
+      // Atualiza status agregado do tenant conforme o evento
+      const update = { 'billing.lastSyncedAt': Date.now() };
+      switch (event) {
+        case 'PAYMENT_RECEIVED':
+        case 'PAYMENT_CONFIRMED':
+          update['billing.status'] = 'active';
+          break;
+        case 'PAYMENT_OVERDUE':
+          update['billing.status'] = 'overdue';
+          break;
+        case 'PAYMENT_DELETED':
+        case 'PAYMENT_REFUNDED':
+          // Não muda status do tenant — refletido só na invoice.
+          break;
+      }
+      await tenantRef.update(update);
+
+      await logAudit(null, 'WEBHOOK', 'Asaas',
+        `${event} payment=${payment.id} status=${payment.status}`,
+        slug, 'ASAAS_WEBHOOK');
+
+      return res.status(200).send('ok');
+    } catch (e) {
+      console.error('asaasWebhook erro:', e);
+      // Retornar 5xx faz o Asaas reentregar — bom em erro transitório, ruim em bug.
+      return res.status(500).send('error');
+    }
+  }
+);
+
+/**
+ * Job diário: desativa tenants em atraso há mais de 7 dias.
+ * (Soft: marca active=false; dados permanecem.)
+ */
+exports.dailyBillingEnforcement = onSchedule(
+  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo' },
+  async () => {
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    const snap = await admin.firestore()
+      .collection('tenants')
+      .where('billing.status', '==', 'overdue')
+      .get();
+
+    let suspended = 0;
+    for (const doc of snap.docs) {
+      const t = doc.data();
+      if (t.active === false) continue;
+      // Verifica se a invoice mais antiga em atraso passou do cutoff
+      const invs = await doc.ref.collection('invoices')
+        .where('status', '==', 'OVERDUE')
+        .orderBy('dueDate', 'asc')
+        .limit(1)
+        .get();
+      const oldestOverdue = invs.docs[0]?.data()?.dueDate;
+      if (oldestOverdue && oldestOverdue < cutoff) {
+        await doc.ref.update({ active: false });
+        await logAudit(null, 'SUSPEND', 'Tenant',
+          `Suspensão automática por inadimplência > 7d`,
+          doc.id, 'BILLING_JOB');
+        suspended++;
+      }
+    }
+    console.log(`dailyBillingEnforcement: suspended=${suspended}`);
+  }
+);

@@ -68,9 +68,12 @@ export default defineConfig(({ mode }) => {
 
     define: {
       /**
-       * Compatibilidade com libs que usam process.env
+       * Whitelist explícita — nunca despejar todo process.env no bundle.
+       * Why: o dump completo vaza PATH, credenciais e segredos pro cliente.
        */
-      'process.env': env,
+      'process.env.API_KEY': JSON.stringify(env.API_KEY ?? ''),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY ?? ''),
+      'process.env.NODE_ENV': JSON.stringify(mode),
     },
 
     resolve: {

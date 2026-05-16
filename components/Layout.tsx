@@ -15,7 +15,7 @@ import {
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home, Package
+  Home, Package, Receipt
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -372,6 +372,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         items: [
           { label: 'RELATÓRIOS', path: '/reports', icon: FileText, perm: 'ROUTE_REPORTS' },
           { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet, perm: 'ROUTE_FINANCIAL' },
+          { label: 'MENSALIDADE', path: '/billing', icon: Receipt, perm: 'ROUTE_BILLING' },
           { label: 'AUDITORIA', path: '/audit', icon: ClipboardList, perm: 'ROUTE_AUDIT' }
         ]
       }

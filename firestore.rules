@@ -128,6 +128,14 @@ service cloud.firestore {
       allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
     }
 
+    // Faturas de mensalidade. Espelho do Asaas — escrita só via Admin SDK
+    // (Cloud Functions ignoram regras). Leitura limitada a admin do tenant +
+    // super admin para não vazar dados financeiros aos demais membros.
+    match /tenants/{tenantId}/invoices/{invoiceId} {
+      allow read: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow write: if false;
+    }
+
     // Audit logs: append-only para membros, leitura só admin. update/delete bloqueados.
     match /tenants/{tenantId}/audit_logs/{logId} {
       allow read: if isTenantAdmin(tenantId) || isSuperAdmin();
