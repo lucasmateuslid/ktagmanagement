@@ -54,11 +54,8 @@ function translateAuthError(err: any): string {
   if (code === 'auth/network-request-failed') {
     return 'Falha de rede. Verifique sua conexão.';
   }
-  if (code === 'auth/email-already-in-use') {
-    return 'Já existe uma conta com este e-mail.';
-  }
-  if (code === 'auth/weak-password') {
-    return 'Senha muito fraca. Use ao menos 6 caracteres.';
+  if (code === 'auth/email-already-in-use' || code === 'auth/weak-password') {
+    return 'Dados inválidos. Verifique e tente novamente.';
   }
   // Fallback: nunca devolver mensagens cruas do Firebase para o usuário.
   return GENERIC_LOGIN_ERROR;
