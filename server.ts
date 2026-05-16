@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
-import { createServer as createViteServer } from "vite";
 import path from "path";
+// vite é devDependency e não é instalada no estágio runtime do Docker.
+// Importação dinâmica abaixo, somente quando NODE_ENV !== 'production'.
 
 class GeocodingError extends Error {
   constructor(message: string) {
@@ -714,6 +715,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
