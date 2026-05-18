@@ -6,6 +6,199 @@
 - [Fase 3](#fase-3--functions-tenant-aware) — Cloud Functions migradas para paths e settings por tenant
 - [Fase 4](#fase-4--painel-super-admin) — Painel super admin (`admin.<dominio>`) + CRUD de tenants
 - [Fase 5](#fase-5--cloud-run--docker--dns) — Dockerfile + Cloud Build + middleware `resolveTenant` no Express
+- [Fase 6](#fase-6--billing-asaas--ui-modern--cicd) — Integração Asaas (assinatura/faturas/PIX/boleto), UI super-admin redesign, página `/billing` do tenant, pipeline GitHub Actions com WIF, fix Cloud Run cold start
+
+---
+
+## Fase 6 — Billing Asaas + UI Modern + CI/CD
+
+### Resumo
+
+Três entregas paralelas:
+
+1. **Billing v1 (Asaas)** — super-admin gerencia assinaturas recorrentes; tenant admin vê suas próprias faturas com PIX copia-e-cola e boleto; webhook do Asaas atualiza status em tempo real; job diário suspende tenants inadimplentes >7d.
+2. **UI super-admin modernizada** — sidebar agrupada (Plataforma/Financeiro/Sistema) com pill ativa, dashboard com gráfico de receita 12m, glassmorphism em `rounded-3xl + backdrop-blur-xl`, mantendo âmbar como brand color.
+3. **CI/CD via GitHub Actions** — Workload Identity Federation (sem JSON keys), `workflow_dispatch` manual com seletor `target=all|cloud-run|functions|firestore`, type-check gateando deploys.
+
+### Arquivos criados
+
+| Arquivo | Propósito |
+|---|---|
+| `functions/asaas.js` | Cliente Asaas: `findOrCreateCustomer`, `createSubscription`, `updateSubscription`, `cancelSubscription`, `listSubscriptionPayments`, `paymentToInvoice`, `normalizeStatus`. Sandbox/prod controlado por `ASAAS_ENV`. `externalReference=tenantSlug` em customer e subscription (evita índice reverso). |
+| `pages/admin/AdminBilling.tsx` | Lista de tenants com MRR estimado, status, plano, próximo vencimento. Clique abre modal `TenantBillingDetail`. |
+| `pages/admin/TenantBillingDetail.tsx` | Modal de gestão por tenant: criar/atualizar/cancelar assinatura, dados do pagador, faturas recentes, ações de sync. |
+| `pages/admin/AdminInvoices.tsx` | Histórico global de cobranças (cross-tenant) + gráfico Recharts de receita 12m. Filtros status/empresa/período. |
+| `pages/Billing.tsx` | Página `/billing` do tenant: card da assinatura, banner de suspensão (se aplicável), pagamento pendente com PIX copia-e-cola + botão de boleto, histórico de faturas. |
+| `.github/workflows/deploy.yml` | Pipeline `workflow_dispatch` com 4 jobs: lint → cloud-run / functions / firestore (condicionais por `target`). Concurrency lock por alvo. |
+| `scripts/setup-gcp-wif.sh` | Idempotente. Cria SA `github-actions-deployer`, pool WIF, provider OIDC com `attribute-condition=repository_owner=='lucasmateuslid'`, concede 11 roles IAM, cria Artifact Registry. Imprime os 3 valores p/ colar em GitHub Secrets. |
+| `.firebaserc` | Define `saastagmanager` como projeto default. |
+| `firestore.indexes.json` | Composite index `invoices(status ASC, dueDate DESC)` — exigido por `listMyTenantInvoices` e `listInvoicesGlobal` com filtro de status. |
+
+### Arquivos modificados (principais)
+
+| Arquivo | Mudança |
+|---|---|
+| `functions/index.js` | +6 callables billing (ver tabela abaixo), webhook `asaasWebhook`, job `dailyBillingEnforcement`. Hardening em `createTenant`/`setTenantActive` (try/catch + logs específicos com `code`/`message`/`stack`, mapeamento de erros do Firebase Auth → HttpsError). |
+| `functions/package.json` | Sem mudança estrutural; secrets `ASAAS_API_KEY` e `ASAAS_WEBHOOK_TOKEN` via `defineSecret`. |
+| `firestore.rules` | Regra `/tenants/{tid}/invoices/{id}` — `read: admin/superadmin`, `write: false` (espelho do Asaas via Admin SDK). |
+| `pages/admin/AdminLayout.tsx` | Sidebar reescrita: brand pill com avatar gradiente, nav agrupado em 3 seções, ativa com `border-l + ChevronRight`, perfil no rodapé, topbar com search `⌘K` e badge de ambiente. Gradient orbs âmbar difusos. |
+| `pages/admin/AdminDashboard.tsx` | Hero stat MRR com sparkline + delta vs mês anterior, AreaChart Recharts 12m, painel de alertas lateral, lista de cadastros recentes com avatares iniciais, distribuição por plano. |
+| `pages/admin/AdminApp.tsx` | Rota `/admin/invoices` registrada. |
+| `utils/permissions.ts` | `ROUTE_BILLING` adicionada em `GESTAO` — admin/admin_tecnico ganham automático via `Object.values().flat()`. |
+| `App.tsx` | Lazy import `Billing` + rota `/billing` com `RoleProtectedRoute permission="ROUTE_BILLING"`. |
+| `components/Layout.tsx` | Item "MENSALIDADE" na seção GESTÃO da sidebar do tenant. |
+| `package.json` | `tsx` movido de `devDependencies` para `dependencies` (motivo no fix abaixo). |
+| `Dockerfile` | Estágio runtime: `CMD ["node_modules/.bin/tsx", "server.ts"]` direto (sem `npx`). Removido `RUN npm i --no-save tsx` e `COPY services utils lib` (dead-weight — server.ts só importa express/cors/path). |
+| `server.ts` | `vite` agora é dynamic import dentro do branch `NODE_ENV !== 'production'` — em produção a importação não é avaliada (vite é devDep e não está no runtime image). |
+| `contexts/AuthContext.tsx` | Fix typo `auth/email-alredy-in-use` → `auth/email-already-in-use`. |
+
+### Callables novas (billing) — `functions/index.js`
+
+**Super admin** (`requireSuperAdmin`):
+
+| Callable | Faz |
+|---|---|
+| `createTenantSubscription({ slug, priceCents, cycle, billingType, dueDay, payer })` | Cria customer + subscription no Asaas. Persiste `billing.*` no tenant. |
+| `updateTenantSubscription({ slug, priceCents?, cycle?, billingType?, dueDay? })` | Patch parcial na assinatura existente. |
+| `cancelTenantSubscription({ slug })` | DELETE no Asaas + `billing.status='canceled'`. |
+| `syncTenantBilling({ slug })` | Pull do Asaas (subscription + payments) → atualiza `invoices/` + `billing.status`. |
+| `listTenantInvoices({ slug, limit? })` | Faturas de 1 tenant (do super admin). |
+| `listInvoicesGlobal({ status?, tenantSlug?, fromMs?, toMs?, limit? })` | Cross-tenant — itera `/tenants/*` (até ~200 tenants). |
+| `aggregateMRRHistory({ months? })` | Receita realizada por mês (últimos N meses, default 12) + MRR atual derivado de `tenants.billing`. |
+
+**Tenant admin** (`requireTenantAdmin`):
+
+| Callable | Faz |
+|---|---|
+| `getMyTenantBilling()` | Estado de plano + cobrança do próprio tenant (IDs internos do Asaas ocultos). |
+| `listMyTenantInvoices({ limit?, status? })` | Histórico próprio. Remove `asaasCustomerId`/`asaasSubscriptionId` do payload. |
+| `syncMyTenantBilling()` | Force-sync (cooldown 60s/tenant). |
+
+**Webhook / cron**:
+
+| Função | Faz |
+|---|---|
+| `asaasWebhook` (onRequest) | Valida `asaas-access-token` header contra `ASAAS_WEBHOOK_TOKEN`. Resolve tenant via `payment.externalReference`. Upsert na invoice + atualiza `billing.status` por tipo de evento. Audit em `system_audit_logs`. |
+| `dailyBillingEnforcement` (onSchedule 03:30 BRT) | Soft-suspend (`active=false`) de tenants com invoice OVERDUE há >7d. |
+
+### Como configurar Asaas (uma vez por ambiente)
+
+```bash
+# 1) Pegar API key em https://www.asaas.com → Integrações → API Asaas
+#    (sandbox: https://sandbox.asaas.com — recomendado para começar)
+
+firebase functions:secrets:set ASAAS_API_KEY
+# cola o valor quando pedir; nunca como argumento na linha de comando
+
+# 2) Gerar token random para o webhook
+openssl rand -hex 32 | firebase functions:secrets:set ASAAS_WEBHOOK_TOKEN --data-file=-
+# salve esse valor (1Password/etc) — vai precisar pra cadastrar webhook no Asaas
+
+# 3) Setar ambiente (sandbox|production) como env var das functions
+#    (sandbox é o default se não setar)
+firebase functions:config:set asaas.env=sandbox   # ou production
+# OU via Cloud Run Functions UI: env var ASAAS_ENV
+
+# 4) Cadastrar webhook no Asaas
+#    URL:   https://us-central1-saastagmanager.cloudfunctions.net/asaasWebhook
+#    Token: o valor gerado no passo 2
+#    Eventos: PAYMENT_CREATED, PAYMENT_RECEIVED, PAYMENT_CONFIRMED,
+#             PAYMENT_OVERDUE, PAYMENT_DELETED, PAYMENT_REFUNDED, PAYMENT_UPDATED
+```
+
+### CI/CD — primeiro deploy
+
+```bash
+# Uma vez por desenvolvedor com permissões de owner no GCP:
+gcloud auth login
+gcloud config set project saastagmanager
+./scripts/setup-gcp-wif.sh
+```
+
+O script imprime 3 valores no final. Cola em **GitHub → repo → Settings → Secrets and variables → Actions**:
+
+- `GCP_PROJECT_ID`
+- `GCP_WIF_PROVIDER`
+- `GCP_SERVICE_ACCOUNT`
+
+Depois é só **Actions → Deploy → Run workflow → target: `all`**. Idempotente — pode rerun à vontade.
+
+### Fixes de Cloud Run (commits 5c7d56c, 5f9480a)
+
+| Sintoma | Causa | Fix |
+|---|---|---|
+| `Failed to start and listen on PORT=8080` (deploy 1) | `import { createServer } from "vite"` no topo do `server.ts` — vite é devDep e não está no runtime image → `MODULE_NOT_FOUND` em runtime | Dynamic import dentro do branch `NODE_ENV !== 'production'` |
+| `Failed to start and listen on PORT=8080` (deploy 2) | `npx tsx` baixava o tsx do npm registry a cada cold start (40s) — `RUN npm i --no-save tsx@4` não deixava o binário acessível pós `USER node` | tsx movido pra `dependencies` (instalado no `npm ci --omit=dev` com permissões corretas) + Dockerfile chama `./node_modules/.bin/tsx` direto |
+
+Startup pós-fix (medido com `docker run` local): **2.1s** (vs 40s antes).
+
+### Próximos passos (roadmap pós-deploy)
+
+**A — DNS wildcard via Cloudflare** (~30 min, sem código):
+
+1. Cloudflare Free → Add Site `ktagfinder.app` → anota 2 nameservers
+2. name.com → ktagfinder.app → Nameservers → trocar pelos do CF
+3. Aguarda email de "Active" (~10-30min)
+4. CF DNS: `CNAME @ → <cloud-run-host>` 🟠 e `CNAME * → <cloud-run-host>` 🟠
+5. CF SSL/TLS → Full (strict). Universal SSL cobre apex + `*.ktagfinder.app`
+6. Smoke test:
+   ```bash
+   curl -sI https://admin.ktagfinder.app/api/health
+   curl -sI https://<slug>.ktagfinder.app/api/health
+   ```
+
+**B — Roadmap de billing** (decidido com usuário, ordem 1 → 3 → 4 → 5 → 6 → 2 → 7 → 8):
+
+| Fase | Status | Escopo |
+|---|---|---|
+| 1 — Área `/billing` do tenant | ✅ feito (Fase 6) | Tenant admin vê suas faturas + PIX/boleto |
+| 3 — Webhook robusto | ⏳ próximo | Idempotência por `dateUpdated`, coleção `system_billing_events` para forensics, validação reforçada |
+| 4 — Notificações | ⏳ | Push (já existe) + e-mail nativo Asaas (`notificationDisabled=false`) |
+| 5 — PIX QR + boleto inline | ⏳ | Renderizar QR code, código de barras, valor/prazo em destaque |
+| 6 — Reenvio manual | ⏳ | Botão "lembrar cliente" → endpoint Asaas notify |
+| 2 — Cobranças avulsas | ⏳ | Setup fee, taxa única (não-recorrente) |
+| 7 — Trial period | ⏳ | Param opcional em `createTenantSubscription` |
+| 8 — Config Asaas no super admin | ⏳ | Toggle sandbox/prod via UI; URL do webhook visível |
+
+### Como retomar após `git clone`
+
+```bash
+# 1) Setup
+npm ci
+cd functions && npm ci && cd ..
+
+# 2) .env (copie .env.example se existir; senão preencha manualmente)
+cat > .env <<EOF
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=saastagmanager.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=saastagmanager
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+EOF
+
+# 3) Dev local
+npm run dev              # http://localhost:5173/?tenant=<slug>
+
+# 4) Smoke test em container (mesma config do Cloud Run)
+docker build -t ktag-app:local .
+docker run --rm -e PORT=8080 -e NODE_ENV=production -p 8080:8080 ktag-app:local
+
+# 5) Deploy
+#    - Tudo via CI: GitHub Actions → Deploy → Run workflow → target: all
+#    - Específico via CLI:
+firebase deploy --only functions:createTenant
+firebase deploy --only firestore:indexes
+gcloud run deploy ktag-app --image=<image> --region=us-central1
+```
+
+### Riscos / pontos de atenção
+
+- **`_syncCooldown` em `syncMyTenantBilling`** é Map global em memória. Cloud Functions Gen 2 escala em múltiplas instâncias — o cooldown não bloqueia abuse cross-instance. Soft rate-limit, OK pra MVP; se virar problema, migrar para Firestore TTL doc por tenant.
+- **`listInvoicesGlobal` itera tenants em série** — performa bem até ~200 tenants. Acima disso, trocar por collectionGroup query + composite index.
+- **Webhook do Asaas é idempotente por chave (`payment.id`)** mas pode logar audit duplicado em retry. Fase 3 vai resolver com `system_billing_events`.
+- **Domínio apex `ktagfinder.app`** sem subdomínio → `getTenantFromHostname` retorna `'default'` → "Empresa não encontrada". Soluções: Cloudflare Page Rule redirecionando para `admin.ktagfinder.app`, ou tratar `default` como landing dedicada no app.
+- **Cloud Functions Gen 2 + Node 20** vai ser deprecado em 2026-10-30. Avaliar upgrade pra Node 22 + `firebase-functions@5+` antes disso.
 
 ---
 
