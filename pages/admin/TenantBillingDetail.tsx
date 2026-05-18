@@ -5,6 +5,7 @@ import { functions } from '../../services/firebase';
 import type { Tenant, Invoice, BillingCycle, BillingMethod } from '../../types';
 import {
   X, Loader2, RefreshCw, CreditCard, Trash2, ExternalLink, AlertTriangle, CheckCircle2,
+  Bell, PlusCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { BillingStatusBadge } from './AdminBilling';
 
@@ -35,15 +36,29 @@ type Props = {
 export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
   const billing = tenant.billing;
   const hasSubscription = !!billing?.asaasSubscriptionId;
+  const hasCustomer = !!billing?.asaasCustomerId;
+
   const [form, setForm] = useState({
     priceCents: billing?.priceCents ?? planDefaultPrice(tenant.plan),
     cycle: (billing?.cycle ?? 'MONTHLY') as BillingCycle,
     billingType: (billing?.method ?? 'UNDEFINED') as BillingMethod,
     dueDay: billing?.dueDay ?? 10,
+    trialDays: 0,
     payerName: billing?.payerName ?? '',
     payerEmail: billing?.payerEmail ?? '',
     payerCpfCnpj: billing?.payerCpfCnpj ?? '',
   });
+
+  // Formulário de cobrança avulsa
+  const [chargeForm, setChargeForm] = useState({
+    valueCents: 0,
+    description: '',
+    billingType: 'UNDEFINED' as BillingMethod,
+    dueDateMs: Date.now() + 7 * 86400000,
+  });
+  const [showChargeForm, setShowChargeForm] = useState(false);
+  const [chargingInvoice, setChargingInvoice] = useState<string | null>(null); // paymentId sendo lembrado
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -88,6 +103,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           email: form.payerEmail,
           cpfCnpj: form.payerCpfCnpj,
         };
+        if (form.trialDays > 0) payload.trialDays = form.trialDays;
       }
       const fn = httpsCallable(functions, fnName);
       await fn(payload);
@@ -129,6 +145,46 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
     }
   };
 
+  const remind = async (paymentId: string) => {
+    if (!functions || chargingInvoice) return;
+    setChargingInvoice(paymentId);
+    setError(''); setInfo('');
+    try {
+      const fn = httpsCallable(functions, 'remindTenantPayment');
+      await fn({ slug: tenant.slug, paymentId });
+      setInfo('Lembrete enviado com sucesso.');
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao enviar lembrete.');
+    } finally {
+      setChargingInvoice(null);
+    }
+  };
+
+  const createCharge = async () => {
+    if (!functions) return;
+    setError(''); setInfo(''); setSubmitting(true);
+    try {
+      const fn = httpsCallable(functions, 'createOneTimeCharge');
+      await fn({
+        slug: tenant.slug,
+        valueCents: chargeForm.valueCents,
+        description: chargeForm.description,
+        billingType: chargeForm.billingType,
+        dueDateMs: chargeForm.dueDateMs,
+      });
+      setInfo('Cobrança avulsa criada com sucesso.');
+      setShowChargeForm(false);
+      setChargeForm({ valueCents: 0, description: '', billingType: 'UNDEFINED', dueDateMs: Date.now() + 7 * 86400000 });
+      await loadInvoices();
+    } catch (e: any) {
+      setError(e?.message || 'Falha ao criar cobrança.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const canRemind = (inv: Invoice) => inv.status === 'PENDING' || inv.status === 'OVERDUE';
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
       <div className="relative bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-3xl w-full max-w-3xl my-8 shadow-2xl shadow-black/50 overflow-hidden">
@@ -165,6 +221,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
             </div>
           )}
 
+          {/* Assinatura recorrente */}
           <section>
             <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3">Plano + cobrança</h4>
             <div className="grid grid-cols-2 gap-3">
@@ -197,6 +254,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
             </div>
           </section>
 
+          {/* Dados do pagador + trial (só na criação) */}
           {!hasSubscription && (
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3">Dados do pagador</h4>
@@ -210,10 +268,28 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
                 <Field label="CPF / CNPJ" hint="Somente números">
                   <input value={form.payerCpfCnpj} onChange={e => setForm({ ...form, payerCpfCnpj: e.target.value.replace(/\D/g, '') })} className={inputCls} required />
                 </Field>
+                <Field label="Período de trial" hint="0 = sem trial (cobrança imediata)">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min="0" max="90"
+                      value={form.trialDays}
+                      onChange={e => setForm({ ...form, trialDays: Math.max(0, Math.min(90, Number(e.target.value))) })}
+                      className={inputCls}
+                    />
+                    <span className="text-zinc-500 text-xs shrink-0">dias</span>
+                  </div>
+                </Field>
               </div>
+              {form.trialDays > 0 && (
+                <p className="mt-2 text-[11px] text-amber-400/80 bg-amber-500/5 border border-amber-500/10 rounded-lg px-3 py-2">
+                  Trial de {form.trialDays} dias — primeira cobrança em{' '}
+                  <strong>{new Date(Date.now() + form.trialDays * 86400000).toLocaleDateString('pt-BR')}</strong>.
+                </p>
+              )}
             </section>
           )}
 
+          {/* Faturas + ações por fatura */}
           {hasSubscription && (
             <section>
               <div className="flex items-center justify-between mb-3">
@@ -235,7 +311,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
                         <th className="text-left px-4 py-2.5">Vencimento</th>
                         <th className="text-left px-4 py-2.5">Valor</th>
                         <th className="text-left px-4 py-2.5">Status</th>
-                        <th className="text-right px-4 py-2.5"></th>
+                        <th className="text-right px-4 py-2.5">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -245,12 +321,27 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
                           <td className="px-4 py-2.5 font-mono">{fmtBRL(inv.valueCents)}</td>
                           <td className="px-4 py-2.5"><InvoiceStatusBadge status={inv.status} /></td>
                           <td className="px-4 py-2.5 text-right">
-                            {inv.invoiceUrl && (
-                              <a href={inv.invoiceUrl} target="_blank" rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-amber-500 hover:text-amber-400">
-                                Asaas <ExternalLink size={11} />
-                              </a>
-                            )}
+                            <div className="inline-flex items-center gap-2">
+                              {canRemind(inv) && (
+                                <button
+                                  onClick={() => remind(inv.id)}
+                                  disabled={!!chargingInvoice}
+                                  title="Reenviar lembrete de pagamento ao cliente"
+                                  className="inline-flex items-center gap-1 text-xs text-amber-500 hover:text-amber-400 disabled:opacity-40"
+                                >
+                                  {chargingInvoice === inv.id
+                                    ? <Loader2 size={11} className="animate-spin" />
+                                    : <Bell size={11} />}
+                                  Lembrar
+                                </button>
+                              )}
+                              {inv.invoiceUrl && (
+                                <a href={inv.invoiceUrl} target="_blank" rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200">
+                                  <ExternalLink size={11} />
+                                </a>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -260,11 +351,74 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
               </div>
             </section>
           )}
+
+          {/* Cobrança avulsa */}
+          {hasCustomer && (
+            <section>
+              <button
+                onClick={() => setShowChargeForm(v => !v)}
+                className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-amber-400 transition-colors"
+              >
+                <PlusCircle size={13} />
+                Nova cobrança avulsa
+                {showChargeForm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+
+              {showChargeForm && (
+                <div className="mt-3 bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Valor (R$)">
+                      <input
+                        type="number" step="0.01" min="1"
+                        value={(chargeForm.valueCents / 100).toFixed(2)}
+                        onChange={e => setChargeForm({ ...chargeForm, valueCents: Math.round(Number(e.target.value) * 100) })}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Método">
+                      <select value={chargeForm.billingType} onChange={e => setChargeForm({ ...chargeForm, billingType: e.target.value as BillingMethod })} className={inputCls}>
+                        {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Vencimento">
+                      <input
+                        type="date"
+                        value={new Date(chargeForm.dueDateMs).toISOString().slice(0, 10)}
+                        onChange={e => setChargeForm({ ...chargeForm, dueDateMs: new Date(e.target.value).getTime() })}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Descrição">
+                      <input
+                        value={chargeForm.description}
+                        onChange={e => setChargeForm({ ...chargeForm, description: e.target.value })}
+                        placeholder="Ex: Taxa de setup"
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                  <button
+                    onClick={createCharge}
+                    disabled={submitting || !chargeForm.description || chargeForm.valueCents < 100}
+                    className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-zinc-950 font-black uppercase tracking-widest text-xs px-4 py-2.5 rounded-xl"
+                  >
+                    {submitting ? <Loader2 className="animate-spin" size={13} /> : <PlusCircle size={13} />}
+                    Gerar cobrança
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         <footer className="relative flex items-center justify-between gap-3 p-6 border-t border-white/5 bg-zinc-950/40">
           <div className="text-[10px] text-zinc-600">
             {billing?.lastSyncedAt && <>Última sincronização: {new Date(billing.lastSyncedAt).toLocaleString('pt-BR')}</>}
+            {billing?.trialEndsAt && (
+              <span className="ml-3 text-amber-500">
+                Trial até {new Date(billing.trialEndsAt).toLocaleDateString('pt-BR')}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {hasSubscription && (

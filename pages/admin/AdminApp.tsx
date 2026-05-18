@@ -10,6 +10,7 @@ import { AdminInvoices } from './AdminInvoices';
 import { AdminUsers } from './AdminUsers';
 import { AdminSystemAdmins } from './AdminSystemAdmins';
 import { AdminAudit } from './AdminAudit';
+import { AdminAsaasConfig } from './AdminAsaasConfig';
 
 const AdminGate = () => {
   const { admin, loading } = useSystemAdmin();
@@ -32,6 +33,7 @@ const AdminGate = () => {
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="/admin/system-admins" element={<AdminSystemAdmins />} />
         <Route path="/admin/audit" element={<AdminAudit />} />
+        <Route path="/admin/asaas-config" element={<AdminAsaasConfig />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>
@@ -40,7 +42,7 @@ const AdminGate = () => {
 
 export const AdminApp = () => (
   <SystemAdminProvider>
-    <HashRouter>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AdminGate />
     </HashRouter>
   </SystemAdminProvider>

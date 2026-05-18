@@ -154,7 +154,7 @@ const TenantApp = () => (
   <AuthProvider>
     <ThemeProvider>
       <WhitelabelStyles />
-      <HashRouter>
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Suspense fallback={<div className="h-screen w-screen bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>}>
           <TenantRoutes />
         </Suspense>

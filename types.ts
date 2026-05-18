@@ -83,6 +83,9 @@ export interface TenantBilling {
   payerEmail?: string;
   /** Última sync bem-sucedida com Asaas (epoch ms). */
   lastSyncedAt?: number;
+  /** Trial period (epoch ms em que o trial expira = data da 1ª cobrança). */
+  trialEndsAt?: number;
+  trialDays?: number;
 }
 
 export interface Tenant {
@@ -116,8 +119,10 @@ export interface Invoice {
   paidAt?: number;
   billingType: BillingMethod;
   invoiceUrl?: string;        // página de pagamento Asaas
-  bankSlipUrl?: string;       // boleto PDF
-  pixQrCode?: string;
+  bankSlipUrl?: string;       // boleto PDF (link externo)
+  boletoBarcode?: string;     // linha digitável do boleto (identificationField)
+  pixQrCode?: string;         // base64 PNG do QR code PIX (encodedImage)
+  pixPayload?: string;        // texto copia-e-cola PIX (payload)
   description?: string;
   createdAt: number;
   updatedAt: number;

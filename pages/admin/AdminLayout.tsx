@@ -2,7 +2,7 @@ import * as React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSystemAdmin } from '../../contexts/SystemAdminContext';
 import {
-  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt, Search, ChevronRight,
+  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt, Search, ChevronRight, Settings2,
 } from 'lucide-react';
 
 const NAV: { to: string; label: string; icon: any; end?: boolean; group: 'main' | 'billing' | 'system' }[] = [
@@ -13,6 +13,7 @@ const NAV: { to: string; label: string; icon: any; end?: boolean; group: 'main' 
   { to: '/admin/invoices', label: 'Faturas', icon: Receipt, group: 'billing' },
   { to: '/admin/system-admins', label: 'Super Admins', icon: Shield, group: 'system' },
   { to: '/admin/audit', label: 'Auditoria', icon: FileText, group: 'system' },
+  { to: '/admin/asaas-config', label: 'Config. Asaas', icon: Settings2, group: 'system' },
 ];
 
 const GROUPS = [

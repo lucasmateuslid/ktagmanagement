@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 import { getDoc } from 'firebase/firestore';
 import { auth } from '../services/firebase';
@@ -26,18 +26,35 @@ const GENERIC_LOGIN_ERROR = 'Email ou senha inválidos.';
 export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
   const [admin, setAdmin] = useState<SystemAdmin | null>(null);
   const [loading, setLoading] = useState(true);
+  const loginInProgress = useRef(false);
 
   const validateSystemAdmin = async (fbUser: FirebaseUser): Promise<SystemAdmin | null> => {
     try {
+      // Force the SDK to resolve the current ID token before the Firestore read.
+      const tokenResult = await fbUser.getIdTokenResult();
+      console.debug('[SystemAdmin] reading system_admins/' + fbUser.uid, {
+        email: fbUser.email,
+        projectId: tokenResult.claims.aud,
+        hasSuperadminClaim: tokenResult.claims.superadmin === true,
+        tokenIssuedAt: tokenResult.issuedAtTime,
+      });
       const snap = await getDoc(systemDoc('system_admins', fbUser.uid));
-      if (!snap.exists()) return null;
+      if (!snap.exists()) {
+        console.warn('[SystemAdmin] No document at system_admins/' + fbUser.uid + '. Run seed-superadmin.ts to create one.');
+        return null;
+      }
       return {
         uid: fbUser.uid,
         email: fbUser.email,
         displayName: fbUser.displayName,
       };
-    } catch (e) {
-      console.error('SystemAdmin lookup failed:', e);
+    } catch (e: any) {
+      console.error('SystemAdmin lookup failed:', {
+        code: e?.code,
+        message: e?.message,
+        uid: fbUser.uid,
+        email: fbUser.email,
+      });
       return null;
     }
   };
@@ -54,6 +71,10 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
         setLoading(false);
         return;
       }
+      // login() handles its own validation — skip here to avoid the race where
+      // onAuthStateChanged fires during signInWithEmailAndPassword and signs the
+      // user out before login()'s own validateSystemAdmin call completes.
+      if (loginInProgress.current) return;
       const sa = await validateSystemAdmin(fbUser);
       if (!sa) {
         await signOut(authInstance);
@@ -72,6 +93,7 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
     if (!limitCheck.allowed) {
       return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
     }
+    loginInProgress.current = true;
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
@@ -88,6 +110,7 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
       console.warn('admin login error:', e?.code);
       return GENERIC_LOGIN_ERROR;
     } finally {
+      loginInProgress.current = false;
       setLoading(false);
     }
   };

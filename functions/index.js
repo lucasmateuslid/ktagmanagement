@@ -167,6 +167,95 @@ async function sendNotificationToPref(tenantId, prefKey, payload, excludeUserId 
   }
 }
 
+/**
+ * Constrói o payload de push para eventos de billing.
+ * Retorna null para eventos que não merecem notificação.
+ */
+function buildBillingPushPayload(event, payment) {
+  const raw = Number(payment.value || 0);
+  const value = raw > 0
+    ? `R$ ${raw.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
+  switch (event) {
+    case 'PAYMENT_RECEIVED':
+    case 'PAYMENT_CONFIRMED':
+      return {
+        title: 'Pagamento confirmado',
+        body: value ? `Recebemos o pagamento de ${value}.` : 'Seu pagamento foi confirmado.',
+        url: '/#/billing',
+      };
+    case 'PAYMENT_OVERDUE':
+      return {
+        title: 'Fatura em atraso',
+        body: value
+          ? `Há uma fatura de ${value} em aberto. Regularize para evitar suspensão.`
+          : 'Você tem uma fatura em atraso.',
+        url: '/#/billing',
+      };
+    case 'PAYMENT_CREATED':
+      return {
+        title: 'Nova fatura disponível',
+        body: value ? `Uma nova fatura de ${value} foi gerada.` : 'Uma nova fatura está disponível.',
+        url: '/#/billing',
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Envia push apenas para usuários admin/admin_tecnico do tenant que não
+ * desativaram a preferência 'billingUpdates'.
+ *
+ * Não lança exceção — falha silenciosa para não bloquear o webhook.
+ */
+async function sendBillingPushToAdmins(tenantId, payload) {
+  if (!tenantId || !payload) return;
+  try {
+    const usersSnap = await admin.firestore()
+      .collection('tenants').doc(tenantId)
+      .collection('users')
+      .where('role', 'in', ['admin', 'admin_tecnico'])
+      .get();
+
+    const targetIds = [];
+    usersSnap.forEach(doc => {
+      const user = doc.data();
+      const prefs = user.notificationPreferences || {};
+      if (prefs.billingUpdates !== false) targetIds.push(user.id);
+    });
+
+    if (targetIds.length === 0) return;
+
+    const subsSnap = await admin.firestore()
+      .collection('push_subscriptions')
+      .where('tenantId', '==', tenantId)
+      .get();
+
+    const pushPayload = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.url || '/#/billing',
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
+    });
+
+    const sends = [];
+    subsSnap.forEach(doc => {
+      if (!targetIds.includes(doc.data().userId)) return;
+      const sub = doc.data().subscription;
+      sends.push(
+        webpush.sendNotification(sub, pushPayload).catch(err => {
+          if (err.statusCode === 410 || err.statusCode === 404) return doc.ref.delete();
+        })
+      );
+    });
+
+    await Promise.all(sends);
+  } catch (e) {
+    console.error(`sendBillingPushToAdmins(${tenantId}):`, e);
+  }
+}
+
 // --- RATE LIMIT MEMORY STORE (Instance-level) ---
 const requestCounts = new Map();
 const BLOCK_DURATION_MS = 60000; 
@@ -1258,6 +1347,16 @@ exports.sendPushNotification = onCall(
 const ASAAS_SECRETS = [ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN];
 const ASAAS_OPTS = { secrets: ASAAS_SECRETS };
 
+// Conjunto de eventos suportados. Eventos fora desta lista são logados mas
+// ignorados, evitando 5xx desnecessário que dispara retry do Asaas.
+const KNOWN_WEBHOOK_EVENTS = new Set([
+  'PAYMENT_CREATED', 'PAYMENT_UPDATED', 'PAYMENT_CONFIRMED',
+  'PAYMENT_RECEIVED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED',
+  'PAYMENT_REFUNDED', 'PAYMENT_RESTORED', 'PAYMENT_REFUND_IN_PROGRESS',
+  'PAYMENT_CHARGEBACK_REQUESTED', 'PAYMENT_CHARGEBACK_DISPUTE',
+  'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
+]);
+
 function ensureBillingPayload(data) {
   const slug = String(data.slug || '').toLowerCase().trim();
   if (!slug) throw new HttpsError('invalid-argument', 'slug é obrigatório.');
@@ -1304,7 +1403,13 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
   const cycle = data.cycle || 'MONTHLY';
   const billingType = data.billingType || 'UNDEFINED';
   const dueDay = data.dueDay || 10;
-  const nextDueDateMs = buildNextDueDate(dueDay);
+  const trialDays = Math.max(0, Math.floor(Number(data.trialDays) || 0));
+
+  // Com trial: primeira cobrança ocorre em trialDays dias (Asaas gera automaticamente).
+  // Sem trial: próxima cobrança calculada pela data de vencimento (dueDay).
+  const nextDueDateMs = trialDays > 0
+    ? Date.now() + trialDays * 86400000
+    : buildNextDueDate(dueDay);
 
   const apiKey = ASAAS_API_KEY.value();
 
@@ -1334,7 +1439,7 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
   });
 
   const billing = {
-    status: 'active',
+    status: trialDays > 0 ? 'trialing' : 'active',
     priceCents,
     cycle,
     method: billingType,
@@ -1346,11 +1451,12 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
     payerName: payer.name,
     payerEmail: payer.email,
     lastSyncedAt: Date.now(),
+    ...(trialDays > 0 && { trialEndsAt: nextDueDateMs, trialDays }),
   };
   await ref.update({ billing });
 
   await logAudit(null, 'CREATE', 'TenantSubscription',
-    `Super admin criou assinatura Asaas (${sub.id}) para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}`,
+    `Assinatura criada para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}${trialDays > 0 ? ` (trial ${trialDays}d)` : ''}`,
     slug, callerUid);
 
   return { ok: true, billing, asaasSubscription: sub };
@@ -1432,10 +1538,18 @@ exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   }
 
   const apiKey = ASAAS_API_KEY.value();
-  const [sub, payments] = await Promise.all([
-    asaas.getSubscription(apiKey, subId).catch(() => null),
-    asaas.listSubscriptionPayments(apiKey, subId, 50),
-  ]);
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  let sub, payments;
+  try {
+    [sub, payments] = await Promise.all([
+      asaas.getSubscription(apiKey, subId).catch(() => null),
+      asaas.listSubscriptionPayments(apiKey, subId, 50),
+    ]);
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    throw new HttpsError('internal', `Falha ao consultar Asaas: ${msg}`);
+  }
 
   // Atualiza invoices
   const batch = admin.firestore().batch();
@@ -1553,7 +1667,7 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   if (Date.now() - last < 60_000) {
     throw new HttpsError('resource-exhausted', 'Aguarde 1 minuto entre sincronizações.');
   }
-  _syncCooldown.set(tenantId, Date.now());
+  // Cooldown só é registrado após o Asaas responder — falhas não bloqueiam retry.
 
   const ref = admin.firestore().collection('tenants').doc(tenantId);
   const snap = await ref.get();
@@ -1563,10 +1677,18 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   if (!subId) return { ok: false, reason: 'sem assinatura' };
 
   const apiKey = ASAAS_API_KEY.value();
-  const [sub, payments] = await Promise.all([
-    asaas.getSubscription(apiKey, subId).catch(() => null),
-    asaas.listSubscriptionPayments(apiKey, subId, 50),
-  ]);
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  let sub, payments;
+  try {
+    [sub, payments] = await Promise.all([
+      asaas.getSubscription(apiKey, subId).catch(() => null),
+      asaas.listSubscriptionPayments(apiKey, subId, 50),
+    ]);
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    throw new HttpsError('internal', `Falha ao consultar Asaas: ${msg}`);
+  }
 
   const batch = admin.firestore().batch();
   for (const p of payments) {
@@ -1583,6 +1705,7 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
     'billing.lastSyncedAt': Date.now(),
   });
 
+  _syncCooldown.set(tenantId, Date.now());
   return { ok: true, invoicesCount: payments.length, status: statusFromSub };
 });
 
@@ -1699,6 +1822,121 @@ exports.aggregateMRRHistory = onCall(async (request) => {
   };
 });
 
+// ─── Fase 6: Reenvio manual ───────────────────────────────────────────────────
+/**
+ * Reenvia o e-mail de notificação de uma fatura para o pagador (via Asaas).
+ * Body: { slug, paymentId }
+ */
+exports.remindTenantPayment = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const paymentId = String(data.paymentId || '').trim();
+  if (!paymentId) throw new HttpsError('invalid-argument', 'paymentId obrigatório.');
+
+  const { ref: tenantRef } = await getTenantOrThrow(slug);
+
+  // Garante que a fatura pertence ao tenant antes de reenviar.
+  const invSnap = await tenantRef.collection('invoices').doc(paymentId).get();
+  if (!invSnap.exists) throw new HttpsError('not-found', 'Fatura não encontrada neste tenant.');
+
+  const apiKey = ASAAS_API_KEY.value();
+  await asaas.sendPaymentNotification(apiKey, paymentId);
+
+  await logAudit(null, 'REMIND', 'Invoice',
+    `Lembrete reenviado: payment=${paymentId}`, slug, callerUid);
+
+  return { ok: true };
+});
+
+// ─── Fase 2: Cobrança avulsa ──────────────────────────────────────────────────
+/**
+ * Cria uma cobrança avulsa (não-recorrente) para um tenant existente.
+ * Body: { slug, valueCents, description, billingType?, dueDateMs? }
+ * Requer que o tenant já tenha um asaasCustomerId (criado pela assinatura).
+ */
+exports.createOneTimeCharge = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const valueCents = Number(data.valueCents);
+  if (!Number.isFinite(valueCents) || valueCents < 100) {
+    throw new HttpsError('invalid-argument', 'valueCents deve ser >= 100 (R$ 1,00).');
+  }
+  const description = String(data.description || '').trim();
+  if (!description) throw new HttpsError('invalid-argument', 'description obrigatória.');
+
+  const customerId = tenant.billing?.asaasCustomerId;
+  if (!customerId) {
+    throw new HttpsError('failed-precondition',
+      'Tenant sem customer Asaas. Crie uma assinatura primeiro para registrar o pagador.');
+  }
+
+  const billingType = data.billingType || 'UNDEFINED';
+  const dueDateMs = Number(data.dueDateMs) > Date.now()
+    ? Number(data.dueDateMs)
+    : Date.now() + 7 * 86400000; // padrão: 7 dias
+
+  const apiKey = ASAAS_API_KEY.value();
+  const payment = await asaas.createPayment(apiKey, {
+    customerId,
+    valueCents,
+    description,
+    billingType,
+    dueDateMs,
+    externalReference: slug,
+  });
+
+  const invoice = asaas.paymentToInvoice(payment, slug);
+  invoice.createdAt = Date.now();
+  await ref.collection('invoices').doc(payment.id).set(invoice);
+
+  await logAudit(null, 'CREATE', 'OneTimeCharge',
+    `Cobrança avulsa: "${description}" R$${(valueCents / 100).toFixed(2)} para ${slug}`,
+    slug, callerUid);
+
+  return { ok: true, invoice };
+});
+
+// ─── Fase 8: Config Asaas ─────────────────────────────────────────────────────
+/**
+ * Retorna configuração atual do Asaas (ambiente, URL do webhook).
+ * Não requer ASAAS_API_KEY — só lê variáveis de ambiente.
+ */
+exports.getAsaasConfig = onCall({ secrets: [ASAAS_WEBHOOK_TOKEN] }, async (request) => {
+  await requireSuperAdmin(request);
+  const env = (process.env.ASAAS_ENV || 'sandbox').toLowerCase();
+  const projectId = admin.app().options.projectId || 'saastagmanager';
+  const webhookUrl = `https://us-central1-${projectId}.cloudfunctions.net/asaasWebhook`;
+  return { env, webhookUrl, apiBaseUrl: asaas.baseUrl() };
+});
+
+/**
+ * Testa a conexão com o Asaas chamando GET /myAccount.
+ * Retorna { ok, env, account? } ou { ok: false, error }.
+ */
+exports.testAsaasConnection = onCall(ASAAS_OPTS, async (request) => {
+  await requireSuperAdmin(request);
+  const env = (process.env.ASAAS_ENV || 'sandbox').toLowerCase();
+  try {
+    const apiKey = ASAAS_API_KEY.value();
+    const account = await asaas.getAccount(apiKey);
+    return {
+      ok: true,
+      env,
+      account: {
+        name: account.name || account.commercialName || '—',
+        email: account.email || '—',
+        cpfCnpj: account.cpfCnpj || '—',
+      },
+    };
+  } catch (e) {
+    return { ok: false, env, error: String(e.response?.data?.errors?.[0]?.description || e.message || e) };
+  }
+});
+
 /**
  * Webhook do Asaas.
  *
@@ -1716,10 +1954,17 @@ exports.aggregateMRRHistory = onCall(async (request) => {
 exports.asaasWebhook = onRequest(
   { secrets: ASAAS_SECRETS, cors: false, timeoutSeconds: 30 },
   async (req, res) => {
+    const receivedAt = Date.now();
+    // Referência ao doc de forensics; preenchida após validação inicial.
+    let billingEventRef = null;
+
     try {
+      // ── 1. Método ────────────────────────────────────────────────────────────
       if (req.method !== 'POST') {
         return res.status(405).send('Method Not Allowed');
       }
+
+      // ── 2. Autenticação do token ─────────────────────────────────────────────
       const expectedToken = ASAAS_WEBHOOK_TOKEN.value();
       const receivedToken = req.headers['asaas-access-token'];
       if (!expectedToken || receivedToken !== expectedToken) {
@@ -1727,48 +1972,104 @@ exports.asaasWebhook = onRequest(
         return res.status(401).send('Unauthorized');
       }
 
+      // ── 3. Validação do payload ──────────────────────────────────────────────
       const body = req.body || {};
       const event = body.event;
       const payment = body.payment;
-      if (!event || !payment) {
-        return res.status(400).send('payload inválido');
+
+      if (!event || typeof event !== 'string') {
+        return res.status(400).send('payload inválido: event ausente');
+      }
+      if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+        return res.status(400).send('payload inválido: payment ausente');
+      }
+      if (!payment.id || typeof payment.id !== 'string') {
+        return res.status(400).send('payload inválido: payment.id ausente');
       }
 
-      // tenantSlug vem do externalReference (definido na criação da subscription)
+      // Evento desconhecido: retorna 202 para não disparar retry desnecessário.
+      if (!KNOWN_WEBHOOK_EVENTS.has(event)) {
+        console.info(`asaasWebhook: evento desconhecido "${event}" — ignorado`, { paymentId: payment.id });
+        return res.status(202).send('ignored: unknown event type');
+      }
+
+      // ── 4. Resolve tenant ────────────────────────────────────────────────────
+      // tenantSlug vem do externalReference (definido na criação da subscription).
       const slug = String(payment.externalReference || '').toLowerCase().trim();
+
+      // ── 5. Grava forensics em system_billing_events ──────────────────────────
+      // Feito ANTES de qualquer processamento; captura toda entrega, inclusive
+      // as que serão ignoradas ou rejeitadas por lógica de negócio.
+      billingEventRef = await admin.firestore().collection('system_billing_events').add({
+        event,
+        paymentId: payment.id,
+        tenantSlug: slug || null,
+        status: 'processing',
+        rawPayment: payment,
+        receivedAt,
+        ip: req.ip || null,
+      });
+
       if (!slug) {
         console.warn('asaasWebhook: payment sem externalReference', payment.id);
+        await billingEventRef.update({ status: 'ignored_no_reference' });
         return res.status(202).send('ignored: no externalReference');
       }
 
       const tenantRef = admin.firestore().collection('tenants').doc(slug);
       const tenantSnap = await tenantRef.get();
       if (!tenantSnap.exists) {
-        console.warn(`asaasWebhook: tenant ${slug} não existe`);
+        console.warn(`asaasWebhook: tenant "${slug}" não existe`, { paymentId: payment.id });
+        await billingEventRef.update({ status: 'ignored_tenant_not_found' });
         return res.status(202).send('ignored: tenant not found');
       }
 
-      const invoice = asaas.paymentToInvoice(payment, slug);
-      invoice.createdAt = invoice.createdAt || Date.now();
-      await tenantRef.collection('invoices').doc(payment.id).set(invoice, { merge: true });
+      // ── 6. Idempotência por dateUpdated ──────────────────────────────────────
+      // Se o invoice já existe e o dateUpdated que temos é igual ou mais recente
+      // que o do evento entrante, o evento é obsoleto — ignoramos sem reescrever.
+      const invoiceRef = tenantRef.collection('invoices').doc(payment.id);
+      if (payment.dateUpdated) {
+        const existingSnap = await invoiceRef.get();
+        if (existingSnap.exists) {
+          const storedDateUpdated = existingSnap.data()?.asaasDateUpdated;
+          // Comparação de strings ISO "YYYY-MM-DD HH:MM:SS" é lexicograficamente
+          // correta para ordem cronológica.
+          if (storedDateUpdated && storedDateUpdated >= payment.dateUpdated) {
+            console.info('asaasWebhook: evento obsoleto, pulando', {
+              paymentId: payment.id, stored: storedDateUpdated, incoming: payment.dateUpdated,
+            });
+            await billingEventRef.update({ status: 'skipped_stale' });
+            return res.status(200).send('ok: stale');
+          }
+        }
+      }
 
-      // Atualiza status agregado do tenant conforme o evento
-      const update = { 'billing.lastSyncedAt': Date.now() };
+      // ── 7. Persiste invoice ───────────────────────────────────────────────────
+      const invoice = asaas.paymentToInvoice(payment, slug);
+      // Preserva createdAt original se invoice já existia.
+      if (!invoice.createdAt) invoice.createdAt = Date.now();
+      await invoiceRef.set(invoice, { merge: true });
+
+      // ── 8. Atualiza status agregado do tenant ─────────────────────────────────
+      const tenantUpdate = { 'billing.lastSyncedAt': Date.now() };
       switch (event) {
         case 'PAYMENT_RECEIVED':
         case 'PAYMENT_CONFIRMED':
-          update['billing.status'] = 'active';
+          tenantUpdate['billing.status'] = 'active';
           break;
         case 'PAYMENT_OVERDUE':
-          update['billing.status'] = 'overdue';
+          tenantUpdate['billing.status'] = 'overdue';
           break;
-        case 'PAYMENT_DELETED':
-        case 'PAYMENT_REFUNDED':
-          // Não muda status do tenant — refletido só na invoice.
-          break;
+        // PAYMENT_DELETED / PAYMENT_REFUNDED: refletido só na invoice.
       }
-      await tenantRef.update(update);
+      await tenantRef.update(tenantUpdate);
 
+      // ── 9. Push para admins do tenant ─────────────────────────────────────────
+      const pushPayload = buildBillingPushPayload(event, payment);
+      await sendBillingPushToAdmins(slug, pushPayload);
+
+      // ── 10. Finaliza forensics + audit ────────────────────────────────────────
+      await billingEventRef.update({ status: 'processed' });
       await logAudit(null, 'WEBHOOK', 'Asaas',
         `${event} payment=${payment.id} status=${payment.status}`,
         slug, 'ASAAS_WEBHOOK');
@@ -1776,7 +2077,14 @@ exports.asaasWebhook = onRequest(
       return res.status(200).send('ok');
     } catch (e) {
       console.error('asaasWebhook erro:', e);
-      // Retornar 5xx faz o Asaas reentregar — bom em erro transitório, ruim em bug.
+      // Atualiza forensics com o erro antes de retornar 500.
+      // 5xx faz o Asaas reentregar — correto para erros transitórios de infra.
+      if (billingEventRef) {
+        await billingEventRef.update({
+          status: 'error',
+          error: String(e.message || e),
+        }).catch(() => {});
+      }
       return res.status(500).send('error');
     }
   }
@@ -1811,6 +2119,12 @@ exports.dailyBillingEnforcement = onSchedule(
         await logAudit(null, 'SUSPEND', 'Tenant',
           `Suspensão automática por inadimplência > 7d`,
           doc.id, 'BILLING_JOB');
+        // Avisa admins do tenant sobre a suspensão.
+        await sendBillingPushToAdmins(doc.id, {
+          title: 'Empresa suspensa por inadimplência',
+          body: 'Seu acesso foi suspenso por fatura em atraso há mais de 7 dias. Regularize para reativar.',
+          url: '/#/billing',
+        });
         suspended++;
       }
     }

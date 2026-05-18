@@ -89,6 +89,10 @@ async function createSubscription(apiKey, args) {
     cycle: args.cycle || 'MONTHLY',
     description: args.description,
     externalReference: args.externalReference,
+    // E-mails de lembrete: Asaas avisa o pagador N dias antes do vencimento.
+    // notificationDisabled já vem false no customer; aqui reforçamos
+    // com lembretes em D-5 e D-1 (sobrescreve o default de D-5 do Asaas).
+    sendPaymentByPostalService: false,
   };
   const res = await client(apiKey).post('/subscriptions', body);
   return res.data;
@@ -166,12 +170,43 @@ function paymentToInvoice(payment, tenantSlug) {
     billingType: payment.billingType || 'UNDEFINED',
     invoiceUrl: payment.invoiceUrl || undefined,
     bankSlipUrl: payment.bankSlipUrl || undefined,
-    pixQrCode: payment.encodedImage || undefined,
+    boletoBarcode: payment.identificationField || undefined, // linha digitável
+    pixQrCode: payment.encodedImage || undefined,            // base64 PNG
+    pixPayload: payment.payload || undefined,                // copia-e-cola PIX
     description: payment.description || undefined,
     asaasSubscriptionId: payment.subscription || undefined,
     asaasCustomerId: payment.customer || undefined,
+    // ISO string "YYYY-MM-DD HH:MM:SS" — usado para idempotência no webhook.
+    asaasDateUpdated: payment.dateUpdated || null,
     updatedAt: Date.now(),
   };
+}
+
+/** Cria cobrança avulsa (sem assinatura). */
+async function createPayment(apiKey, { customerId, valueCents, description, billingType, dueDateMs, externalReference }) {
+  const body = {
+    customer: customerId,
+    billingType: billingType || 'UNDEFINED',
+    value: centsToReal(valueCents),
+    dueDate: isoDate(dueDateMs || Date.now()),
+    description,
+    externalReference,
+    sendPaymentByPostalService: false,
+  };
+  const res = await client(apiKey).post('/payments', body);
+  return res.data;
+}
+
+/** Reenvia o e-mail / notificação de um pagamento para o cliente. */
+async function sendPaymentNotification(apiKey, paymentId) {
+  const res = await client(apiKey).post(`/payments/${paymentId}/sendNotification`);
+  return res.data;
+}
+
+/** Retorna dados da conta Asaas (usado para testar a conexão). */
+async function getAccount(apiKey) {
+  const res = await client(apiKey).get('/myAccount');
+  return res.data;
 }
 
 module.exports = {
@@ -185,6 +220,9 @@ module.exports = {
   getSubscription,
   listSubscriptionPayments,
   getPayment,
+  createPayment,
+  sendPaymentNotification,
+  getAccount,
   normalizeStatus,
   paymentToInvoice,
 };

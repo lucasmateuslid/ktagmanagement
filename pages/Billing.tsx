@@ -265,20 +265,24 @@ const Field = ({ icon: Icon, label, value }: { icon: any; label: string; value: 
 );
 
 // ─────────────────────────────────────────────────────────────────────────
-// Pending payment - PIX QR / boleto display
+// Pending payment - PIX QR image + copia-e-cola / boleto linha digitável
 // ─────────────────────────────────────────────────────────────────────────
 
 const PendingPaymentCard = ({ invoice }: { invoice: Invoice }) => {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'pix' | 'boleto' | null>(null);
   const method = invoice.billingType;
   const isOverdue = invoice.status === 'OVERDUE';
 
-  const copyPix = async () => {
-    if (!invoice.pixQrCode) return;
+  const hasPix = (method === 'PIX' || method === 'UNDEFINED') &&
+    (invoice.pixQrCode || invoice.pixPayload);
+  const hasBoleto = (method === 'BOLETO' || method === 'UNDEFINED') &&
+    (invoice.bankSlipUrl || invoice.boletoBarcode);
+
+  const copyToClipboard = async (text: string, field: 'pix' | 'boleto') => {
     try {
-      await navigator.clipboard.writeText(invoice.pixQrCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(field);
+      setTimeout(() => setCopied(null), 2500);
     } catch (e) {
       console.error(e);
     }
@@ -290,19 +294,31 @@ const PendingPaymentCard = ({ invoice }: { invoice: Invoice }) => {
         ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/40'
         : 'bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800'
     }`}>
-      <div className="flex items-start justify-between gap-4 mb-5">
+
+      {/* Header: valor + vencimento + link de pagamento */}
+      <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              {isOverdue ? 'Fatura vencida' : 'Como pagar'}
+              {isOverdue ? 'Fatura vencida' : 'Pagamento pendente'}
             </span>
             <InvoiceStatusBadge status={invoice.status} />
           </div>
-          <div className="font-display text-2xl font-black text-zinc-900 dark:text-white">
+          <div className="font-display text-3xl font-black text-zinc-900 dark:text-white">
             {fmtBRL(invoice.valueCents)}
           </div>
-          <div className="text-xs text-zinc-500 mt-0.5">
-            Vencimento: <span className="font-bold text-zinc-800 dark:text-zinc-200">{fmtDate(invoice.dueDate)}</span>
+          <div className="flex items-center gap-4 mt-1.5 text-xs text-zinc-500">
+            <span>
+              Vencimento:{' '}
+              <span className={`font-bold ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-zinc-800 dark:text-zinc-200'}`}>
+                {fmtDate(invoice.dueDate)}
+              </span>
+            </span>
+            {invoice.description && (
+              <span className="text-zinc-400 hidden sm:inline truncate max-w-[200px]">
+                {invoice.description}
+              </span>
+            )}
           </div>
         </div>
         {invoice.invoiceUrl && (
@@ -310,55 +326,104 @@ const PendingPaymentCard = ({ invoice }: { invoice: Invoice }) => {
             href={invoice.invoiceUrl}
             target="_blank"
             rel="noreferrer"
-            className="shrink-0 inline-flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white font-black uppercase tracking-widest text-xs px-4 py-2.5 rounded-xl"
+            className="shrink-0 inline-flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white font-black uppercase tracking-widest text-xs px-4 py-2.5 rounded-xl transition-colors"
           >
-            <ExternalLink size={12} /> Página de pagamento
+            <ExternalLink size={12} /> Ver no Asaas
           </a>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(method === 'PIX' || method === 'UNDEFINED') && invoice.pixQrCode && (
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
-            <div className="flex items-center gap-2 mb-3">
+
+        {/* PIX */}
+        {hasPix && (
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
               <QrCode size={14} className="text-primary-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">PIX copia e cola</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">PIX</span>
             </div>
-            <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-[10px] font-mono break-all text-zinc-600 dark:text-zinc-400 max-h-24 overflow-y-auto">
-              {invoice.pixQrCode}
-            </div>
-            <button
-              onClick={copyPix}
-              className="mt-3 w-full inline-flex items-center justify-center gap-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 font-black uppercase tracking-widest text-xs px-3 py-2.5 rounded-xl transition-colors"
-            >
-              {copied ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar código</>}
-            </button>
+
+            {/* QR Code image */}
+            {invoice.pixQrCode && (
+              <div className="flex justify-center">
+                <img
+                  src={`data:image/png;base64,${invoice.pixQrCode}`}
+                  alt="QR Code PIX"
+                  className="w-44 h-44 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white p-1"
+                />
+              </div>
+            )}
+
+            {/* Copia e cola */}
+            {invoice.pixPayload && (
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">
+                  Copia e cola
+                </div>
+                <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono break-all text-zinc-600 dark:text-zinc-400 max-h-20 overflow-y-auto">
+                  {invoice.pixPayload}
+                </div>
+                <button
+                  onClick={() => copyToClipboard(invoice.pixPayload!, 'pix')}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 font-black uppercase tracking-widest text-xs px-3 py-2.5 rounded-xl transition-colors"
+                >
+                  {copied === 'pix'
+                    ? <><Check size={13} /> Copiado!</>
+                    : <><Copy size={13} /> Copiar código PIX</>}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {(method === 'BOLETO' || method === 'UNDEFINED') && invoice.bankSlipUrl && (
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
-            <div className="flex items-center gap-2 mb-3">
+        {/* Boleto */}
+        {hasBoleto && (
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
               <FileText size={14} className="text-primary-500" />
               <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Boleto bancário</span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-              Baixe o PDF do boleto e pague no internet banking ou caixa eletrônico.
-            </p>
-            <a
-              href={invoice.bankSlipUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full inline-flex items-center justify-center gap-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 font-black uppercase tracking-widest text-xs px-3 py-2.5 rounded-xl transition-colors"
-            >
-              <FileText size={13} /> Baixar boleto
-            </a>
+
+            {/* Linha digitável */}
+            {invoice.boletoBarcode && (
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">
+                  Linha digitável
+                </div>
+                <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-[11px] font-mono break-all text-zinc-600 dark:text-zinc-400">
+                  {invoice.boletoBarcode}
+                </div>
+                <button
+                  onClick={() => copyToClipboard(invoice.boletoBarcode!, 'boleto')}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 font-black uppercase tracking-widest text-xs px-3 py-2.5 rounded-xl transition-colors"
+                >
+                  {copied === 'boleto'
+                    ? <><Check size={13} /> Copiado!</>
+                    : <><Copy size={13} /> Copiar linha digitável</>}
+                </button>
+              </div>
+            )}
+
+            {/* PDF */}
+            {invoice.bankSlipUrl && (
+              <a
+                href={invoice.bankSlipUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 font-black uppercase tracking-widest text-xs px-3 py-2.5 rounded-xl transition-colors"
+              >
+                <FileText size={13} /> Baixar boleto PDF
+              </a>
+            )}
           </div>
         )}
 
-        {!invoice.pixQrCode && !invoice.bankSlipUrl && invoice.invoiceUrl && (
+        {/* Fallback: sem PIX nem boleto, só invoiceUrl */}
+        {!hasPix && !hasBoleto && invoice.invoiceUrl && (
           <div className="md:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 text-xs text-zinc-500">
-            Use o botão <strong className="text-zinc-700 dark:text-zinc-300">"Página de pagamento"</strong> acima para visualizar todas as formas de pagamento disponíveis no Asaas.
+            Clique em{' '}
+            <strong className="text-zinc-700 dark:text-zinc-300">"Ver no Asaas"</strong>{' '}
+            para visualizar todas as formas de pagamento disponíveis.
           </div>
         )}
       </div>

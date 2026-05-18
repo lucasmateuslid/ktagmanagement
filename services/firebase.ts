@@ -1,5 +1,5 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { initializeFirestore, Firestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAuth, Auth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFunctions, Functions } from 'firebase/functions';
 
@@ -23,14 +23,7 @@ try {
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true,
-  });
-
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn("Firestore Persistence: Múltiplas abas detectadas. Cache ativo apenas na aba principal.");
-    } else if (err.code === 'unimplemented') {
-      console.warn("Firestore Persistence: Este navegador não suporta armazenamento offline.");
-    }
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
 
   auth = getAuth(app);

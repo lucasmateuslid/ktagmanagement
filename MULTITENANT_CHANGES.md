@@ -7,6 +7,277 @@
 - [Fase 4](#fase-4--painel-super-admin) — Painel super admin (`admin.<dominio>`) + CRUD de tenants
 - [Fase 5](#fase-5--cloud-run--docker--dns) — Dockerfile + Cloud Build + middleware `resolveTenant` no Express
 - [Fase 6](#fase-6--billing-asaas--ui-modern--cicd) — Integração Asaas (assinatura/faturas/PIX/boleto), UI super-admin redesign, página `/billing` do tenant, pipeline GitHub Actions com WIF, fix Cloud Run cold start
+- [Billing Fase 3](#billing-fase-3--webhook-robusto) — Webhook Asaas com idempotência, forensics e validação reforçada
+- [Billing Fase 4](#billing-fase-4--notificações) — Push para admins em eventos de billing + push de suspensão automática + e-mail Asaas habilitado
+- [Billing Fase 5](#billing-fase-5--pix-qr--boleto-inline) — QR code PIX renderizado como imagem + copia-e-cola separado + linha digitável do boleto inline
+- [Billing Fases 6·2·7·8](#billing-fases-627-e-8) — Reenvio manual, cobranças avulsas, trial period, Config Asaas no super admin
+
+---
+
+## Billing Fases 6·2·7 e 8
+
+### Resumo — implementação conjunta
+
+| Fase | Escopo |
+|---|---|
+| **6 — Reenvio manual** | Botão "Lembrar" por fatura no painel admin → callable `remindTenantPayment` → Asaas `POST /payments/{id}/sendNotification` |
+| **2 — Cobranças avulsas** | Seção "Nova cobrança avulsa" no `TenantBillingDetail` → callable `createOneTimeCharge` → Asaas `POST /payments` (sem assinatura) |
+| **7 — Trial period** | Campo `trialDays` na criação de assinatura → `nextDueDate = now + trialDays` → `billing.status = 'trialing'` + `billing.trialEndsAt` |
+| **8 — Config Asaas** | Página `/admin/asaas-config` com ambiente, webhook URL copiável, teste de conexão (`GET /myAccount`) |
+
+### Arquivos criados
+
+| Arquivo | Propósito |
+|---|---|
+| `pages/admin/AdminAsaasConfig.tsx` | Página de configuração Asaas: badge de ambiente (sandbox/prod), URL do webhook copiável, botão "Testar agora" com resultado da conta Asaas, bloco de instruções de setup. |
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `functions/asaas.js` | +`createPayment`, `sendPaymentNotification`, `getAccount` |
+| `functions/index.js` | `createTenantSubscription` aceita `trialDays` (ajusta `nextDueDate` + `billing.status='trialing'`). +callables: `remindTenantPayment`, `createOneTimeCharge`, `getAsaasConfig`, `testAsaasConnection` |
+| `pages/admin/TenantBillingDetail.tsx` | Botão "Lembrar" por fatura (PENDING/OVERDUE); seção "Nova cobrança avulsa" (valor, método, vencimento, descrição); campo `trialDays` na criação; footer mostra `trialEndsAt` quando ativo |
+| `pages/admin/AdminLayout.tsx` | Item "Config. Asaas" no grupo Sistema |
+| `pages/admin/AdminApp.tsx` | Rota `/admin/asaas-config` + import |
+| `types.ts` | `TenantBilling` + `trialEndsAt?`, `trialDays?` |
+
+### Callables adicionadas
+
+| Callable | Guard | Faz |
+|---|---|---|
+| `remindTenantPayment({ slug, paymentId })` | superAdmin | Verifica que o paymentId pertence ao tenant; chama Asaas `sendNotification`; audit log |
+| `createOneTimeCharge({ slug, valueCents, description, billingType?, dueDateMs? })` | superAdmin | Requer `asaasCustomerId` no tenant; cria payment no Asaas; persiste invoice no Firestore |
+| `getAsaasConfig()` | superAdmin | Retorna `{ env, webhookUrl, apiBaseUrl }` sem depender da API key |
+| `testAsaasConnection()` | superAdmin | Chama `GET /myAccount` no Asaas; retorna `{ ok, account }` ou `{ ok: false, error }` |
+
+### Trial period — como funciona
+
+1. Super admin cria assinatura com `trialDays > 0`
+2. Backend calcula `nextDueDateMs = now + trialDays * 86400000` e passa para o Asaas como `nextDueDate`
+3. Asaas gera a primeira cobrança apenas naquela data — até lá, o tenant não recebe nenhuma fatura
+4. `billing.status = 'trialing'` e `billing.trialEndsAt` ficam no Firestore
+5. Quando o Asaas gerar a primeira fatura, o webhook `PAYMENT_CREATED` muda o status para `active` (ou `overdue` se já venceu)
+6. O `TenantBillingDetail` exibe "Trial até DD/MM/AAAA" no rodapé enquanto `trialEndsAt` está no futuro
+
+### Roadmap de billing — **COMPLETO**
+
+| Fase | Status |
+|---|---|
+| 1 — Área `/billing` do tenant | ✅ |
+| 3 — Webhook robusto | ✅ |
+| 4 — Notificações | ✅ |
+| 5 — PIX QR + boleto inline | ✅ |
+| 6 — Reenvio manual | ✅ |
+| 2 — Cobranças avulsas | ✅ |
+| 7 — Trial period | ✅ |
+| 8 — Config Asaas no super admin | ✅ |
+
+### Deploy
+
+```bash
+# Backend — todos os callables novos + webhook atualizado:
+firebase deploy --only functions
+
+# Frontend — CI GitHub Actions:
+# Actions → Deploy → Run workflow → target: cloud-run
+```
+
+---
+
+## Billing Fase 5 — PIX QR + boleto inline
+
+### Resumo
+
+A página `/billing` do tenant agora exibe o QR code PIX como imagem escaneável + campo de copia-e-cola separado, e a linha digitável do boleto com botão de cópia. Não exige bibliotecas externas.
+
+### Problema corrigido
+
+O campo `pixQrCode` foi criado mapeando `payment.encodedImage` (base64 PNG), mas a UI v1 o exibia como texto — produzindo um blob base64 ilegível no campo de cópia. O campo correto para copia-e-cola é `payment.payload`.
+
+### Novos campos
+
+**`types.ts` — `Invoice`:**
+
+| Campo | Tipo | Fonte Asaas | Uso |
+|---|---|---|---|
+| `pixQrCode` | `string?` | `payment.encodedImage` | Imagem base64 PNG renderizada com `<img>` |
+| `pixPayload` | `string?` | `payment.payload` | Texto para copia-e-cola PIX |
+| `boletoBarcode` | `string?` | `payment.identificationField` | Linha digitável do boleto |
+
+**`functions/asaas.js` — `paymentToInvoice`:** mapeamento dos três campos acima a partir do payload Asaas.
+
+### UI — `PendingPaymentCard` (`pages/Billing.tsx`)
+
+**PIX:**
+- QR Code: `<img src="data:image/png;base64,{pixQrCode}">` — escaneável direto pelo celular (sem lib JS)
+- Copia e cola: campo com `pixPayload` + botão "Copiar código PIX"
+
+**Boleto:**
+- Linha digitável: campo com `boletoBarcode` + botão "Copiar linha digitável"
+- Download: botão "Baixar boleto PDF" aponta para `bankSlipUrl`
+
+**Estado de cópia** reformulado: `copied: 'pix' | 'boleto' | null` — cada campo tem feedback independente.
+
+**Fallback** mantido: se não houver nem PIX nem boleto, exibe instrução para clicar em "Ver no Asaas".
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `types.ts` | `Invoice` ganha `pixPayload?` e `boletoBarcode?`; comentários corrigidos em `pixQrCode` |
+| `functions/asaas.js` | `paymentToInvoice` adiciona `pixPayload: payment.payload` e `boletoBarcode: payment.identificationField` |
+| `pages/Billing.tsx` | `PendingPaymentCard` reescrito: QR image, dois estados de cópia independentes, linha digitável |
+
+### Deploy
+
+```bash
+# Backend (novos campos na invoice):
+firebase deploy --only functions:asaasWebhook,functions:syncMyTenantBilling,functions:syncTenantBilling
+
+# Frontend:
+# CI via GitHub Actions → Deploy → target: cloud-run
+```
+
+> Invoices já existentes no Firestore **não** terão `pixPayload` e `boletoBarcode` até o próximo sync (via botão "Sincronizar" ou webhook). Isso é esperado — o fallback "Ver no Asaas" cobre esses casos.
+
+### Roadmap de billing (atualizado)
+
+| Fase | Status | Escopo |
+|---|---|---|
+| 1 — Área `/billing` do tenant | ✅ feito | Tenant admin vê suas faturas |
+| 3 — Webhook robusto | ✅ feito | Idempotência, forensics, validação |
+| 4 — Notificações | ✅ feito | Push para admins em eventos billing |
+| 5 — PIX QR + boleto inline | ✅ feito (este PR) | QR image + copia-e-cola + linha digitável |
+| 6 — Reenvio manual | ⏳ próximo | Botão "lembrar cliente" → endpoint Asaas notify |
+| 2 — Cobranças avulsas | ⏳ | Setup fee, taxa única (não-recorrente) |
+| 7 — Trial period | ⏳ | Param opcional em `createTenantSubscription` |
+| 8 — Config Asaas no super admin | ⏳ | Toggle sandbox/prod via UI; URL do webhook visível |
+
+---
+
+## Billing Fase 4 — Notificações
+
+### Resumo
+
+Admins do tenant agora recebem push notifications para eventos críticos de billing. O e-mail nativo do Asaas (já habilitado desde a criação do customer) é documentado e confirmado.
+
+### Push notifications (web push)
+
+Dois novos helpers em `functions/index.js`:
+
+**`buildBillingPushPayload(event, payment)`** — constrói o payload de notificação por tipo de evento:
+
+| Evento Asaas | Título | Corpo |
+|---|---|---|
+| `PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED` | "Pagamento confirmado" | "Recebemos o pagamento de R$ X." |
+| `PAYMENT_OVERDUE` | "Fatura em atraso" | "Há uma fatura de R$ X em aberto. Regularize para evitar suspensão." |
+| `PAYMENT_CREATED` | "Nova fatura disponível" | "Uma nova fatura de R$ X foi gerada." |
+| demais eventos | (null — sem push) | — |
+
+**`sendBillingPushToAdmins(tenantId, payload)`** — envia push apenas para usuários com `role in ['admin', 'admin_tecnico']` que não desativaram a preferência `billingUpdates` (default: habilitada). Falha silenciosa para não bloquear o webhook.
+
+### Integração com webhook
+
+O `asaasWebhook` chama `sendBillingPushToAdmins` após atualizar o status do tenant (step 9, antes do commit de forensics).
+
+### Push de suspensão automática
+
+O `dailyBillingEnforcement` agora envia push para os admins do tenant no momento em que marca `active=false`, com mensagem "Empresa suspensa por inadimplência" e link para `/billing`.
+
+### E-mail nativo Asaas
+
+O Asaas envia e-mails automaticamente ao pagador quando `notificationDisabled: false` no customer (já configurado em `findOrCreateCustomer` desde a Fase 6). Comportamento padrão:
+- **Boleto/PIX gerado**: e-mail com link de pagamento
+- **Vencimento próximo (D-5)**: lembrete automático
+- **Fatura vencida**: aviso de inadimplência
+- **Pagamento confirmado**: e-mail de confirmação
+
+`createSubscription` agora inclui `sendPaymentByPostalService: false` para confirmar explicitamente que não queremos envio físico.
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `functions/index.js` | Helpers `buildBillingPushPayload` + `sendBillingPushToAdmins`. Webhook: step 9 chama push após atualizar tenant. `dailyBillingEnforcement`: push de suspensão. |
+| `functions/asaas.js` | `createSubscription` inclui `sendPaymentByPostalService: false`. |
+
+### Preferência `billingUpdates`
+
+Adicionada ao modelo de preferências. Valor padrão: habilitado (opt-out). Para desativar, o usuário define `notificationPreferences.billingUpdates = false` no seu perfil.
+
+> A UI de preferências de notificação já existe no sistema (módulo de perfil). A preferência `billingUpdates` será exibida lá na Fase 5 ou 6 de billing quando houver UI dedicada.
+
+### Roadmap de billing (atualizado)
+
+| Fase | Status | Escopo |
+|---|---|---|
+| 1 — Área `/billing` do tenant | ✅ feito (Fase 6) | Tenant admin vê suas faturas + PIX/boleto |
+| 3 — Webhook robusto | ✅ feito | Idempotência, forensics, validação reforçada |
+| 4 — Notificações | ✅ feito (este PR) | Push para admins em eventos billing + push de suspensão |
+| 5 — PIX QR + boleto inline | ⏳ | Renderizar QR code, código de barras, valor/prazo em destaque |
+| 6 — Reenvio manual | ⏳ | Botão "lembrar cliente" → endpoint Asaas notify |
+| 2 — Cobranças avulsas | ⏳ | Setup fee, taxa única (não-recorrente) |
+| 7 — Trial period | ⏳ | Param opcional em `createTenantSubscription` |
+| 8 — Config Asaas no super admin | ⏳ | Toggle sandbox/prod via UI; URL do webhook visível |
+
+### Deploy
+
+```bash
+firebase deploy --only functions:asaasWebhook,functions:dailyBillingEnforcement
+```
+
+---
+
+## Billing Fase 3 — Webhook robusto
+
+### Resumo
+
+Três melhorias no `asaasWebhook` para torná-lo confiável em produção:
+
+1. **Idempotência por `dateUpdated`** — antes de reescrever o invoice, compara o campo `asaasDateUpdated` armazenado com o `payment.dateUpdated` do payload entrante. Se o dado armazenado for igual ou mais recente, o evento é marcado como `skipped_stale` e retornamos 200 imediatamente, evitando reescrita e audit log duplicado em retries.
+2. **Coleção `system_billing_events`** — cada entrega do webhook (inclusive as ignoradas) gera um doc de forensics antes de qualquer processamento. O doc registra `event`, `paymentId`, `tenantSlug`, `rawPayment`, `receivedAt`, `ip` e `status` (valores possíveis: `processing → processed | skipped_stale | ignored_* | error`). Útil para debugar re-entregas, auditar divergências e rastrear problemas de integração.
+3. **Validação reforçada** — verifica que `event` é string, `payment` é objeto, `payment.id` é string não-vazia, e que o tipo de evento pertence ao conjunto `KNOWN_WEBHOOK_EVENTS`. Eventos desconhecidos retornam 202 (não 500) para não disparar retry desnecessário do Asaas.
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `functions/asaas.js` | `paymentToInvoice` agora inclui campo `asaasDateUpdated: payment.dateUpdated \| null` — chave da idempotência. |
+| `functions/index.js` | `asaasWebhook` reescrito: constante `KNOWN_WEBHOOK_EVENTS`; etapas numeradas com comentários; gravação em `system_billing_events` antes do processamento; check de `asaasDateUpdated`; `billingEventRef.update(status)` em cada branch de saída. |
+| `firestore.rules` | Regra `system_billing_events/{eventId}`: `read: superadmin`, `write: false` (somente Admin SDK). |
+| `firestore.indexes.json` | Dois índices compostos em `system_billing_events`: `(tenantSlug ASC, receivedAt DESC)` e `(status ASC, receivedAt DESC)` para queries de forensics por tenant e por status. |
+
+### Status dos eventos em `system_billing_events`
+
+| Status | Significado |
+|---|---|
+| `processing` | Doc criado; processamento em andamento. Não deve permanecer neste estado; indica falha se persiste. |
+| `processed` | Evento processado com sucesso — invoice atualizado e tenant_status sincronizado. |
+| `skipped_stale` | Evento ignorado pois o `dateUpdated` armazenado é ≥ ao do payload. Retry do Asaas sem nova informação. |
+| `ignored_no_reference` | `payment.externalReference` ausente; não foi possível resolver o tenant. |
+| `ignored_tenant_not_found` | Tenant derivado do `externalReference` não existe no Firestore. |
+| `error` | Exceção inesperada; campo `error` contém a mensagem. Webhook retornou 500 → Asaas vai retentar. |
+
+### Roadmap de billing (atualizado)
+
+| Fase | Status | Escopo |
+|---|---|---|
+| 1 — Área `/billing` do tenant | ✅ feito (Fase 6) | Tenant admin vê suas faturas + PIX/boleto |
+| 3 — Webhook robusto | ✅ feito (este PR) | Idempotência, forensics, validação reforçada |
+| 4 — Notificações | ⏳ | Push (já existe) + e-mail nativo Asaas (`notificationDisabled=false`) |
+| 5 — PIX QR + boleto inline | ⏳ | Renderizar QR code, código de barras, valor/prazo em destaque |
+| 6 — Reenvio manual | ⏳ | Botão "lembrar cliente" → endpoint Asaas notify |
+| 2 — Cobranças avulsas | ⏳ | Setup fee, taxa única (não-recorrente) |
+| 7 — Trial period | ⏳ | Param opcional em `createTenantSubscription` |
+| 8 — Config Asaas no super admin | ⏳ | Toggle sandbox/prod via UI; URL do webhook visível |
+
+### Deploy
+
+```bash
+# Rules + indexes + functions juntos para evitar janela inconsistente:
+firebase deploy --only firestore:rules,firestore:indexes,functions:asaasWebhook
+```
 
 ---
 

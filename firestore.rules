@@ -171,6 +171,26 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Forensics de cada entrega do webhook Asaas. Escrita exclusiva pelo Admin SDK
+    // (Cloud Functions ignoram regras). Leitura restrita a superadmin.
+    match /system_billing_events/{eventId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // Config global da plataforma (whitelabel, anúncios). Leitura pública
+    // para usuários autenticados; escrita restrita a superadmins.
+    match /ktag_settings_v3/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // Inventário global de rastreadores físicos (cross-tenant, usado em Envios).
+    match /ktag_trackers/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
     // Push subscriptions ficam flat (Functions varre cross-tenant para envio
     // global de notificações por preferência). Cada doc carrega userId.
     match /push_subscriptions/{subId} {
