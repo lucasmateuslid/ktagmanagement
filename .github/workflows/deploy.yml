@@ -1,8 +1,10 @@
 name: Deploy
 
-# Disparo manual: vá em Actions → "Deploy" → "Run workflow".
-# Escolha o alvo no dropdown 'target' (all / cloud-run / functions / firestore)
-# e o ambiente em 'environment' (sandbox / production).
+# Gatilhos:
+#   - push em master  → auto-deploy: target=all, environment=production
+#   - workflow_dispatch → escolha target/environment no UI (sandbox p/ smoke).
+#
+# Para deploy a sandbox, sempre usar dispatch — push em master sempre vai pra prod.
 #
 # Secrets esperados (configurar em Settings → Secrets and variables → Actions):
 #   Sandbox (saastagmanager):
@@ -27,6 +29,10 @@ name: Deploy
 #     KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID
 #     KTAGFINDER_PROD_FIREBASE_APP_ID
 on:
+  # Auto-deploy em push para master → production (target=all).
+  # Para deployar sandbox ou qualquer subset, use o workflow_dispatch abaixo.
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       target:
@@ -50,11 +56,15 @@ env:
   REGION: us-central1
   SERVICE: ktag-app
   REPO: ktag
+  # Defaults usados quando o gatilho é push (sem inputs). workflow_dispatch
+  # sobrescreve via inputs.target / inputs.environment.
+  TARGET: ${{ github.event.inputs.target || 'all' }}
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
 
 # Concorrência por (target, environment): sandbox e prod não bloqueiam um ao
 # outro; reexecuções do mesmo par são serializadas.
 concurrency:
-  group: deploy-${{ github.event.inputs.target }}-${{ github.event.inputs.environment }}
+  group: deploy-${{ github.event.inputs.target || 'all' }}-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
@@ -85,7 +95,7 @@ jobs:
     steps:
       - id: pick
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
           SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
           SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
@@ -107,7 +117,7 @@ jobs:
   deploy-cloud-run:
     name: Cloud Run
     needs: resolve-env
-    if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'cloud-run' }}
+    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'cloud-run' }}
     runs-on: ubuntu-latest
     env:
       PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
@@ -128,7 +138,7 @@ jobs:
       - name: Pick VITE_FIREBASE_* by environment
         id: vite
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
           SBX_API_KEY: ${{ secrets.SAASTAGMANAGER_FIREBASE_API_KEY }}
           SBX_AUTH_DOMAIN: ${{ secrets.SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_PROJECT_ID }}
@@ -206,7 +216,7 @@ jobs:
   deploy-functions:
     name: Firebase Functions
     needs: resolve-env
-    if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'functions' }}
+    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'functions' }}
     runs-on: ubuntu-latest
     env:
       PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
@@ -239,7 +249,7 @@ jobs:
   deploy-firestore:
     name: Firestore rules + indexes
     needs: resolve-env
-    if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'firestore' }}
+    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'firestore' }}
     runs-on: ubuntu-latest
     env:
       PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
