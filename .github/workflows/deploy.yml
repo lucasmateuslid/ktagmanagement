@@ -82,16 +82,14 @@ jobs:
       - name: tsc --noEmit
         run: npm run lint
 
-  # ── Resolve secrets por ambiente ──────────────────────────────────────────
-  # Centraliza a seleção sandbox/produção. Outputs viram inputs dos jobs abaixo.
+  # ── Pre-flight: valida que os secrets do ambiente existem ─────────────────
+  # NÃO emite job outputs com valores de secret: o GitHub redacta (zera) qualquer
+  # job output cujo valor case com um secret, então o downstream receberia "".
+  # Cada deploy job seleciona sandbox/prod inline (ver step "Pick GCP env").
   resolve-env:
-    name: Resolve env secrets
+    name: Validate env secrets
     needs: lint
     runs-on: ubuntu-latest
-    outputs:
-      project_id: ${{ steps.pick.outputs.project_id }}
-      wif_provider: ${{ steps.pick.outputs.wif_provider }}
-      service_account: ${{ steps.pick.outputs.service_account }}
     steps:
       - name: Validar secrets do ambiente
         env:
@@ -120,7 +118,17 @@ jobs:
           fi
           echo "Secrets OK para ENVIRONMENT=$ENVIRONMENT"
 
-      - id: pick
+  # ── Cloud Run: build → push → deploy ──────────────────────────────────────
+  deploy-cloud-run:
+    name: Cloud Run
+    needs: resolve-env
+    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'cloud-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+        id: gcp
         env:
           ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
@@ -131,31 +139,22 @@ jobs:
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
         run: |
           if [ "$ENVIRONMENT" = "production" ]; then
-            echo "project_id=$PRD_PROJECT_ID" >> "$GITHUB_OUTPUT"
-            echo "wif_provider=$PRD_WIF" >> "$GITHUB_OUTPUT"
-            echo "service_account=$PRD_SA" >> "$GITHUB_OUTPUT"
+            PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
           else
-            echo "project_id=$SBX_PROJECT_ID" >> "$GITHUB_OUTPUT"
-            echo "wif_provider=$SBX_WIF" >> "$GITHUB_OUTPUT"
-            echo "service_account=$SBX_SA" >> "$GITHUB_OUTPUT"
+            PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
           fi
-
-  # ── Cloud Run: build → push → deploy ──────────────────────────────────────
-  deploy-cloud-run:
-    name: Cloud Run
-    needs: resolve-env
-    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'cloud-run' }}
-    runs-on: ubuntu-latest
-    env:
-      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
-    steps:
-      - uses: actions/checkout@v4
+          echo "::add-mask::$WIF"
+          echo "::add-mask::$SA"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "wif_provider=$WIF"     >> "$GITHUB_OUTPUT"
+          echo "service_account=$SA"   >> "$GITHUB_OUTPUT"
+          echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
 
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
-          service_account: ${{ needs.resolve-env.outputs.service_account }}
+          workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
+          service_account: ${{ steps.gcp.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -245,8 +244,6 @@ jobs:
     needs: resolve-env
     if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'functions' }}
     runs-on: ubuntu-latest
-    env:
-      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -258,11 +255,34 @@ jobs:
         working-directory: functions
         run: npm ci --no-audit --no-fund
 
+      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+        id: gcp
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
+          SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
+          SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
+          PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_PROJECT_ID }}
+          PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
+          PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
+        run: |
+          if [ "$ENVIRONMENT" = "production" ]; then
+            PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
+          else
+            PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
+          fi
+          echo "::add-mask::$WIF"
+          echo "::add-mask::$SA"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "wif_provider=$WIF"     >> "$GITHUB_OUTPUT"
+          echo "service_account=$SA"   >> "$GITHUB_OUTPUT"
+          echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
+
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
-          service_account: ${{ needs.resolve-env.outputs.service_account }}
+          workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
+          service_account: ${{ steps.gcp.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -278,16 +298,37 @@ jobs:
     needs: resolve-env
     if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'firestore' }}
     runs-on: ubuntu-latest
-    env:
-      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+        id: gcp
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
+          SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
+          SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
+          PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_PROJECT_ID }}
+          PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
+          PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
+        run: |
+          if [ "$ENVIRONMENT" = "production" ]; then
+            PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
+          else
+            PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
+          fi
+          echo "::add-mask::$WIF"
+          echo "::add-mask::$SA"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "wif_provider=$WIF"     >> "$GITHUB_OUTPUT"
+          echo "service_account=$SA"   >> "$GITHUB_OUTPUT"
+          echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
 
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
-          service_account: ${{ needs.resolve-env.outputs.service_account }}
+          workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
+          service_account: ${{ steps.gcp.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
