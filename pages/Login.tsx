@@ -89,18 +89,14 @@ export const Login = () => {
   }, []);
 
   useEffect(() => {
-     const loadSettings = async () => {
-         try {
-             const settings = await storage.getSettings();
-             setAppSettings({
-                 appName: settings.customAppName,
-                 appLogo: settings.customLogoUrlDark || settings.customLogoUrlLight
-             });
-         } catch(e) {
-             console.log(e);
-         }
-     };
-     loadSettings();
+     // Lê o espelho público (sem auth) — antes usávamos getSettings, que exigia
+     // membership e gerava PERMISSION_DENIED em loop na tela de login.
+     storage.getPublicSettings().then(settings => {
+       setAppSettings({
+         appName: settings.customAppName,
+         appLogo: settings.customLogoUrlDark || settings.customLogoUrlLight
+       });
+     }).catch(() => {});
   }, []);
 
   useEffect(() => {

@@ -70,9 +70,21 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   // Carrega o User decriptado a partir de /tenants/{tenantId}/users/{uid}.
   // Retorna null se o doc não existe (usuário não é membro deste tenant) ou
   // se o status não está aprovado.
+  //
+  // Importante: as rules de /tenants/{tid}/users/{uid} exigem que o próprio
+  // doc exista para liberar leitura. Quando o doc não existe, o Firestore
+  // devolve PERMISSION_DENIED em vez de snap.exists()===false — então
+  // tratamos esse erro como "não-membro" e devolvemos null. Outros erros
+  // (rede, etc.) sobem para o caller.
   const loadUserDoc = async (fbUser: FirebaseUser): Promise<User | null> => {
     if (!auth) return null;
-    const snap = await getDoc(tenantDoc(USERS_COLLECTION, fbUser.uid));
+    let snap;
+    try {
+      snap = await getDoc(tenantDoc(USERS_COLLECTION, fbUser.uid));
+    } catch (e: any) {
+      if (e?.code === 'permission-denied') return null;
+      throw e;
+    }
     if (!snap.exists()) return null;
     const raw = { ...snap.data(), id: snap.id } as User;
 
@@ -134,7 +146,10 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
         setUser(doc);
       } catch (e) {
+        // Erro inesperado (rede, etc.) — força signOut para não deixar o
+        // Firebase Auth e o estado da UI dessincronizados.
         console.error('Auth boot error:', e);
+        try { await fbSignOut(authInstance); } catch { /* noop */ }
         setUser(null);
       } finally {
         setLoading(false);

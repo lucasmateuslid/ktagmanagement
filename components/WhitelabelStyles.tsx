@@ -1,19 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { storage } from '../services/storage';
-import { AppSettings } from '../types';
+import type { PublicSettings } from '../services/storage';
 
 export const WhitelabelStyles: React.FC = () => {
-    const [settings, setSettings] = useState<AppSettings | null>(null);
+    const [settings, setSettings] = useState<PublicSettings | null>(null);
 
     useEffect(() => {
-        const fetchSettings = async () => {
-            const s = await storage.getSettings();
-            setSettings(s);
-        };
-        fetchSettings();
-
-        const interval = setInterval(fetchSettings, 5000);
-        return () => clearInterval(interval);
+        // public_settings é legível sem auth — Login e telas pré-login podem
+        // pintar o tema. Apenas uma leitura no mount; saveSettings atualiza
+        // o doc espelho, então não precisamos polling.
+        storage.getPublicSettings().then(setSettings).catch(() => {});
     }, []);
 
     if (!settings || !settings.themeColors) return null;

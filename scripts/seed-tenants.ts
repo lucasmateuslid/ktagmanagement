@@ -88,6 +88,16 @@ async function main() {
     { merge: true }
   );
 
+  // 2b. Espelho público do whitelabel (legível sem auth). Mantém apenas o
+  // subset whitelabel; daqui pra frente, storage.saveSettings sincroniza
+  // automaticamente a cada gravação no UI.
+  await tenantRef.collection('public_settings').doc('whitelabel').set(
+    {
+      customAppName: `Empresa ${slug}`,
+    },
+    { merge: true }
+  );
+
   // 3. Admin: Firebase Auth user + doc no tenant
   let userRecord;
   try {

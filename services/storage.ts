@@ -39,7 +39,26 @@ const COLLECTIONS = {
   SHIPPING_ADDRESSES: 'shipping_addresses',
   TECHNICIAN_PAYMENTS: 'technician_payments',
   CUSTOM_ROLES: 'custom_roles',
+  PUBLIC_SETTINGS: 'public_settings',
 };
+
+// Subconjunto público de AppSettings — apenas whitelabel/tema, sem segredos.
+// Espelhado em /tenants/{tid}/public_settings/whitelabel pelo saveSettings
+// para que telas pré-login (Login, WhitelabelStyles) possam ler sem auth.
+export type PublicSettings = Pick<AppSettings,
+  'customAppName' | 'customLogoUrlLight' | 'customLogoUrlDark' | 'themeColors'
+>;
+
+const PUBLIC_SETTINGS_DOC = 'whitelabel';
+
+function pickPublicSettings(s: AppSettings): PublicSettings {
+  return {
+    customAppName: s.customAppName,
+    customLogoUrlLight: s.customLogoUrlLight,
+    customLogoUrlDark: s.customLogoUrlDark,
+    themeColors: s.themeColors,
+  };
+}
 
 // Cache em localStorage, prefixado por tenant para evitar leakage entre tenants
 // na mesma máquina (dev/preview com múltiplos subdomínios).
@@ -506,16 +525,53 @@ export const storage = {
           cache.set(COLLECTIONS.SETTINGS, data);
           return data;
         }
-      } catch (e) {
-        console.warn("Settings Fetch failed, using local cache.");
+      } catch (e: any) {
+        // permission-denied é esperado quando o caller não está autenticado
+        // ou ainda não é membro do tenant. Cache local cobre o fallback —
+        // não polui o console nesse caso.
+        if (e?.code !== 'permission-denied') {
+          console.warn("Settings Fetch failed, using local cache.");
+        }
       }
     }
     return cache.get<AppSettings>(COLLECTIONS.SETTINGS, {} as AppSettings);
   },
 
+  // Subconjunto público (whitelabel/tema) — legível sem auth para pintar
+  // Login e splash. Espelhado por saveSettings no doc /public_settings/whitelabel.
+  getPublicSettings: async (): Promise<PublicSettings> => {
+    if (db) {
+      try {
+        const snap = await getDoc(tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC));
+        if (snap.exists()) {
+          const data = snap.data() as PublicSettings;
+          cache.set(COLLECTIONS.PUBLIC_SETTINGS, data);
+          return data;
+        }
+      } catch {
+        // Cache local cobre — silencioso para evitar ruído em tela de login.
+      }
+    }
+    return cache.get<PublicSettings>(COLLECTIONS.PUBLIC_SETTINGS, {} as PublicSettings);
+  },
+
   saveSettings: async (s: AppSettings) => {
-    if (db) await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(s));
+    if (db) {
+      await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(s));
+      // Espelha o subconjunto público — Login/WhitelabelStyles leem deste doc
+      // sem precisar de auth. Se falhar (sem permissão de escrita no
+      // espelho), seguimos — o doc privado já foi salvo.
+      try {
+        await setDoc(
+          tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC),
+          cleanData(pickPublicSettings(s) as any),
+        );
+      } catch (e) {
+        console.warn('Mirror de public_settings falhou:', e);
+      }
+    }
     cache.set(COLLECTIONS.SETTINGS, s);
+    cache.set(COLLECTIONS.PUBLIC_SETTINGS, pickPublicSettings(s));
   },
 
   // --- AUDIT LOGS ---

@@ -129,6 +129,17 @@ service cloud.firestore {
       allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
     }
 
+    // Public settings: espelho com APENAS whitelabel/tema (sem segredos),
+    // mantido por storage.saveSettings. Leitura pública para que Login e
+    // splash possam pintar o tema antes do auth. Escrita restrita a admin.
+    //
+    // ATENÇÃO: nunca colocar credenciais ou tokens aqui — qualquer pessoa
+    // que conheça o subdomínio pode ler este doc.
+    match /tenants/{tenantId}/public_settings/{docId} {
+      allow read: if true;
+      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+    }
+
     // Faturas de mensalidade. Espelho do Asaas — escrita só via Admin SDK
     // (Cloud Functions ignoram regras). Leitura limitada a admin do tenant +
     // super admin para não vazar dados financeiros aos demais membros.

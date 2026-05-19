@@ -11,6 +11,11 @@ Dockerfile
 .firebase/
 firebase-debug.log
 firebase-service-account*.json
+serviceAccount*.json
+servceAccout*.json
+*.serviceaccount.json
+SECURITY_AUDIT_*.md
+CODEBASE_SUMMARY.md
 dist
 build
 .vscode
