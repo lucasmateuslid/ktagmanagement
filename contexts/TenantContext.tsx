@@ -6,7 +6,8 @@ import { db } from '../services/firebase';
 import { activeTenant } from '../services/activeTenant';
 import { encryption } from '../services/encryption';
 import { tenantRootDoc } from '../lib/firestore';
-import { getTenantFromHostname, isReservedSlug } from '../utils/tenant';
+import { getTenantFromHostname, isReservedSlug, APEX_TENANT } from '../utils/tenant';
+import { ApexPlaceholder } from '../components/ApexPlaceholder';
 
 interface TenantContextValue {
   tenantId: string;
@@ -19,6 +20,7 @@ interface TenantContextValue {
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 
 const ADMIN_TENANT_SLUG = 'admin';
+const LOCK_TENANT_SLUG = 'lock';
 
 export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   const [tenantId] = useState<string>(() => getTenantFromHostname());
@@ -27,12 +29,21 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
 
   const isAdminPanel = tenantId === ADMIN_TENANT_SLUG;
+  const isApex = tenantId === APEX_TENANT;
+  const isLock = tenantId === LOCK_TENANT_SLUG;
 
   useEffect(() => {
+    // Apex e lock não precisam de boot: nenhum acesso a Firestore, encryption
+    // ou activeTenant. Saem imediatamente do loading.
+    if (isApex || isLock) {
+      setLoading(false);
+      return;
+    }
+
     const boot = async () => {
       try {
         // Slugs reservados não podem existir como tenant real. admin é tratado
-        // à parte (futuro painel super admin); demais reservados resultam em 404.
+        // à parte (painel super admin); demais reservados resultam em 404.
         if (isReservedSlug(tenantId) && !isAdminPanel) {
           setError(`Subdomínio reservado: "${tenantId}"`);
           setLoading(false);
@@ -84,7 +95,20 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
       }
     };
     boot();
-  }, [tenantId, isAdminPanel]);
+  }, [tenantId, isAdminPanel, isApex, isLock]);
+
+  if (isApex) {
+    return <ApexPlaceholder />;
+  }
+
+  if (isLock) {
+    return (
+      <TenantNotFound
+        message="Esta área é gerenciada por uma instância externa."
+        tenantId={tenantId}
+      />
+    );
+  }
 
   if (loading) {
     return (

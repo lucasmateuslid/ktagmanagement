@@ -49,7 +49,15 @@ export default {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         display: ['Manrope', 'sans-serif'],
-      }
+      },
+      keyframes: {
+        shimmer: {
+          '100%': { transform: 'translateX(100%)' },
+        },
+      },
+      animation: {
+        shimmer: 'shimmer 1.6s infinite',
+      },
     },
   },
   plugins: [],

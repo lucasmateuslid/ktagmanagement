@@ -11,6 +11,8 @@ import { AdminUsers } from './AdminUsers';
 import { AdminSystemAdmins } from './AdminSystemAdmins';
 import { AdminAudit } from './AdminAudit';
 import { AdminAsaasConfig } from './AdminAsaasConfig';
+import { AdminAccount } from './AdminAccount';
+import { AdminPlansConfig } from './AdminPlansConfig';
 
 const AdminGate = () => {
   const { admin, loading } = useSystemAdmin();
@@ -34,6 +36,8 @@ const AdminGate = () => {
         <Route path="/admin/system-admins" element={<AdminSystemAdmins />} />
         <Route path="/admin/audit" element={<AdminAudit />} />
         <Route path="/admin/asaas-config" element={<AdminAsaasConfig />} />
+        <Route path="/admin/account" element={<AdminAccount />} />
+        <Route path="/admin/plans" element={<AdminPlansConfig />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>

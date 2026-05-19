@@ -3,16 +3,15 @@
  *
  * Regras:
  *  - Em produção: o subdomínio é o slug do tenant.
- *      empresa1.dominio.com  → tenantId = 'empresa1'
- *      admin.dominio.com     → tenantId = 'admin' (painel super admin — Fase 2)
- *      www.dominio.com       → tenantId = 'default' (landing/redirect — Fase 2)
+ *      empresa1.ktagfinder.app  → tenantId = 'empresa1'
+ *      admin.ktagfinder.app     → tenantId = 'admin' (painel super admin)
+ *      ktagfinder.app (apex)    → tenantId = APEX_TENANT (landing/placeholder)
+ *      lock.ktagfinder.app      → reservado para instância externa; DNS deveria
+ *                                 desviar, mas o app trata como reservado.
  *  - Em desenvolvimento (localhost/127.0.0.1):
  *      1. ?tenant=xxx na URL tem prioridade
  *      2. import.meta.env.VITE_DEV_TENANT
  *      3. fallback 'dev-tenant'
- *
- * Slugs reservados não podem ser usados por tenants reais — bloqueiam tentativa
- * de takeover de painel/infra (admin, api, www, etc.).
  */
 
 export const RESERVED_TENANT_SLUGS = [
@@ -28,9 +27,15 @@ export const RESERVED_TENANT_SLUGS = [
   'system',
   'root',
   'localhost',
+  'lock',
 ];
 
 export const DEFAULT_DEV_TENANT = 'dev-tenant';
+
+// Sentinel para indicar que o host é o apex (sem subdomínio).
+// Usado pelo TenantContext para renderizar a landing/placeholder em vez de
+// tentar carregar um documento de tenant.
+export const APEX_TENANT = '__apex__';
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
 
@@ -71,8 +76,8 @@ export function getTenantFromHostname(hostname?: string): string {
   const parts = host.split('.');
   // ex: 'empresa.dominio.com' → ['empresa', 'dominio', 'com'] → tenant = 'empresa'
   if (parts.length < 3) {
-    // domínio apex sem subdomínio (dominio.com) — landing / default
-    return 'default';
+    // domínio apex sem subdomínio (ktagfinder.app) — placeholder/landing.
+    return APEX_TENANT;
   }
 
   return parts[0].toLowerCase();
@@ -80,4 +85,8 @@ export function getTenantFromHostname(hostname?: string): string {
 
 export function isAdminPanelHost(hostname?: string): boolean {
   return getTenantFromHostname(hostname) === 'admin';
+}
+
+export function isApexHost(hostname?: string): boolean {
+  return getTenantFromHostname(hostname) === APEX_TENANT;
 }

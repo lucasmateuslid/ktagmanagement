@@ -1,7 +1,31 @@
 name: Deploy
 
 # Disparo manual: vá em Actions → "Deploy" → "Run workflow".
-# Escolha o alvo no dropdown 'target' (all / cloud-run / functions / firestore).
+# Escolha o alvo no dropdown 'target' (all / cloud-run / functions / firestore)
+# e o ambiente em 'environment' (sandbox / production).
+#
+# Secrets esperados (configurar em Settings → Secrets and variables → Actions):
+#   Sandbox (saastagmanager):
+#     SAASTAGMANAGER_PROJECT_ID
+#     SAASTAGMANAGER_WIF_PROVIDER
+#     SAASTAGMANAGER_SERVICE_ACCOUNT
+#     SAASTAGMANAGER_FIREBASE_API_KEY
+#     SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN
+#     SAASTAGMANAGER_FIREBASE_PROJECT_ID
+#     SAASTAGMANAGER_FIREBASE_STORAGE_BUCKET
+#     SAASTAGMANAGER_FIREBASE_MESSAGING_SENDER_ID
+#     SAASTAGMANAGER_FIREBASE_APP_ID
+#
+#   Produção (ktagfinder-prod):
+#     KTAGFINDER_PROD_PROJECT_ID
+#     KTAGFINDER_PROD_WIF_PROVIDER
+#     KTAGFINDER_PROD_SERVICE_ACCOUNT
+#     KTAGFINDER_PROD_FIREBASE_API_KEY
+#     KTAGFINDER_PROD_FIREBASE_AUTH_DOMAIN
+#     KTAGFINDER_PROD_FIREBASE_PROJECT_ID
+#     KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET
+#     KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID
+#     KTAGFINDER_PROD_FIREBASE_APP_ID
 on:
   workflow_dispatch:
     inputs:
@@ -11,20 +35,26 @@ on:
         required: true
         default: all
         options: [all, cloud-run, functions, firestore]
+      environment:
+        description: Ambiente alvo
+        type: choice
+        required: true
+        default: sandbox
+        options: [sandbox, production]
 
 permissions:
   contents: read
   id-token: write   # obrigatório para Workload Identity Federation
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: us-central1
   SERVICE: ktag-app
   REPO: ktag
 
-# Garante que dois deploys simultâneos do mesmo alvo não conflitem.
+# Concorrência por (target, environment): sandbox e prod não bloqueiam um ao
+# outro; reexecuções do mesmo par são serializadas.
 concurrency:
-  group: deploy-${{ github.event.inputs.target }}
+  group: deploy-${{ github.event.inputs.target }}-${{ github.event.inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -42,31 +72,113 @@ jobs:
       - name: tsc --noEmit
         run: npm run lint
 
+  # ── Resolve secrets por ambiente ──────────────────────────────────────────
+  # Centraliza a seleção sandbox/produção. Outputs viram inputs dos jobs abaixo.
+  resolve-env:
+    name: Resolve env secrets
+    needs: lint
+    runs-on: ubuntu-latest
+    outputs:
+      project_id: ${{ steps.pick.outputs.project_id }}
+      wif_provider: ${{ steps.pick.outputs.wif_provider }}
+      service_account: ${{ steps.pick.outputs.service_account }}
+    steps:
+      - id: pick
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
+          SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
+          SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
+          PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_PROJECT_ID }}
+          PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
+          PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
+        run: |
+          if [ "$ENVIRONMENT" = "production" ]; then
+            echo "project_id=$PRD_PROJECT_ID" >> "$GITHUB_OUTPUT"
+            echo "wif_provider=$PRD_WIF" >> "$GITHUB_OUTPUT"
+            echo "service_account=$PRD_SA" >> "$GITHUB_OUTPUT"
+          else
+            echo "project_id=$SBX_PROJECT_ID" >> "$GITHUB_OUTPUT"
+            echo "wif_provider=$SBX_WIF" >> "$GITHUB_OUTPUT"
+            echo "service_account=$SBX_SA" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Cloud Run: build → push → deploy ──────────────────────────────────────
   deploy-cloud-run:
     name: Cloud Run
-    needs: lint
+    needs: resolve-env
     if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'cloud-run' }}
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
     steps:
       - uses: actions/checkout@v4
 
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
+          service_account: ${{ needs.resolve-env.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Configurar Docker auth p/ Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
+      - name: Pick VITE_FIREBASE_* by environment
+        id: vite
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          SBX_API_KEY: ${{ secrets.SAASTAGMANAGER_FIREBASE_API_KEY }}
+          SBX_AUTH_DOMAIN: ${{ secrets.SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN }}
+          SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_PROJECT_ID }}
+          SBX_BUCKET: ${{ secrets.SAASTAGMANAGER_FIREBASE_STORAGE_BUCKET }}
+          SBX_SENDER: ${{ secrets.SAASTAGMANAGER_FIREBASE_MESSAGING_SENDER_ID }}
+          SBX_APP_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_APP_ID }}
+          PRD_API_KEY: ${{ secrets.KTAGFINDER_PROD_FIREBASE_API_KEY }}
+          PRD_AUTH_DOMAIN: ${{ secrets.KTAGFINDER_PROD_FIREBASE_AUTH_DOMAIN }}
+          PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_PROJECT_ID }}
+          PRD_BUCKET: ${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
+          PRD_SENDER: ${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
+          PRD_APP_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
+        run: |
+          if [ "$ENVIRONMENT" = "production" ]; then
+            echo "::add-mask::$PRD_API_KEY"
+            echo "api_key=$PRD_API_KEY" >> "$GITHUB_OUTPUT"
+            echo "auth_domain=$PRD_AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
+            echo "project_id=$PRD_PROJECT_ID" >> "$GITHUB_OUTPUT"
+            echo "bucket=$PRD_BUCKET" >> "$GITHUB_OUTPUT"
+            echo "sender=$PRD_SENDER" >> "$GITHUB_OUTPUT"
+            echo "app_id=$PRD_APP_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "::add-mask::$SBX_API_KEY"
+            echo "api_key=$SBX_API_KEY" >> "$GITHUB_OUTPUT"
+            echo "auth_domain=$SBX_AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
+            echo "project_id=$SBX_PROJECT_ID" >> "$GITHUB_OUTPUT"
+            echo "bucket=$SBX_BUCKET" >> "$GITHUB_OUTPUT"
+            echo "sender=$SBX_SENDER" >> "$GITHUB_OUTPUT"
+            echo "app_id=$SBX_APP_ID" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build & push image
+        env:
+          VITE_API_KEY: ${{ steps.vite.outputs.api_key }}
+          VITE_AUTH_DOMAIN: ${{ steps.vite.outputs.auth_domain }}
+          VITE_PROJECT_ID: ${{ steps.vite.outputs.project_id }}
+          VITE_BUCKET: ${{ steps.vite.outputs.bucket }}
+          VITE_SENDER: ${{ steps.vite.outputs.sender }}
+          VITE_APP_ID: ${{ steps.vite.outputs.app_id }}
         run: |
           IMAGE_SHA=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${{ github.sha }}
           IMAGE_LATEST=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest
-          docker build -t "$IMAGE_SHA" -t "$IMAGE_LATEST" .
+          docker build \
+            --build-arg VITE_FIREBASE_API_KEY="$VITE_API_KEY" \
+            --build-arg VITE_FIREBASE_AUTH_DOMAIN="$VITE_AUTH_DOMAIN" \
+            --build-arg VITE_FIREBASE_PROJECT_ID="$VITE_PROJECT_ID" \
+            --build-arg VITE_FIREBASE_STORAGE_BUCKET="$VITE_BUCKET" \
+            --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="$VITE_SENDER" \
+            --build-arg VITE_FIREBASE_APP_ID="$VITE_APP_ID" \
+            -t "$IMAGE_SHA" -t "$IMAGE_LATEST" .
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_LATEST"
           echo "IMAGE=$IMAGE_SHA" >> "$GITHUB_ENV"
@@ -76,6 +188,7 @@ jobs:
           gcloud run deploy "$SERVICE" \
             --image="$IMAGE" \
             --region="$REGION" \
+            --project="$PROJECT_ID" \
             --platform=managed \
             --allow-unauthenticated \
             --port=8080 \
@@ -87,14 +200,16 @@ jobs:
             --quiet
 
       - name: Imprimir URL
-        run: gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)'
+        run: gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)'
 
   # ── Firebase Functions ────────────────────────────────────────────────────
   deploy-functions:
     name: Firebase Functions
-    needs: lint
+    needs: resolve-env
     if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'functions' }}
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -109,8 +224,8 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
+          service_account: ${{ needs.resolve-env.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -123,17 +238,19 @@ jobs:
   # ── Firestore rules + indexes ─────────────────────────────────────────────
   deploy-firestore:
     name: Firestore rules + indexes
-    needs: lint
+    needs: resolve-env
     if: ${{ github.event.inputs.target == 'all' || github.event.inputs.target == 'firestore' }}
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ needs.resolve-env.outputs.project_id }}
     steps:
       - uses: actions/checkout@v4
 
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ needs.resolve-env.outputs.wif_provider }}
+          service_account: ${{ needs.resolve-env.outputs.service_account }}
 
       - uses: google-github-actions/setup-gcloud@v2
 

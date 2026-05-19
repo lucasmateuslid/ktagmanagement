@@ -15,18 +15,34 @@ const asaas = require("./asaas");
 // Secrets — set with: firebase functions:secrets:set <NAME>
 const ASAAS_API_KEY = defineSecret("ASAAS_API_KEY");
 const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
-const cors = require("cors")({ 
-  origin: true, 
+// CORS: em produção, só aceita ktagfinder.app e seus subdomínios.
+// Localhost continua liberado para dev. server-to-server (sem origin) também.
+// Override via ALLOWED_ORIGIN_OVERRIDE=true mantém compat com integrações
+// pontuais (ex.: testes manuais) — usar com cuidado.
+const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (process.env.ALLOWED_ORIGIN_OVERRIDE === 'true') return cb(null, true);
+    if (ALLOWED_ORIGIN_PATTERN.test(origin)) return cb(null, true);
+    if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+      return cb(null, true);
+    }
+    return cb(new Error(`Origin não permitida: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'api_token', 'timestamp', 'Authorization', 'x-goog-api-key', 'x-goog-api-client', 'x-goog-user-project']
-});
+};
+const cors = require("cors")(corsOptions);
 const webpush = require("web-push");
 
 // Inicializa o Admin SDK se ainda não estiver inicializado
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
+// Aceitar `undefined` em writes do Firestore como "campo ausente" em vez de erro.
+admin.firestore().settings({ ignoreUndefinedProperties: true });
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
 const vapidKeys = {
@@ -1453,13 +1469,89 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
     lastSyncedAt: Date.now(),
     ...(trialDays > 0 && { trialEndsAt: nextDueDateMs, trialDays }),
   };
+
+  // -------- ADESÃO (setup fee) opcional --------
+  // Aceita {valueCents, status: 'paid'|'pending'|'waived', description?}
+  // - 'paid': só registra no Firestore (sem cobrança Asaas)
+  // - 'pending': cria payment one-time no Asaas e registra paymentId
+  // - 'waived' / omitido: ignorado
+  const setupFeeInput = data.setupFee;
+  if (setupFeeInput && setupFeeInput.status && setupFeeInput.status !== 'waived') {
+    const setupValue = Number(setupFeeInput.valueCents);
+    if (!Number.isFinite(setupValue) || setupValue < 100) {
+      throw new HttpsError('invalid-argument', 'setupFee.valueCents deve ser >= 100 (R$ 1,00).');
+    }
+    const setupDescription = String(setupFeeInput.description || `Taxa de adesão — ${tenant.name}`).trim();
+
+    const fee = {
+      valueCents: setupValue,
+      status: setupFeeInput.status, // 'paid' ou 'pending'
+      description: setupDescription,
+      registeredAt: Date.now(),
+      registeredBy: callerUid,
+    };
+
+    if (setupFeeInput.status === 'paid') {
+      fee.paidAt = Date.now();
+    } else if (setupFeeInput.status === 'pending') {
+      // Cria cobrança avulsa no Asaas (vencimento padrão: 7 dias).
+      try {
+        const setupPayment = await asaas.createPayment(apiKey, {
+          customerId: customer.id,
+          valueCents: setupValue,
+          description: setupDescription,
+          billingType: setupFeeInput.billingType || 'UNDEFINED',
+          dueDateMs: Date.now() + 7 * 86400000,
+          externalReference: `${slug}__setup`,
+        });
+        const setupInvoice = asaas.paymentToInvoice(setupPayment, slug);
+        setupInvoice.createdAt = Date.now();
+        await ref.collection('invoices').doc(setupPayment.id).set(setupInvoice);
+        fee.asaasPaymentId = setupPayment.id;
+      } catch (e) {
+        console.error(`[createTenantSubscription] Falha ao gerar setupFee Asaas (${slug}):`, e?.response?.data || e.message);
+        throw new HttpsError('internal', `Assinatura criada, mas a adesão Asaas falhou: ${e.message}. Crie manualmente via "Nova cobrança avulsa".`);
+      }
+    }
+    billing.setupFee = fee;
+  }
+
   await ref.update({ billing });
 
+  const setupFeeNote = billing.setupFee
+    ? ` + adesão R$${(billing.setupFee.valueCents / 100).toFixed(2)} (${billing.setupFee.status})`
+    : '';
   await logAudit(null, 'CREATE', 'TenantSubscription',
-    `Assinatura criada para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}${trialDays > 0 ? ` (trial ${trialDays}d)` : ''}`,
+    `Assinatura criada para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}${trialDays > 0 ? ` (trial ${trialDays}d)` : ''}${setupFeeNote}`,
     slug, callerUid);
 
   return { ok: true, billing, asaasSubscription: sub };
+});
+
+/**
+ * Marca a adesão (setupFee) de um tenant como paga. Útil quando o admin recebeu
+ * o pagamento por fora (em dinheiro/transferência) e quer atualizar o status.
+ */
+exports.markSetupFeePaid = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const ref = admin.firestore().collection('tenants').doc(slug);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  const billing = snap.data().billing || {};
+  if (!billing.setupFee) throw new HttpsError('failed-precondition', 'Este tenant não tem adesão registrada.');
+  if (billing.setupFee.status === 'paid') return { ok: true, alreadyPaid: true };
+
+  await ref.update({
+    'billing.setupFee.status': 'paid',
+    'billing.setupFee.paidAt': Date.now(),
+  });
+  await logAudit(null, 'UPDATE', 'TenantSubscription',
+    `Adesão marcada como paga (R$${(billing.setupFee.valueCents / 100).toFixed(2)})`,
+    slug, callerUid);
+  return { ok: true, alreadyPaid: false };
 });
 
 /**
@@ -2131,3 +2223,432 @@ exports.dailyBillingEnforcement = onSchedule(
     console.log(`dailyBillingEnforcement: suspended=${suspended}`);
   }
 );
+
+// ============================================================
+// FASE 2 — TENANT USAGE + LIMITES + EXCLUSÃO + RANKING
+// ============================================================
+
+/**
+ * Conta entidades de um tenant e atualiza usage.* cacheado no doc.
+ * Restrito a super admin. Reusa as subcoleções tenant-aware.
+ */
+exports.getTenantUsage = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const { slug } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const tenantSnap = await tenantRef.get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  // Conta cada subcoleção em paralelo via count() aggregation (mais barato).
+  const COLS = ['tags', 'vehicles', 'users', 'schedules'];
+  const counts = await Promise.all(COLS.map(async (col) => {
+    try {
+      const agg = await tenantRef.collection(col).count().get();
+      return agg.data().count;
+    } catch (e) {
+      console.warn(`getTenantUsage count(${col}) falhou para ${slug}:`, e.message);
+      return 0;
+    }
+  }));
+  const [tagsUtilizadas, veiculosUtilizados, usuariosAtivos, agendamentosAtivos] = counts;
+
+  // Última atividade: olha o doc mais recente entre schedules, vehicles e tags.
+  let lastActivityAt = 0;
+  for (const col of ['schedules', 'vehicles', 'tags']) {
+    try {
+      const last = await tenantRef.collection(col).orderBy('createdAt', 'desc').limit(1).get();
+      const ts = last.docs[0]?.data()?.createdAt || 0;
+      if (ts > lastActivityAt) lastActivityAt = ts;
+    } catch (e) { /* coleção pode não ter createdAt indexado */ }
+  }
+
+  const usage = {
+    tagsUtilizadas,
+    veiculosUtilizados,
+    usuariosAtivos,
+    agendamentosAtivos,
+    lastComputedAt: Date.now(),
+    lastActivityAt: lastActivityAt || undefined,
+  };
+  await tenantRef.update({ usage });
+  return { slug, usage };
+});
+
+/**
+ * Atualiza limites do tenant (limiteTags, limiteVeiculos, maxUsers).
+ * Restrito a super admin. Audita a mudança.
+ */
+exports.updateTenantLimits = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, limiteTags, limiteVeiculos, maxUsers } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const snap = await tenantRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  const prev = snap.data().settings || {};
+  const next = { ...prev };
+  const changes = [];
+  if (limiteTags !== undefined && Number.isFinite(limiteTags) && limiteTags >= 0) {
+    if (prev.limiteTags !== limiteTags) {
+      changes.push(`limiteTags: ${prev.limiteTags ?? 'ilimitado'} → ${limiteTags || 'ilimitado'}`);
+      next.limiteTags = limiteTags;
+    }
+  }
+  if (limiteVeiculos !== undefined && Number.isFinite(limiteVeiculos) && limiteVeiculos >= 0) {
+    if (prev.limiteVeiculos !== limiteVeiculos) {
+      changes.push(`limiteVeiculos: ${prev.limiteVeiculos ?? 'ilimitado'} → ${limiteVeiculos || 'ilimitado'}`);
+      next.limiteVeiculos = limiteVeiculos;
+    }
+  }
+  if (maxUsers !== undefined && Number.isFinite(maxUsers) && maxUsers >= 0) {
+    if (prev.maxUsers !== maxUsers) {
+      changes.push(`maxUsers: ${prev.maxUsers ?? 'ilimitado'} → ${maxUsers || 'ilimitado'}`);
+      next.maxUsers = maxUsers;
+    }
+  }
+  if (changes.length === 0) return { slug, changed: false };
+
+  await tenantRef.update({ settings: next });
+  await logAudit(null, 'UPDATE', 'Tenant', `Super admin alterou limites: ${changes.join('; ')}`, slug, callerUid);
+  return { slug, changed: true, changes };
+});
+
+/**
+ * Exclui um tenant — soft ou hard.
+ * soft: marca deletedAt + active=false (reversível).
+ * hard: cancela subscription no Asaas, apaga subcoleções recursivamente,
+ *       desativa usuários no Firebase Auth, apaga o doc do tenant.
+ *
+ * confirmName: o caller precisa enviar o name exato do tenant para confirmar.
+ */
+exports.deleteTenant = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, mode, confirmName } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+  if (mode !== 'soft' && mode !== 'hard') {
+    throw new HttpsError('invalid-argument', 'mode deve ser "soft" ou "hard".');
+  }
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const tenantSnap = await tenantRef.get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  const tenant = tenantSnap.data();
+
+  if (!confirmName || confirmName.trim() !== (tenant.name || '').trim()) {
+    throw new HttpsError('failed-precondition',
+      'Nome de confirmação não corresponde ao tenant. Operação abortada.');
+  }
+
+  // ---------- SOFT ----------
+  if (mode === 'soft') {
+    await tenantRef.update({
+      active: false,
+      deletedAt: Date.now(),
+      deletedBy: callerUid,
+      deletionMode: 'soft',
+    });
+    await logAudit(null, 'DELETE', 'Tenant',
+      `Super admin executou SOFT delete de "${tenant.name}" (${slug}). Reversível.`,
+      slug, callerUid);
+    return { slug, mode, ok: true };
+  }
+
+  // ---------- HARD ----------
+  // 1. Cancelar subscription Asaas (best-effort).
+  const billing = tenant.billing || {};
+  if (billing.asaasSubscriptionId) {
+    try {
+      const apiKey = await ASAAS_API_KEY.value();
+      await asaas.cancelSubscription(apiKey, billing.asaasSubscriptionId);
+      console.log(`[deleteTenant] Asaas subscription ${billing.asaasSubscriptionId} cancelada.`);
+    } catch (e) {
+      console.error(`[deleteTenant] Falha ao cancelar Asaas (${slug}):`, e.message);
+      // Não bloqueia hard delete — apenas registra.
+    }
+  }
+
+  // 2. Coletar UIDs de usuários do tenant para desativar no Firebase Auth.
+  const usersSnap = await tenantRef.collection('users').get();
+  const userUids = usersSnap.docs.map(d => d.id);
+
+  // 3. Desativar usuários no Auth (não delete — permite recriação se houver erro).
+  await Promise.all(userUids.map(async (uid) => {
+    try {
+      await admin.auth().updateUser(uid, { disabled: true });
+    } catch (e) {
+      console.warn(`[deleteTenant] Auth disable ${uid} falhou:`, e.message);
+    }
+  }));
+
+  // 4. recursiveDelete cobre todas as subcoleções (tags, vehicles, schedules,
+  // shipments, audit_logs, settings, etc) + o próprio doc do tenant.
+  await admin.firestore().recursiveDelete(tenantRef);
+
+  // 5. Limpar push_subscriptions deste tenant (coleção flat).
+  try {
+    const pushSnap = await admin.firestore().collection('push_subscriptions')
+      .where('tenantId', '==', slug).get();
+    const batch = admin.firestore().batch();
+    pushSnap.docs.forEach(d => batch.delete(d.ref));
+    if (!pushSnap.empty) await batch.commit();
+  } catch (e) {
+    console.warn('[deleteTenant] limpeza push_subscriptions falhou:', e.message);
+  }
+
+  // 6. Auditoria global. Não vai mais no audit_logs do tenant (não existe mais).
+  try {
+    await admin.firestore().collection('system_audit_logs').add({
+      action: 'DELETE',
+      entity: 'Tenant',
+      details: `HARD delete de "${tenant.name}" (${slug}) — ${userUids.length} usuários, billing=${billing.status || 'none'}.`,
+      tenantSlug: slug,
+      callerUid,
+      timestamp: Date.now(),
+    });
+  } catch (_) { /* sem coleção é OK */ }
+
+  return { slug, mode, ok: true, usersDisabled: userUids.length };
+});
+
+// ============================================================
+// CONFIGURAÇÃO DE PLANOS — /system_config/plans
+// ============================================================
+
+const PLANS_CONFIG_DOC = ['system_config', 'plans'];
+
+/** Defaults usados quando o doc /system_config/plans ainda não existe. */
+const DEFAULT_PLANS_CONFIG = {
+  basic: {
+    id: 'basic',
+    name: 'Basic',
+    priceCents: 9900,
+    maxUsers: 5,
+    defaultLimiteTags: 50,
+    defaultSetupFeeCents: 0,
+    defaultDueDay: 10,
+    features: [],
+  },
+  pro: {
+    id: 'pro',
+    name: 'Pro',
+    priceCents: 29900,
+    maxUsers: 25,
+    defaultLimiteTags: 250,
+    defaultSetupFeeCents: 29900,
+    defaultDueDay: 10,
+    features: [],
+  },
+  enterprise: {
+    id: 'enterprise',
+    name: 'Enterprise',
+    priceCents: 99900,
+    maxUsers: 0,
+    defaultLimiteTags: 0,
+    defaultSetupFeeCents: 99900,
+    defaultDueDay: 10,
+    features: [],
+  },
+};
+
+function plansDocRef() {
+  return admin.firestore().collection(PLANS_CONFIG_DOC[0]).doc(PLANS_CONFIG_DOC[1]);
+}
+
+/**
+ * Retorna a configuração atual dos planos. Se não existir, devolve os defaults
+ * (sem persistir — só persiste no primeiro updatePlansConfig).
+ */
+exports.getPlansConfig = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await plansDocRef().get();
+  if (!snap.exists) {
+    return { plans: DEFAULT_PLANS_CONFIG, fromDefaults: true };
+  }
+  return { plans: snap.data(), fromDefaults: false };
+});
+
+/**
+ * Atualiza a configuração de planos. Só super admin.
+ * Body: { plans: { basic: PlanConfig, pro: PlanConfig, enterprise: PlanConfig } }
+ * Valida que cada plano tem priceCents válido. Audita.
+ */
+exports.updatePlansConfig = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { plans } = request.data || {};
+  if (!plans || typeof plans !== 'object') {
+    throw new HttpsError('invalid-argument', 'plans é obrigatório.');
+  }
+
+  const allowedIds = ['basic', 'pro', 'enterprise'];
+  const sanitized = {};
+  for (const id of allowedIds) {
+    const p = plans[id];
+    if (!p) throw new HttpsError('invalid-argument', `plans.${id} é obrigatório.`);
+    const priceCents = Number(p.priceCents);
+    if (!Number.isFinite(priceCents) || priceCents < 100) {
+      throw new HttpsError('invalid-argument', `plans.${id}.priceCents inválido (mín R$ 1,00).`);
+    }
+    const setupFeeCents = Number(p.defaultSetupFeeCents || 0);
+    if (setupFeeCents < 0) {
+      throw new HttpsError('invalid-argument', `plans.${id}.defaultSetupFeeCents não pode ser negativo.`);
+    }
+    const dueDay = Math.min(28, Math.max(1, Number(p.defaultDueDay || 10)));
+    sanitized[id] = {
+      id,
+      name: String(p.name || id).trim(),
+      priceCents,
+      maxUsers: Math.max(0, Number(p.maxUsers || 0)),
+      defaultLimiteTags: Math.max(0, Number(p.defaultLimiteTags || 0)),
+      defaultSetupFeeCents: setupFeeCents,
+      defaultDueDay: dueDay,
+      features: Array.isArray(p.features) ? p.features.map(String) : [],
+    };
+  }
+
+  const payload = {
+    ...sanitized,
+    updatedAt: Date.now(),
+    updatedBy: callerUid,
+  };
+  await plansDocRef().set(payload, { merge: false });
+
+  await logAudit(null, 'UPDATE', 'PlansConfig',
+    `Super admin atualizou planos: ` +
+    `basic=R$${(sanitized.basic.priceCents / 100).toFixed(2)}, ` +
+    `pro=R$${(sanitized.pro.priceCents / 100).toFixed(2)}, ` +
+    `enterprise=R$${(sanitized.enterprise.priceCents / 100).toFixed(2)}`,
+    null, callerUid);
+
+  return { ok: true, plans: payload };
+});
+
+/**
+ * Super admin reseta a senha de qualquer usuário em qualquer tenant.
+ * Gera senha aleatória e devolve em texto plano (mostrada uma única vez).
+ * Difere de `resetTenantUserPassword` porque NÃO exige role admin no tenant —
+ * o gate é via `requireSuperAdmin` (mais privilegiado).
+ */
+exports.superAdminResetUserPassword = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { tenantId, userId } = request.data || {};
+  if (!tenantId || !userId) {
+    throw new HttpsError('invalid-argument', 'tenantId e userId são obrigatórios.');
+  }
+
+  const targetRef = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId);
+  const targetSnap = await targetRef.get();
+  if (!targetSnap.exists) {
+    throw new HttpsError('not-found', `Usuário ${userId} não encontrado em ${tenantId}.`);
+  }
+
+  const targetEmail = targetSnap.data().email || '';
+  const password = generateRandomPassword();
+  try {
+    await admin.auth().updateUser(userId, { password });
+  } catch (e) {
+    throw new HttpsError('internal', `Falha ao atualizar senha no Firebase Auth: ${e.message}`);
+  }
+
+  // Audita no tenant (para o dono ver) E no log global de super admin.
+  await logAudit(tenantId, 'UPDATE', 'User',
+    `Super admin (${callerUid}) resetou senha de ${targetEmail}`,
+    userId, callerUid);
+  try {
+    await admin.firestore().collection('system_audit_logs').add({
+      action: 'PASSWORD_RESET',
+      entity: 'User',
+      details: `Super admin resetou senha de ${targetEmail} em ${tenantId}.`,
+      tenantSlug: tenantId,
+      targetUid: userId,
+      callerUid,
+      timestamp: Date.now(),
+    });
+  } catch (_) { /* coleção opcional */ }
+
+  return { userId, email: targetEmail, password };
+});
+
+/**
+ * Estatísticas agregadas cross-tenant para o painel de Empresas:
+ * - ranking por uso de tags
+ * - ranking por veículos
+ * - tenants inadimplentes
+ * - novos tenants por mês (12m)
+ *
+ * Lê o cache `usage.*` dos tenants — chame `getTenantUsage` periodicamente
+ * (ou no carregamento da tela) para manter atualizado.
+ */
+exports.aggregateTenantsStats = onCall(async (request) => {
+  await requireSuperAdmin(request);
+
+  const snap = await admin.firestore().collection('tenants').get();
+  const tenants = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const ranked = (key) => tenants
+    .filter(t => !t.deletedAt && (t.usage?.[key] || 0) > 0)
+    .sort((a, b) => (b.usage[key] || 0) - (a.usage[key] || 0))
+    .slice(0, 10)
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      value: t.usage[key] || 0,
+      limit: key === 'tagsUtilizadas' ? t.settings?.limiteTags : (key === 'veiculosUtilizados' ? t.settings?.limiteVeiculos : undefined),
+    }));
+
+  // Inadimplentes: status overdue ou trial expirado sem assinatura ativa.
+  const overdue = tenants
+    .filter(t => !t.deletedAt && t.billing?.status === 'overdue')
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      priceCents: t.billing?.priceCents || 0,
+      nextDueDate: t.billing?.nextDueDate,
+    }));
+
+  // Mais ativos: ordena por usage.lastActivityAt desc.
+  const mostActive = tenants
+    .filter(t => !t.deletedAt && t.usage?.lastActivityAt)
+    .sort((a, b) => (b.usage.lastActivityAt || 0) - (a.usage.lastActivityAt || 0))
+    .slice(0, 10)
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      lastActivityAt: t.usage.lastActivityAt,
+    }));
+
+  // Crescimento por mês: bucket dos últimos 12 meses por createdAt.
+  const now = new Date();
+  const buckets = {};
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    buckets[k] = 0;
+  }
+  for (const t of tenants) {
+    if (!t.createdAt) continue;
+    const d = new Date(t.createdAt);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (k in buckets) buckets[k]++;
+  }
+  const growth = Object.entries(buckets).map(([month, count]) => ({ month, count }));
+
+  return {
+    topByTags: ranked('tagsUtilizadas'),
+    topByVehicles: ranked('veiculosUtilizados'),
+    mostActive,
+    overdue,
+    growth,
+    totals: {
+      tenants: tenants.length,
+      active: tenants.filter(t => t.active !== false && !t.deletedAt).length,
+      deleted: tenants.filter(t => t.deletedAt).length,
+    },
+  };
+});

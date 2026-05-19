@@ -6,13 +6,16 @@ import { db, functions } from '../../services/firebase';
 import { systemCollection } from '../../lib/firestore';
 import {
   Building2, CheckCircle2, XCircle, Shield, TrendingUp, AlertTriangle, CreditCard, Sparkles,
-  ArrowUpRight, Receipt, Activity, Crown,
+  ArrowUpRight, Receipt, Activity, Crown, Tag as TagIcon, Trophy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import type { Tenant } from '../../types';
+import { useTenantsStats } from '../../hooks/useTenantsStats';
+import { UsageBadge } from '../../components/ui/progress-bar';
+import { Skeleton } from '../../components/ui/skeleton';
 
 interface Counts {
   totalTenants: number;
@@ -71,6 +74,7 @@ export const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const { stats: tenantStats, loading: statsLoading } = useTenantsStats();
 
   useEffect(() => {
     if (!db) return;
@@ -357,9 +361,154 @@ export const AdminDashboard = () => {
           </div>
         </div>
       </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <RankingCard
+          title="Top empresas por tags"
+          icon={<TagIcon size={14} />}
+          loading={statsLoading}
+          items={(tenantStats?.topByTags || []).map(t => ({
+            slug: t.slug,
+            name: t.name,
+            plan: t.plan,
+            primary: t.value,
+            secondary: t.limit,
+            unit: 'tags',
+          }))}
+          renderTrailing={(it) => it.secondary
+            ? <UsageBadge value={it.primary} max={it.secondary} />
+            : <span className="text-[11px] font-mono text-zinc-300">{it.primary.toLocaleString('pt-BR')} tags</span>}
+        />
+
+        <RankingCard
+          title="Mais ativas"
+          icon={<Activity size={14} />}
+          loading={statsLoading}
+          items={(tenantStats?.mostActive || []).map(t => ({
+            slug: t.slug,
+            name: t.name,
+            plan: t.plan,
+            primary: t.lastActivityAt,
+          }))}
+          renderTrailing={(it) => (
+            <span className="text-[11px] font-mono text-zinc-400">
+              {it.primary ? new Date(it.primary).toLocaleDateString('pt-BR') : '—'}
+            </span>
+          )}
+        />
+
+        <OverdueCard
+          loading={statsLoading}
+          items={tenantStats?.overdue || []}
+        />
+      </section>
     </div>
   );
 };
+
+interface RankingItem {
+  slug: string;
+  name: string;
+  plan: string;
+  primary: number;
+  secondary?: number;
+  unit?: string;
+}
+
+const RankingCard = ({
+  title, icon, loading, items, renderTrailing,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  loading: boolean;
+  items: RankingItem[];
+  renderTrailing: (it: RankingItem) => React.ReactNode;
+}) => (
+  <div className="bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl p-5">
+    <div className="flex items-center gap-2 mb-4">
+      <Trophy size={14} className="text-amber-500" />
+      <h2 className="font-display text-sm font-black uppercase tracking-widest text-zinc-300">{title}</h2>
+    </div>
+    {loading ? (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} h={36} rounded="lg" />)}
+      </div>
+    ) : items.length === 0 ? (
+      <div className="text-[10px] uppercase tracking-widest text-zinc-600 py-6 text-center">
+        Sem dados ainda · {icon}
+      </div>
+    ) : (
+      <ul className="space-y-1.5">
+        {items.slice(0, 5).map((it, i) => (
+          <li key={it.slug} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.03] transition-colors">
+            <span className={`w-6 h-6 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-black ${
+              i === 0 ? 'bg-amber-500/20 text-amber-400' :
+                i === 1 ? 'bg-zinc-700/40 text-zinc-300' :
+                  i === 2 ? 'bg-orange-700/30 text-orange-300' :
+                    'bg-white/[0.03] text-zinc-500'
+            }`}>{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold truncate">{it.name}</div>
+              <code className="text-[10px] text-amber-500/80">{it.slug}</code>
+            </div>
+            <div className="shrink-0 text-right">{renderTrailing(it)}</div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
+
+const OverdueCard = ({
+  loading, items,
+}: {
+  loading: boolean;
+  items: { slug: string; name: string; plan: string; priceCents: number; nextDueDate?: number }[];
+}) => (
+  <div className="bg-red-500/[0.04] border border-red-500/15 backdrop-blur-xl rounded-3xl p-5">
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2">
+        <AlertTriangle size={14} className="text-red-400" />
+        <h2 className="font-display text-sm font-black uppercase tracking-widest text-red-400">Inadimplentes</h2>
+      </div>
+      <Link to="/admin/billing" className="text-[10px] font-bold uppercase tracking-widest text-red-400/80 hover:text-red-300 inline-flex items-center gap-1">
+        Gerenciar <ArrowUpRight size={10} />
+      </Link>
+    </div>
+    {loading ? (
+      <div className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={36} rounded="lg" />)}
+      </div>
+    ) : items.length === 0 ? (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <CheckCircle2 className="text-emerald-400" size={28} />
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Tudo em dia</p>
+        <p className="text-[10px] text-zinc-500">Nenhuma empresa com fatura vencida</p>
+      </div>
+    ) : (
+      <ul className="space-y-1.5">
+        {items.slice(0, 5).map(t => (
+          <li key={t.slug} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-red-500/5 transition-colors">
+            <div className="w-7 h-7 shrink-0 rounded-lg bg-red-500/15 border border-red-500/20 flex items-center justify-center text-red-400 font-display font-black text-[11px]">
+              {t.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold truncate text-zinc-200">{t.name}</div>
+              {t.nextDueDate && (
+                <div className="text-[10px] text-red-400/80">
+                  Venceu em {new Date(t.nextDueDate).toLocaleDateString('pt-BR')}
+                </div>
+              )}
+            </div>
+            <span className="shrink-0 text-[11px] font-mono text-red-300">
+              {t.priceCents ? fmtBRL(t.priceCents) : '—'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
 
 function planBadgeCls(plan?: string) {
   return plan === 'enterprise' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'

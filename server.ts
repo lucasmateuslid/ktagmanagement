@@ -247,15 +247,16 @@ async function performReverseGeocoding(lat: number, lng: number, geocoderPrefere
 // fazer o lookup adicional sob demanda (cache server-side recomendado).
 // ---------------------------------------------------------------
 
-const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth']);
+const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'lock']);
+const APEX_TENANT = '__apex__';
 
 function extractTenantFromHostname(hostname: string): string {
-  if (!hostname) return 'default';
+  if (!hostname) return APEX_TENANT;
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost')) {
     return 'localhost';
   }
   const parts = hostname.split('.');
-  if (parts.length < 3) return 'default';
+  if (parts.length < 3) return APEX_TENANT;
   return parts[0].toLowerCase();
 }
 
@@ -265,6 +266,7 @@ declare global {
     interface Request {
       tenantId?: string;
       isAdminPanel?: boolean;
+      isApex?: boolean;
     }
   }
 }
@@ -281,8 +283,14 @@ function resolveTenant(req: express.Request, res: express.Response, next: expres
 
   req.tenantId = tenantId;
   req.isAdminPanel = tenantId === 'admin';
+  req.isApex = tenantId === APEX_TENANT;
 
-  // Bloqueia subdomínios reservados (exceto 'admin', que tem rota própria).
+  // Apex tem tratamento próprio (serve apex.html / placeholder).
+  // 'lock' deveria ser desviado pelo DNS para uma instância externa; chegando
+  // aqui, retorna 403 explícito (defesa em profundidade).
+  if (req.isApex) {
+    return next();
+  }
   if (RESERVED_SUBDOMAINS.has(tenantId) && tenantId !== 'admin') {
     return res.status(403).json({ error: `Subdomínio reservado: ${tenantId}` });
   }
@@ -711,6 +719,19 @@ async function startServer() {
       console.error("[MELHOR ENVIO Webhook] Error:", error);
       res.status(500).send('error');
     }
+  });
+
+  // Apex placeholder: quando o Host bate no domínio raiz (ktagfinder.app),
+  // serve um HTML estático leve em vez do SPA. Subdomínios continuam servindo
+  // o bundle React normalmente.
+  const apexHtmlProd = path.join(process.cwd(), 'dist', 'apex.html');
+  const apexHtmlDev = path.join(process.cwd(), 'public', 'apex.html');
+  app.use((req, res, next) => {
+    if (!req.isApex) return next();
+    if (req.method !== 'GET') return next();
+    if (req.path !== '/' && req.path !== '/index.html') return next();
+    const file = process.env.NODE_ENV === 'production' ? apexHtmlProd : apexHtmlDev;
+    return res.sendFile(file);
   });
 
   // Vite middleware for development
