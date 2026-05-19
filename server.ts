@@ -398,10 +398,11 @@ async function startServer() {
   // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 4000.
   const PORT = Number(process.env.PORT) || 4000;
 
-  // Importante: trust proxy para que req.hostname respeite o X-Forwarded-Host
-  // do Cloud Run / load balancer. Numérico (1) limita a 1 hop conhecido,
-  // evita spoof de X-Forwarded-For pelo client.
-  app.set('trust proxy', 1);
+  // trust proxy = 2: Cloudflare (1) + Cloud Run frontend (2). Necessário para
+  // req.ip refletir o cliente real (rate-limit) e req.hostname refletir o
+  // visitor hostname (tenant resolution). Spoof de XFF pelo client é mitigado
+  // porque o limite é numérico, não 'true'.
+  app.set('trust proxy', 2);
 
   // ---------- SECURITY HEADERS ----------
   // CSP relativamente permissiva para acomodar Firebase + Leaflet + mapas;
@@ -414,6 +415,31 @@ async function startServer() {
     hsts: isProd ? { maxAge: 15552000, includeSubDomains: true, preload: false } : false,
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   }));
+
+  // ---------- ORIGIN SECRET (Cloudflare → Cloud Run) ----------
+  // Cloudflare termina TLS pra ktagfinder.app/*.ktagfinder.app e injeta o
+  // header X-Origin-Secret via Transform Rule. Tudo que chegar SEM o header
+  // (ex: alguém batendo direto em *.run.app) recebe 403. Fail-closed se
+  // CF_ORIGIN_SECRET não estiver configurado em produção.
+  if (isProd) {
+    const expectedSecret = process.env.CF_ORIGIN_SECRET || '';
+    if (!expectedSecret) {
+      console.error('[ORIGIN] CF_ORIGIN_SECRET não configurado em produção — bloqueando todas as requests.');
+    }
+    app.use((req, res, next) => {
+      if (!expectedSecret) return res.status(503).json({ error: 'origin not configured' });
+      const received = req.headers['x-origin-secret'];
+      if (typeof received !== 'string' || received.length !== expectedSecret.length) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+      let diff = 0;
+      for (let i = 0; i < expectedSecret.length; i++) {
+        diff |= received.charCodeAt(i) ^ expectedSecret.charCodeAt(i);
+      }
+      if (diff !== 0) return res.status(403).json({ error: 'forbidden' });
+      next();
+    });
+  }
 
   // ---------- CORS ----------
   // Default: aceita apenas ktagfinder.app e seus subdomínios em produção.
@@ -439,8 +465,8 @@ async function startServer() {
   app.use(express.json({ limit: '100kb' }));
 
   // ---------- RATE LIMITING ----------
-  // Limites por IP (com trust proxy = 1). Aplica somente a /api/*; assets
-  // estáticos não são limitados.
+  // Limites por IP (com trust proxy = 2 → Cloudflare + Cloud Run). Aplica
+  // somente a /api/*; assets estáticos não são limitados.
   const apiLimiter = rateLimit({
     windowMs: 60_000,
     limit: 120, // 120 req/min por IP
