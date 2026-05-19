@@ -93,6 +93,33 @@ jobs:
       wif_provider: ${{ steps.pick.outputs.wif_provider }}
       service_account: ${{ steps.pick.outputs.service_account }}
     steps:
+      - name: Validar secrets do ambiente
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
+          SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
+          SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
+          PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_PROJECT_ID }}
+          PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
+          PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
+        run: |
+          missing=()
+          if [ "$ENVIRONMENT" = "production" ]; then
+            [ -z "$PRD_PROJECT_ID" ] && missing+=("KTAGFINDER_PROD_PROJECT_ID")
+            [ -z "$PRD_WIF" ]        && missing+=("KTAGFINDER_PROD_WIF_PROVIDER")
+            [ -z "$PRD_SA" ]         && missing+=("KTAGFINDER_PROD_SERVICE_ACCOUNT")
+          else
+            [ -z "$SBX_PROJECT_ID" ] && missing+=("SAASTAGMANAGER_PROJECT_ID")
+            [ -z "$SBX_WIF" ]        && missing+=("SAASTAGMANAGER_WIF_PROVIDER")
+            [ -z "$SBX_SA" ]         && missing+=("SAASTAGMANAGER_SERVICE_ACCOUNT")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Secrets vazios para ENVIRONMENT=$ENVIRONMENT: ${missing[*]}"
+            echo "::error::Cadastre em Settings → Secrets and variables → Actions como Repository secrets (não Environment secrets, este workflow não usa GitHub Environments)."
+            exit 1
+          fi
+          echo "Secrets OK para ENVIRONMENT=$ENVIRONMENT"
+
       - id: pick
         env:
           ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
