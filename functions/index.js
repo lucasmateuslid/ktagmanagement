@@ -10,11 +10,73 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
+const dns = require("node:dns").promises;
+const net = require("node:net");
 const asaas = require("./asaas");
+
+// ---------- SSRF GUARD (mirror do server.ts) ----------
+const PROXY_ALLOWED_HOSTS = new Set(
+  (process.env.PROXY_ALLOWED_HOSTS || '')
+    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+);
+function _isPrivateIPv4(ip) {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const a = +m[1], b = +m[2];
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224) return true;
+  return false;
+}
+function _isPrivateIPv6(ip) {
+  const low = String(ip).toLowerCase();
+  if (low === '::1' || low === '::') return true;
+  if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return true;
+  if (low.startsWith('::ffff:')) {
+    const v4 = low.slice('::ffff:'.length);
+    if (net.isIPv4(v4)) return _isPrivateIPv4(v4);
+  }
+  return false;
+}
+async function assertProxyTargetAllowed(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { throw new Error('URL inválida.'); }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error(`Protocolo não permitido: ${u.protocol}`);
+  if (u.username || u.password) throw new Error('URL com credenciais embutidas não é permitida.');
+  const host = u.hostname.toLowerCase();
+  if (PROXY_ALLOWED_HOSTS.size > 0) {
+    const ok = [...PROXY_ALLOWED_HOSTS].some(h => host === h || host.endsWith('.' + h));
+    if (!ok) throw new Error(`Host não permitido: ${host}`);
+  }
+  if (['metadata.google.internal', 'metadata', 'instance-data', 'metadata.goog'].includes(host)) {
+    throw new Error('Host de metadados bloqueado.');
+  }
+  if (net.isIP(host)) {
+    if (net.isIPv4(host) ? _isPrivateIPv4(host) : _isPrivateIPv6(host)) {
+      throw new Error(`IP privado/reservado bloqueado: ${host}`);
+    }
+    return u;
+  }
+  let addrs;
+  try { addrs = await dns.lookup(host, { all: true }); } catch { throw new Error(`Falha ao resolver host: ${host}`); }
+  for (const a of (Array.isArray(addrs) ? addrs : [addrs])) {
+    const bad = a.family === 6 ? _isPrivateIPv6(a.address) : _isPrivateIPv4(a.address);
+    if (bad) throw new Error(`Host resolve para IP privado/reservado (${a.address}).`);
+  }
+  return u;
+}
 
 // Secrets — set with: firebase functions:secrets:set <NAME>
 const ASAAS_API_KEY = defineSecret("ASAAS_API_KEY");
 const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
+// VAPID keys também via Secret Manager. Configurar com:
+//   firebase functions:secrets:set VAPID_PUBLIC_KEY
+//   firebase functions:secrets:set VAPID_PRIVATE_KEY
+const VAPID_PUBLIC_KEY = defineSecret("VAPID_PUBLIC_KEY");
+const VAPID_PRIVATE_KEY = defineSecret("VAPID_PRIVATE_KEY");
 // CORS: em produção, só aceita ktagfinder.app e seus subdomínios.
 // Localhost continua liberado para dev. server-to-server (sem origin) também.
 // Override via ALLOWED_ORIGIN_OVERRIDE=true mantém compat com integrações
@@ -45,19 +107,26 @@ if (admin.apps.length === 0) {
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
-const vapidKeys = {
-  publicKey: "BPeLenAfveHRZomoae7lEJgkVXoV40wiqGYiaDg6itNL6t-0HzhyVS_LkP13BDgy-UVUB0ctKde-e3aPdT3xn9o", 
-  privateKey: "7U_Yyn_NkWjIt8IyjjydcwkcNOP5p6a9b1YqBAwqEEY"
-};
-
-try {
+// Chaves VAPID vêm do Secret Manager. Funções que enviam push devem declarar
+// { secrets: VAPID_SECRETS } e chamar configureWebPush() antes de usar webpush.
+// Why: a chave PRIVADA NUNCA pode ficar no source — quem tem a privada pode
+// enviar push como se fosse a aplicação, fazendo phishing direto no usuário.
+const VAPID_SECRETS = [VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY];
+let _vapidConfigured = false;
+function configureWebPush() {
+  if (_vapidConfigured) return;
+  const pub = VAPID_PUBLIC_KEY.value();
+  const priv = VAPID_PRIVATE_KEY.value();
+  if (!pub || !priv) {
+    console.warn("VAPID secrets ausentes — push notifications desabilitadas.");
+    return;
+  }
   webpush.setVapidDetails(
-    "mailto:admin@ktag.com.br", 
-    vapidKeys.publicKey,
-    vapidKeys.privateKey
+    process.env.VAPID_CONTACT || "mailto:admin@ktag.com.br",
+    pub,
+    priv,
   );
-} catch (e) {
-  console.warn("VAPID Keys not configured properly.");
+  _vapidConfigured = true;
 }
 
 // --- HELPERS TENANT-AWARE ---
@@ -93,6 +162,7 @@ async function getUserInfo(tenantId, userId) {
 
 async function sendNotificationToUser(tenantId, userId, payload) {
   try {
+    configureWebPush();
     // push_subscriptions é flat; filtra por userId + tenantId.
     const subscriptionsSnapshot = await admin.firestore()
       .collection('push_subscriptions')
@@ -133,6 +203,7 @@ async function sendNotificationToPref(tenantId, prefKey, payload, excludeUserId 
     return;
   }
   try {
+    configureWebPush();
     const usersSnapshot = await admin.firestore()
       .collection('tenants').doc(tenantId)
       .collection('users').get();
@@ -228,6 +299,7 @@ function buildBillingPushPayload(event, payment) {
 async function sendBillingPushToAdmins(tenantId, payload) {
   if (!tenantId || !payload) return;
   try {
+    configureWebPush();
     const usersSnap = await admin.firestore()
       .collection('tenants').doc(tenantId)
       .collection('users')
@@ -320,63 +392,64 @@ exports.proxyApi = onRequest((req, res) => {
     }
 
     // 2. Extract Data from Request Body
-    const { url, method, headers, body } = req.body;
+    const { url, method, headers, body } = req.body || {};
 
-    if (!url) {
+    if (!url || typeof url !== 'string') {
       res.status(400).send({ error: "Missing 'url' in request body" });
       return;
     }
-
-    console.log(`Proxying request to: ${url}`);
-
-    // Sanitize Headers & Inject User-Agent
-    const safeHeaders = { ...headers };
-    
-    // Remove headers que causam problemas em repasse
-    delete safeHeaders['host'];
-    delete safeHeaders['content-length'];
-    delete safeHeaders['connection'];
-    delete safeHeaders['origin'];
-    delete safeHeaders['referer'];
-    delete safeHeaders['accept-encoding']; // Importante: Deixa o axios/node negociar a compressão
-
-    // Mimetiza um navegador real para evitar bloqueios de API (Essencial para Hinova/SGA)
-    if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
-        safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    if (url.length > 2048) {
+      res.status(400).send({ error: "URL muito longa." });
+      return;
     }
 
+    // SSRF guard: bloqueia metadata, loopback, RFC1918, link-local, ULA + DNS rebinding.
+    let target;
+    try { target = await assertProxyTargetAllowed(url); }
+    catch (e) {
+      console.warn('[Proxy] target rejected:', e.message, 'url=', url);
+      res.status(403).send({ error: `Proxy bloqueado: ${e.message}` });
+      return;
+    }
+
+    const ALLOWED = new Set([
+      'authorization', 'content-type', 'accept', 'apikey', 'api_token',
+      'timestamp', 'user-agent', 'x-api-key',
+    ]);
+    const safeHeaders = {};
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        if (ALLOWED.has(k.toLowerCase()) && typeof v === 'string') safeHeaders[k] = v;
+      }
+    }
+    if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
+      safeHeaders['User-Agent'] = process.env.PROXY_USER_AGENT || 'KTagManagerPro-Proxy/1.0';
+    }
+    const safeMethod = (typeof method === 'string' && /^(GET|POST|PUT|PATCH|DELETE|HEAD)$/i.test(method))
+      ? method.toUpperCase() : 'GET';
+
     try {
-      // 3. Make the Request using Axios
       const response = await axios({
-        url: url,
-        method: method || 'GET',
-        headers: safeHeaders, 
-        data: body || undefined,
-        validateStatus: () => true, // Permite capturar erros 4xx/5xx sem throw
-        timeout: 25000 // Aumentado para APIs lentas
+        url: target.toString(),
+        method: safeMethod,
+        headers: safeHeaders,
+        data: (safeMethod === 'GET' || safeMethod === 'HEAD') ? undefined : (body || undefined),
+        validateStatus: () => true,
+        timeout: 15000,
+        maxRedirects: 0,                  // não seguir redirects (mitiga SSRF via Location)
+        maxContentLength: 5 * 1024 * 1024, // 5MB
+        maxBodyLength: 1 * 1024 * 1024,    // 1MB
       });
-
-      // Repassa dados e status exatos
       res.status(response.status).send(response.data);
-
     } catch (error) {
-      console.error("[Proxy Error]", error.message, url);
-      
-      const status = error.response ? error.response.status : 500;
+      console.error("[Proxy Error]", error.message);
+      const status = error.response ? error.response.status : 502;
       const message = error.response ? error.response.data : error.message;
-      
       let errorMsg = message;
       if (typeof message === 'object') {
-        try {
-          errorMsg = JSON.stringify(message);
-        } catch (e) {
-          errorMsg = String(message);
-        }
+        try { errorMsg = JSON.stringify(message); } catch (e) { errorMsg = String(message); }
       }
-      res.status(status).json({ 
-          error: errorMsg,
-          proxyError: true 
-      });
+      res.status(status).json({ error: errorMsg, proxyError: true });
     }
   });
 });
@@ -415,7 +488,7 @@ async function logAudit(tenantId, action, entity, details, entityId = null, user
  * TRIGGER AUTOMÁTICO: Criação de Agendamento
  */
 exports.onScheduleCreate = onDocumentCreated(
-  'tenants/{tenantId}/schedules/{scheduleId}',
+  { document: 'tenants/{tenantId}/schedules/{scheduleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const schedule = event.data.data();
     if (!schedule) return null;
@@ -448,7 +521,7 @@ exports.onScheduleCreate = onDocumentCreated(
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
  */
 exports.onScheduleUpdate = onDocumentUpdated(
-  'tenants/{tenantId}/schedules/{scheduleId}',
+  { document: 'tenants/{tenantId}/schedules/{scheduleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
@@ -547,7 +620,7 @@ exports.onScheduleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Atualização de Veículo (Roubo)
  */
 exports.onVehicleUpdate = onDocumentUpdated(
-  'tenants/{tenantId}/vehicles/{vehicleId}',
+  { document: 'tenants/{tenantId}/vehicles/{vehicleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
@@ -581,7 +654,7 @@ exports.onVehicleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Criação de Feedback/Comentário
  */
 exports.onFeedbackCreate = onDocumentCreated(
-  'tenants/{tenantId}/feedbacks/{feedbackId}',
+  { document: 'tenants/{tenantId}/feedbacks/{feedbackId}', secrets: VAPID_SECRETS },
   async (event) => {
     const feedback = event.data.data();
     if (!feedback) return null;
@@ -900,10 +973,13 @@ async function requireTenantAdmin(request) {
 }
 
 function generateRandomPassword() {
+  // CSPRNG via Node crypto. Math.random() é previsível e NÃO deve ser usado
+  // para gerar senhas/tokens — qualquer dump de timing aproximado revela a sementinha.
+  const { randomInt } = require('node:crypto');
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz!@#$%';
   let result = '';
-  for (let i = 0; i < 14; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 16; i++) {
+    result += chars.charAt(randomInt(0, chars.length));
   }
   return result;
 }
@@ -1290,13 +1366,9 @@ exports.listAllUsers = onCall(async (request) => {
 });
 
 exports.sendPushNotification = onCall(
+  { secrets: VAPID_SECRETS },
   async (request) => {
-
-    webpush.setVapidDetails(
-      "mailto:monitoramento@lockprotecao.com.br",
-      vapidKeys.publicKey,
-      vapidKeys.privateKey
-    );
+    configureWebPush();
 
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Login obrigatório.');
@@ -1362,6 +1434,8 @@ exports.sendPushNotification = onCall(
 
 const ASAAS_SECRETS = [ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN];
 const ASAAS_OPTS = { secrets: ASAAS_SECRETS };
+// Webhook + job diário enviam push; combinam secrets Asaas com VAPID.
+const ASAAS_WEBHOOK_SECRETS = [...ASAAS_SECRETS, ...VAPID_SECRETS];
 
 // Conjunto de eventos suportados. Eventos fora desta lista são logados mas
 // ignorados, evitando 5xx desnecessário que dispara retry do Asaas.
@@ -2044,7 +2118,7 @@ exports.testAsaasConnection = onCall(ASAAS_OPTS, async (request) => {
  * a desativação automática (active=false) acontece via job diário.
  */
 exports.asaasWebhook = onRequest(
-  { secrets: ASAAS_SECRETS, cors: false, timeoutSeconds: 30 },
+  { secrets: ASAAS_WEBHOOK_SECRETS, cors: false, timeoutSeconds: 30 },
   async (req, res) => {
     const receivedAt = Date.now();
     // Referência ao doc de forensics; preenchida após validação inicial.
@@ -2187,7 +2261,7 @@ exports.asaasWebhook = onRequest(
  * (Soft: marca active=false; dados permanecem.)
  */
 exports.dailyBillingEnforcement = onSchedule(
-  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo' },
+  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo', secrets: VAPID_SECRETS },
   async () => {
     const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
     const snap = await admin.firestore()

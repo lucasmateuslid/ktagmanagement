@@ -78,16 +78,18 @@ service cloud.firestore {
     }
 
     // ---------- TENANT ROOT ----------
+    //
+    // NOTA DE SEGURANÇA (OWASP A01 — Broken Access Control):
+    // Em Firestore Rules, múltiplas `match` que casam no mesmo path são
+    // combinadas com OR — não há "regra mais específica vence". Por isso o
+    // catch-all `match /tenants/{tenantId}/{document=**}` foi REMOVIDO daqui;
+    // ele tornaria as regras restritivas de invoices/audit_logs/etc dead code.
+    // Cada subcoleção é declarada explicitamente. Coleções novas começam
+    // negadas por padrão — adicione um `match` específico antes de gravar.
 
     match /tenants/{tenantId} {
       allow read: if isMemberOf(tenantId) || isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
-    }
-
-    // Catch-all: qualquer subcoleção do tenant exige membership.
-    // Regras mais específicas abaixo SOBRESCREVEM esta para casos especiais.
-    match /tenants/{tenantId}/{document=**} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
     }
 
     // ---------- REGRAS ESPECÍFICAS POR COLEÇÃO ----------
@@ -110,7 +112,6 @@ service cloud.firestore {
                        || isSuperAdmin();
 
       // Update: dono pode editar campos não-sensíveis; admin pode tudo.
-      // (Restrição fina de campos seria mais segura — fica para Fase 5 OWASP.)
       allow update: if (hasTenantDoc(tenantId) && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
                         && request.resource.data.status == resource.data.status
@@ -149,13 +150,69 @@ service cloud.firestore {
       allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
     }
 
-    // Stolen records: leitura pública via trackingToken; write restrito a membros.
+    // Stolen records: leitura via trackingToken na URL para terceiros (ex.: polícia)
+    // mas o token DEVE ser secreto / impossível de listar. Write restrito a membros.
+    //
+    // OBS: leitura via trackingToken não pode ser feita por list/query pública —
+    // o cliente já precisa saber o ID do doc para acessar. Em Firestore Rules
+    // isso significa que list/query externa retorna PERMISSION_DENIED, mas get
+    // de um doc específico funciona se o doc carrega trackingToken.
     match /tenants/{tenantId}/stolen_records/{recordId} {
-      allow read: if isMemberOf(tenantId)
-                     || isSuperAdmin()
-                     || (resource != null && resource.data.trackingToken != null);
+      allow get: if isMemberOf(tenantId)
+                    || isSuperAdmin()
+                    || (resource != null && resource.data.trackingToken != null);
+      allow list: if isMemberOf(tenantId) || isSuperAdmin();
       allow create: if isMemberOf(tenantId);
       allow update, delete: if isTenantAdmin(tenantId) || isSuperAdmin();
+    }
+
+    // ---------- COLEÇÕES DE DOMÍNIO (acesso livre p/ membros do tenant) ----------
+    // Estas são as coleções operacionais — read/write para qualquer membro
+    // aprovado é o comportamento esperado. Adicionar novas aqui quando criadas.
+
+    match /tenants/{tenantId}/tags/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/trackers/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/vehicles/{vehicleId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      match /history/{histId} {
+        allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      }
+    }
+    match /tenants/{tenantId}/clients/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/companies/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/categories/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/schedules/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/technicians/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/technician_payments/{docId} {
+      allow read: if isTenantModerator(tenantId) || isSuperAdmin();
+      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/feedbacks/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/system_updates/{docId} {
+      allow read: if isMemberOf(tenantId) || isSuperAdmin();
+      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/shipments/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+    }
+    match /tenants/{tenantId}/shipping_addresses/{docId} {
+      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
     }
 
     // ---------- SISTEMA (cross-tenant) ----------
@@ -186,9 +243,12 @@ service cloud.firestore {
     }
 
     // Inventário global de rastreadores físicos (cross-tenant, usado em Envios).
+    // Leitura: qualquer autenticado (catálogo compartilhado).
+    // Escrita: somente super admin — evita que um tenant adultere o catálogo
+    // global usado por outros tenants. (Issue OWASP A01 — Broken Access Control.)
     match /ktag_trackers/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isSuperAdmin();
     }
 
     // Push subscriptions ficam flat (Functions varre cross-tenant para envio

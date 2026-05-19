@@ -1,6 +1,10 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
+import dns from "node:dns/promises";
+import net from "node:net";
 // vite é devDependency e não é instalada no estágio runtime do Docker.
 // Importação dinâmica abaixo, somente quando NODE_ENV !== 'production'.
 
@@ -9,6 +13,98 @@ class GeocodingError extends Error {
     super(message);
     this.name = "GeocodingError";
   }
+}
+
+// ---------------------------------------------------------------
+// SSRF GUARD — bloqueia URLs que apontam para metadata cloud,
+// loopback, redes privadas RFC1918, CGNAT, link-local, IPv6 ULA, etc.
+// Resolve o hostname antes de fetch para evitar DNS rebinding.
+// ---------------------------------------------------------------
+const PROXY_ALLOWED_HOSTS = new Set(
+  (process.env.PROXY_ALLOWED_HOSTS || '')
+    .split(',')
+    .map(h => h.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+function isPrivateIPv4(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if (a === 10) return true;                        // 10/8
+  if (a === 127) return true;                       // loopback
+  if (a === 0) return true;                         // 0.0.0.0/8
+  if (a === 169 && b === 254) return true;          // link-local (metadata 169.254.169.254)
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
+  if (a === 192 && b === 168) return true;          // 192.168/16
+  if (a === 100 && b >= 64 && b <= 127) return true;// 100.64/10 CGNAT
+  if (a >= 224) return true;                        // multicast / reserved
+  return false;
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const low = ip.toLowerCase();
+  if (low === '::1' || low === '::') return true;
+  if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return true; // link-local + ULA
+  if (low.startsWith('::ffff:')) {
+    const v4 = low.slice('::ffff:'.length);
+    if (net.isIPv4(v4)) return isPrivateIPv4(v4);
+  }
+  return false;
+}
+
+async function assertProxyTargetAllowed(rawUrl: string): Promise<URL> {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    throw new Error('URL inválida.');
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+    throw new Error(`Protocolo não permitido: ${u.protocol}`);
+  }
+  // Bloqueia credenciais embutidas (http://user:pass@host) — vetor SSRF clássico.
+  if (u.username || u.password) {
+    throw new Error('URL com credenciais embutidas não é permitida.');
+  }
+  const host = u.hostname.toLowerCase();
+
+  // Allowlist via env (recomendado). Se definida, só hosts listados passam.
+  if (PROXY_ALLOWED_HOSTS.size > 0) {
+    const allowed = [...PROXY_ALLOWED_HOSTS].some(h =>
+      host === h || host.endsWith('.' + h)
+    );
+    if (!allowed) throw new Error(`Host não permitido: ${host}`);
+  }
+
+  // Bloqueia metadata services explicitamente, mesmo se passou na allowlist.
+  if (host === 'metadata.google.internal' || host === 'metadata' || host === 'instance-data' || host === 'metadata.goog') {
+    throw new Error('Host de metadados bloqueado.');
+  }
+
+  // Se já é IP literal, validar diretamente.
+  if (net.isIP(host)) {
+    if (net.isIPv4(host) ? isPrivateIPv4(host) : isPrivateIPv6(host)) {
+      throw new Error(`IP privado/reservado bloqueado: ${host}`);
+    }
+    return u;
+  }
+
+  // Resolve DNS e bloqueia se QUALQUER endereço resolver para faixa privada
+  // (defesa contra DNS rebinding: o atacante pode hospedar A=pública e mudar
+  // depois para 169.254.169.254).
+  let addrs: Awaited<ReturnType<typeof dns.lookup>>;
+  try {
+    addrs = await dns.lookup(host, { all: true } as any) as any;
+  } catch {
+    throw new Error(`Falha ao resolver host: ${host}`);
+  }
+  const list = Array.isArray(addrs) ? addrs : [addrs];
+  for (const a of list as Array<{ address: string; family: number }>) {
+    const bad = a.family === 6 ? isPrivateIPv6(a.address) : isPrivateIPv4(a.address);
+    if (bad) throw new Error(`Host resolve para IP privado/reservado (${a.address}).`);
+  }
+  return u;
 }
 
 const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number = 5000) => {
@@ -302,12 +398,64 @@ async function startServer() {
   // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 4000.
   const PORT = Number(process.env.PORT) || 4000;
 
-  app.use(cors());
-  app.use(express.json());
-
   // Importante: trust proxy para que req.hostname respeite o X-Forwarded-Host
-  // do Cloud Run / load balancer.
-  app.set('trust proxy', true);
+  // do Cloud Run / load balancer. Numérico (1) limita a 1 hop conhecido,
+  // evita spoof de X-Forwarded-For pelo client.
+  app.set('trust proxy', 1);
+
+  // ---------- SECURITY HEADERS ----------
+  // CSP relativamente permissiva para acomodar Firebase + Leaflet + mapas;
+  // refinar conforme o app evoluir. HSTS habilitado em produção.
+  const isProd = process.env.NODE_ENV === 'production';
+  app.use(helmet({
+    contentSecurityPolicy: false, // SPA dinâmica; ativar CSP estrita exige nonces
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: isProd ? { maxAge: 15552000, includeSubDomains: true, preload: false } : false,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  }));
+
+  // ---------- CORS ----------
+  // Default: aceita apenas ktagfinder.app e seus subdomínios em produção.
+  // Localhost liberado em dev. Override via CORS_ALLOW_ALL=true (NÃO RECOMENDADO).
+  const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // server-to-server / curl
+      if (process.env.CORS_ALLOW_ALL === 'true') return cb(null, true);
+      if (ALLOWED_ORIGIN_PATTERN.test(origin)) return cb(null, true);
+      if (!isProd && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+        return cb(null, true);
+      }
+      return cb(new Error(`Origin não permitida: ${origin}`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
+  }));
+
+  // ---------- BODY LIMITS ----------
+  // 100kB padrão; suficiente para JSON de geocoding/tracking. Webhooks com
+  // payload maior devem ser configurados via rota dedicada.
+  app.use(express.json({ limit: '100kb' }));
+
+  // ---------- RATE LIMITING ----------
+  // Limites por IP (com trust proxy = 1). Aplica somente a /api/*; assets
+  // estáticos não são limitados.
+  const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 120, // 120 req/min por IP
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Muitas requisições. Tente novamente em instantes.' },
+  });
+  const sensitiveLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20, // proxy/track: 20/min
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Rate limit excedido neste endpoint.' },
+  });
+  app.use('/api/', apiLimiter);
 
   app.use(resolveTenant);
 
@@ -341,58 +489,90 @@ async function startServer() {
     }
   });
 
-  app.post("/api/proxy", async (req, res) => {
+  // PROXY: hardenizado contra SSRF.
+  //   - exige allowlist (PROXY_ALLOWED_HOSTS) OU restringe a hosts não-privados
+  //   - bloqueia metadata services, loopback, RFC1918, link-local, ULA
+  //   - resolve DNS antes do fetch para mitigar DNS rebinding
+  //   - permite apenas headers seguros do client (allowlist)
+  //   - timeout de 15s, limita tamanho da resposta repassada
+  const ALLOWED_PROXY_HEADERS = new Set([
+    'authorization', 'content-type', 'accept', 'apikey', 'api_token',
+    'timestamp', 'user-agent', 'x-api-key',
+  ]);
+  app.post("/api/proxy", sensitiveLimiter, async (req, res) => {
     try {
-      const { url, method, headers, body } = req.body;
-      if (!url) return res.status(400).json({ error: "Missing 'url' in request body" });
+      const { url, method, headers, body } = req.body || {};
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: "Missing 'url' in request body" });
+      }
+      if (url.length > 2048) {
+        return res.status(400).json({ error: "URL muito longa." });
+      }
 
-      console.log(`[PROXY] Proxying request to: ${url}`);
+      let target: URL;
+      try {
+        target = await assertProxyTargetAllowed(url);
+      } catch (e: any) {
+        console.warn('[PROXY] target rejected:', e.message, 'url=', url);
+        return res.status(403).json({ error: `Proxy bloqueado: ${e.message}` });
+      }
 
-      const safeHeaders: Record<string, string> = { ...headers };
-      delete safeHeaders['host'];
-      delete safeHeaders['content-length'];
-      delete safeHeaders['connection'];
-      delete safeHeaders['origin'];
-      delete safeHeaders['referer'];
-      delete safeHeaders['accept-encoding'];
+      const safeMethod = (typeof method === 'string' && /^(GET|POST|PUT|PATCH|DELETE|HEAD)$/i.test(method))
+        ? method.toUpperCase() : 'GET';
 
+      // Allowlist de headers do client — nada de Host/Cookie/etc.
+      const safeHeaders: Record<string, string> = {};
+      if (headers && typeof headers === 'object') {
+        for (const [k, v] of Object.entries(headers)) {
+          const lk = k.toLowerCase();
+          if (ALLOWED_PROXY_HEADERS.has(lk) && typeof v === 'string') {
+            safeHeaders[k] = v;
+          }
+        }
+      }
       if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
-        safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        safeHeaders['User-Agent'] = process.env.PROXY_USER_AGENT || 'KTagManagerPro-Proxy/1.0';
       }
 
       const options: RequestInit = {
-        method: method || 'GET',
+        method: safeMethod,
         headers: safeHeaders,
+        redirect: 'manual', // não seguir redirects automáticos — eles podem virar SSRF
       };
-
-      if (body && method !== 'GET' && method !== 'HEAD') {
-        options.body = typeof body === 'object' ? JSON.stringify(body) : body;
-        if (!safeHeaders['Content-Type'] && !safeHeaders['content-type']) {
-           if (typeof body === 'object') {
-             safeHeaders['Content-Type'] = 'application/json';
-           }
+      if (body && safeMethod !== 'GET' && safeMethod !== 'HEAD') {
+        options.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+        if (!safeHeaders['Content-Type'] && !safeHeaders['content-type'] && typeof body === 'object') {
+          safeHeaders['Content-Type'] = 'application/json';
         }
       }
 
-      const response = await fetch(url, options);
-      
-      const responseBody = await response.text();
-      
-      let parsedBody;
+      const ctl = new AbortController();
+      const tmo = setTimeout(() => ctl.abort(), 15_000);
+      let response: Response;
       try {
-        parsedBody = JSON.parse(responseBody);
-      } catch (e) {
-        parsedBody = responseBody;
+        response = await fetch(target.toString(), { ...options, signal: ctl.signal });
+      } finally {
+        clearTimeout(tmo);
       }
-      
+
+      // 3xx vira erro explícito (não seguimos redirects para evitar SSRF via Location).
+      if (response.status >= 300 && response.status < 400) {
+        return res.status(502).json({ error: 'Resposta redirecionada — proxy não segue redirects.', upstreamStatus: response.status });
+      }
+
+      // Limita o body repassado a 5MB para não explodir memória.
+      const buf = await response.arrayBuffer();
+      if (buf.byteLength > 5 * 1024 * 1024) {
+        return res.status(502).json({ error: 'Resposta upstream muito grande.' });
+      }
+      const responseBody = Buffer.from(buf).toString('utf8');
+      let parsedBody: any;
+      try { parsedBody = JSON.parse(responseBody); } catch { parsedBody = responseBody; }
       res.status(response.status).json(parsedBody);
     } catch (error: any) {
-      console.error("[PROXY Error]", error.message);
-      let errorMsg = error.message;
-      if (typeof errorMsg === 'object') {
-          try { errorMsg = JSON.stringify(errorMsg); } catch(e){}
-      }
-      res.status(500).json({ error: errorMsg, proxyError: true });
+      const msg = error?.name === 'AbortError' ? 'Timeout no upstream.' : (error?.message || 'Proxy error');
+      console.error("[PROXY Error]", msg);
+      res.status(502).json({ error: msg, proxyError: true });
     }
   });
 
@@ -702,24 +882,49 @@ async function startServer() {
     }
   });
 
-  // Webhook Receiver
-  app.post("/api/melhorenvio/webhook", async (req, res) => {
-    try {
-      const signature = req.headers['x-me-signature'];
-      // The secret should be validated if possible. In this environment, it requires the user's stored clientSecret,
-      // but webhooks don't identify the tenant easily without a custom parameter in the URL.
-      // For now, we will just log the webhook.
-      
-      const { order } = req.body;
-      console.log('[MELHOR ENVIO Webhook] Evento Recebido:', order?.status, '| ID:', order?.id);
-      
-      // Emit event or update firebase (Not full implemented as we need to match to specific Shipment doc without knowing app config immediately here, but basic structure is ready)
-      res.status(200).send('ok');
-    } catch (error) {
-      console.error("[MELHOR ENVIO Webhook] Error:", error);
-      res.status(500).send('error');
+  // Webhook Receiver.
+  // Why: webhooks são endpoints públicos — sem validação de assinatura, qualquer
+  // um pode forjar eventos. Exigimos HMAC SHA-256 com MELHOR_ENVIO_WEBHOOK_SECRET.
+  // Se o secret não estiver configurado, o endpoint retorna 503 (fail-closed)
+  // em vez de aceitar tudo.
+  const meWebhookSecret = process.env.MELHOR_ENVIO_WEBHOOK_SECRET || '';
+  app.post(
+    "/api/melhorenvio/webhook",
+    // Captura raw body para validar HMAC; precisa ANTES de express.json()
+    express.raw({ type: '*/*', limit: '256kb' }),
+    async (req, res) => {
+      try {
+        if (!meWebhookSecret) {
+          console.error('[MELHOR ENVIO Webhook] MELHOR_ENVIO_WEBHOOK_SECRET não configurado — rejeitando.');
+          return res.status(503).send('webhook secret not configured');
+        }
+        const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+        const signature = String(req.headers['x-me-signature'] || '');
+        if (!signature) return res.status(401).send('missing signature');
+
+        const { createHmac, timingSafeEqual } = await import('node:crypto');
+        const expected = createHmac('sha256', meWebhookSecret).update(rawBody).digest('hex');
+        const a = Buffer.from(expected, 'hex');
+        let b: Buffer;
+        try { b = Buffer.from(signature, 'hex'); } catch { return res.status(401).send('invalid signature format'); }
+        if (a.length !== b.length || !timingSafeEqual(a, b)) {
+          return res.status(401).send('invalid signature');
+        }
+
+        let payload: any = null;
+        try { payload = JSON.parse(rawBody.toString('utf8')); } catch { /* ignore */ }
+        const order = payload?.order;
+        console.log('[MELHOR ENVIO Webhook] verified:', order?.status, '| ID:', order?.id);
+
+        // Processamento de evento — fora de escopo desta auditoria; manter no-op
+        // por ora, mas a assinatura foi validada.
+        res.status(200).send('ok');
+      } catch (error) {
+        console.error("[MELHOR ENVIO Webhook] Error:", error);
+        res.status(500).send('error');
+      }
     }
-  });
+  );
 
   // Apex placeholder: quando o Host bate no domínio raiz (ktagfinder.app),
   // serve um HTML estático leve em vez do SPA. Subdomínios continuam servindo
