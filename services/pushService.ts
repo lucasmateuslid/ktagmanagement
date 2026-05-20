@@ -3,7 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 // IMPORTANTE: Gere suas chaves rodando `npx web-push generate-vapid-keys` no terminal
-const PUBLIC_VAPID_KEY = 'BMnx9yH4EQcu5mmrkhOKlRQzIjohzNsP1kFpHMd9vAKbSEztNOR6nVIJKdefPuIpMo44yM1zy7-9DfmCtvEEqDY'; 
+const PUBLIC_VAPID_KEY = 'BAqwc5ZcxrHHB-UrSQLcjx4GGyGkfmYen2MoWqm6FBbEqAUpru0F57QCy-i7UaMqCKkWo92rOZc8WXVZy4q5LVk';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
