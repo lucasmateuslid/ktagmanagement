@@ -6,6 +6,8 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   updatePassword as fbUpdatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User as FirebaseUser,
 } from 'firebase/auth';
 import { getDoc, setDoc, updateDoc } from 'firebase/firestore';
@@ -23,6 +25,7 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<string | void>;
   register: (name: string, email: string, password: string, ip: string) => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -257,6 +260,24 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     setUser({ ...user, ...dataToUpdate });
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!auth?.currentUser?.email) {
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
+    const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    try {
+      await reauthenticateWithCredential(auth.currentUser, credential);
+    } catch (e: any) {
+      if (INVALID_CREDENTIAL_CODES.has(e?.code)) {
+        const err = new Error('Senha atual incorreta.');
+        (err as any).code = 'auth/wrong-password';
+        throw err;
+      }
+      throw e;
+    }
+    await fbUpdatePassword(auth.currentUser, newPassword);
+  };
+
   const logout = async () => {
     if (auth) await fbSignOut(auth);
     setUser(null);
@@ -275,7 +296,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, customRoles, login, register, updateProfile, logout,
+      user, customRoles, login, register, updateProfile, changePassword, logout,
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'superadmin' || false,
       loading,
