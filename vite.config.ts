@@ -1,6 +1,8 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 /**
  * Dependências que podem ser externalizadas SOMENTE no build,
  * e APENAS se futuramente você mudar para:
@@ -29,9 +31,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
 
   return {
-    plugins: [
-      react(),
-    ],
+    plugins: [react(), cloudflare()],
 
     server: {
       port: 3005,

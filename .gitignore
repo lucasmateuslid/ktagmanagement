@@ -32,3 +32,9 @@ Thumbs.db
 firebase-service-account*.json
 serviceAccount*.json
 servceAccout*.json
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
