@@ -5,7 +5,7 @@ import type { Tenant } from '../types';
 import { db } from '../services/firebase';
 import { activeTenant } from '../services/activeTenant';
 import { encryption } from '../services/encryption';
-import { tenantRootDoc } from '../lib/firestore';
+import { tenantPublicMetaDoc } from '../lib/firestore';
 import { getTenantFromHostname, isReservedSlug, APEX_TENANT } from '../utils/tenant';
 import { ApexPlaceholder } from '../components/ApexPlaceholder';
 
@@ -71,20 +71,24 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
           return;
         }
 
-        const snap = await getDoc(tenantRootDoc(tenantId));
+        // Lê apenas o espelho público (name/active/plan). O root doc carrega
+        // dados sensíveis (billing.asaas*) e é protegido por regra que exige
+        // auth — não pode ser lido aqui no boot pre-login.
+        const snap = await getDoc(tenantPublicMetaDoc(tenantId));
         if (!snap.exists()) {
           setError(`Empresa "${tenantId}" não encontrada.`);
           setLoading(false);
           return;
         }
 
-        const data = { ...snap.data(), id: snap.id } as Tenant;
-        if (data.active === false) {
-          setError(`Empresa "${data.name || tenantId}" está inativa.`);
+        const meta = snap.data() as { name?: string; active?: boolean; plan?: string };
+        if (meta.active === false) {
+          setError(`Empresa "${meta.name || tenantId}" está inativa.`);
           setLoading(false);
           return;
         }
 
+        const data = { id: tenantId, slug: tenantId, name: meta.name || tenantId, plan: meta.plan || 'basic', active: true } as Tenant;
         activeTenant.set(tenantId, data);
         setTenant(data);
       } catch (e: any) {

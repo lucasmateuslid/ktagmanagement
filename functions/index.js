@@ -1124,6 +1124,26 @@ function validateSlug(slug) {
 }
 
 /**
+ * Espelho público do tenant em /tenants/{slug}/public_settings/meta.
+ * Mantido aqui pelo backend porque a regra do Firestore protege o root doc
+ * (billing.asaas* não pode vazar pré-login). Este espelho só carrega name/
+ * active/plan e é lido pelo TenantContext do SPA antes do login.
+ *
+ * Chame após qualquer mudança em name/active/plan no root doc.
+ */
+async function writeTenantPublicMeta(slug, fields) {
+  const ref = admin.firestore()
+    .collection('tenants').doc(slug)
+    .collection('public_settings').doc('meta');
+  const patch = {};
+  if (fields.name !== undefined) patch.name = fields.name;
+  if (fields.active !== undefined) patch.active = fields.active !== false;
+  if (fields.plan !== undefined) patch.plan = fields.plan || 'basic';
+  if (Object.keys(patch).length === 0) return;
+  await ref.set(patch, { merge: true });
+}
+
+/**
  * Cria um novo tenant + opcional admin inicial (Auth user + doc).
  * Retorna { slug, ownerEmail?, ownerPassword? } se ownerEmail foi passado.
  */
@@ -1157,6 +1177,9 @@ exports.createTenant = onCall(async (request) => {
       { language: 'pt', customAppName: name },
       { merge: true }
     );
+
+    // Espelho público — necessário pro SPA carregar o subdomínio sem login.
+    await writeTenantPublicMeta(slug, { name, active, plan });
 
     let ownerPassword = null;
     let ownerUid = null;
@@ -1239,6 +1262,7 @@ exports.setTenantActive = onCall(async (request) => {
     if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
 
     await ref.update({ active });
+    await writeTenantPublicMeta(slug, { active });
     await logAudit(null, 'UPDATE', 'Tenant', `Super admin ${active ? 'ativou' : 'desativou'} tenant ${slug}`, slug, callerUid);
     return { slug, active };
   } catch (e) {
@@ -1268,6 +1292,9 @@ exports.updateTenant = onCall(async (request) => {
     return { slug, changed: false };
   }
   await ref.update(patch);
+  if (patch.name !== undefined || patch.plan !== undefined) {
+    await writeTenantPublicMeta(slug, { name: patch.name, plan: patch.plan });
+  }
   await logAudit(null, 'UPDATE', 'Tenant', `Super admin atualizou tenant ${slug}: ${Object.keys(patch).join(', ')}`, slug, callerUid);
   return { slug, changed: true };
 });
@@ -1337,6 +1364,29 @@ exports.listAllTenants = onCall(async (request) => {
   return {
     tenants: snap.docs.map(d => ({ id: d.id, ...d.data() })),
   };
+});
+
+/**
+ * Backfill one-shot do espelho público (/tenants/{slug}/public_settings/meta).
+ * Necessário pra tenants criados antes do espelho existir — sem ele, o SPA
+ * retorna "Empresa não encontrada" no boot pré-login.
+ *
+ * Idempotente: pode ser chamado várias vezes sem efeito colateral.
+ */
+exports.backfillTenantPublicMeta = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await admin.firestore().collection('tenants').get();
+  let written = 0;
+  for (const doc of snap.docs) {
+    const t = doc.data() || {};
+    await writeTenantPublicMeta(doc.id, {
+      name: t.name || doc.id,
+      active: t.active !== false,
+      plan: t.plan || 'basic',
+    });
+    written++;
+  }
+  return { written };
 });
 
 /**
@@ -2282,6 +2332,7 @@ exports.dailyBillingEnforcement = onSchedule(
       const oldestOverdue = invs.docs[0]?.data()?.dueDate;
       if (oldestOverdue && oldestOverdue < cutoff) {
         await doc.ref.update({ active: false });
+        await writeTenantPublicMeta(doc.id, { active: false });
         await logAudit(null, 'SUSPEND', 'Tenant',
           `Suspensão automática por inadimplência > 7d`,
           doc.id, 'BILLING_JOB');
@@ -2425,6 +2476,7 @@ exports.deleteTenant = onCall(ASAAS_OPTS, async (request) => {
       deletedBy: callerUid,
       deletionMode: 'soft',
     });
+    await writeTenantPublicMeta(slug, { active: false });
     await logAudit(null, 'DELETE', 'Tenant',
       `Super admin executou SOFT delete de "${tenant.name}" (${slug}). Reversível.`,
       slug, callerUid);
