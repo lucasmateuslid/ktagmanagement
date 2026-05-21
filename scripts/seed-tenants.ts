@@ -98,6 +98,19 @@ async function main() {
     { merge: true }
   );
 
+  // 2c. Espelho público de metadata (name/active/plan). O TenantContext lê
+  // este doc no boot pré-login pra validar que o subdomínio existe e está
+  // ativo. Sem ele, o SPA retorna "Empresa não encontrada" mesmo com o
+  // root /tenants/{slug} criado. Mesma lógica da Cloud Function createTenant.
+  await tenantRef.collection('public_settings').doc('meta').set(
+    {
+      name: `Empresa ${slug}`,
+      active: true,
+      plan: 'basic',
+    },
+    { merge: true }
+  );
+
   // 3. Admin: Firebase Auth user + doc no tenant
   let userRecord;
   try {

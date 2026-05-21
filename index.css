@@ -145,3 +145,266 @@ button:active {
 .dark .pac-item-query {
   color: white !important;
 }
+
+/* =============================================================
+ * ADMIN LIGHT THEME
+ * Escopo aplicado em <AdminLayout> e <AdminLogin> (.admin-light).
+ * Convertendo dark→light por override de utilitários Tailwind
+ * via especificidade ".admin-light .classe" (sem !important onde
+ * possível). Mantém o tenant intocado.
+ * ============================================================= */
+.admin-light {
+  color-scheme: light;
+  --admin-bg: #f8fafc;          /* slate-50 */
+  --admin-surface: #ffffff;
+  --admin-surface-2: #f1f5f9;   /* slate-100 */
+  --admin-surface-3: #e2e8f0;   /* slate-200 */
+  --admin-border: #e2e8f0;      /* slate-200 */
+  --admin-border-strong: #cbd5e1; /* slate-300 */
+  --admin-text: #0f172a;        /* slate-900 */
+  --admin-text-soft: #334155;   /* slate-700 */
+  --admin-text-muted: #64748b;  /* slate-500 */
+  --admin-text-dim: #94a3b8;    /* slate-400 */
+  color: var(--admin-text);
+  background-color: var(--admin-bg);
+}
+
+/* ---- Surfaces (cards, sidebars, headers) ---- */
+.admin-light .bg-zinc-950,
+.admin-light .bg-zinc-900,
+.admin-light .bg-zinc-900\/40,
+.admin-light .bg-zinc-900\/60,
+.admin-light .bg-zinc-950\/40,
+.admin-light .bg-zinc-950\/50,
+.admin-light .bg-zinc-950\/60,
+.admin-light .bg-zinc-950\/80,
+.admin-light .bg-zinc-950\/95 {
+  background-color: var(--admin-surface);
+}
+
+.admin-light .bg-zinc-800,
+.admin-light .bg-zinc-800\/50,
+.admin-light .bg-zinc-800\/60,
+.admin-light .bg-zinc-800\/80,
+.admin-light .bg-zinc-700,
+.admin-light .bg-zinc-700\/40 {
+  background-color: var(--admin-surface-2);
+}
+
+.admin-light .bg-zinc-600 { background-color: var(--admin-surface-3); }
+
+.admin-light .bg-zinc-950\/20,
+.admin-light .bg-zinc-950\/30,
+.admin-light .bg-zinc-950\/90 {
+  background-color: var(--admin-surface);
+}
+
+/* Tints sutis em hovers/zebras */
+.admin-light .bg-white\/\[0\.02\],
+.admin-light .bg-white\/\[0\.03\],
+.admin-light .bg-white\/\[0\.04\],
+.admin-light .bg-white\/\[0\.05\],
+.admin-light .bg-white\/5,
+.admin-light .bg-white\/10 {
+  background-color: var(--admin-surface-2);
+}
+
+/* Handles e indicadores */
+.admin-light .bg-white\/15,
+.admin-light .bg-white\/20 {
+  background-color: #cbd5e1; /* slate-300 */
+}
+
+/* Hover utilitários */
+.admin-light .hover\:bg-white\/\[0\.02\]:hover,
+.admin-light .hover\:bg-white\/\[0\.03\]:hover,
+.admin-light .hover\:bg-white\/\[0\.04\]:hover,
+.admin-light .hover\:bg-white\/\[0\.05\]:hover,
+.admin-light .hover\:bg-white\/5:hover {
+  background-color: var(--admin-surface-2);
+}
+
+/* ---- Borders ---- */
+.admin-light .border-white\/5,
+.admin-light .border-white\/10,
+.admin-light .border-zinc-800,
+.admin-light .border-zinc-700 {
+  border-color: var(--admin-border);
+}
+
+.admin-light .hover\:border-white\/5:hover,
+.admin-light .hover\:border-white\/10:hover {
+  border-color: var(--admin-border-strong);
+}
+
+.admin-light .divide-white\/5 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-border);
+}
+
+/* Ring / shadow inset light */
+.admin-light .ring-white\/20,
+.admin-light .ring-inset.ring-white\/20 {
+  --tw-ring-color: rgba(15, 23, 42, 0.08);
+}
+
+/* ---- Text colors ---- */
+.admin-light .text-white { color: var(--admin-text); }
+.admin-light .text-zinc-100,
+.admin-light .text-zinc-200,
+.admin-light .text-zinc-300 { color: var(--admin-text-soft); }
+.admin-light .text-zinc-400 { color: var(--admin-text-muted); }
+.admin-light .text-zinc-500 { color: var(--admin-text-muted); }
+.admin-light .text-zinc-600 { color: var(--admin-text-dim); }
+.admin-light .text-zinc-700 { color: var(--admin-text-dim); }
+
+/* Hovers de texto */
+.admin-light .hover\:text-white:hover { color: var(--admin-text); }
+.admin-light .group:hover .group-hover\:text-white { color: var(--admin-text); }
+.admin-light .group:hover .group-hover\:text-zinc-300 { color: var(--admin-text-soft); }
+
+/* Acento âmbar precisa de mais contraste sobre branco */
+.admin-light .text-amber-300 { color: #b45309; } /* amber-700 */
+.admin-light .text-amber-400 { color: #d97706; } /* amber-600 */
+.admin-light .text-amber-500 { color: #d97706; }
+.admin-light .text-amber-500\/80 { color: rgba(217, 119, 6, 0.85); }
+.admin-light .text-amber-500\/90 { color: rgba(217, 119, 6, 0.9); }
+.admin-light .text-amber-400\/60 { color: rgba(217, 119, 6, 0.7); }
+.admin-light .text-amber-400\/80 { color: rgba(217, 119, 6, 0.85); }
+.admin-light .hover\:text-amber-400:hover { color: #d97706; }
+.admin-light .hover\:text-amber-300:hover { color: #b45309; }
+
+/* Estados accent extras */
+.admin-light .text-emerald-400 { color: #059669; }
+.admin-light .text-red-400 { color: #dc2626; }
+.admin-light .text-red-300 { color: #b91c1c; }
+.admin-light .text-blue-400 { color: #2563eb; }
+.admin-light .text-purple-400 { color: #9333ea; }
+.admin-light .text-orange-300 { color: #c2410c; }
+.admin-light .text-red-400\/80 { color: rgba(220, 38, 38, 0.85); }
+
+/* Tints com /5 /10 /15 /20 sobre branco — clarear o fundo */
+.admin-light .bg-amber-500\/5    { background-color: rgba(245, 158, 11, 0.08); }
+.admin-light .bg-amber-500\/10   { background-color: rgba(245, 158, 11, 0.12); }
+.admin-light .bg-amber-500\/\[0\.04\] { background-color: rgba(245, 158, 11, 0.06); }
+.admin-light .bg-amber-500\/15   { background-color: rgba(245, 158, 11, 0.15); }
+.admin-light .bg-amber-500\/20   { background-color: rgba(245, 158, 11, 0.18); }
+.admin-light .bg-emerald-500\/5  { background-color: rgba(16, 185, 129, 0.07); }
+.admin-light .bg-emerald-500\/10 { background-color: rgba(16, 185, 129, 0.12); }
+.admin-light .bg-emerald-500\/15 { background-color: rgba(16, 185, 129, 0.15); }
+.admin-light .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.18); }
+.admin-light .bg-red-500\/5      { background-color: rgba(239, 68, 68, 0.07); }
+.admin-light .bg-red-500\/\[0\.04\] { background-color: rgba(239, 68, 68, 0.06); }
+.admin-light .bg-red-500\/10     { background-color: rgba(239, 68, 68, 0.12); }
+.admin-light .bg-red-500\/15     { background-color: rgba(239, 68, 68, 0.15); }
+.admin-light .bg-red-500\/20     { background-color: rgba(239, 68, 68, 0.18); }
+.admin-light .bg-blue-500\/10    { background-color: rgba(59, 130, 246, 0.12); }
+.admin-light .bg-purple-500\/10  { background-color: rgba(168, 85, 247, 0.12); }
+.admin-light .bg-red-950\/40     { background-color: #fef2f2; } /* red-50 */
+
+/* Bordas accent */
+.admin-light .border-amber-500\/20 { border-color: rgba(217, 119, 6, 0.35); }
+.admin-light .border-amber-500\/30 { border-color: rgba(217, 119, 6, 0.45); }
+.admin-light .border-amber-500\/40 { border-color: rgba(217, 119, 6, 0.55); }
+.admin-light .border-emerald-500\/20 { border-color: rgba(16, 185, 129, 0.4); }
+.admin-light .border-emerald-500\/30 { border-color: rgba(16, 185, 129, 0.5); }
+.admin-light .border-emerald-500\/40 { border-color: rgba(16, 185, 129, 0.55); }
+.admin-light .border-red-500\/15 { border-color: rgba(239, 68, 68, 0.25); }
+.admin-light .border-red-500\/20 { border-color: rgba(239, 68, 68, 0.3); }
+.admin-light .border-red-500\/30 { border-color: rgba(239, 68, 68, 0.4); }
+.admin-light .border-red-500\/40 { border-color: rgba(239, 68, 68, 0.5); }
+.admin-light .border-red-900\/50 { border-color: #fecaca; }
+.admin-light .border-blue-500\/20 { border-color: rgba(59, 130, 246, 0.3); }
+.admin-light .border-blue-500\/30 { border-color: rgba(59, 130, 246, 0.4); }
+.admin-light .border-purple-500\/20 { border-color: rgba(168, 85, 247, 0.3); }
+.admin-light .border-purple-500\/30 { border-color: rgba(168, 85, 247, 0.4); }
+.admin-light .border-orange-500\/20 { border-color: rgba(249, 115, 22, 0.3); }
+.admin-light .border-orange-500\/30 { border-color: rgba(249, 115, 22, 0.4); }
+.admin-light .border-zinc-700 { border-color: var(--admin-border-strong); }
+.admin-light .border-zinc-800 { border-color: var(--admin-border); }
+.admin-light .border-zinc-850,
+.admin-light .border-zinc-900 { border-color: var(--admin-border); }
+
+/* Hover de bordas accent */
+.admin-light .hover\:border-amber-500\/20:hover { border-color: rgba(217, 119, 6, 0.45); }
+.admin-light .hover\:border-amber-500\/30:hover { border-color: rgba(217, 119, 6, 0.55); }
+.admin-light .hover\:border-red-500\/20:hover { border-color: rgba(239, 68, 68, 0.4); }
+
+/* Placeholder e caret */
+.admin-light input,
+.admin-light textarea,
+.admin-light select {
+  color: var(--admin-text);
+}
+.admin-light input::placeholder,
+.admin-light textarea::placeholder {
+  color: var(--admin-text-dim);
+}
+.admin-light .placeholder\:text-zinc-500::placeholder,
+.admin-light .placeholder\:text-zinc-600::placeholder {
+  color: var(--admin-text-dim);
+}
+
+/* Autofill branco no admin */
+.admin-light input:-webkit-autofill,
+.admin-light input:-webkit-autofill:hover,
+.admin-light input:-webkit-autofill:focus,
+.admin-light input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+  -webkit-text-fill-color: #0f172a !important;
+}
+
+/* Scrollbar admin */
+.admin-light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.admin-light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Sombras dark → light */
+.admin-light .shadow-2xl.shadow-black\/60,
+.admin-light .shadow-2xl.shadow-black\/40,
+.admin-light .shadow-lg.shadow-amber-500\/20 {
+  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.15);
+}
+
+/* Overlay de modal mobile */
+.admin-light .bg-black\/70 { background-color: rgba(15, 23, 42, 0.45); }
+.admin-light .bg-black\/80 { background-color: rgba(15, 23, 42, 0.55); }
+.admin-light .bg-black\/60 { background-color: rgba(15, 23, 42, 0.4); }
+.admin-light .bg-black\/50 { background-color: rgba(15, 23, 42, 0.35); }
+
+/* Tints vermelhos extras */
+.admin-light .bg-red-500\/15 { background-color: rgba(239, 68, 68, 0.15); }
+.admin-light .text-red-300 { color: #b91c1c; }
+.admin-light .text-red-300\/60 { color: rgba(185, 28, 28, 0.6); }
+.admin-light .border-red-900\/40 { border-color: #fecaca; }
+.admin-light .border-red-900\/50 { border-color: #fecaca; }
+.admin-light .border-zinc-800 { border-color: var(--admin-border); }
+
+/* Focus border de inputs no admin */
+.admin-light .focus\:border-white\/20:focus { border-color: var(--admin-border-strong); }
+
+/* Sombras adicionais */
+.admin-light .shadow-red-900\/20 { box-shadow: 0 10px 30px -10px rgba(239, 68, 68, 0.18); }
+.admin-light .shadow-red-500\/20 { box-shadow: 0 6px 18px -6px rgba(239, 68, 68, 0.35); }
+
+/* Gradients de cards (manter sutil) */
+.admin-light .from-amber-400\/20 { --tw-gradient-from: rgba(245, 158, 11, 0.18) var(--tw-gradient-from-position); }
+.admin-light .to-orange-600\/10  { --tw-gradient-to: rgba(234, 88, 12, 0.12) var(--tw-gradient-to-position); }
+
+/* Foco amber visível em inputs/select */
+.admin-light .focus\:border-amber-500\/30:focus,
+.admin-light .focus\:border-amber-500\/40:focus,
+.admin-light .focus-visible\:border-amber-500\/40:focus-visible {
+  border-color: rgba(217, 119, 6, 0.55);
+}
+.admin-light .focus\:bg-white\/\[0\.05\]:focus,
+.admin-light .focus-visible\:bg-white\/\[0\.05\]:focus-visible {
+  background-color: #ffffff;
+}
+
+/* Selo verde (ambient indicator) */
+.admin-light .bg-emerald-400 { background-color: #10b981; }
+
+/* CartesianGrid / axis defaults Recharts já são escuros — sobrescrito inline no Dashboard */

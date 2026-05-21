@@ -3,7 +3,8 @@ import { Bot, Save, AlertTriangle, CheckCircle2, Eye, EyeOff } from 'lucide-reac
 import { storage } from '../../services/storage';
 import { AppSettings } from '../../types';
 
-export const AiConfigModule = () => {
+interface AiConfigModuleProps { embedded?: boolean }
+export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -35,23 +36,8 @@ export const AiConfigModule = () => {
     { id: 'deepseek', name: 'DeepSeek', keyConfig: 'deepseekApiKey' },
   ];
 
-  return (
-    <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
-      <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
-        <div className="flex items-center gap-3 text-emerald-500">
-          <Bot size={24} />
-          <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Provedores de Inteligência Artificial</h2>
-        </div>
-        <button 
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold uppercase tracking-wider text-[10px] hover:bg-emerald-600 transition-colors"
-        >
-          {isSaving ? 'Salvando...' : saved ? <><CheckCircle2 size={14}/> Salvo</> : <><Save size={14}/> Salvar</>}
-        </button>
-      </div>
-
-      <div className="space-y-4">
+  const body = (
+    <div className="space-y-4">
         <p className="text-xs text-zinc-500 leading-relaxed font-medium">
           A assistente K-Tag AI Admin precisa de uma chave de API para funcionar. Se a chave padrão do sistema estiver falhando por excesso de uso, você pode configurar provedores alternativos abaixo e selecionar qual deseja usar.
         </p>
@@ -93,7 +79,42 @@ export const AiConfigModule = () => {
                 </div>
             ))}
         </div>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold uppercase tracking-wider text-[10px] hover:bg-emerald-600 transition-colors"
+          >
+            {isSaving ? 'Salvando...' : saved ? <><CheckCircle2 size={14} /> Salvo</> : <><Save size={14} /> Salvar</>}
+          </button>
+        </div>
+        {body}
       </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+      <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
+        <div className="flex items-center gap-3 text-emerald-500">
+          <Bot size={24} />
+          <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Provedores de Inteligência Artificial</h2>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold uppercase tracking-wider text-[10px] hover:bg-emerald-600 transition-colors"
+        >
+          {isSaving ? 'Salvando...' : saved ? <><CheckCircle2 size={14} /> Salvo</> : <><Save size={14} /> Salvar</>}
+        </button>
+      </div>
+      {body}
     </div>
   );
 };

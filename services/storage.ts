@@ -14,10 +14,22 @@ import {
   query, where, setDoc, getDoc, orderBy, limit, getDocsFromCache, onSnapshot,
   CollectionReference, Query
 } from 'firebase/firestore';
-import { tenantCollection, tenantDoc } from '../lib/firestore';
+import { tenantCollection, tenantDoc, systemDoc } from '../lib/firestore';
 import { activeTenant } from './activeTenant';
 import { encryption } from './encryption';
 import { securityService } from './security';
+
+// Integrações configuradas no nível da plataforma pelo super admin
+// (/ktag_settings_v3/platform_integrations). Hoje só carrega o proxy/relay
+// compartilhado — endpoints e tokens (K-TAG URL, Traqcare etc.) continuam
+// sob controle de cada tenant.
+export interface PlatformIntegrations {
+  proxyUrl?: string;       // Cloud Function que faz bypass de CORS
+  updatedAt?: number;
+}
+
+const PLATFORM_INTEGRATIONS_DOC = 'platform_integrations';
+const PLATFORM_INTEGRATIONS_CACHE_KEY = 'platform_integrations';
 
 // Nomes de coleção (curtos — já namespacedos sob /tenants/{id}).
 const COLLECTIONS = {
@@ -46,7 +58,9 @@ const COLLECTIONS = {
 // Espelhado em /tenants/{tid}/public_settings/whitelabel pelo saveSettings
 // para que telas pré-login (Login, WhitelabelStyles) possam ler sem auth.
 export type PublicSettings = Pick<AppSettings,
-  'customAppName' | 'customLogoUrlLight' | 'customLogoUrlDark' | 'themeColors'
+  'customAppName' | 'customLogoUrlLight' | 'customLogoUrlDark'
+  | 'customLogoBase64Light' | 'customLogoBase64Dark'
+  | 'themeColors'
 >;
 
 const PUBLIC_SETTINGS_DOC = 'whitelabel';
@@ -56,6 +70,8 @@ function pickPublicSettings(s: AppSettings): PublicSettings {
     customAppName: s.customAppName,
     customLogoUrlLight: s.customLogoUrlLight,
     customLogoUrlDark: s.customLogoUrlDark,
+    customLogoBase64Light: s.customLogoBase64Light,
+    customLogoBase64Dark: s.customLogoBase64Dark,
     themeColors: s.themeColors,
   };
 }
@@ -515,26 +531,64 @@ export const storage = {
     return [];
   },
 
+  // --- PLATFORM INTEGRATIONS (cross-tenant — super admin configura) ---
+  getPlatformIntegrations: async (): Promise<PlatformIntegrations> => {
+    if (db) {
+      try {
+        const snap = await getDoc(systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC));
+        if (snap.exists()) {
+          const data = snap.data() as PlatformIntegrations;
+          cache.set(PLATFORM_INTEGRATIONS_CACHE_KEY, data);
+          return data;
+        }
+      } catch (e: any) {
+        if (e?.code !== 'permission-denied') {
+          console.warn('Platform integrations fetch failed, fallback ao cache.');
+        }
+      }
+    }
+    return cache.get<PlatformIntegrations>(PLATFORM_INTEGRATIONS_CACHE_KEY, {});
+  },
+
+  savePlatformIntegrations: async (p: PlatformIntegrations) => {
+    if (!db) throw new Error('Firestore indisponível.');
+    const payload: PlatformIntegrations = { ...p, updatedAt: Date.now() };
+    await setDoc(systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC), cleanData(payload as any), { merge: true });
+    cache.set(PLATFORM_INTEGRATIONS_CACHE_KEY, payload);
+  },
+
   // --- SETTINGS (por tenant agora — D4) ---
+  // Faz overlay automático das integrações de plataforma sobre os campos
+  // proxy/K-TAG URL/Traqcare token. Assim a app inteira (api.ts, xadtag.ts,
+  // hinova.ts) consome valores centralizados sem precisar de mudança.
   getSettings: async (): Promise<AppSettings> => {
+    let tenantSettings: AppSettings = {} as AppSettings;
     if (db) {
       try {
         const snap = await getDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'));
         if (snap.exists()) {
-          const data = snap.data() as AppSettings;
-          cache.set(COLLECTIONS.SETTINGS, data);
-          return data;
+          tenantSettings = snap.data() as AppSettings;
+          cache.set(COLLECTIONS.SETTINGS, tenantSettings);
+        } else {
+          tenantSettings = cache.get<AppSettings>(COLLECTIONS.SETTINGS, {} as AppSettings);
         }
       } catch (e: any) {
-        // permission-denied é esperado quando o caller não está autenticado
-        // ou ainda não é membro do tenant. Cache local cobre o fallback —
-        // não polui o console nesse caso.
         if (e?.code !== 'permission-denied') {
-          console.warn("Settings Fetch failed, using local cache.");
+          console.warn('Settings Fetch failed, using local cache.');
         }
+        tenantSettings = cache.get<AppSettings>(COLLECTIONS.SETTINGS, {} as AppSettings);
       }
+    } else {
+      tenantSettings = cache.get<AppSettings>(COLLECTIONS.SETTINGS, {} as AppSettings);
     }
-    return cache.get<AppSettings>(COLLECTIONS.SETTINGS, {} as AppSettings);
+
+    // Overlay de plataforma: super admin define a URL única do proxy compartilhado.
+    // K-TAG URL e Traqcare token permanecem por-tenant (cada empresa configura).
+    const platform = await storage.getPlatformIntegrations().catch(() => ({} as PlatformIntegrations));
+    return {
+      ...tenantSettings,
+      customProxyUrl: platform.proxyUrl || tenantSettings.customProxyUrl || '',
+    };
   },
 
   // Subconjunto público (whitelabel/tema) — legível sem auth para pintar
@@ -556,8 +610,12 @@ export const storage = {
   },
 
   saveSettings: async (s: AppSettings) => {
+    // customProxyUrl vem da plataforma (super admin) — não persiste no doc
+    // do tenant para evitar drift. getSettings sempre faz overlay no read.
+    const { customProxyUrl: _p, ...tenantOnly } = s as any;
+    const persisted = tenantOnly as AppSettings;
     if (db) {
-      await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(s));
+      await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(persisted));
       // Espelha o subconjunto público — Login/WhitelabelStyles leem deste doc
       // sem precisar de auth. Se falhar (sem permissão de escrita no
       // espelho), seguimos — o doc privado já foi salvo.

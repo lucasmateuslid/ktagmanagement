@@ -89,7 +89,9 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
 
   const login = async (email: string, password: string): Promise<string | void> => {
     if (!auth) return 'Serviço indisponível.';
-    const limitCheck = rateLimitService.check('admin_login_attempt', 5, 900);
+    // Backoff progressivo (mesma escala do tenant login): 4 falhas → bloqueio
+    // 30s, depois 60s, 120s, 240s, 480s, 960s. Sucesso reseta via clear().
+    const limitCheck = rateLimitService.checkProgressive('admin_login_attempt');
     if (!limitCheck.allowed) {
       return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
     }
@@ -100,13 +102,13 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
       const sa = await validateSystemAdmin(cred.user);
       if (!sa) {
         await signOut(auth);
-        rateLimitService.record('admin_login_attempt');
+        rateLimitService.recordFailProgressive('admin_login_attempt');
         return GENERIC_LOGIN_ERROR;
       }
       rateLimitService.clear('admin_login_attempt');
       setAdmin(sa);
     } catch (e: any) {
-      rateLimitService.record('admin_login_attempt');
+      rateLimitService.recordFailProgressive('admin_login_attempt');
       console.warn('admin login error:', e?.code);
       return GENERIC_LOGIN_ERROR;
     } finally {

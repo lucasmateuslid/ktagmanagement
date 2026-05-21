@@ -166,7 +166,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     if (!auth) return 'Serviço de autenticação indisponível.';
     if (!password) return GENERIC_LOGIN_ERROR;
 
-    const limitCheck = rateLimitService.check('login_attempt', 5, 900);
+    // Backoff progressivo: 4 tentativas por stage, escalando o bloqueio
+    // 30 → 60 → 120 → 240 → 480 → 960s. Sucesso reseta tudo via clear().
+    const limitCheck = rateLimitService.checkProgressive('login_attempt');
     if (!limitCheck.allowed) {
       return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
     }
@@ -179,7 +181,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       if (!doc) {
         // Auth OK mas usuário não é membro deste tenant — esconde a razão.
         await fbSignOut(auth);
-        rateLimitService.record('login_attempt');
+        rateLimitService.recordFailProgressive('login_attempt');
         return GENERIC_LOGIN_ERROR;
       }
 
@@ -197,7 +199,7 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       setUser(doc);
       return;
     } catch (e: any) {
-      rateLimitService.record('login_attempt');
+      rateLimitService.recordFailProgressive('login_attempt');
       console.warn('Login error:', e?.code || e?.message);
       return translateAuthError(e);
     } finally {

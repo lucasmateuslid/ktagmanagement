@@ -122,11 +122,13 @@ const TenantRoutes = () => (
       <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
       <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
       <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
+      {/* /settings é acessível por qualquer usuário autenticado — a tela
+          interna gateia cards por hasPermission(). */}
       <Route path="/settings" element={<Settings />} />
 
       {/* Agendamentos */}
       <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
-      <Route path="/schedules" element={<Schedules />} />
+      <Route path="/schedules" element={<RoleProtectedRoute permission="ROUTE_SCHEDULES"><Schedules /></RoleProtectedRoute>} />
       <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
       <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
       <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />

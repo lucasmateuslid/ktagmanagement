@@ -94,7 +94,10 @@ export const Login = () => {
      storage.getPublicSettings().then(settings => {
        setAppSettings({
          appName: settings.customAppName,
-         appLogo: settings.customLogoUrlDark || settings.customLogoUrlLight
+         appLogo: settings.customLogoBase64Dark
+                  || settings.customLogoBase64Light
+                  || settings.customLogoUrlDark
+                  || settings.customLogoUrlLight
        });
      }).catch(() => {});
   }, []);

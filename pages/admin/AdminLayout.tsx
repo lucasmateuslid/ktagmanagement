@@ -3,11 +3,13 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useSystemAdmin } from '../../contexts/SystemAdminContext';
 import {
   LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt,
-  Search, ChevronRight, Settings2, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers,
+  Search, ChevronRight, Settings2, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
+  Sun, Moon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BottomNav, type BottomNavItem } from '../../components/ui/bottom-nav';
 import { cn } from '../../lib/utils';
+import { useAdminTheme, type AdminTheme } from '../../hooks/useAdminTheme';
 
 interface NavItem {
   to: string;
@@ -27,6 +29,7 @@ const NAV: NavItem[] = [
   { to: '/admin/system-admins', label: 'Super Admins', icon: Shield, group: 'system' },
   { to: '/admin/audit', label: 'Auditoria', icon: FileText, group: 'system' },
   { to: '/admin/asaas-config', label: 'Config. Asaas', icon: Settings2, group: 'system' },
+  { to: '/admin/platform-integrations', label: 'Integrações', icon: Cloud, group: 'system' },
   { to: '/admin/account', label: 'Minha conta', icon: UserCog, group: 'system' },
 ];
 
@@ -36,7 +39,6 @@ const GROUPS = [
   { key: 'system', label: 'Sistema' },
 ] as const;
 
-// Itens primários da bottom nav mobile (4 + "mais")
 const BOTTOM_NAV_PRIMARY: BottomNavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} />, end: true },
   { to: '/admin/tenants', label: 'Empresas', icon: <Building2 size={18} /> },
@@ -50,6 +52,7 @@ export const AdminLayout = () => {
   const { admin, logout } = useSystemAdmin();
   const navigate = useNavigate();
   const location = useLocation();
+  const { theme, toggle: toggleTheme } = useAdminTheme();
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -58,7 +61,6 @@ export const AdminLayout = () => {
     return localStorage.getItem(SIDEBAR_OPEN_KEY) === '1';
   });
 
-  // Fecha drawer mobile ao navegar
   React.useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   React.useEffect(() => {
@@ -77,7 +79,7 @@ export const AdminLayout = () => {
 
   return (
     <div className="relative min-h-screen bg-zinc-950 text-white overflow-hidden">
-      {/* Ambient orbs */}
+      {/* Ambient orbs — sutis em ambos os temas (overrides convertem em light) */}
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-amber-500/10 blur-[140px]" />
         <div className="absolute top-1/3 -right-40 w-[480px] h-[480px] rounded-full bg-amber-400/5 blur-[160px]" />
@@ -85,12 +87,13 @@ export const AdminLayout = () => {
       </div>
 
       <div className="relative z-10 flex min-h-screen">
-        {/* Sidebar desktop — colapsável */}
         <DesktopSidebar
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed(v => !v)}
           adminEmail={admin?.email || undefined}
           onLogout={handleLogout}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <main className="flex-1 flex flex-col min-w-0">
@@ -107,6 +110,7 @@ export const AdminLayout = () => {
                 <span className="absolute right-3 text-[9px] font-mono text-zinc-600 border border-white/10 rounded-md px-1.5 py-0.5 bg-white/[0.02] hidden lg:block">⌘K</span>
               </label>
             </div>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
               Ambiente {import.meta.env.MODE === 'production' ? 'PROD' : 'DEV'}
@@ -126,6 +130,7 @@ export const AdminLayout = () => {
               <div className="text-[9px] font-black uppercase tracking-widest text-amber-500/80">K-TAG Platform</div>
               <div className="font-display font-black text-sm truncate">{currentPageTitle(location.pathname)}</div>
             </div>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} compact />
             <button
               onClick={() => setSearchOpen(v => !v)}
               className={cn(
@@ -138,7 +143,6 @@ export const AdminLayout = () => {
             </button>
           </header>
 
-          {/* Search slide-down mobile */}
           <AnimatePresence>
             {searchOpen && (
               <motion.div
@@ -160,22 +164,22 @@ export const AdminLayout = () => {
             )}
           </AnimatePresence>
 
-          <div className="flex-1 overflow-auto px-4 md:px-6 lg:px-8 py-5 md:py-7 pb-24 md:pb-7">
+          <div className="flex-1 overflow-auto px-4 md:px-6 lg:px-8 xl:px-10 py-5 md:py-7 pb-24 md:pb-7 max-w-[1600px] w-full mx-auto">
             <Outlet />
           </div>
         </main>
       </div>
 
-      {/* Bottom nav mobile */}
       <BottomNav items={bottomNavItems} />
 
-      {/* Mobile drawer */}
       <AnimatePresence>
         {mobileOpen && (
           <MobileDrawer
             adminEmail={admin?.email || undefined}
             onClose={() => setMobileOpen(false)}
             onLogout={handleLogout}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
         )}
       </AnimatePresence>
@@ -184,16 +188,45 @@ export const AdminLayout = () => {
 };
 
 // ============================================================
+// THEME TOGGLE
+// ============================================================
+
+const ThemeToggle = ({
+  theme, onToggle, compact,
+}: { theme: AdminTheme; onToggle: () => void; compact?: boolean }) => (
+  <button
+    onClick={onToggle}
+    aria-label={theme === 'light' ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
+    title={theme === 'light' ? 'Modo escuro' : 'Modo claro'}
+    className={cn(
+      'shrink-0 inline-flex items-center justify-center rounded-lg transition-colors border',
+      'text-zinc-400 hover:text-amber-400 bg-white/[0.02] hover:bg-white/[0.05]',
+      'border-white/5 hover:border-white/10',
+      compact ? 'w-9 h-9' : 'h-9 px-2.5',
+    )}
+  >
+    {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+    {!compact && (
+      <span className="ml-2 text-[10px] font-black uppercase tracking-widest">
+        {theme === 'light' ? 'Dark' : 'Light'}
+      </span>
+    )}
+  </button>
+);
+
+// ============================================================
 // DESKTOP SIDEBAR
 // ============================================================
 
 const DesktopSidebar = ({
-  collapsed, onToggleCollapsed, adminEmail, onLogout,
+  collapsed, onToggleCollapsed, adminEmail, onLogout, theme, onToggleTheme,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   adminEmail?: string;
   onLogout: () => void;
+  theme: AdminTheme;
+  onToggleTheme: () => void;
 }) => (
   <aside
     className={cn(
@@ -302,6 +335,19 @@ const DesktopSidebar = ({
       )}
       <div className={cn('flex', collapsed ? 'flex-col gap-1.5' : 'gap-1.5')}>
         <button
+          onClick={onToggleTheme}
+          aria-label={theme === 'light' ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
+          title={theme === 'light' ? 'Tema escuro' : 'Tema claro'}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors',
+            'text-zinc-500 hover:text-amber-400 hover:bg-white/[0.04] border border-transparent hover:border-white/10',
+            collapsed ? 'p-2' : 'flex-1 py-2',
+          )}
+        >
+          {theme === 'light' ? <Moon size={13} /> : <Sun size={13} />}
+          {!collapsed && <span>{theme === 'light' ? 'Dark' : 'Light'}</span>}
+        </button>
+        <button
           onClick={onToggleCollapsed}
           aria-label={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
           title={collapsed ? 'Expandir' : 'Recolher'}
@@ -337,8 +383,8 @@ const DesktopSidebar = ({
 // ============================================================
 
 const MobileDrawer = ({
-  onClose, adminEmail, onLogout,
-}: { onClose: () => void; adminEmail?: string; onLogout: () => void }) => (
+  onClose, adminEmail, onLogout, theme, onToggleTheme,
+}: { onClose: () => void; adminEmail?: string; onLogout: () => void; theme: AdminTheme; onToggleTheme: () => void }) => (
   <motion.div
     className="md:hidden fixed inset-0 z-[80] flex"
     initial={{ opacity: 0 }}
@@ -427,6 +473,15 @@ const MobileDrawer = ({
           </div>
           <UserCog size={13} className="text-zinc-500 shrink-0" />
         </NavLink>
+
+        <button
+          onClick={onToggleTheme}
+          className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-zinc-400 hover:bg-white/[0.04] hover:text-amber-400 border border-white/5 hover:border-amber-500/20 transition-colors"
+        >
+          {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+          <span>{theme === 'light' ? 'Tema escuro' : 'Tema claro'}</span>
+        </button>
+
         <button
           onClick={onLogout}
           className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-zinc-400 hover:bg-red-500/10 hover:text-red-400 border border-white/5 hover:border-red-500/20 transition-colors"

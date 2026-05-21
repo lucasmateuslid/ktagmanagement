@@ -480,6 +480,12 @@ export interface AppSettings {
   customAppName?: string;
   customLogoUrlLight?: string;
   customLogoUrlDark?: string;
+  // Upload local (PNG/JPG/SVG codificado em base64). Tem prioridade sobre
+  // customLogoUrl* na renderização — permite ao admin trocar a logo sem
+  // depender de hosting externo. Tamanho máx ~280KB encodado (caber dentro
+  // do limite de 1MB do doc do Firestore).
+  customLogoBase64Light?: string;
+  customLogoBase64Dark?: string;
   themeColors?: ThemeColors;
   ktagUrl: string;
   ktagUser: string;

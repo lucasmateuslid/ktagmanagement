@@ -1,10 +1,13 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { useSystemAdmin } from '../../contexts/SystemAdminContext';
-import { ShieldCheck, Loader2, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertTriangle, Sun, Moon } from 'lucide-react';
+import { useAdminTheme } from '../../hooks/useAdminTheme';
+import { cn } from '../../lib/utils';
 
 export const AdminLogin = () => {
   const { login } = useSystemAdmin();
+  const { theme, toggle: toggleTheme } = useAdminTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -34,6 +37,21 @@ export const AdminLogin = () => {
           }}
         />
       </div>
+
+      {/* Toggle de tema canto superior direito */}
+      <button
+        onClick={toggleTheme}
+        aria-label={theme === 'light' ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
+        title={theme === 'light' ? 'Modo escuro' : 'Modo claro'}
+        className={cn(
+          'absolute top-5 right-5 z-10 inline-flex items-center gap-2 px-3 h-9 rounded-xl',
+          'text-zinc-400 hover:text-amber-400 bg-white/[0.03] hover:bg-white/[0.06]',
+          'border border-white/5 hover:border-white/10 transition-colors text-[10px] font-black uppercase tracking-widest',
+        )}
+      >
+        {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+        {theme === 'light' ? 'Dark' : 'Light'}
+      </button>
 
       <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center gap-3 mb-8">

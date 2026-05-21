@@ -596,15 +596,18 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Menu size={24} /></button>
                   
                   <div className="hidden md:flex items-center gap-4 h-10">
-                    {theme === 'dark' && appSettings?.customLogoUrlDark ? (
-                        <img src={appSettings.customLogoUrlDark} alt="Logo" className="w-10 h-10 object-contain" />
-                    ) : theme === 'light' && appSettings?.customLogoUrlLight ? (
-                        <img src={appSettings.customLogoUrlLight} alt="Logo" className="w-10 h-10 object-contain" />
-                    ) : (
+                    {(() => {
+                      const logoSrc = theme === 'dark'
+                        ? (appSettings?.customLogoBase64Dark || appSettings?.customLogoUrlDark)
+                        : (appSettings?.customLogoBase64Light || appSettings?.customLogoUrlLight);
+                      return logoSrc ? (
+                        <img src={logoSrc} alt="Logo" className="w-10 h-10 object-contain" />
+                      ) : (
                         <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-800 dark:border-zinc-200">
                           <span className="font-display font-black text-white dark:text-black text-lg">K</span>
                         </div>
-                    )}
+                      );
+                    })()}
                     <div className="flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 justify-center">
                         <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.customAppName || appSettings?.appName || 'Manager Pro'}</span>
                         <div className="flex items-center gap-2">
