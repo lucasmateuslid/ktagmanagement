@@ -94,7 +94,51 @@ export const adminApi = {
 
   markSetupFeePaid: (slug: string) =>
     call<{ slug: string }, { ok: boolean; alreadyPaid: boolean }>('markSetupFeePaid')({ slug }).then(r => r.data),
+
+  // ----- Acessos (identidade unificada) -----
+
+  lookupIdentity: (email: string) =>
+    call<{ email: string }, IdentityLookup>('superAdminLookupIdentity')({ email }).then(r => r.data),
+
+  grantMembership: (input: GrantMembershipInput) =>
+    call<GrantMembershipInput, GrantMembershipResult>('superAdminGrantMembership')(input).then(r => r.data),
+
+  revokeMembership: (input: { tenantId: string; uid?: string; email?: string }) =>
+    call<{ tenantId: string; uid?: string; email?: string }, { ok: boolean }>('superAdminRevokeMembership')(input).then(r => r.data),
 };
+
+export interface IdentityMembershipRow {
+  tenantId: string;
+  role: string;
+  status: string;
+}
+
+export type IdentityLookup =
+  | { found: false; email: string }
+  | {
+      found: true;
+      uid: string;
+      email: string;
+      disabled: boolean;
+      isGlobalAdmin: boolean;
+      memberships: IdentityMembershipRow[];
+    };
+
+export interface GrantMembershipInput {
+  email: string;
+  tenantId: string;
+  role: string;
+  name?: string;
+}
+
+export interface GrantMembershipResult {
+  uid: string;
+  email: string;
+  tenantId: string;
+  role: string;
+  created: boolean;
+  tempPassword: string | null;
+}
 
 export interface SetupFeeInput {
   valueCents: number;

@@ -1077,6 +1077,136 @@ exports.migrateIdentities = onCall(async (request) => {
   return { identities: touched.size, memberships, tenants: tenantsSnap.size };
 });
 
+// ------------------------------------------------------------------
+// SUPER ADMIN — gestão de ACESSOS (memberships cross-tenant)
+// ------------------------------------------------------------------
+// Permite ao super admin conceder/revogar acesso de qualquer e-mail a qualquer
+// tenant e consultar os vínculos de um e-mail. Escrever /tenants/{tid}/users/{uid}
+// dispara os triggers que mantêm /identities + claims em sincronia.
+
+// Papéis concedíveis no escopo de um tenant. 'superadmin' NÃO entra aqui — é
+// gerido por addSystemAdmin/removeSystemAdmin (poder de painel, separado).
+const GRANTABLE_TENANT_ROLES = new Set([
+  'admin', 'admin_tecnico', 'moderator', 'user', 'technician', 'client',
+]);
+
+/** Consulta vínculos (memberships) + flag de super admin de um e-mail. */
+exports.superAdminLookupIdentity = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  if (!email) throw new HttpsError('invalid-argument', 'email é obrigatório.');
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found') return { found: false, email };
+    throw new HttpsError('internal', `Falha ao buscar e-mail: ${e.message}`);
+  }
+  const uid = userRecord.uid;
+  const [membersSnap, isGlobal] = await Promise.all([
+    membershipColRef(uid).get(),
+    isGlobalAdminUid(uid),
+  ]);
+  const memberships = membersSnap.docs.map((d) => {
+    const m = d.data();
+    return { tenantId: d.id, role: m.role || 'user', status: m.status || 'pending' };
+  });
+  return {
+    found: true,
+    uid,
+    email: userRecord.email || email,
+    disabled: !!userRecord.disabled,
+    isGlobalAdmin: isGlobal,
+    memberships,
+  };
+});
+
+/**
+ * Concede (ou atualiza o papel de) acesso de um e-mail a um tenant.
+ * Cria a conta no Firebase Auth se ainda não existir (retorna senha temporária).
+ */
+exports.superAdminGrantMembership = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  const tenantId = String(request.data?.tenantId || '').toLowerCase().trim();
+  const role = String(request.data?.role || 'user');
+  const name = request.data?.name ? String(request.data.name) : '';
+
+  if (!email || !tenantId) throw new HttpsError('invalid-argument', 'email e tenantId são obrigatórios.');
+  if (!GRANTABLE_TENANT_ROLES.has(role)) {
+    throw new HttpsError('invalid-argument', `Papel inválido: ${role}.`);
+  }
+  const tenantSnap = await admin.firestore().collection('tenants').doc(tenantId).get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${tenantId} não encontrado.`);
+
+  // Resolve/cria a conta no Auth.
+  let userRecord;
+  let created = false;
+  let tempPassword = null;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') {
+      throw new HttpsError('internal', `Falha ao buscar e-mail: ${e.message}`);
+    }
+    tempPassword = generateRandomPassword();
+    try {
+      userRecord = await admin.auth().createUser({ email, password: tempPassword, displayName: name || email });
+      created = true;
+    } catch (ce) {
+      if (ce.code === 'auth/invalid-email') throw new HttpsError('invalid-argument', 'E-mail inválido.');
+      throw new HttpsError('internal', `Falha ao criar usuário: ${ce.message}`);
+    }
+  }
+  const uid = userRecord.uid;
+
+  const ref = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid);
+  const existing = await ref.get();
+  const userDoc = {
+    id: uid,
+    email,
+    name: name || email, // plaintext OK: encryption.decrypt devolve o original p/ não-ciphertext.
+    role,
+    status: 'approved',
+    tenantId,
+    updatedBy: callerUid,
+  };
+  if (!existing.exists) userDoc.createdAt = Date.now();
+  await ref.set(userDoc, { merge: true });
+
+  // Síncrono p/ claims já válidas no retorno (o trigger também roda, idempotente).
+  await upsertMembership(uid, tenantId, userDoc);
+  await rebuildIdentityAndClaims(uid);
+
+  await logAudit(tenantId, existing.exists ? 'UPDATE' : 'CREATE', 'User',
+    `Super admin ${existing.exists ? 'alterou papel de' : 'concedeu acesso a'} ${email} (${role})`, uid, callerUid);
+
+  return { uid, email, tenantId, role, created, tempPassword };
+});
+
+/** Revoga o acesso de um e-mail a um tenant. NÃO apaga a conta global. */
+exports.superAdminRevokeMembership = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const tenantId = String(request.data?.tenantId || '').toLowerCase().trim();
+  let uid = request.data?.uid ? String(request.data.uid) : '';
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  if (!tenantId || (!uid && !email)) {
+    throw new HttpsError('invalid-argument', 'tenantId e (uid ou email) são obrigatórios.');
+  }
+  if (!uid && email) {
+    try { uid = (await admin.auth().getUserByEmail(email)).uid; }
+    catch (e) { throw new HttpsError('not-found', 'Usuário não encontrado.'); }
+  }
+  // Apaga só o doc do tenant — onTenantUserDelete limpa a membership + claims.
+  // A conta Auth é preservada (pode ter outros vínculos / ser super admin).
+  await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid).delete();
+  await removeMembership(uid, tenantId);
+  await rebuildIdentityAndClaims(uid);
+  await logAudit(tenantId, 'DELETE', 'User', `Super admin revogou acesso de ${email || uid}`, uid, callerUid);
+  return { ok: true, uid, tenantId };
+});
+
 /**
  * Resolve quem é o caller e em que tenant ele está, validando que é admin
  * daquele tenant. Throws HttpsError se não autorizado.
