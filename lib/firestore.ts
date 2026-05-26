@@ -72,3 +72,19 @@ export function systemDoc(name: string, id: string): DocumentReference {
   const firestore = requireDb();
   return doc(firestore, name, id);
 }
+
+/**
+ * Identidade global do usuário: `/identities/{uid}`.
+ * Derivada/mantida por Cloud Functions; o cliente só lê a própria (rules).
+ */
+export function identityDoc(uid: string): DocumentReference {
+  return doc(requireDb(), 'identities', uid);
+}
+
+/**
+ * Memberships da identidade: `/identities/{uid}/memberships/{tid}`.
+ * Junção uid↔tenant. Usada pelo seletor de empresa (tenant switcher).
+ */
+export function membershipCollection(uid: string): CollectionReference {
+  return collection(requireDb(), 'identities', uid, 'memberships');
+}

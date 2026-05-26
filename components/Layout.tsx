@@ -9,13 +9,14 @@ import { AiAssistant } from './AiAssistant';
 import { pushService } from '../services/pushService'; 
 import { ChangelogModal } from './ChangelogModal'; // Import Changelog
 import { hasPermission } from '../utils/permissions';
+import { buildTenantHref } from '../utils/tenant';
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home, Package, Receipt
+  Home, Package, Receipt, Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -131,8 +132,12 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
 };
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
-  const { user, customRoles, logout, isAdmin, updateProfile } = useAuth();
+  const { user, customRoles, logout, isAdmin, updateProfile, memberships, isGlobalAdmin } = useAuth();
   const { tenantId } = useTenant();
+  // Identidade unificada: oferece troca de empresa quando o usuário tem mais de
+  // um vínculo (ou é super admin). Cada item navega para o subdomínio do tenant.
+  const otherMemberships = memberships.filter((m) => m.tenantId !== tenantId);
+  const canSwitch = otherMemberships.length > 0 || isGlobalAdmin;
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast, addNotification } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -826,6 +831,25 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         <Package size={18} className="text-zinc-400"/> Rastreamento
                       </a>
                   </div>
+                  {canSwitch && (
+                    <div className="mb-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-2 px-1">Trocar ambiente</p>
+                      <div className="space-y-1.5">
+                        {isGlobalAdmin && (
+                          <a href={buildTenantHref('admin')} className="flex items-center gap-3 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold text-sm hover:bg-amber-500/15 transition-all">
+                            <ShieldCheck size={16} className="text-amber-400" /> Painel da plataforma
+                            <ChevronRight size={14} className="ml-auto opacity-60" />
+                          </a>
+                        )}
+                        {otherMemberships.map((m) => (
+                          <a key={m.tenantId} href={buildTenantHref(m.tenantId)} className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                            <Building2 size={16} className="text-zinc-400" /> <span className="truncate">{m.tenantId}</span>
+                            <ChevronRight size={14} className="ml-auto opacity-60" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 mt-auto hover:bg-red-500 hover:text-white transition-all"><LogOut size={16}/> Sair do App</button>
                 </MotionDiv>
               </>

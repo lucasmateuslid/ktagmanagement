@@ -5,7 +5,7 @@
  */
 
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentCreated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
@@ -889,26 +889,107 @@ async function updateTagsForTenant(db, tenantId) {
 // Multi-tenant: sync de custom claims + admin user provisioning
 // ============================================================
 
+// ------------------------------------------------------------------
+// UNIFIED IDENTITY MODEL
+// ------------------------------------------------------------------
+// Um mesmo e-mail (= um único Firebase UID no projeto) pode ser membro de
+// vários tenants E/OU super admin da plataforma. As fontes da verdade são:
+//
+//   /tenants/{tid}/users/{uid}            → registro operacional por-tenant
+//                                           (escrito pelo app/admin; criptografa name/cpf)
+//   /system_admins/{uid}                  → flag de super admin global
+//
+// Derivados, mantidos SOMENTE por estas funções (Admin SDK; rules = read-only):
+//
+//   /identities/{uid}                     → { uid, email, isGlobalAdmin, disabled, updatedAt }
+//   /identities/{uid}/memberships/{tid}   → { uid, tenantId, role, status, customRoleId?, email }
+//
+// Custom claims (= "JWT payload") — REPLACE em cada rebuild, fonte única:
+//   { superadmin?: true, tn?: { [tid]: role }, tnBig?: true }
+//   `tn` só inclui memberships APROVADOS. `superadmin` é poder de PAINEL —
+//   as rules NÃO o usam para liberar dados operacionais de tenant (isolamento).
+//   Limite de claims do Firebase ≈ 1000 bytes: se `tn` estourar, omitimos e
+//   marcamos tnBig=true; as rules então caem no fallback por doc de membership.
+
+const MAX_CLAIM_BYTES = 900; // margem sob o teto de 1000 bytes do Firebase.
+
+function identityDocRef(uid) {
+  return admin.firestore().collection('identities').doc(uid);
+}
+function membershipColRef(uid) {
+  return identityDocRef(uid).collection('memberships');
+}
+
+async function isGlobalAdminUid(uid) {
+  const snap = await admin.firestore().collection('system_admins').doc(uid).get();
+  return snap.exists;
+}
+
 /**
- * Sincroniza customClaims do Firebase Auth com o doc do usuário no tenant.
- * Roda em CREATE e UPDATE de /tenants/{tenantId}/users/{uid}.
- *
- * Por que precisa: as Firestore Rules e qualquer middleware server-side
- * usam request.auth.token.tenantId / token.role como atalho barato (sem
- * get() do user doc a cada read). Este trigger mantém o token sincronizado
- * com o estado canônico do banco.
+ * Espelha o registro de tenant para a camada de identidade. Não toca claims —
+ * o caller deve chamar rebuildIdentityAndClaims(uid) em seguida.
  */
-async function syncUserClaims(uid, tenantId, role, status) {
+async function upsertMembership(uid, tenantId, data) {
   if (!uid || !tenantId) return;
+  const email = (data.email || '').toLowerCase();
+  await identityDocRef(uid).set({
+    uid,
+    email,
+    updatedAt: Date.now(),
+  }, { merge: true });
+  await membershipColRef(uid).doc(tenantId).set({
+    uid,
+    tenantId,
+    role: data.role || 'user',
+    status: data.status || 'pending',
+    customRoleId: data.customRoleId || null,
+    email,
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+async function removeMembership(uid, tenantId) {
+  if (!uid || !tenantId) return;
+  await membershipColRef(uid).doc(tenantId).delete().catch(() => {});
+}
+
+/**
+ * Recomputa /identities/{uid}.isGlobalAdmin + custom claims a partir de TODAS
+ * as memberships + system_admins. Fonte única que faz setCustomUserClaims
+ * (REPLACE), então limpa claims legadas {tenantId, role, approved} no processo.
+ */
+async function rebuildIdentityAndClaims(uid) {
+  if (!uid) return;
   try {
-    const isApproved = status === 'approved';
-    await admin.auth().setCustomUserClaims(uid, {
-      tenantId,
-      role: role || 'user',
-      approved: isApproved,
+    const [membersSnap, isGlobal] = await Promise.all([
+      membershipColRef(uid).get(),
+      isGlobalAdminUid(uid),
+    ]);
+
+    const tn = {};
+    membersSnap.forEach((d) => {
+      const m = d.data();
+      if (m.status === 'approved') tn[d.id] = m.role || 'user';
     });
+
+    const claims = {};
+    if (isGlobal) claims.superadmin = true;
+    // Mede o tamanho só com `tn` para decidir fallback.
+    const withTn = { ...claims, tn };
+    if (Buffer.byteLength(JSON.stringify(withTn), 'utf8') <= MAX_CLAIM_BYTES) {
+      if (Object.keys(tn).length > 0) claims.tn = tn;
+    } else {
+      claims.tnBig = true; // rules caem no fallback por doc de membership.
+    }
+
+    await admin.auth().setCustomUserClaims(uid, claims);
+    await identityDocRef(uid).set({
+      uid,
+      isGlobalAdmin: !!isGlobal,
+      updatedAt: Date.now(),
+    }, { merge: true });
   } catch (e) {
-    console.error('Falha ao setar customClaims', { uid, tenantId, role, error: e.message });
+    console.error('rebuildIdentityAndClaims falhou', { uid, error: e.message });
   }
 }
 
@@ -917,8 +998,10 @@ exports.onTenantUserCreate = onDocumentCreated(
   async (event) => {
     const data = event.data?.data();
     if (!data) return null;
-    await syncUserClaims(event.params.uid, event.params.tenantId, data.role, data.status);
-    await logAudit(event.params.tenantId, 'CREATE', 'User', `Usuário provisionado: ${data.email}`, event.params.uid, data.id || 'SYSTEM');
+    const { uid, tenantId } = event.params;
+    await upsertMembership(uid, tenantId, data);
+    await rebuildIdentityAndClaims(uid);
+    await logAudit(tenantId, 'CREATE', 'User', `Usuário provisionado: ${data.email}`, uid, data.id || 'SYSTEM');
     return null;
   }
 );
@@ -929,23 +1012,70 @@ exports.onTenantUserUpdate = onDocumentUpdated(
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
     if (!after) return null;
+    const { uid, tenantId } = event.params;
 
     const roleChanged = before?.role !== after.role;
     const statusChanged = before?.status !== after.status;
-    if (roleChanged || statusChanged) {
-      await syncUserClaims(event.params.uid, event.params.tenantId, after.role, after.status);
+    const customRoleChanged = before?.customRoleId !== after.customRoleId;
+    if (roleChanged || statusChanged || customRoleChanged) {
+      await upsertMembership(uid, tenantId, after);
+      await rebuildIdentityAndClaims(uid);
       await logAudit(
-        event.params.tenantId,
+        tenantId,
         'UPDATE',
         'User',
         `Permissões atualizadas: role=${after.role}, status=${after.status}`,
-        event.params.uid,
+        uid,
         after.updatedBy || 'SYSTEM'
       );
     }
     return null;
   }
 );
+
+exports.onTenantUserDelete = onDocumentDeleted(
+  'tenants/{tenantId}/users/{uid}',
+  async (event) => {
+    const { uid, tenantId } = event.params;
+    await removeMembership(uid, tenantId);
+    await rebuildIdentityAndClaims(uid);
+    await logAudit(tenantId, 'DELETE', 'User', `Membership removida do tenant`, uid, 'SYSTEM');
+    return null;
+  }
+);
+
+/**
+ * Backfill idempotente: reconstrói /identities + memberships + claims a partir
+ * dos docs existentes em /tenants/*\/users/* e /system_admins/*. Seguro rodar
+ * várias vezes. Apenas super admin.
+ */
+exports.migrateIdentities = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const db = admin.firestore();
+  const tenantsSnap = await db.collection('tenants').get();
+
+  const touched = new Set();
+  let memberships = 0;
+  for (const t of tenantsSnap.docs) {
+    const usersSnap = await t.ref.collection('users').get();
+    for (const u of usersSnap.docs) {
+      const data = u.data();
+      await upsertMembership(u.id, t.id, data);
+      touched.add(u.id);
+      memberships++;
+    }
+  }
+
+  // system_admins → identidade pode existir sem nenhuma membership de tenant.
+  const adminsSnap = await db.collection('system_admins').get();
+  adminsSnap.forEach((d) => touched.add(d.id));
+
+  for (const uid of touched) {
+    await rebuildIdentityAndClaims(uid);
+  }
+
+  return { identities: touched.size, memberships, tenants: tenantsSnap.size };
+});
 
 /**
  * Resolve quem é o caller e em que tenant ele está, validando que é admin
@@ -1036,9 +1166,10 @@ exports.createTenantUser = onCall(async (request) => {
 
   await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid).set(userDoc);
 
-  // syncUserClaims roda via trigger, mas chamamos aqui para garantir que o token
-  // já esteja válido caso o admin precise impersonate em seguida.
-  await syncUserClaims(uid, tenantId, userDoc.role, userDoc.status);
+  // O trigger onTenantUserCreate também faz isso, mas chamamos síncrono aqui
+  // para garantir identidade + claims válidos no retorno (admin pode agir já).
+  await upsertMembership(uid, tenantId, userDoc);
+  await rebuildIdentityAndClaims(uid);
 
   await logAudit(tenantId, 'CREATE', 'User', `Admin criou usuário ${cleanEmail} (${userDoc.role})`, uid, request.auth.uid);
 
@@ -1073,7 +1204,13 @@ exports.resetTenantUserPassword = onCall(async (request) => {
 });
 
 /**
- * Admin do tenant remove um usuário (Auth + doc).
+ * Admin do tenant remove um usuário DESTE tenant.
+ *
+ * Identidade unificada: o mesmo e-mail pode pertencer a outros tenants e/ou ser
+ * super admin. Por isso só apagamos a conta do Firebase Auth se esta for a
+ * ÚLTIMA membership E o usuário não for super admin. Caso contrário, apenas
+ * removemos a membership deste tenant (o doc delete dispara onTenantUserDelete,
+ * que limpa /identities/{uid}/memberships/{tid} + recomputa claims).
  */
 exports.deleteTenantUser = onCall(async (request) => {
   const { tenantId, callerUid } = await requireTenantAdmin(request);
@@ -1084,16 +1221,28 @@ exports.deleteTenantUser = onCall(async (request) => {
   if (userId === callerUid) {
     throw new HttpsError('failed-precondition', 'Você não pode excluir sua própria conta.');
   }
-  try {
-    await admin.auth().deleteUser(userId);
-  } catch (e) {
-    // Se o usuário já não existe no Auth, segue para apagar o doc.
-    if (e.code !== 'auth/user-not-found') {
-      console.warn('deleteUser auth error:', e.message);
-    }
-  }
+
+  // Remove a membership deste tenant primeiro (dispara o trigger de cleanup).
   await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId).delete();
-  await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId}`, userId, callerUid);
+
+  // Decide se a conta Auth pode ser apagada: só se não restar NENHUM vínculo.
+  const [otherMemberships, isGlobal] = await Promise.all([
+    membershipColRef(userId).get(),
+    isGlobalAdminUid(userId),
+  ]);
+  const remaining = otherMemberships.docs.filter((d) => d.id !== tenantId);
+
+  if (remaining.length === 0 && !isGlobal) {
+    try {
+      await admin.auth().deleteUser(userId);
+      await identityDocRef(userId).delete().catch(() => {});
+    } catch (e) {
+      if (e.code !== 'auth/user-not-found') console.warn('deleteUser auth error:', e.message);
+    }
+    await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId} (conta global excluída)`, userId, callerUid);
+  } else {
+    await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId} deste tenant (conta mantida — outros vínculos)`, userId, callerUid);
+  }
   return { ok: true };
 });
 
@@ -1219,13 +1368,7 @@ exports.createTenant = onCall(async (request) => {
         }
       }
       ownerUid = userRecord.uid;
-      try {
-        await admin.auth().setCustomUserClaims(ownerUid, { tenantId: slug, role: 'admin', approved: true });
-      } catch (e) {
-        console.error('[createTenant] setCustomUserClaims falhou', { uid: ownerUid, code: e.code, message: e.message });
-        throw new HttpsError('internal', `Falha ao setar claims do admin: ${e.message}`);
-      }
-      await tenantRef.collection('users').doc(ownerUid).set({
+      const ownerDoc = {
         id: ownerUid,
         name: ownerName || cleanEmail,
         email: cleanEmail,
@@ -1233,7 +1376,18 @@ exports.createTenant = onCall(async (request) => {
         status: 'approved',
         tenantId: slug,
         createdAt: Date.now(),
-      });
+      };
+      await tenantRef.collection('users').doc(ownerUid).set(ownerDoc);
+      // Espelha membership + recomputa claims. Se o e-mail já era membro de
+      // outros tenants, o rebuild PRESERVA esses acessos (não sobrescreve como
+      // o claim singular legado fazia).
+      try {
+        await upsertMembership(ownerUid, slug, ownerDoc);
+        await rebuildIdentityAndClaims(ownerUid);
+      } catch (e) {
+        console.error('[createTenant] identity/claims falhou', { uid: ownerUid, code: e.code, message: e.message });
+        throw new HttpsError('internal', `Falha ao setar identidade/claims do admin: ${e.message}`);
+      }
       await tenantRef.update({ ownerUserId: ownerUid });
     }
 
@@ -1323,9 +1477,8 @@ exports.addSystemAdmin = onCall(async (request) => {
     addedBy: callerUid,
     addedAt: Date.now(),
   });
-  // Custom claim para fast-path em rules.
-  const existing = (await admin.auth().getUser(targetUid)).customClaims || {};
-  await admin.auth().setCustomUserClaims(targetUid, { ...existing, superadmin: true });
+  // Recomputa identidade + claims (superadmin + memberships preservadas).
+  await rebuildIdentityAndClaims(targetUid);
 
   await logAudit(null, 'CREATE', 'SystemAdmin', `Super admin promoveu ${targetUid} a system admin`, targetUid, callerUid);
   return { uid: targetUid };
@@ -1347,9 +1500,8 @@ exports.removeSystemAdmin = onCall(async (request) => {
   }
 
   await admin.firestore().collection('system_admins').doc(uid).delete();
-  const existing = (await admin.auth().getUser(uid)).customClaims || {};
-  delete existing.superadmin;
-  await admin.auth().setCustomUserClaims(uid, existing);
+  // Recomputa: remove o claim superadmin mas mantém memberships de tenant.
+  await rebuildIdentityAndClaims(uid);
 
   await logAudit(null, 'DELETE', 'SystemAdmin', `Super admin removeu ${uid} dos system admins`, uid, callerUid);
   return { uid };
@@ -2497,14 +2649,26 @@ exports.deleteTenant = onCall(ASAAS_OPTS, async (request) => {
     }
   }
 
-  // 2. Coletar UIDs de usuários do tenant para desativar no Firebase Auth.
+  // 2. Coletar UIDs de usuários do tenant.
   const usersSnap = await tenantRef.collection('users').get();
   const userUids = usersSnap.docs.map(d => d.id);
 
-  // 3. Desativar usuários no Auth (não delete — permite recriação se houver erro).
+  // 3. IDENTIDADE UNIFICADA: desativar no Auth SOMENTE contas sem outro vínculo.
+  // Uma conta compartilhada (mesmo e-mail em outro tenant, ou super admin) NÃO
+  // pode ser desabilitada — isso bloquearia o acesso aos demais ambientes.
+  // (As memberships em /identities/{uid}/memberships são limpas pelos triggers
+  // onTenantUserDelete disparados no recursiveDelete abaixo.)
+  let disabledCount = 0;
   await Promise.all(userUids.map(async (uid) => {
     try {
+      const [membersSnap, isGlobal] = await Promise.all([
+        membershipColRef(uid).get(),
+        isGlobalAdminUid(uid),
+      ]);
+      const hasOtherTenant = membersSnap.docs.some((d) => d.id !== slug);
+      if (hasOtherTenant || isGlobal) return; // mantém a conta — tem outros acessos
       await admin.auth().updateUser(uid, { disabled: true });
+      disabledCount++;
     } catch (e) {
       console.warn(`[deleteTenant] Auth disable ${uid} falhou:`, e.message);
     }
@@ -2530,14 +2694,14 @@ exports.deleteTenant = onCall(ASAAS_OPTS, async (request) => {
     await admin.firestore().collection('system_audit_logs').add({
       action: 'DELETE',
       entity: 'Tenant',
-      details: `HARD delete de "${tenant.name}" (${slug}) — ${userUids.length} usuários, billing=${billing.status || 'none'}.`,
+      details: `HARD delete de "${tenant.name}" (${slug}) — ${userUids.length} usuários (${disabledCount} contas desativadas; demais mantidas por terem outros vínculos), billing=${billing.status || 'none'}.`,
       tenantSlug: slug,
       callerUid,
       timestamp: Date.now(),
     });
   } catch (_) { /* sem coleção é OK */ }
 
-  return { slug, mode, ok: true, usersDisabled: userUids.length };
+  return { slug, mode, ok: true, usersDisabled: disabledCount, usersTotal: userUids.length };
 });
 
 // ============================================================
