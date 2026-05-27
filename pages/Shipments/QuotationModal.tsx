@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Package, MapPin, Calculator, Truck } from 'lucide-react';
+import { Package, MapPin, Calculator, Truck } from 'lucide-react';
+import { ResponsiveModal, ModalSection } from '../../components/ui/responsive-modal';
 import { useNotification } from '../../contexts/NotificationContext';
 import { storage } from '../../services/storage';
 import { AppSettings, ShippingPackage } from '../../types';
@@ -149,28 +149,35 @@ export const QuotationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          
-          <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl z-10 flex flex-col max-h-[90vh]">
-            <div className="flex justify-between items-center p-6 border-b border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center gap-3 text-emerald-500">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                  <Calculator size={20} />
-                </div>
-                <h2 className="text-xl font-black uppercase tracking-tight text-zinc-900 dark:text-white">Cotação Melhor Envio</h2>
-              </div>
-              <button onClick={onClose} className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 md:p-8 overflow-y-auto">
+    <ResponsiveModal
+      open={isOpen}
+      onClose={onClose}
+      size="xl"
+      accent="emerald"
+      title={
+        <span className="flex items-center gap-3 text-emerald-500">
+          <span className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+            <Calculator size={18} />
+          </span>
+          Cotação Melhor Envio
+        </span>
+      }
+      footer={step === 1 ? (
+        <button
+          onClick={handleCalculate}
+          disabled={loading}
+          className="w-full bg-emerald-500 hover:bg-emerald-400 text-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-xs transition-colors disabled:opacity-60"
+        >
+          {loading ? (
+            <div className="flex gap-1 items-center"><Calculator className="animate-pulse" size={18} />Calculando...</div>
+          ) : (
+            <><Calculator size={18} /> Obter Cotação</>
+          )}
+        </button>
+      ) : undefined}
+    >
+      <ModalSection>
               {step === 1 ? (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -277,26 +284,7 @@ export const QuotationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
                   )}
                 </div>
               )}
-            </div>
-
-            {step === 1 && (
-              <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
-                <button 
-                  onClick={handleCalculate}
-                  disabled={loading}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-xs transition-colors"
-                >
-                  {loading ? (
-                    <div className="flex gap-1 items-center"><Calculator className="animate-pulse" size={18} />Calculando...</div>
-                  ) : (
-                    <><Calculator size={18} /> Obter Cotação</>
-                  )}
-                </button>
-              </div>
-            )}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+      </ModalSection>
+    </ResponsiveModal>
   );
 };

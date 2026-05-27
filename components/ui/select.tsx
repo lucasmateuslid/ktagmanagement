@@ -216,7 +216,7 @@ export function Select<V extends string = string>({
                 bottom: rect.openUpward ? window.innerHeight - rect.top : undefined,
                 left: rect.left,
                 width: rect.width,
-                zIndex: 100,
+                zIndex: 4300, /* z-popover — acima de modais (z-modal=4100) p/ não sumir atrás deles */
               }}
               className="rounded-xl border border-white/10 bg-zinc-950/95 backdrop-blur-xl shadow-2xl shadow-black/60 overflow-hidden"
             >

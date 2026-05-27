@@ -1,6 +1,7 @@
 
 import React, { useEffect, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -174,15 +175,18 @@ const AppRouter = () => {
 
 function App() {
   return (
-    <NotificationProvider>
-      <ConnectionProvider>
-        <LanguageProvider>
-          <TenantProvider>
-            <AppRouter />
-          </TenantProvider>
-        </LanguageProvider>
-      </ConnectionProvider>
-    </NotificationProvider>
+    // reducedMotion="user" faz TODO o framer-motion respeitar prefers-reduced-motion (UI-001).
+    <MotionConfig reducedMotion="user">
+      <NotificationProvider>
+        <ConnectionProvider>
+          <LanguageProvider>
+            <TenantProvider>
+              <AppRouter />
+            </TenantProvider>
+          </LanguageProvider>
+        </ConnectionProvider>
+      </NotificationProvider>
+    </MotionConfig>
   );
 }
 

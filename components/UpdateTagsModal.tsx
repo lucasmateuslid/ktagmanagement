@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Tag, Vehicle } from '../types';
-import { fetchTagsLocationBatch } from '../services/api';
-import { db } from '../services/firebase';
-import { doc, updateDoc, collection, setDoc } from 'firebase/firestore';
+import { Tag, Vehicle, LocationHistory } from '../types';
+import { fetchTagsLocationBatch, hasMoved } from '../services/api';
+import { storage } from '../services/storage';
 
 interface UpdateTagsModalProps {
     isOpen: boolean;
@@ -27,8 +26,7 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
     });
 
     const handleUpdate = async () => {
-        const firestoreDb = db;
-        if (isUpdating || tagsToUpdate.length === 0 || !firestoreDb) return;
+        if (isUpdating || tagsToUpdate.length === 0) return;
         setIsUpdating(true);
         setResults([]);
         setProgress(0);
@@ -50,19 +48,13 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
                 const label = v ? `${v.plate} / ${v.model}` : tag?.id || tagId;
 
                 try {
-                    // Atualiza veiculo se existir
+                    // Atualiza veiculo se existir (caminho tenant-aware via storage)
                     if (v) {
-                        const vehicleRef = doc(firestoreDb, 'ktag_vehicles', v.id);
-                        await updateDoc(vehicleRef, { lastPosition: loc });
-                        
-                        // Add history
-                        const histRef = doc(firestoreDb, `ktag_vehicles/${v.id}/history`, Math.random().toString(36).substring(2, 15));
-                        await setDoc(histRef, {
-                            ...loc,
-                            tagId,
-                            vehicleId: v.id,
-                            savedAt: Date.now()
-                        });
+                        // Histórico só quando a posição muda (dedup vs. lastPosition persistido)
+                        if (hasMoved(v.lastPosition, loc as LocationHistory)) {
+                            await storage.appendVehicleHistory(v.id, loc as LocationHistory);
+                        }
+                        await storage.updateVehiclePosition(v.id, loc as LocationHistory);
                     }
 
                     // Se logar sucesso do tag

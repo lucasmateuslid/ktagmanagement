@@ -779,15 +779,29 @@ async function fetchXadtagLocation(tag, settings) {
 }
 
 /**
- * RASTREIO AGENDADO: Atualiza equipamentos a cada 3h.
+ * Distância (em graus) acima da qual consideramos que o veículo se moveu.
+ * ~0.00005° ≈ 5m. Abaixo disso, não gravamos novo ponto de histórico (dedup),
+ * evitando milhares de pontos idênticos de veículos parados.
+ */
+const MOVE_THRESHOLD_DEG = 0.00005;
+
+function hasMoved(prev, next) {
+  if (!next) return false;
+  if (!prev || typeof prev.lat !== 'number' || typeof prev.lon !== 'number') return true;
+  return Math.abs(prev.lat - next.lat) > MOVE_THRESHOLD_DEG || Math.abs(prev.lon - next.lon) > MOVE_THRESHOLD_DEG;
+}
+
+/**
+ * RASTREIO AGENDADO: Atualiza equipamentos a cada 1h.
  *
  * Tenant-aware: itera /tenants/* ativos e, para cada um, lê settings/tags/vehicles
  * do PRÓPRIO tenant. Credenciais K-TAG/XADTAG nunca vazam entre tenants.
  *
- * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write).
- * 3h é confortável até ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
+ * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write +
+ * 1 history write APENAS quando o veículo se moveu). 1h é confortável até
+ * ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
  */
-exports.scheduledTagUpdate = onSchedule("every 3 hours", async (event) => {
+exports.scheduledTagUpdate = onSchedule("every 1 hours", async (event) => {
   const db = admin.firestore();
 
   let totalUpdated = 0;
@@ -859,17 +873,23 @@ async function updateTagsForTenant(db, tenantId) {
 
         if (!vehiclesSnapshot.empty) {
           const vehicleDoc = vehiclesSnapshot.docs[0];
+          const prevPosition = vehicleDoc.data().lastPosition;
+
+          // lastPosition é sempre atualizado (mantém timestamp/bateria frescos).
           await vehicleDoc.ref.update({ lastPosition: locationResult });
 
-          await vehicleDoc.ref.collection('history')
-            .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
-            .set({
-              ...locationResult,
-              tagId: tag.id,
-              vehicleId: vehicleDoc.id,
-              tenantId,
-              savedAt: Date.now()
-            });
+          // Histórico só quando o veículo realmente se moveu (dedup).
+          if (hasMoved(prevPosition, locationResult)) {
+            await vehicleDoc.ref.collection('history')
+              .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
+              .set({
+                ...locationResult,
+                tagId: tag.id,
+                vehicleId: vehicleDoc.id,
+                tenantId,
+                savedAt: Date.now()
+              });
+          }
 
           updatedCount++;
         }

@@ -1,0 +1,34 @@
+/* Estilos exclusivos da landing page (apex domain). Carregados via import
+   na entry da Landing — não vazam para o restante do SPA. */
+
+@keyframes landingFadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.landing-root .animate-fade-up {
+  opacity: 0;
+  animation: landingFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-root .delay-100 { animation-delay: 0.1s; }
+.landing-root .delay-200 { animation-delay: 0.2s; }
+.landing-root .delay-300 { animation-delay: 0.3s; }
+.landing-root .delay-400 { animation-delay: 0.4s; }
+.landing-root .delay-500 { animation-delay: 0.5s; }
+
+.landing-root .landing-glow {
+  position: absolute;
+  width: 600px;
+  height: 400px;
+  background: rgba(245, 166, 35, 0.08);
+  border-radius: 100%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Esconder a barra de rolagem dos elementos internos quando necessário. */
+.landing-root {
+  font-family: 'Inter', system-ui, sans-serif;
+}

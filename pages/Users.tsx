@@ -12,6 +12,7 @@ import { functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DataTable, DataTableColumn } from '../components/ui/basic-data-table';
+import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
@@ -462,15 +463,19 @@ export const Users = () => {
       {clientUsers.length > 0 && renderUserTable(clientUsers, "Acesso de Clientes", <Briefcase size={16} className="text-zinc-400"/>)}
 
       {/* Modal de Usuário */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-8 md:p-10 border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-2xl font-display font-black uppercase tracking-tight">{selectedUser ? 'Editar Acesso' : 'Novo Colaborador'}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X size={24}/></button>
-            </div>
-            
-            <form onSubmit={handleSave} className="space-y-6">
+      <ResponsiveModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        size="md"
+        title={selectedUser ? 'Editar Acesso' : 'Novo Colaborador'}
+        footer={
+          <button type="submit" form="user-form" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
+            <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Gerar Acesso Seguro'}
+          </button>
+        }
+      >
+        <ModalSection>
+            <form id="user-form" onSubmit={handleSave} className="space-y-6">
                 <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-zinc-500">Nome Completo</label>
                     <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:border-primary-500 transition-all font-bold" />
@@ -562,19 +567,13 @@ export const Users = () => {
                     </label>
                 </div>
 
-                <div className="pt-2">
-                    <button type="submit" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
-                        <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Gerar Acesso Seguro'}
-                    </button>
-                </div>
             </form>
-          </div>
-        </div>
-      )}
+        </ModalSection>
+      </ResponsiveModal>
 
       {/* Modal de Credenciais (Sucesso) */}
       {isCredentialsModalOpen && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
             <div className="bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-800 shadow-2xl relative animate-in zoom-in-95">
                 <div className="flex flex-col items-center text-center mb-8">
                     <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-black mb-6 shadow-2xl shadow-emerald-500/30">

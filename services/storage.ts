@@ -275,6 +275,35 @@ export const storage = {
     }
   },
 
+  // Registra um ponto de histórico em /tenants/{tid}/vehicles/{id}/history.
+  // O dedup (gravar só quando há movimento) fica a cargo do chamador via hasMoved().
+  appendVehicleHistory: async (vehicleId: string, location: LocationHistory) => {
+    if (!db) return;
+    try {
+      await addDoc(tenantCollection(`${COLLECTIONS.VEHICLES}/${vehicleId}/history`), {
+        ...location,
+        vehicleId,
+        savedAt: Date.now(),
+      });
+    } catch (e) {
+      console.warn("Falha ao registrar histórico de posição (offline ou erro):", e);
+    }
+  },
+
+  // Lê o histórico de posições de um veículo a partir de um timestamp (epoch ms).
+  getVehicleHistory: async (vehicleId: string, sinceTimestamp: number): Promise<LocationHistory[]> => {
+    if (!db) return [];
+    const snapshot = await getDocs(
+      query(tenantCollection(`${COLLECTIONS.VEHICLES}/${vehicleId}/history`), orderBy('timestamp', 'desc'))
+    );
+    const results: LocationHistory[] = [];
+    snapshot.forEach(doc => {
+      const data = doc.data() as LocationHistory;
+      if (data.timestamp >= sinceTimestamp) results.push(data);
+    });
+    return results;
+  },
+
   subscribeVehicles: (callback: (vehicles: Vehicle[]) => void) => {
     if (!db) return () => {};
     return onSnapshot(tenantCollection(COLLECTIONS.VEHICLES), async (snap) => {
@@ -589,6 +618,20 @@ export const storage = {
       ...tenantSettings,
       customProxyUrl: platform.proxyUrl || tenantSettings.customProxyUrl || '',
     };
+  },
+
+  // Assina o doc de settings DO TENANT em tempo real (logo whitelabel, nome,
+  // anúncio). É a fonte do header (Layout). Sem db, resolve uma vez via getSettings.
+  subscribeSettings: (callback: (s: AppSettings) => void): (() => void) => {
+    if (!db) {
+      storage.getSettings().then(callback).catch(() => callback({} as AppSettings));
+      return () => {};
+    }
+    return onSnapshot(
+      tenantDoc(COLLECTIONS.SETTINGS, 'config'),
+      (snap) => callback(snap.exists() ? (snap.data() as AppSettings) : ({} as AppSettings)),
+      () => callback({} as AppSettings),
+    );
   },
 
   // Subconjunto público (whitelabel/tema) — legível sem auth para pintar
