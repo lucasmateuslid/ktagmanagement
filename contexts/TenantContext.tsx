@@ -5,8 +5,9 @@ import type { Tenant } from '../types';
 import { db } from '../services/firebase';
 import { activeTenant } from '../services/activeTenant';
 import { encryption } from '../services/encryption';
-import { tenantRootDoc } from '../lib/firestore';
-import { getTenantFromHostname, isReservedSlug } from '../utils/tenant';
+import { tenantPublicMetaDoc } from '../lib/firestore';
+import { getTenantFromHostname, isReservedSlug, APEX_TENANT } from '../utils/tenant';
+import { ApexPlaceholder } from '../components/ApexPlaceholder';
 
 interface TenantContextValue {
   tenantId: string;
@@ -19,6 +20,7 @@ interface TenantContextValue {
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 
 const ADMIN_TENANT_SLUG = 'admin';
+const LOCK_TENANT_SLUG = 'lock';
 
 export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   const [tenantId] = useState<string>(() => getTenantFromHostname());
@@ -27,12 +29,21 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
 
   const isAdminPanel = tenantId === ADMIN_TENANT_SLUG;
+  const isApex = tenantId === APEX_TENANT;
+  const isLock = tenantId === LOCK_TENANT_SLUG;
 
   useEffect(() => {
+    // Apex e lock não precisam de boot: nenhum acesso a Firestore, encryption
+    // ou activeTenant. Saem imediatamente do loading.
+    if (isApex || isLock) {
+      setLoading(false);
+      return;
+    }
+
     const boot = async () => {
       try {
         // Slugs reservados não podem existir como tenant real. admin é tratado
-        // à parte (futuro painel super admin); demais reservados resultam em 404.
+        // à parte (painel super admin); demais reservados resultam em 404.
         if (isReservedSlug(tenantId) && !isAdminPanel) {
           setError(`Subdomínio reservado: "${tenantId}"`);
           setLoading(false);
@@ -60,20 +71,24 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
           return;
         }
 
-        const snap = await getDoc(tenantRootDoc(tenantId));
+        // Lê apenas o espelho público (name/active/plan). O root doc carrega
+        // dados sensíveis (billing.asaas*) e é protegido por regra que exige
+        // auth — não pode ser lido aqui no boot pre-login.
+        const snap = await getDoc(tenantPublicMetaDoc(tenantId));
         if (!snap.exists()) {
           setError(`Empresa "${tenantId}" não encontrada.`);
           setLoading(false);
           return;
         }
 
-        const data = { ...snap.data(), id: snap.id } as Tenant;
-        if (data.active === false) {
-          setError(`Empresa "${data.name || tenantId}" está inativa.`);
+        const meta = snap.data() as { name?: string; active?: boolean; plan?: string };
+        if (meta.active === false) {
+          setError(`Empresa "${meta.name || tenantId}" está inativa.`);
           setLoading(false);
           return;
         }
 
+        const data = { id: tenantId, slug: tenantId, name: meta.name || tenantId, plan: meta.plan || 'basic', active: true } as Tenant;
         activeTenant.set(tenantId, data);
         setTenant(data);
       } catch (e: any) {
@@ -84,7 +99,20 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
       }
     };
     boot();
-  }, [tenantId, isAdminPanel]);
+  }, [tenantId, isAdminPanel, isApex, isLock]);
+
+  if (isApex) {
+    return <ApexPlaceholder />;
+  }
+
+  if (isLock) {
+    return (
+      <TenantNotFound
+        message="Esta área é gerenciada por uma instância externa."
+        tenantId={tenantId}
+      />
+    );
+  }
 
   if (loading) {
     return (

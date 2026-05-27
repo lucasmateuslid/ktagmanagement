@@ -1,7 +1,7 @@
 {
   "name": "ktag-manager-pro",
   "private": true,
-  "version": "1.0.0",
+  "version": "5.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -20,9 +20,11 @@
     "cors": "^2.8.6",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "file-saver": "^2.0.5",
     "firebase": "^10.14.1",
     "framer-motion": "^11.0.8",
+    "helmet": "^8.1.0",
     "html5-qrcode": "^2.3.8",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
@@ -37,9 +39,11 @@
     "react-router-dom": "^6.22.3",
     "recharts": "^2.12.3",
     "tailwind-merge": "^2.2.1",
+    "tsx": "^4.22.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/file-saver": "^2.0.7",
@@ -51,8 +55,12 @@
     "firebase-admin": "^13.10.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
-    "tsx": "^4.22.0",
     "typescript": "^5.2.2",
     "vite": "^7.3.0"
+  },
+  "overrides": {
+    "undici": "^6.25.0",
+    "http-proxy-agent": "^7.0.2",
+    "@tootallnate/once": "^3.0.1"
   }
 }

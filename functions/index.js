@@ -5,43 +5,128 @@
  */
 
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentCreated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
+const dns = require("node:dns").promises;
+const net = require("node:net");
 const asaas = require("./asaas");
+
+// ---------- SSRF GUARD (mirror do server.ts) ----------
+const PROXY_ALLOWED_HOSTS = new Set(
+  (process.env.PROXY_ALLOWED_HOSTS || '')
+    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+);
+function _isPrivateIPv4(ip) {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const a = +m[1], b = +m[2];
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a >= 224) return true;
+  return false;
+}
+function _isPrivateIPv6(ip) {
+  const low = String(ip).toLowerCase();
+  if (low === '::1' || low === '::') return true;
+  if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return true;
+  if (low.startsWith('::ffff:')) {
+    const v4 = low.slice('::ffff:'.length);
+    if (net.isIPv4(v4)) return _isPrivateIPv4(v4);
+  }
+  return false;
+}
+async function assertProxyTargetAllowed(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { throw new Error('URL inválida.'); }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error(`Protocolo não permitido: ${u.protocol}`);
+  if (u.username || u.password) throw new Error('URL com credenciais embutidas não é permitida.');
+  const host = u.hostname.toLowerCase();
+  if (PROXY_ALLOWED_HOSTS.size > 0) {
+    const ok = [...PROXY_ALLOWED_HOSTS].some(h => host === h || host.endsWith('.' + h));
+    if (!ok) throw new Error(`Host não permitido: ${host}`);
+  }
+  if (['metadata.google.internal', 'metadata', 'instance-data', 'metadata.goog'].includes(host)) {
+    throw new Error('Host de metadados bloqueado.');
+  }
+  if (net.isIP(host)) {
+    if (net.isIPv4(host) ? _isPrivateIPv4(host) : _isPrivateIPv6(host)) {
+      throw new Error(`IP privado/reservado bloqueado: ${host}`);
+    }
+    return u;
+  }
+  let addrs;
+  try { addrs = await dns.lookup(host, { all: true }); } catch { throw new Error(`Falha ao resolver host: ${host}`); }
+  for (const a of (Array.isArray(addrs) ? addrs : [addrs])) {
+    const bad = a.family === 6 ? _isPrivateIPv6(a.address) : _isPrivateIPv4(a.address);
+    if (bad) throw new Error(`Host resolve para IP privado/reservado (${a.address}).`);
+  }
+  return u;
+}
 
 // Secrets — set with: firebase functions:secrets:set <NAME>
 const ASAAS_API_KEY = defineSecret("ASAAS_API_KEY");
 const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
-const cors = require("cors")({ 
-  origin: true, 
+// VAPID keys também via Secret Manager. Configurar com:
+//   firebase functions:secrets:set VAPID_PUBLIC_KEY
+//   firebase functions:secrets:set VAPID_PRIVATE_KEY
+const VAPID_PUBLIC_KEY = defineSecret("VAPID_PUBLIC_KEY");
+const VAPID_PRIVATE_KEY = defineSecret("VAPID_PRIVATE_KEY");
+// CORS: em produção, só aceita ktagfinder.app e seus subdomínios.
+// Localhost continua liberado para dev. server-to-server (sem origin) também.
+// Override via ALLOWED_ORIGIN_OVERRIDE=true mantém compat com integrações
+// pontuais (ex.: testes manuais) — usar com cuidado.
+const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (process.env.ALLOWED_ORIGIN_OVERRIDE === 'true') return cb(null, true);
+    if (ALLOWED_ORIGIN_PATTERN.test(origin)) return cb(null, true);
+    if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+      return cb(null, true);
+    }
+    return cb(new Error(`Origin não permitida: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'api_token', 'timestamp', 'Authorization', 'x-goog-api-key', 'x-goog-api-client', 'x-goog-user-project']
-});
+};
+const cors = require("cors")(corsOptions);
 const webpush = require("web-push");
 
 // Inicializa o Admin SDK se ainda não estiver inicializado
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
+// Aceitar `undefined` em writes do Firestore como "campo ausente" em vez de erro.
+admin.firestore().settings({ ignoreUndefinedProperties: true });
 
 // --- CONFIGURAÇÃO VAPID (PUSH NOTIFICATIONS) ---
-const vapidKeys = {
-  publicKey: "BPeLenAfveHRZomoae7lEJgkVXoV40wiqGYiaDg6itNL6t-0HzhyVS_LkP13BDgy-UVUB0ctKde-e3aPdT3xn9o", 
-  privateKey: "7U_Yyn_NkWjIt8IyjjydcwkcNOP5p6a9b1YqBAwqEEY"
-};
-
-try {
+// Chaves VAPID vêm do Secret Manager. Funções que enviam push devem declarar
+// { secrets: VAPID_SECRETS } e chamar configureWebPush() antes de usar webpush.
+// Why: a chave PRIVADA NUNCA pode ficar no source — quem tem a privada pode
+// enviar push como se fosse a aplicação, fazendo phishing direto no usuário.
+const VAPID_SECRETS = [VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY];
+let _vapidConfigured = false;
+function configureWebPush() {
+  if (_vapidConfigured) return;
+  const pub = VAPID_PUBLIC_KEY.value();
+  const priv = VAPID_PRIVATE_KEY.value();
+  if (!pub || !priv) {
+    console.warn("VAPID secrets ausentes — push notifications desabilitadas.");
+    return;
+  }
   webpush.setVapidDetails(
-    "mailto:admin@ktag.com.br", 
-    vapidKeys.publicKey,
-    vapidKeys.privateKey
+    process.env.VAPID_CONTACT || "mailto:admin@ktag.com.br",
+    pub,
+    priv,
   );
-} catch (e) {
-  console.warn("VAPID Keys not configured properly.");
+  _vapidConfigured = true;
 }
 
 // --- HELPERS TENANT-AWARE ---
@@ -77,6 +162,7 @@ async function getUserInfo(tenantId, userId) {
 
 async function sendNotificationToUser(tenantId, userId, payload) {
   try {
+    configureWebPush();
     // push_subscriptions é flat; filtra por userId + tenantId.
     const subscriptionsSnapshot = await admin.firestore()
       .collection('push_subscriptions')
@@ -117,6 +203,7 @@ async function sendNotificationToPref(tenantId, prefKey, payload, excludeUserId 
     return;
   }
   try {
+    configureWebPush();
     const usersSnapshot = await admin.firestore()
       .collection('tenants').doc(tenantId)
       .collection('users').get();
@@ -164,6 +251,96 @@ async function sendNotificationToPref(tenantId, prefKey, payload, excludeUserId 
     await Promise.all(notifications);
   } catch (error) {
     console.error(`Error sending notification for pref ${prefKey} (${tenantId}):`, error);
+  }
+}
+
+/**
+ * Constrói o payload de push para eventos de billing.
+ * Retorna null para eventos que não merecem notificação.
+ */
+function buildBillingPushPayload(event, payment) {
+  const raw = Number(payment.value || 0);
+  const value = raw > 0
+    ? `R$ ${raw.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
+  switch (event) {
+    case 'PAYMENT_RECEIVED':
+    case 'PAYMENT_CONFIRMED':
+      return {
+        title: 'Pagamento confirmado',
+        body: value ? `Recebemos o pagamento de ${value}.` : 'Seu pagamento foi confirmado.',
+        url: '/#/billing',
+      };
+    case 'PAYMENT_OVERDUE':
+      return {
+        title: 'Fatura em atraso',
+        body: value
+          ? `Há uma fatura de ${value} em aberto. Regularize para evitar suspensão.`
+          : 'Você tem uma fatura em atraso.',
+        url: '/#/billing',
+      };
+    case 'PAYMENT_CREATED':
+      return {
+        title: 'Nova fatura disponível',
+        body: value ? `Uma nova fatura de ${value} foi gerada.` : 'Uma nova fatura está disponível.',
+        url: '/#/billing',
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Envia push apenas para usuários admin/admin_tecnico do tenant que não
+ * desativaram a preferência 'billingUpdates'.
+ *
+ * Não lança exceção — falha silenciosa para não bloquear o webhook.
+ */
+async function sendBillingPushToAdmins(tenantId, payload) {
+  if (!tenantId || !payload) return;
+  try {
+    configureWebPush();
+    const usersSnap = await admin.firestore()
+      .collection('tenants').doc(tenantId)
+      .collection('users')
+      .where('role', 'in', ['admin', 'admin_tecnico'])
+      .get();
+
+    const targetIds = [];
+    usersSnap.forEach(doc => {
+      const user = doc.data();
+      const prefs = user.notificationPreferences || {};
+      if (prefs.billingUpdates !== false) targetIds.push(user.id);
+    });
+
+    if (targetIds.length === 0) return;
+
+    const subsSnap = await admin.firestore()
+      .collection('push_subscriptions')
+      .where('tenantId', '==', tenantId)
+      .get();
+
+    const pushPayload = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.url || '/#/billing',
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
+    });
+
+    const sends = [];
+    subsSnap.forEach(doc => {
+      if (!targetIds.includes(doc.data().userId)) return;
+      const sub = doc.data().subscription;
+      sends.push(
+        webpush.sendNotification(sub, pushPayload).catch(err => {
+          if (err.statusCode === 410 || err.statusCode === 404) return doc.ref.delete();
+        })
+      );
+    });
+
+    await Promise.all(sends);
+  } catch (e) {
+    console.error(`sendBillingPushToAdmins(${tenantId}):`, e);
   }
 }
 
@@ -215,63 +392,64 @@ exports.proxyApi = onRequest((req, res) => {
     }
 
     // 2. Extract Data from Request Body
-    const { url, method, headers, body } = req.body;
+    const { url, method, headers, body } = req.body || {};
 
-    if (!url) {
+    if (!url || typeof url !== 'string') {
       res.status(400).send({ error: "Missing 'url' in request body" });
       return;
     }
-
-    console.log(`Proxying request to: ${url}`);
-
-    // Sanitize Headers & Inject User-Agent
-    const safeHeaders = { ...headers };
-    
-    // Remove headers que causam problemas em repasse
-    delete safeHeaders['host'];
-    delete safeHeaders['content-length'];
-    delete safeHeaders['connection'];
-    delete safeHeaders['origin'];
-    delete safeHeaders['referer'];
-    delete safeHeaders['accept-encoding']; // Importante: Deixa o axios/node negociar a compressão
-
-    // Mimetiza um navegador real para evitar bloqueios de API (Essencial para Hinova/SGA)
-    if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
-        safeHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    if (url.length > 2048) {
+      res.status(400).send({ error: "URL muito longa." });
+      return;
     }
 
+    // SSRF guard: bloqueia metadata, loopback, RFC1918, link-local, ULA + DNS rebinding.
+    let target;
+    try { target = await assertProxyTargetAllowed(url); }
+    catch (e) {
+      console.warn('[Proxy] target rejected:', e.message, 'url=', url);
+      res.status(403).send({ error: `Proxy bloqueado: ${e.message}` });
+      return;
+    }
+
+    const ALLOWED = new Set([
+      'authorization', 'content-type', 'accept', 'apikey', 'api_token',
+      'timestamp', 'user-agent', 'x-api-key',
+    ]);
+    const safeHeaders = {};
+    if (headers && typeof headers === 'object') {
+      for (const [k, v] of Object.entries(headers)) {
+        if (ALLOWED.has(k.toLowerCase()) && typeof v === 'string') safeHeaders[k] = v;
+      }
+    }
+    if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
+      safeHeaders['User-Agent'] = process.env.PROXY_USER_AGENT || 'KTagManagerPro-Proxy/1.0';
+    }
+    const safeMethod = (typeof method === 'string' && /^(GET|POST|PUT|PATCH|DELETE|HEAD)$/i.test(method))
+      ? method.toUpperCase() : 'GET';
+
     try {
-      // 3. Make the Request using Axios
       const response = await axios({
-        url: url,
-        method: method || 'GET',
-        headers: safeHeaders, 
-        data: body || undefined,
-        validateStatus: () => true, // Permite capturar erros 4xx/5xx sem throw
-        timeout: 25000 // Aumentado para APIs lentas
+        url: target.toString(),
+        method: safeMethod,
+        headers: safeHeaders,
+        data: (safeMethod === 'GET' || safeMethod === 'HEAD') ? undefined : (body || undefined),
+        validateStatus: () => true,
+        timeout: 15000,
+        maxRedirects: 0,                  // não seguir redirects (mitiga SSRF via Location)
+        maxContentLength: 5 * 1024 * 1024, // 5MB
+        maxBodyLength: 1 * 1024 * 1024,    // 1MB
       });
-
-      // Repassa dados e status exatos
       res.status(response.status).send(response.data);
-
     } catch (error) {
-      console.error("[Proxy Error]", error.message, url);
-      
-      const status = error.response ? error.response.status : 500;
+      console.error("[Proxy Error]", error.message);
+      const status = error.response ? error.response.status : 502;
       const message = error.response ? error.response.data : error.message;
-      
       let errorMsg = message;
       if (typeof message === 'object') {
-        try {
-          errorMsg = JSON.stringify(message);
-        } catch (e) {
-          errorMsg = String(message);
-        }
+        try { errorMsg = JSON.stringify(message); } catch (e) { errorMsg = String(message); }
       }
-      res.status(status).json({ 
-          error: errorMsg,
-          proxyError: true 
-      });
+      res.status(status).json({ error: errorMsg, proxyError: true });
     }
   });
 });
@@ -310,7 +488,7 @@ async function logAudit(tenantId, action, entity, details, entityId = null, user
  * TRIGGER AUTOMÁTICO: Criação de Agendamento
  */
 exports.onScheduleCreate = onDocumentCreated(
-  'tenants/{tenantId}/schedules/{scheduleId}',
+  { document: 'tenants/{tenantId}/schedules/{scheduleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const schedule = event.data.data();
     if (!schedule) return null;
@@ -343,7 +521,7 @@ exports.onScheduleCreate = onDocumentCreated(
  * TRIGGER AUTOMÁTICO: Atualização de Status de Agendamento
  */
 exports.onScheduleUpdate = onDocumentUpdated(
-  'tenants/{tenantId}/schedules/{scheduleId}',
+  { document: 'tenants/{tenantId}/schedules/{scheduleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
@@ -442,7 +620,7 @@ exports.onScheduleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Atualização de Veículo (Roubo)
  */
 exports.onVehicleUpdate = onDocumentUpdated(
-  'tenants/{tenantId}/vehicles/{vehicleId}',
+  { document: 'tenants/{tenantId}/vehicles/{vehicleId}', secrets: VAPID_SECRETS },
   async (event) => {
     const newData = event.data.after.data();
     const previousData = event.data.before.data();
@@ -476,7 +654,7 @@ exports.onVehicleUpdate = onDocumentUpdated(
  * TRIGGER AUTOMÁTICO: Criação de Feedback/Comentário
  */
 exports.onFeedbackCreate = onDocumentCreated(
-  'tenants/{tenantId}/feedbacks/{feedbackId}',
+  { document: 'tenants/{tenantId}/feedbacks/{feedbackId}', secrets: VAPID_SECRETS },
   async (event) => {
     const feedback = event.data.data();
     if (!feedback) return null;
@@ -601,15 +779,29 @@ async function fetchXadtagLocation(tag, settings) {
 }
 
 /**
- * RASTREIO AGENDADO: Atualiza equipamentos a cada 3h.
+ * Distância (em graus) acima da qual consideramos que o veículo se moveu.
+ * ~0.00005° ≈ 5m. Abaixo disso, não gravamos novo ponto de histórico (dedup),
+ * evitando milhares de pontos idênticos de veículos parados.
+ */
+const MOVE_THRESHOLD_DEG = 0.00005;
+
+function hasMoved(prev, next) {
+  if (!next) return false;
+  if (!prev || typeof prev.lat !== 'number' || typeof prev.lon !== 'number') return true;
+  return Math.abs(prev.lat - next.lat) > MOVE_THRESHOLD_DEG || Math.abs(prev.lon - next.lon) > MOVE_THRESHOLD_DEG;
+}
+
+/**
+ * RASTREIO AGENDADO: Atualiza equipamentos a cada 1h.
  *
  * Tenant-aware: itera /tenants/* ativos e, para cada um, lê settings/tags/vehicles
  * do PRÓPRIO tenant. Credenciais K-TAG/XADTAG nunca vazam entre tenants.
  *
- * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write).
- * 3h é confortável até ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
+ * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write +
+ * 1 history write APENAS quando o veículo se moveu). 1h é confortável até
+ * ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
  */
-exports.scheduledTagUpdate = onSchedule("every 3 hours", async (event) => {
+exports.scheduledTagUpdate = onSchedule("every 1 hours", async (event) => {
   const db = admin.firestore();
 
   let totalUpdated = 0;
@@ -681,17 +873,23 @@ async function updateTagsForTenant(db, tenantId) {
 
         if (!vehiclesSnapshot.empty) {
           const vehicleDoc = vehiclesSnapshot.docs[0];
+          const prevPosition = vehicleDoc.data().lastPosition;
+
+          // lastPosition é sempre atualizado (mantém timestamp/bateria frescos).
           await vehicleDoc.ref.update({ lastPosition: locationResult });
 
-          await vehicleDoc.ref.collection('history')
-            .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
-            .set({
-              ...locationResult,
-              tagId: tag.id,
-              vehicleId: vehicleDoc.id,
-              tenantId,
-              savedAt: Date.now()
-            });
+          // Histórico só quando o veículo realmente se moveu (dedup).
+          if (hasMoved(prevPosition, locationResult)) {
+            await vehicleDoc.ref.collection('history')
+              .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
+              .set({
+                ...locationResult,
+                tagId: tag.id,
+                vehicleId: vehicleDoc.id,
+                tenantId,
+                savedAt: Date.now()
+              });
+          }
 
           updatedCount++;
         }
@@ -711,26 +909,107 @@ async function updateTagsForTenant(db, tenantId) {
 // Multi-tenant: sync de custom claims + admin user provisioning
 // ============================================================
 
+// ------------------------------------------------------------------
+// UNIFIED IDENTITY MODEL
+// ------------------------------------------------------------------
+// Um mesmo e-mail (= um único Firebase UID no projeto) pode ser membro de
+// vários tenants E/OU super admin da plataforma. As fontes da verdade são:
+//
+//   /tenants/{tid}/users/{uid}            → registro operacional por-tenant
+//                                           (escrito pelo app/admin; criptografa name/cpf)
+//   /system_admins/{uid}                  → flag de super admin global
+//
+// Derivados, mantidos SOMENTE por estas funções (Admin SDK; rules = read-only):
+//
+//   /identities/{uid}                     → { uid, email, isGlobalAdmin, disabled, updatedAt }
+//   /identities/{uid}/memberships/{tid}   → { uid, tenantId, role, status, customRoleId?, email }
+//
+// Custom claims (= "JWT payload") — REPLACE em cada rebuild, fonte única:
+//   { superadmin?: true, tn?: { [tid]: role }, tnBig?: true }
+//   `tn` só inclui memberships APROVADOS. `superadmin` é poder de PAINEL —
+//   as rules NÃO o usam para liberar dados operacionais de tenant (isolamento).
+//   Limite de claims do Firebase ≈ 1000 bytes: se `tn` estourar, omitimos e
+//   marcamos tnBig=true; as rules então caem no fallback por doc de membership.
+
+const MAX_CLAIM_BYTES = 900; // margem sob o teto de 1000 bytes do Firebase.
+
+function identityDocRef(uid) {
+  return admin.firestore().collection('identities').doc(uid);
+}
+function membershipColRef(uid) {
+  return identityDocRef(uid).collection('memberships');
+}
+
+async function isGlobalAdminUid(uid) {
+  const snap = await admin.firestore().collection('system_admins').doc(uid).get();
+  return snap.exists;
+}
+
 /**
- * Sincroniza customClaims do Firebase Auth com o doc do usuário no tenant.
- * Roda em CREATE e UPDATE de /tenants/{tenantId}/users/{uid}.
- *
- * Por que precisa: as Firestore Rules e qualquer middleware server-side
- * usam request.auth.token.tenantId / token.role como atalho barato (sem
- * get() do user doc a cada read). Este trigger mantém o token sincronizado
- * com o estado canônico do banco.
+ * Espelha o registro de tenant para a camada de identidade. Não toca claims —
+ * o caller deve chamar rebuildIdentityAndClaims(uid) em seguida.
  */
-async function syncUserClaims(uid, tenantId, role, status) {
+async function upsertMembership(uid, tenantId, data) {
   if (!uid || !tenantId) return;
+  const email = (data.email || '').toLowerCase();
+  await identityDocRef(uid).set({
+    uid,
+    email,
+    updatedAt: Date.now(),
+  }, { merge: true });
+  await membershipColRef(uid).doc(tenantId).set({
+    uid,
+    tenantId,
+    role: data.role || 'user',
+    status: data.status || 'pending',
+    customRoleId: data.customRoleId || null,
+    email,
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+async function removeMembership(uid, tenantId) {
+  if (!uid || !tenantId) return;
+  await membershipColRef(uid).doc(tenantId).delete().catch(() => {});
+}
+
+/**
+ * Recomputa /identities/{uid}.isGlobalAdmin + custom claims a partir de TODAS
+ * as memberships + system_admins. Fonte única que faz setCustomUserClaims
+ * (REPLACE), então limpa claims legadas {tenantId, role, approved} no processo.
+ */
+async function rebuildIdentityAndClaims(uid) {
+  if (!uid) return;
   try {
-    const isApproved = status === 'approved';
-    await admin.auth().setCustomUserClaims(uid, {
-      tenantId,
-      role: role || 'user',
-      approved: isApproved,
+    const [membersSnap, isGlobal] = await Promise.all([
+      membershipColRef(uid).get(),
+      isGlobalAdminUid(uid),
+    ]);
+
+    const tn = {};
+    membersSnap.forEach((d) => {
+      const m = d.data();
+      if (m.status === 'approved') tn[d.id] = m.role || 'user';
     });
+
+    const claims = {};
+    if (isGlobal) claims.superadmin = true;
+    // Mede o tamanho só com `tn` para decidir fallback.
+    const withTn = { ...claims, tn };
+    if (Buffer.byteLength(JSON.stringify(withTn), 'utf8') <= MAX_CLAIM_BYTES) {
+      if (Object.keys(tn).length > 0) claims.tn = tn;
+    } else {
+      claims.tnBig = true; // rules caem no fallback por doc de membership.
+    }
+
+    await admin.auth().setCustomUserClaims(uid, claims);
+    await identityDocRef(uid).set({
+      uid,
+      isGlobalAdmin: !!isGlobal,
+      updatedAt: Date.now(),
+    }, { merge: true });
   } catch (e) {
-    console.error('Falha ao setar customClaims', { uid, tenantId, role, error: e.message });
+    console.error('rebuildIdentityAndClaims falhou', { uid, error: e.message });
   }
 }
 
@@ -739,8 +1018,10 @@ exports.onTenantUserCreate = onDocumentCreated(
   async (event) => {
     const data = event.data?.data();
     if (!data) return null;
-    await syncUserClaims(event.params.uid, event.params.tenantId, data.role, data.status);
-    await logAudit(event.params.tenantId, 'CREATE', 'User', `Usuário provisionado: ${data.email}`, event.params.uid, data.id || 'SYSTEM');
+    const { uid, tenantId } = event.params;
+    await upsertMembership(uid, tenantId, data);
+    await rebuildIdentityAndClaims(uid);
+    await logAudit(tenantId, 'CREATE', 'User', `Usuário provisionado: ${data.email}`, uid, data.id || 'SYSTEM');
     return null;
   }
 );
@@ -751,23 +1032,200 @@ exports.onTenantUserUpdate = onDocumentUpdated(
     const after = event.data?.after?.data();
     const before = event.data?.before?.data();
     if (!after) return null;
+    const { uid, tenantId } = event.params;
 
     const roleChanged = before?.role !== after.role;
     const statusChanged = before?.status !== after.status;
-    if (roleChanged || statusChanged) {
-      await syncUserClaims(event.params.uid, event.params.tenantId, after.role, after.status);
+    const customRoleChanged = before?.customRoleId !== after.customRoleId;
+    if (roleChanged || statusChanged || customRoleChanged) {
+      await upsertMembership(uid, tenantId, after);
+      await rebuildIdentityAndClaims(uid);
       await logAudit(
-        event.params.tenantId,
+        tenantId,
         'UPDATE',
         'User',
         `Permissões atualizadas: role=${after.role}, status=${after.status}`,
-        event.params.uid,
+        uid,
         after.updatedBy || 'SYSTEM'
       );
     }
     return null;
   }
 );
+
+exports.onTenantUserDelete = onDocumentDeleted(
+  'tenants/{tenantId}/users/{uid}',
+  async (event) => {
+    const { uid, tenantId } = event.params;
+    await removeMembership(uid, tenantId);
+    await rebuildIdentityAndClaims(uid);
+    await logAudit(tenantId, 'DELETE', 'User', `Membership removida do tenant`, uid, 'SYSTEM');
+    return null;
+  }
+);
+
+/**
+ * Backfill idempotente: reconstrói /identities + memberships + claims a partir
+ * dos docs existentes em /tenants/*\/users/* e /system_admins/*. Seguro rodar
+ * várias vezes. Apenas super admin.
+ */
+exports.migrateIdentities = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const db = admin.firestore();
+  const tenantsSnap = await db.collection('tenants').get();
+
+  const touched = new Set();
+  let memberships = 0;
+  for (const t of tenantsSnap.docs) {
+    const usersSnap = await t.ref.collection('users').get();
+    for (const u of usersSnap.docs) {
+      const data = u.data();
+      await upsertMembership(u.id, t.id, data);
+      touched.add(u.id);
+      memberships++;
+    }
+  }
+
+  // system_admins → identidade pode existir sem nenhuma membership de tenant.
+  const adminsSnap = await db.collection('system_admins').get();
+  adminsSnap.forEach((d) => touched.add(d.id));
+
+  for (const uid of touched) {
+    await rebuildIdentityAndClaims(uid);
+  }
+
+  return { identities: touched.size, memberships, tenants: tenantsSnap.size };
+});
+
+// ------------------------------------------------------------------
+// SUPER ADMIN — gestão de ACESSOS (memberships cross-tenant)
+// ------------------------------------------------------------------
+// Permite ao super admin conceder/revogar acesso de qualquer e-mail a qualquer
+// tenant e consultar os vínculos de um e-mail. Escrever /tenants/{tid}/users/{uid}
+// dispara os triggers que mantêm /identities + claims em sincronia.
+
+// Papéis concedíveis no escopo de um tenant. 'superadmin' NÃO entra aqui — é
+// gerido por addSystemAdmin/removeSystemAdmin (poder de painel, separado).
+const GRANTABLE_TENANT_ROLES = new Set([
+  'admin', 'admin_tecnico', 'moderator', 'user', 'technician', 'client',
+]);
+
+/** Consulta vínculos (memberships) + flag de super admin de um e-mail. */
+exports.superAdminLookupIdentity = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  if (!email) throw new HttpsError('invalid-argument', 'email é obrigatório.');
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found') return { found: false, email };
+    throw new HttpsError('internal', `Falha ao buscar e-mail: ${e.message}`);
+  }
+  const uid = userRecord.uid;
+  const [membersSnap, isGlobal] = await Promise.all([
+    membershipColRef(uid).get(),
+    isGlobalAdminUid(uid),
+  ]);
+  const memberships = membersSnap.docs.map((d) => {
+    const m = d.data();
+    return { tenantId: d.id, role: m.role || 'user', status: m.status || 'pending' };
+  });
+  return {
+    found: true,
+    uid,
+    email: userRecord.email || email,
+    disabled: !!userRecord.disabled,
+    isGlobalAdmin: isGlobal,
+    memberships,
+  };
+});
+
+/**
+ * Concede (ou atualiza o papel de) acesso de um e-mail a um tenant.
+ * Cria a conta no Firebase Auth se ainda não existir (retorna senha temporária).
+ */
+exports.superAdminGrantMembership = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  const tenantId = String(request.data?.tenantId || '').toLowerCase().trim();
+  const role = String(request.data?.role || 'user');
+  const name = request.data?.name ? String(request.data.name) : '';
+
+  if (!email || !tenantId) throw new HttpsError('invalid-argument', 'email e tenantId são obrigatórios.');
+  if (!GRANTABLE_TENANT_ROLES.has(role)) {
+    throw new HttpsError('invalid-argument', `Papel inválido: ${role}.`);
+  }
+  const tenantSnap = await admin.firestore().collection('tenants').doc(tenantId).get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${tenantId} não encontrado.`);
+
+  // Resolve/cria a conta no Auth.
+  let userRecord;
+  let created = false;
+  let tempPassword = null;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') {
+      throw new HttpsError('internal', `Falha ao buscar e-mail: ${e.message}`);
+    }
+    tempPassword = generateRandomPassword();
+    try {
+      userRecord = await admin.auth().createUser({ email, password: tempPassword, displayName: name || email });
+      created = true;
+    } catch (ce) {
+      if (ce.code === 'auth/invalid-email') throw new HttpsError('invalid-argument', 'E-mail inválido.');
+      throw new HttpsError('internal', `Falha ao criar usuário: ${ce.message}`);
+    }
+  }
+  const uid = userRecord.uid;
+
+  const ref = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid);
+  const existing = await ref.get();
+  const userDoc = {
+    id: uid,
+    email,
+    name: name || email, // plaintext OK: encryption.decrypt devolve o original p/ não-ciphertext.
+    role,
+    status: 'approved',
+    tenantId,
+    updatedBy: callerUid,
+  };
+  if (!existing.exists) userDoc.createdAt = Date.now();
+  await ref.set(userDoc, { merge: true });
+
+  // Síncrono p/ claims já válidas no retorno (o trigger também roda, idempotente).
+  await upsertMembership(uid, tenantId, userDoc);
+  await rebuildIdentityAndClaims(uid);
+
+  await logAudit(tenantId, existing.exists ? 'UPDATE' : 'CREATE', 'User',
+    `Super admin ${existing.exists ? 'alterou papel de' : 'concedeu acesso a'} ${email} (${role})`, uid, callerUid);
+
+  return { uid, email, tenantId, role, created, tempPassword };
+});
+
+/** Revoga o acesso de um e-mail a um tenant. NÃO apaga a conta global. */
+exports.superAdminRevokeMembership = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const tenantId = String(request.data?.tenantId || '').toLowerCase().trim();
+  let uid = request.data?.uid ? String(request.data.uid) : '';
+  const email = String(request.data?.email || '').toLowerCase().trim();
+  if (!tenantId || (!uid && !email)) {
+    throw new HttpsError('invalid-argument', 'tenantId e (uid ou email) são obrigatórios.');
+  }
+  if (!uid && email) {
+    try { uid = (await admin.auth().getUserByEmail(email)).uid; }
+    catch (e) { throw new HttpsError('not-found', 'Usuário não encontrado.'); }
+  }
+  // Apaga só o doc do tenant — onTenantUserDelete limpa a membership + claims.
+  // A conta Auth é preservada (pode ter outros vínculos / ser super admin).
+  await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid).delete();
+  await removeMembership(uid, tenantId);
+  await rebuildIdentityAndClaims(uid);
+  await logAudit(tenantId, 'DELETE', 'User', `Super admin revogou acesso de ${email || uid}`, uid, callerUid);
+  return { ok: true, uid, tenantId };
+});
 
 /**
  * Resolve quem é o caller e em que tenant ele está, validando que é admin
@@ -795,10 +1253,13 @@ async function requireTenantAdmin(request) {
 }
 
 function generateRandomPassword() {
+  // CSPRNG via Node crypto. Math.random() é previsível e NÃO deve ser usado
+  // para gerar senhas/tokens — qualquer dump de timing aproximado revela a sementinha.
+  const { randomInt } = require('node:crypto');
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz!@#$%';
   let result = '';
-  for (let i = 0; i < 14; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 16; i++) {
+    result += chars.charAt(randomInt(0, chars.length));
   }
   return result;
 }
@@ -855,9 +1316,10 @@ exports.createTenantUser = onCall(async (request) => {
 
   await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(uid).set(userDoc);
 
-  // syncUserClaims roda via trigger, mas chamamos aqui para garantir que o token
-  // já esteja válido caso o admin precise impersonate em seguida.
-  await syncUserClaims(uid, tenantId, userDoc.role, userDoc.status);
+  // O trigger onTenantUserCreate também faz isso, mas chamamos síncrono aqui
+  // para garantir identidade + claims válidos no retorno (admin pode agir já).
+  await upsertMembership(uid, tenantId, userDoc);
+  await rebuildIdentityAndClaims(uid);
 
   await logAudit(tenantId, 'CREATE', 'User', `Admin criou usuário ${cleanEmail} (${userDoc.role})`, uid, request.auth.uid);
 
@@ -892,7 +1354,13 @@ exports.resetTenantUserPassword = onCall(async (request) => {
 });
 
 /**
- * Admin do tenant remove um usuário (Auth + doc).
+ * Admin do tenant remove um usuário DESTE tenant.
+ *
+ * Identidade unificada: o mesmo e-mail pode pertencer a outros tenants e/ou ser
+ * super admin. Por isso só apagamos a conta do Firebase Auth se esta for a
+ * ÚLTIMA membership E o usuário não for super admin. Caso contrário, apenas
+ * removemos a membership deste tenant (o doc delete dispara onTenantUserDelete,
+ * que limpa /identities/{uid}/memberships/{tid} + recomputa claims).
  */
 exports.deleteTenantUser = onCall(async (request) => {
   const { tenantId, callerUid } = await requireTenantAdmin(request);
@@ -903,16 +1371,28 @@ exports.deleteTenantUser = onCall(async (request) => {
   if (userId === callerUid) {
     throw new HttpsError('failed-precondition', 'Você não pode excluir sua própria conta.');
   }
-  try {
-    await admin.auth().deleteUser(userId);
-  } catch (e) {
-    // Se o usuário já não existe no Auth, segue para apagar o doc.
-    if (e.code !== 'auth/user-not-found') {
-      console.warn('deleteUser auth error:', e.message);
-    }
-  }
+
+  // Remove a membership deste tenant primeiro (dispara o trigger de cleanup).
   await admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId).delete();
-  await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId}`, userId, callerUid);
+
+  // Decide se a conta Auth pode ser apagada: só se não restar NENHUM vínculo.
+  const [otherMemberships, isGlobal] = await Promise.all([
+    membershipColRef(userId).get(),
+    isGlobalAdminUid(userId),
+  ]);
+  const remaining = otherMemberships.docs.filter((d) => d.id !== tenantId);
+
+  if (remaining.length === 0 && !isGlobal) {
+    try {
+      await admin.auth().deleteUser(userId);
+      await identityDocRef(userId).delete().catch(() => {});
+    } catch (e) {
+      if (e.code !== 'auth/user-not-found') console.warn('deleteUser auth error:', e.message);
+    }
+    await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId} (conta global excluída)`, userId, callerUid);
+  } else {
+    await logAudit(tenantId, 'DELETE', 'User', `Admin removeu usuário ${userId} deste tenant (conta mantida — outros vínculos)`, userId, callerUid);
+  }
   return { ok: true };
 });
 
@@ -940,6 +1420,26 @@ function validateSlug(slug) {
   if (!SLUG_REGEX.test(slug)) return 'Slug deve ter 3-32 caracteres: letras minúsculas, números e hífens.';
   if (RESERVED_TENANT_SLUGS.includes(slug)) return `Slug "${slug}" é reservado.`;
   return null;
+}
+
+/**
+ * Espelho público do tenant em /tenants/{slug}/public_settings/meta.
+ * Mantido aqui pelo backend porque a regra do Firestore protege o root doc
+ * (billing.asaas* não pode vazar pré-login). Este espelho só carrega name/
+ * active/plan e é lido pelo TenantContext do SPA antes do login.
+ *
+ * Chame após qualquer mudança em name/active/plan no root doc.
+ */
+async function writeTenantPublicMeta(slug, fields) {
+  const ref = admin.firestore()
+    .collection('tenants').doc(slug)
+    .collection('public_settings').doc('meta');
+  const patch = {};
+  if (fields.name !== undefined) patch.name = fields.name;
+  if (fields.active !== undefined) patch.active = fields.active !== false;
+  if (fields.plan !== undefined) patch.plan = fields.plan || 'basic';
+  if (Object.keys(patch).length === 0) return;
+  await ref.set(patch, { merge: true });
 }
 
 /**
@@ -976,6 +1476,9 @@ exports.createTenant = onCall(async (request) => {
       { language: 'pt', customAppName: name },
       { merge: true }
     );
+
+    // Espelho público — necessário pro SPA carregar o subdomínio sem login.
+    await writeTenantPublicMeta(slug, { name, active, plan });
 
     let ownerPassword = null;
     let ownerUid = null;
@@ -1015,13 +1518,7 @@ exports.createTenant = onCall(async (request) => {
         }
       }
       ownerUid = userRecord.uid;
-      try {
-        await admin.auth().setCustomUserClaims(ownerUid, { tenantId: slug, role: 'admin', approved: true });
-      } catch (e) {
-        console.error('[createTenant] setCustomUserClaims falhou', { uid: ownerUid, code: e.code, message: e.message });
-        throw new HttpsError('internal', `Falha ao setar claims do admin: ${e.message}`);
-      }
-      await tenantRef.collection('users').doc(ownerUid).set({
+      const ownerDoc = {
         id: ownerUid,
         name: ownerName || cleanEmail,
         email: cleanEmail,
@@ -1029,7 +1526,18 @@ exports.createTenant = onCall(async (request) => {
         status: 'approved',
         tenantId: slug,
         createdAt: Date.now(),
-      });
+      };
+      await tenantRef.collection('users').doc(ownerUid).set(ownerDoc);
+      // Espelha membership + recomputa claims. Se o e-mail já era membro de
+      // outros tenants, o rebuild PRESERVA esses acessos (não sobrescreve como
+      // o claim singular legado fazia).
+      try {
+        await upsertMembership(ownerUid, slug, ownerDoc);
+        await rebuildIdentityAndClaims(ownerUid);
+      } catch (e) {
+        console.error('[createTenant] identity/claims falhou', { uid: ownerUid, code: e.code, message: e.message });
+        throw new HttpsError('internal', `Falha ao setar identidade/claims do admin: ${e.message}`);
+      }
       await tenantRef.update({ ownerUserId: ownerUid });
     }
 
@@ -1058,6 +1566,7 @@ exports.setTenantActive = onCall(async (request) => {
     if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
 
     await ref.update({ active });
+    await writeTenantPublicMeta(slug, { active });
     await logAudit(null, 'UPDATE', 'Tenant', `Super admin ${active ? 'ativou' : 'desativou'} tenant ${slug}`, slug, callerUid);
     return { slug, active };
   } catch (e) {
@@ -1087,6 +1596,9 @@ exports.updateTenant = onCall(async (request) => {
     return { slug, changed: false };
   }
   await ref.update(patch);
+  if (patch.name !== undefined || patch.plan !== undefined) {
+    await writeTenantPublicMeta(slug, { name: patch.name, plan: patch.plan });
+  }
   await logAudit(null, 'UPDATE', 'Tenant', `Super admin atualizou tenant ${slug}: ${Object.keys(patch).join(', ')}`, slug, callerUid);
   return { slug, changed: true };
 });
@@ -1115,9 +1627,8 @@ exports.addSystemAdmin = onCall(async (request) => {
     addedBy: callerUid,
     addedAt: Date.now(),
   });
-  // Custom claim para fast-path em rules.
-  const existing = (await admin.auth().getUser(targetUid)).customClaims || {};
-  await admin.auth().setCustomUserClaims(targetUid, { ...existing, superadmin: true });
+  // Recomputa identidade + claims (superadmin + memberships preservadas).
+  await rebuildIdentityAndClaims(targetUid);
 
   await logAudit(null, 'CREATE', 'SystemAdmin', `Super admin promoveu ${targetUid} a system admin`, targetUid, callerUid);
   return { uid: targetUid };
@@ -1139,9 +1650,8 @@ exports.removeSystemAdmin = onCall(async (request) => {
   }
 
   await admin.firestore().collection('system_admins').doc(uid).delete();
-  const existing = (await admin.auth().getUser(uid)).customClaims || {};
-  delete existing.superadmin;
-  await admin.auth().setCustomUserClaims(uid, existing);
+  // Recomputa: remove o claim superadmin mas mantém memberships de tenant.
+  await rebuildIdentityAndClaims(uid);
 
   await logAudit(null, 'DELETE', 'SystemAdmin', `Super admin removeu ${uid} dos system admins`, uid, callerUid);
   return { uid };
@@ -1156,6 +1666,29 @@ exports.listAllTenants = onCall(async (request) => {
   return {
     tenants: snap.docs.map(d => ({ id: d.id, ...d.data() })),
   };
+});
+
+/**
+ * Backfill one-shot do espelho público (/tenants/{slug}/public_settings/meta).
+ * Necessário pra tenants criados antes do espelho existir — sem ele, o SPA
+ * retorna "Empresa não encontrada" no boot pré-login.
+ *
+ * Idempotente: pode ser chamado várias vezes sem efeito colateral.
+ */
+exports.backfillTenantPublicMeta = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await admin.firestore().collection('tenants').get();
+  let written = 0;
+  for (const doc of snap.docs) {
+    const t = doc.data() || {};
+    await writeTenantPublicMeta(doc.id, {
+      name: t.name || doc.id,
+      active: t.active !== false,
+      plan: t.plan || 'basic',
+    });
+    written++;
+  }
+  return { written };
 });
 
 /**
@@ -1185,13 +1718,9 @@ exports.listAllUsers = onCall(async (request) => {
 });
 
 exports.sendPushNotification = onCall(
+  { secrets: VAPID_SECRETS },
   async (request) => {
-
-    webpush.setVapidDetails(
-      "mailto:monitoramento@lockprotecao.com.br",
-      vapidKeys.publicKey,
-      vapidKeys.privateKey
-    );
+    configureWebPush();
 
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Login obrigatório.');
@@ -1257,6 +1786,18 @@ exports.sendPushNotification = onCall(
 
 const ASAAS_SECRETS = [ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN];
 const ASAAS_OPTS = { secrets: ASAAS_SECRETS };
+// Webhook + job diário enviam push; combinam secrets Asaas com VAPID.
+const ASAAS_WEBHOOK_SECRETS = [...ASAAS_SECRETS, ...VAPID_SECRETS];
+
+// Conjunto de eventos suportados. Eventos fora desta lista são logados mas
+// ignorados, evitando 5xx desnecessário que dispara retry do Asaas.
+const KNOWN_WEBHOOK_EVENTS = new Set([
+  'PAYMENT_CREATED', 'PAYMENT_UPDATED', 'PAYMENT_CONFIRMED',
+  'PAYMENT_RECEIVED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED',
+  'PAYMENT_REFUNDED', 'PAYMENT_RESTORED', 'PAYMENT_REFUND_IN_PROGRESS',
+  'PAYMENT_CHARGEBACK_REQUESTED', 'PAYMENT_CHARGEBACK_DISPUTE',
+  'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
+]);
 
 function ensureBillingPayload(data) {
   const slug = String(data.slug || '').toLowerCase().trim();
@@ -1304,7 +1845,13 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
   const cycle = data.cycle || 'MONTHLY';
   const billingType = data.billingType || 'UNDEFINED';
   const dueDay = data.dueDay || 10;
-  const nextDueDateMs = buildNextDueDate(dueDay);
+  const trialDays = Math.max(0, Math.floor(Number(data.trialDays) || 0));
+
+  // Com trial: primeira cobrança ocorre em trialDays dias (Asaas gera automaticamente).
+  // Sem trial: próxima cobrança calculada pela data de vencimento (dueDay).
+  const nextDueDateMs = trialDays > 0
+    ? Date.now() + trialDays * 86400000
+    : buildNextDueDate(dueDay);
 
   const apiKey = ASAAS_API_KEY.value();
 
@@ -1334,7 +1881,7 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
   });
 
   const billing = {
-    status: 'active',
+    status: trialDays > 0 ? 'trialing' : 'active',
     priceCents,
     cycle,
     method: billingType,
@@ -1346,14 +1893,91 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
     payerName: payer.name,
     payerEmail: payer.email,
     lastSyncedAt: Date.now(),
+    ...(trialDays > 0 && { trialEndsAt: nextDueDateMs, trialDays }),
   };
+
+  // -------- ADESÃO (setup fee) opcional --------
+  // Aceita {valueCents, status: 'paid'|'pending'|'waived', description?}
+  // - 'paid': só registra no Firestore (sem cobrança Asaas)
+  // - 'pending': cria payment one-time no Asaas e registra paymentId
+  // - 'waived' / omitido: ignorado
+  const setupFeeInput = data.setupFee;
+  if (setupFeeInput && setupFeeInput.status && setupFeeInput.status !== 'waived') {
+    const setupValue = Number(setupFeeInput.valueCents);
+    if (!Number.isFinite(setupValue) || setupValue < 100) {
+      throw new HttpsError('invalid-argument', 'setupFee.valueCents deve ser >= 100 (R$ 1,00).');
+    }
+    const setupDescription = String(setupFeeInput.description || `Taxa de adesão — ${tenant.name}`).trim();
+
+    const fee = {
+      valueCents: setupValue,
+      status: setupFeeInput.status, // 'paid' ou 'pending'
+      description: setupDescription,
+      registeredAt: Date.now(),
+      registeredBy: callerUid,
+    };
+
+    if (setupFeeInput.status === 'paid') {
+      fee.paidAt = Date.now();
+    } else if (setupFeeInput.status === 'pending') {
+      // Cria cobrança avulsa no Asaas (vencimento padrão: 7 dias).
+      try {
+        const setupPayment = await asaas.createPayment(apiKey, {
+          customerId: customer.id,
+          valueCents: setupValue,
+          description: setupDescription,
+          billingType: setupFeeInput.billingType || 'UNDEFINED',
+          dueDateMs: Date.now() + 7 * 86400000,
+          externalReference: `${slug}__setup`,
+        });
+        const setupInvoice = asaas.paymentToInvoice(setupPayment, slug);
+        setupInvoice.createdAt = Date.now();
+        await ref.collection('invoices').doc(setupPayment.id).set(setupInvoice);
+        fee.asaasPaymentId = setupPayment.id;
+      } catch (e) {
+        console.error(`[createTenantSubscription] Falha ao gerar setupFee Asaas (${slug}):`, e?.response?.data || e.message);
+        throw new HttpsError('internal', `Assinatura criada, mas a adesão Asaas falhou: ${e.message}. Crie manualmente via "Nova cobrança avulsa".`);
+      }
+    }
+    billing.setupFee = fee;
+  }
+
   await ref.update({ billing });
 
+  const setupFeeNote = billing.setupFee
+    ? ` + adesão R$${(billing.setupFee.valueCents / 100).toFixed(2)} (${billing.setupFee.status})`
+    : '';
   await logAudit(null, 'CREATE', 'TenantSubscription',
-    `Super admin criou assinatura Asaas (${sub.id}) para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}`,
+    `Assinatura criada para ${slug} — R$${(priceCents/100).toFixed(2)}/${cycle}${trialDays > 0 ? ` (trial ${trialDays}d)` : ''}${setupFeeNote}`,
     slug, callerUid);
 
   return { ok: true, billing, asaasSubscription: sub };
+});
+
+/**
+ * Marca a adesão (setupFee) de um tenant como paga. Útil quando o admin recebeu
+ * o pagamento por fora (em dinheiro/transferência) e quer atualizar o status.
+ */
+exports.markSetupFeePaid = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const ref = admin.firestore().collection('tenants').doc(slug);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  const billing = snap.data().billing || {};
+  if (!billing.setupFee) throw new HttpsError('failed-precondition', 'Este tenant não tem adesão registrada.');
+  if (billing.setupFee.status === 'paid') return { ok: true, alreadyPaid: true };
+
+  await ref.update({
+    'billing.setupFee.status': 'paid',
+    'billing.setupFee.paidAt': Date.now(),
+  });
+  await logAudit(null, 'UPDATE', 'TenantSubscription',
+    `Adesão marcada como paga (R$${(billing.setupFee.valueCents / 100).toFixed(2)})`,
+    slug, callerUid);
+  return { ok: true, alreadyPaid: false };
 });
 
 /**
@@ -1432,10 +2056,18 @@ exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   }
 
   const apiKey = ASAAS_API_KEY.value();
-  const [sub, payments] = await Promise.all([
-    asaas.getSubscription(apiKey, subId).catch(() => null),
-    asaas.listSubscriptionPayments(apiKey, subId, 50),
-  ]);
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  let sub, payments;
+  try {
+    [sub, payments] = await Promise.all([
+      asaas.getSubscription(apiKey, subId).catch(() => null),
+      asaas.listSubscriptionPayments(apiKey, subId, 50),
+    ]);
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    throw new HttpsError('internal', `Falha ao consultar Asaas: ${msg}`);
+  }
 
   // Atualiza invoices
   const batch = admin.firestore().batch();
@@ -1553,7 +2185,7 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   if (Date.now() - last < 60_000) {
     throw new HttpsError('resource-exhausted', 'Aguarde 1 minuto entre sincronizações.');
   }
-  _syncCooldown.set(tenantId, Date.now());
+  // Cooldown só é registrado após o Asaas responder — falhas não bloqueiam retry.
 
   const ref = admin.firestore().collection('tenants').doc(tenantId);
   const snap = await ref.get();
@@ -1563,10 +2195,18 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   if (!subId) return { ok: false, reason: 'sem assinatura' };
 
   const apiKey = ASAAS_API_KEY.value();
-  const [sub, payments] = await Promise.all([
-    asaas.getSubscription(apiKey, subId).catch(() => null),
-    asaas.listSubscriptionPayments(apiKey, subId, 50),
-  ]);
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  let sub, payments;
+  try {
+    [sub, payments] = await Promise.all([
+      asaas.getSubscription(apiKey, subId).catch(() => null),
+      asaas.listSubscriptionPayments(apiKey, subId, 50),
+    ]);
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    throw new HttpsError('internal', `Falha ao consultar Asaas: ${msg}`);
+  }
 
   const batch = admin.firestore().batch();
   for (const p of payments) {
@@ -1583,6 +2223,7 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
     'billing.lastSyncedAt': Date.now(),
   });
 
+  _syncCooldown.set(tenantId, Date.now());
   return { ok: true, invoicesCount: payments.length, status: statusFromSub };
 });
 
@@ -1699,6 +2340,121 @@ exports.aggregateMRRHistory = onCall(async (request) => {
   };
 });
 
+// ─── Fase 6: Reenvio manual ───────────────────────────────────────────────────
+/**
+ * Reenvia o e-mail de notificação de uma fatura para o pagador (via Asaas).
+ * Body: { slug, paymentId }
+ */
+exports.remindTenantPayment = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const paymentId = String(data.paymentId || '').trim();
+  if (!paymentId) throw new HttpsError('invalid-argument', 'paymentId obrigatório.');
+
+  const { ref: tenantRef } = await getTenantOrThrow(slug);
+
+  // Garante que a fatura pertence ao tenant antes de reenviar.
+  const invSnap = await tenantRef.collection('invoices').doc(paymentId).get();
+  if (!invSnap.exists) throw new HttpsError('not-found', 'Fatura não encontrada neste tenant.');
+
+  const apiKey = ASAAS_API_KEY.value();
+  await asaas.sendPaymentNotification(apiKey, paymentId);
+
+  await logAudit(null, 'REMIND', 'Invoice',
+    `Lembrete reenviado: payment=${paymentId}`, slug, callerUid);
+
+  return { ok: true };
+});
+
+// ─── Fase 2: Cobrança avulsa ──────────────────────────────────────────────────
+/**
+ * Cria uma cobrança avulsa (não-recorrente) para um tenant existente.
+ * Body: { slug, valueCents, description, billingType?, dueDateMs? }
+ * Requer que o tenant já tenha um asaasCustomerId (criado pela assinatura).
+ */
+exports.createOneTimeCharge = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  const { ref, data: tenant } = await getTenantOrThrow(slug);
+
+  const valueCents = Number(data.valueCents);
+  if (!Number.isFinite(valueCents) || valueCents < 100) {
+    throw new HttpsError('invalid-argument', 'valueCents deve ser >= 100 (R$ 1,00).');
+  }
+  const description = String(data.description || '').trim();
+  if (!description) throw new HttpsError('invalid-argument', 'description obrigatória.');
+
+  const customerId = tenant.billing?.asaasCustomerId;
+  if (!customerId) {
+    throw new HttpsError('failed-precondition',
+      'Tenant sem customer Asaas. Crie uma assinatura primeiro para registrar o pagador.');
+  }
+
+  const billingType = data.billingType || 'UNDEFINED';
+  const dueDateMs = Number(data.dueDateMs) > Date.now()
+    ? Number(data.dueDateMs)
+    : Date.now() + 7 * 86400000; // padrão: 7 dias
+
+  const apiKey = ASAAS_API_KEY.value();
+  const payment = await asaas.createPayment(apiKey, {
+    customerId,
+    valueCents,
+    description,
+    billingType,
+    dueDateMs,
+    externalReference: slug,
+  });
+
+  const invoice = asaas.paymentToInvoice(payment, slug);
+  invoice.createdAt = Date.now();
+  await ref.collection('invoices').doc(payment.id).set(invoice);
+
+  await logAudit(null, 'CREATE', 'OneTimeCharge',
+    `Cobrança avulsa: "${description}" R$${(valueCents / 100).toFixed(2)} para ${slug}`,
+    slug, callerUid);
+
+  return { ok: true, invoice };
+});
+
+// ─── Fase 8: Config Asaas ─────────────────────────────────────────────────────
+/**
+ * Retorna configuração atual do Asaas (ambiente, URL do webhook).
+ * Não requer ASAAS_API_KEY — só lê variáveis de ambiente.
+ */
+exports.getAsaasConfig = onCall({ secrets: [ASAAS_WEBHOOK_TOKEN] }, async (request) => {
+  await requireSuperAdmin(request);
+  const env = (process.env.ASAAS_ENV || 'sandbox').toLowerCase();
+  const projectId = admin.app().options.projectId || 'saastagmanager';
+  const webhookUrl = `https://us-central1-${projectId}.cloudfunctions.net/asaasWebhook`;
+  return { env, webhookUrl, apiBaseUrl: asaas.baseUrl() };
+});
+
+/**
+ * Testa a conexão com o Asaas chamando GET /myAccount.
+ * Retorna { ok, env, account? } ou { ok: false, error }.
+ */
+exports.testAsaasConnection = onCall(ASAAS_OPTS, async (request) => {
+  await requireSuperAdmin(request);
+  const env = (process.env.ASAAS_ENV || 'sandbox').toLowerCase();
+  try {
+    const apiKey = ASAAS_API_KEY.value();
+    const account = await asaas.getAccount(apiKey);
+    return {
+      ok: true,
+      env,
+      account: {
+        name: account.name || account.commercialName || '—',
+        email: account.email || '—',
+        cpfCnpj: account.cpfCnpj || '—',
+      },
+    };
+  } catch (e) {
+    return { ok: false, env, error: String(e.response?.data?.errors?.[0]?.description || e.message || e) };
+  }
+});
+
 /**
  * Webhook do Asaas.
  *
@@ -1714,12 +2470,19 @@ exports.aggregateMRRHistory = onCall(async (request) => {
  * a desativação automática (active=false) acontece via job diário.
  */
 exports.asaasWebhook = onRequest(
-  { secrets: ASAAS_SECRETS, cors: false, timeoutSeconds: 30 },
+  { secrets: ASAAS_WEBHOOK_SECRETS, cors: false, timeoutSeconds: 30 },
   async (req, res) => {
+    const receivedAt = Date.now();
+    // Referência ao doc de forensics; preenchida após validação inicial.
+    let billingEventRef = null;
+
     try {
+      // ── 1. Método ────────────────────────────────────────────────────────────
       if (req.method !== 'POST') {
         return res.status(405).send('Method Not Allowed');
       }
+
+      // ── 2. Autenticação do token ─────────────────────────────────────────────
       const expectedToken = ASAAS_WEBHOOK_TOKEN.value();
       const receivedToken = req.headers['asaas-access-token'];
       if (!expectedToken || receivedToken !== expectedToken) {
@@ -1727,48 +2490,104 @@ exports.asaasWebhook = onRequest(
         return res.status(401).send('Unauthorized');
       }
 
+      // ── 3. Validação do payload ──────────────────────────────────────────────
       const body = req.body || {};
       const event = body.event;
       const payment = body.payment;
-      if (!event || !payment) {
-        return res.status(400).send('payload inválido');
+
+      if (!event || typeof event !== 'string') {
+        return res.status(400).send('payload inválido: event ausente');
+      }
+      if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+        return res.status(400).send('payload inválido: payment ausente');
+      }
+      if (!payment.id || typeof payment.id !== 'string') {
+        return res.status(400).send('payload inválido: payment.id ausente');
       }
 
-      // tenantSlug vem do externalReference (definido na criação da subscription)
+      // Evento desconhecido: retorna 202 para não disparar retry desnecessário.
+      if (!KNOWN_WEBHOOK_EVENTS.has(event)) {
+        console.info(`asaasWebhook: evento desconhecido "${event}" — ignorado`, { paymentId: payment.id });
+        return res.status(202).send('ignored: unknown event type');
+      }
+
+      // ── 4. Resolve tenant ────────────────────────────────────────────────────
+      // tenantSlug vem do externalReference (definido na criação da subscription).
       const slug = String(payment.externalReference || '').toLowerCase().trim();
+
+      // ── 5. Grava forensics em system_billing_events ──────────────────────────
+      // Feito ANTES de qualquer processamento; captura toda entrega, inclusive
+      // as que serão ignoradas ou rejeitadas por lógica de negócio.
+      billingEventRef = await admin.firestore().collection('system_billing_events').add({
+        event,
+        paymentId: payment.id,
+        tenantSlug: slug || null,
+        status: 'processing',
+        rawPayment: payment,
+        receivedAt,
+        ip: req.ip || null,
+      });
+
       if (!slug) {
         console.warn('asaasWebhook: payment sem externalReference', payment.id);
+        await billingEventRef.update({ status: 'ignored_no_reference' });
         return res.status(202).send('ignored: no externalReference');
       }
 
       const tenantRef = admin.firestore().collection('tenants').doc(slug);
       const tenantSnap = await tenantRef.get();
       if (!tenantSnap.exists) {
-        console.warn(`asaasWebhook: tenant ${slug} não existe`);
+        console.warn(`asaasWebhook: tenant "${slug}" não existe`, { paymentId: payment.id });
+        await billingEventRef.update({ status: 'ignored_tenant_not_found' });
         return res.status(202).send('ignored: tenant not found');
       }
 
-      const invoice = asaas.paymentToInvoice(payment, slug);
-      invoice.createdAt = invoice.createdAt || Date.now();
-      await tenantRef.collection('invoices').doc(payment.id).set(invoice, { merge: true });
+      // ── 6. Idempotência por dateUpdated ──────────────────────────────────────
+      // Se o invoice já existe e o dateUpdated que temos é igual ou mais recente
+      // que o do evento entrante, o evento é obsoleto — ignoramos sem reescrever.
+      const invoiceRef = tenantRef.collection('invoices').doc(payment.id);
+      if (payment.dateUpdated) {
+        const existingSnap = await invoiceRef.get();
+        if (existingSnap.exists) {
+          const storedDateUpdated = existingSnap.data()?.asaasDateUpdated;
+          // Comparação de strings ISO "YYYY-MM-DD HH:MM:SS" é lexicograficamente
+          // correta para ordem cronológica.
+          if (storedDateUpdated && storedDateUpdated >= payment.dateUpdated) {
+            console.info('asaasWebhook: evento obsoleto, pulando', {
+              paymentId: payment.id, stored: storedDateUpdated, incoming: payment.dateUpdated,
+            });
+            await billingEventRef.update({ status: 'skipped_stale' });
+            return res.status(200).send('ok: stale');
+          }
+        }
+      }
 
-      // Atualiza status agregado do tenant conforme o evento
-      const update = { 'billing.lastSyncedAt': Date.now() };
+      // ── 7. Persiste invoice ───────────────────────────────────────────────────
+      const invoice = asaas.paymentToInvoice(payment, slug);
+      // Preserva createdAt original se invoice já existia.
+      if (!invoice.createdAt) invoice.createdAt = Date.now();
+      await invoiceRef.set(invoice, { merge: true });
+
+      // ── 8. Atualiza status agregado do tenant ─────────────────────────────────
+      const tenantUpdate = { 'billing.lastSyncedAt': Date.now() };
       switch (event) {
         case 'PAYMENT_RECEIVED':
         case 'PAYMENT_CONFIRMED':
-          update['billing.status'] = 'active';
+          tenantUpdate['billing.status'] = 'active';
           break;
         case 'PAYMENT_OVERDUE':
-          update['billing.status'] = 'overdue';
+          tenantUpdate['billing.status'] = 'overdue';
           break;
-        case 'PAYMENT_DELETED':
-        case 'PAYMENT_REFUNDED':
-          // Não muda status do tenant — refletido só na invoice.
-          break;
+        // PAYMENT_DELETED / PAYMENT_REFUNDED: refletido só na invoice.
       }
-      await tenantRef.update(update);
+      await tenantRef.update(tenantUpdate);
 
+      // ── 9. Push para admins do tenant ─────────────────────────────────────────
+      const pushPayload = buildBillingPushPayload(event, payment);
+      await sendBillingPushToAdmins(slug, pushPayload);
+
+      // ── 10. Finaliza forensics + audit ────────────────────────────────────────
+      await billingEventRef.update({ status: 'processed' });
       await logAudit(null, 'WEBHOOK', 'Asaas',
         `${event} payment=${payment.id} status=${payment.status}`,
         slug, 'ASAAS_WEBHOOK');
@@ -1776,7 +2595,14 @@ exports.asaasWebhook = onRequest(
       return res.status(200).send('ok');
     } catch (e) {
       console.error('asaasWebhook erro:', e);
-      // Retornar 5xx faz o Asaas reentregar — bom em erro transitório, ruim em bug.
+      // Atualiza forensics com o erro antes de retornar 500.
+      // 5xx faz o Asaas reentregar — correto para erros transitórios de infra.
+      if (billingEventRef) {
+        await billingEventRef.update({
+          status: 'error',
+          error: String(e.message || e),
+        }).catch(() => {});
+      }
       return res.status(500).send('error');
     }
   }
@@ -1787,7 +2613,7 @@ exports.asaasWebhook = onRequest(
  * (Soft: marca active=false; dados permanecem.)
  */
 exports.dailyBillingEnforcement = onSchedule(
-  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo' },
+  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo', secrets: VAPID_SECRETS },
   async () => {
     const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
     const snap = await admin.firestore()
@@ -1808,12 +2634,461 @@ exports.dailyBillingEnforcement = onSchedule(
       const oldestOverdue = invs.docs[0]?.data()?.dueDate;
       if (oldestOverdue && oldestOverdue < cutoff) {
         await doc.ref.update({ active: false });
+        await writeTenantPublicMeta(doc.id, { active: false });
         await logAudit(null, 'SUSPEND', 'Tenant',
           `Suspensão automática por inadimplência > 7d`,
           doc.id, 'BILLING_JOB');
+        // Avisa admins do tenant sobre a suspensão.
+        await sendBillingPushToAdmins(doc.id, {
+          title: 'Empresa suspensa por inadimplência',
+          body: 'Seu acesso foi suspenso por fatura em atraso há mais de 7 dias. Regularize para reativar.',
+          url: '/#/billing',
+        });
         suspended++;
       }
     }
     console.log(`dailyBillingEnforcement: suspended=${suspended}`);
   }
 );
+
+// ============================================================
+// FASE 2 — TENANT USAGE + LIMITES + EXCLUSÃO + RANKING
+// ============================================================
+
+/**
+ * Conta entidades de um tenant e atualiza usage.* cacheado no doc.
+ * Restrito a super admin. Reusa as subcoleções tenant-aware.
+ */
+exports.getTenantUsage = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const { slug } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const tenantSnap = await tenantRef.get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  // Conta cada subcoleção em paralelo via count() aggregation (mais barato).
+  const COLS = ['tags', 'vehicles', 'users', 'schedules'];
+  const counts = await Promise.all(COLS.map(async (col) => {
+    try {
+      const agg = await tenantRef.collection(col).count().get();
+      return agg.data().count;
+    } catch (e) {
+      console.warn(`getTenantUsage count(${col}) falhou para ${slug}:`, e.message);
+      return 0;
+    }
+  }));
+  const [tagsUtilizadas, veiculosUtilizados, usuariosAtivos, agendamentosAtivos] = counts;
+
+  // Última atividade: olha o doc mais recente entre schedules, vehicles e tags.
+  let lastActivityAt = 0;
+  for (const col of ['schedules', 'vehicles', 'tags']) {
+    try {
+      const last = await tenantRef.collection(col).orderBy('createdAt', 'desc').limit(1).get();
+      const ts = last.docs[0]?.data()?.createdAt || 0;
+      if (ts > lastActivityAt) lastActivityAt = ts;
+    } catch (e) { /* coleção pode não ter createdAt indexado */ }
+  }
+
+  const usage = {
+    tagsUtilizadas,
+    veiculosUtilizados,
+    usuariosAtivos,
+    agendamentosAtivos,
+    lastComputedAt: Date.now(),
+    lastActivityAt: lastActivityAt || undefined,
+  };
+  await tenantRef.update({ usage });
+  return { slug, usage };
+});
+
+/**
+ * Atualiza limites do tenant (limiteTags, limiteVeiculos, maxUsers).
+ * Restrito a super admin. Audita a mudança.
+ */
+exports.updateTenantLimits = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, limiteTags, limiteVeiculos, maxUsers } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const snap = await tenantRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+
+  const prev = snap.data().settings || {};
+  const next = { ...prev };
+  const changes = [];
+  if (limiteTags !== undefined && Number.isFinite(limiteTags) && limiteTags >= 0) {
+    if (prev.limiteTags !== limiteTags) {
+      changes.push(`limiteTags: ${prev.limiteTags ?? 'ilimitado'} → ${limiteTags || 'ilimitado'}`);
+      next.limiteTags = limiteTags;
+    }
+  }
+  if (limiteVeiculos !== undefined && Number.isFinite(limiteVeiculos) && limiteVeiculos >= 0) {
+    if (prev.limiteVeiculos !== limiteVeiculos) {
+      changes.push(`limiteVeiculos: ${prev.limiteVeiculos ?? 'ilimitado'} → ${limiteVeiculos || 'ilimitado'}`);
+      next.limiteVeiculos = limiteVeiculos;
+    }
+  }
+  if (maxUsers !== undefined && Number.isFinite(maxUsers) && maxUsers >= 0) {
+    if (prev.maxUsers !== maxUsers) {
+      changes.push(`maxUsers: ${prev.maxUsers ?? 'ilimitado'} → ${maxUsers || 'ilimitado'}`);
+      next.maxUsers = maxUsers;
+    }
+  }
+  if (changes.length === 0) return { slug, changed: false };
+
+  await tenantRef.update({ settings: next });
+  await logAudit(null, 'UPDATE', 'Tenant', `Super admin alterou limites: ${changes.join('; ')}`, slug, callerUid);
+  return { slug, changed: true, changes };
+});
+
+/**
+ * Exclui um tenant — soft ou hard.
+ * soft: marca deletedAt + active=false (reversível).
+ * hard: cancela subscription no Asaas, apaga subcoleções recursivamente,
+ *       desativa usuários no Firebase Auth, apaga o doc do tenant.
+ *
+ * confirmName: o caller precisa enviar o name exato do tenant para confirmar.
+ */
+exports.deleteTenant = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { slug, mode, confirmName } = request.data || {};
+  if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
+  if (mode !== 'soft' && mode !== 'hard') {
+    throw new HttpsError('invalid-argument', 'mode deve ser "soft" ou "hard".');
+  }
+
+  const tenantRef = admin.firestore().collection('tenants').doc(slug);
+  const tenantSnap = await tenantRef.get();
+  if (!tenantSnap.exists) throw new HttpsError('not-found', `Tenant ${slug} não encontrado.`);
+  const tenant = tenantSnap.data();
+
+  if (!confirmName || confirmName.trim() !== (tenant.name || '').trim()) {
+    throw new HttpsError('failed-precondition',
+      'Nome de confirmação não corresponde ao tenant. Operação abortada.');
+  }
+
+  // ---------- SOFT ----------
+  if (mode === 'soft') {
+    await tenantRef.update({
+      active: false,
+      deletedAt: Date.now(),
+      deletedBy: callerUid,
+      deletionMode: 'soft',
+    });
+    await writeTenantPublicMeta(slug, { active: false });
+    await logAudit(null, 'DELETE', 'Tenant',
+      `Super admin executou SOFT delete de "${tenant.name}" (${slug}). Reversível.`,
+      slug, callerUid);
+    return { slug, mode, ok: true };
+  }
+
+  // ---------- HARD ----------
+  // 1. Cancelar subscription Asaas (best-effort).
+  const billing = tenant.billing || {};
+  if (billing.asaasSubscriptionId) {
+    try {
+      const apiKey = await ASAAS_API_KEY.value();
+      await asaas.cancelSubscription(apiKey, billing.asaasSubscriptionId);
+      console.log(`[deleteTenant] Asaas subscription ${billing.asaasSubscriptionId} cancelada.`);
+    } catch (e) {
+      console.error(`[deleteTenant] Falha ao cancelar Asaas (${slug}):`, e.message);
+      // Não bloqueia hard delete — apenas registra.
+    }
+  }
+
+  // 2. Coletar UIDs de usuários do tenant.
+  const usersSnap = await tenantRef.collection('users').get();
+  const userUids = usersSnap.docs.map(d => d.id);
+
+  // 3. IDENTIDADE UNIFICADA: desativar no Auth SOMENTE contas sem outro vínculo.
+  // Uma conta compartilhada (mesmo e-mail em outro tenant, ou super admin) NÃO
+  // pode ser desabilitada — isso bloquearia o acesso aos demais ambientes.
+  // (As memberships em /identities/{uid}/memberships são limpas pelos triggers
+  // onTenantUserDelete disparados no recursiveDelete abaixo.)
+  let disabledCount = 0;
+  await Promise.all(userUids.map(async (uid) => {
+    try {
+      const [membersSnap, isGlobal] = await Promise.all([
+        membershipColRef(uid).get(),
+        isGlobalAdminUid(uid),
+      ]);
+      const hasOtherTenant = membersSnap.docs.some((d) => d.id !== slug);
+      if (hasOtherTenant || isGlobal) return; // mantém a conta — tem outros acessos
+      await admin.auth().updateUser(uid, { disabled: true });
+      disabledCount++;
+    } catch (e) {
+      console.warn(`[deleteTenant] Auth disable ${uid} falhou:`, e.message);
+    }
+  }));
+
+  // 4. recursiveDelete cobre todas as subcoleções (tags, vehicles, schedules,
+  // shipments, audit_logs, settings, etc) + o próprio doc do tenant.
+  await admin.firestore().recursiveDelete(tenantRef);
+
+  // 5. Limpar push_subscriptions deste tenant (coleção flat).
+  try {
+    const pushSnap = await admin.firestore().collection('push_subscriptions')
+      .where('tenantId', '==', slug).get();
+    const batch = admin.firestore().batch();
+    pushSnap.docs.forEach(d => batch.delete(d.ref));
+    if (!pushSnap.empty) await batch.commit();
+  } catch (e) {
+    console.warn('[deleteTenant] limpeza push_subscriptions falhou:', e.message);
+  }
+
+  // 6. Auditoria global. Não vai mais no audit_logs do tenant (não existe mais).
+  try {
+    await admin.firestore().collection('system_audit_logs').add({
+      action: 'DELETE',
+      entity: 'Tenant',
+      details: `HARD delete de "${tenant.name}" (${slug}) — ${userUids.length} usuários (${disabledCount} contas desativadas; demais mantidas por terem outros vínculos), billing=${billing.status || 'none'}.`,
+      tenantSlug: slug,
+      callerUid,
+      timestamp: Date.now(),
+    });
+  } catch (_) { /* sem coleção é OK */ }
+
+  return { slug, mode, ok: true, usersDisabled: disabledCount, usersTotal: userUids.length };
+});
+
+// ============================================================
+// CONFIGURAÇÃO DE PLANOS — /system_config/plans
+// ============================================================
+
+const PLANS_CONFIG_DOC = ['system_config', 'plans'];
+
+/** Defaults usados quando o doc /system_config/plans ainda não existe. */
+const DEFAULT_PLANS_CONFIG = {
+  basic: {
+    id: 'basic',
+    name: 'Basic',
+    priceCents: 9900,
+    maxUsers: 5,
+    defaultLimiteTags: 50,
+    defaultSetupFeeCents: 0,
+    defaultDueDay: 10,
+    features: [],
+  },
+  pro: {
+    id: 'pro',
+    name: 'Pro',
+    priceCents: 29900,
+    maxUsers: 25,
+    defaultLimiteTags: 250,
+    defaultSetupFeeCents: 29900,
+    defaultDueDay: 10,
+    features: [],
+  },
+  enterprise: {
+    id: 'enterprise',
+    name: 'Enterprise',
+    priceCents: 99900,
+    maxUsers: 0,
+    defaultLimiteTags: 0,
+    defaultSetupFeeCents: 99900,
+    defaultDueDay: 10,
+    features: [],
+  },
+};
+
+function plansDocRef() {
+  return admin.firestore().collection(PLANS_CONFIG_DOC[0]).doc(PLANS_CONFIG_DOC[1]);
+}
+
+/**
+ * Retorna a configuração atual dos planos. Se não existir, devolve os defaults
+ * (sem persistir — só persiste no primeiro updatePlansConfig).
+ */
+exports.getPlansConfig = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await plansDocRef().get();
+  if (!snap.exists) {
+    return { plans: DEFAULT_PLANS_CONFIG, fromDefaults: true };
+  }
+  return { plans: snap.data(), fromDefaults: false };
+});
+
+/**
+ * Atualiza a configuração de planos. Só super admin.
+ * Body: { plans: { basic: PlanConfig, pro: PlanConfig, enterprise: PlanConfig } }
+ * Valida que cada plano tem priceCents válido. Audita.
+ */
+exports.updatePlansConfig = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { plans } = request.data || {};
+  if (!plans || typeof plans !== 'object') {
+    throw new HttpsError('invalid-argument', 'plans é obrigatório.');
+  }
+
+  const allowedIds = ['basic', 'pro', 'enterprise'];
+  const sanitized = {};
+  for (const id of allowedIds) {
+    const p = plans[id];
+    if (!p) throw new HttpsError('invalid-argument', `plans.${id} é obrigatório.`);
+    const priceCents = Number(p.priceCents);
+    if (!Number.isFinite(priceCents) || priceCents < 100) {
+      throw new HttpsError('invalid-argument', `plans.${id}.priceCents inválido (mín R$ 1,00).`);
+    }
+    const setupFeeCents = Number(p.defaultSetupFeeCents || 0);
+    if (setupFeeCents < 0) {
+      throw new HttpsError('invalid-argument', `plans.${id}.defaultSetupFeeCents não pode ser negativo.`);
+    }
+    const dueDay = Math.min(28, Math.max(1, Number(p.defaultDueDay || 10)));
+    sanitized[id] = {
+      id,
+      name: String(p.name || id).trim(),
+      priceCents,
+      maxUsers: Math.max(0, Number(p.maxUsers || 0)),
+      defaultLimiteTags: Math.max(0, Number(p.defaultLimiteTags || 0)),
+      defaultSetupFeeCents: setupFeeCents,
+      defaultDueDay: dueDay,
+      features: Array.isArray(p.features) ? p.features.map(String) : [],
+    };
+  }
+
+  const payload = {
+    ...sanitized,
+    updatedAt: Date.now(),
+    updatedBy: callerUid,
+  };
+  await plansDocRef().set(payload, { merge: false });
+
+  await logAudit(null, 'UPDATE', 'PlansConfig',
+    `Super admin atualizou planos: ` +
+    `basic=R$${(sanitized.basic.priceCents / 100).toFixed(2)}, ` +
+    `pro=R$${(sanitized.pro.priceCents / 100).toFixed(2)}, ` +
+    `enterprise=R$${(sanitized.enterprise.priceCents / 100).toFixed(2)}`,
+    null, callerUid);
+
+  return { ok: true, plans: payload };
+});
+
+/**
+ * Super admin reseta a senha de qualquer usuário em qualquer tenant.
+ * Gera senha aleatória e devolve em texto plano (mostrada uma única vez).
+ * Difere de `resetTenantUserPassword` porque NÃO exige role admin no tenant —
+ * o gate é via `requireSuperAdmin` (mais privilegiado).
+ */
+exports.superAdminResetUserPassword = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { tenantId, userId } = request.data || {};
+  if (!tenantId || !userId) {
+    throw new HttpsError('invalid-argument', 'tenantId e userId são obrigatórios.');
+  }
+
+  const targetRef = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userId);
+  const targetSnap = await targetRef.get();
+  if (!targetSnap.exists) {
+    throw new HttpsError('not-found', `Usuário ${userId} não encontrado em ${tenantId}.`);
+  }
+
+  const targetEmail = targetSnap.data().email || '';
+  const password = generateRandomPassword();
+  try {
+    await admin.auth().updateUser(userId, { password });
+  } catch (e) {
+    throw new HttpsError('internal', `Falha ao atualizar senha no Firebase Auth: ${e.message}`);
+  }
+
+  // Audita no tenant (para o dono ver) E no log global de super admin.
+  await logAudit(tenantId, 'UPDATE', 'User',
+    `Super admin (${callerUid}) resetou senha de ${targetEmail}`,
+    userId, callerUid);
+  try {
+    await admin.firestore().collection('system_audit_logs').add({
+      action: 'PASSWORD_RESET',
+      entity: 'User',
+      details: `Super admin resetou senha de ${targetEmail} em ${tenantId}.`,
+      tenantSlug: tenantId,
+      targetUid: userId,
+      callerUid,
+      timestamp: Date.now(),
+    });
+  } catch (_) { /* coleção opcional */ }
+
+  return { userId, email: targetEmail, password };
+});
+
+/**
+ * Estatísticas agregadas cross-tenant para o painel de Empresas:
+ * - ranking por uso de tags
+ * - ranking por veículos
+ * - tenants inadimplentes
+ * - novos tenants por mês (12m)
+ *
+ * Lê o cache `usage.*` dos tenants — chame `getTenantUsage` periodicamente
+ * (ou no carregamento da tela) para manter atualizado.
+ */
+exports.aggregateTenantsStats = onCall(async (request) => {
+  await requireSuperAdmin(request);
+
+  const snap = await admin.firestore().collection('tenants').get();
+  const tenants = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const ranked = (key) => tenants
+    .filter(t => !t.deletedAt && (t.usage?.[key] || 0) > 0)
+    .sort((a, b) => (b.usage[key] || 0) - (a.usage[key] || 0))
+    .slice(0, 10)
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      value: t.usage[key] || 0,
+      limit: key === 'tagsUtilizadas' ? t.settings?.limiteTags : (key === 'veiculosUtilizados' ? t.settings?.limiteVeiculos : undefined),
+    }));
+
+  // Inadimplentes: status overdue ou trial expirado sem assinatura ativa.
+  const overdue = tenants
+    .filter(t => !t.deletedAt && t.billing?.status === 'overdue')
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      priceCents: t.billing?.priceCents || 0,
+      nextDueDate: t.billing?.nextDueDate,
+    }));
+
+  // Mais ativos: ordena por usage.lastActivityAt desc.
+  const mostActive = tenants
+    .filter(t => !t.deletedAt && t.usage?.lastActivityAt)
+    .sort((a, b) => (b.usage.lastActivityAt || 0) - (a.usage.lastActivityAt || 0))
+    .slice(0, 10)
+    .map(t => ({
+      slug: t.slug,
+      name: t.name,
+      plan: t.plan,
+      lastActivityAt: t.usage.lastActivityAt,
+    }));
+
+  // Crescimento por mês: bucket dos últimos 12 meses por createdAt.
+  const now = new Date();
+  const buckets = {};
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    buckets[k] = 0;
+  }
+  for (const t of tenants) {
+    if (!t.createdAt) continue;
+    const d = new Date(t.createdAt);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (k in buckets) buckets[k]++;
+  }
+  const growth = Object.entries(buckets).map(([month, count]) => ({ month, count }));
+
+  return {
+    topByTags: ranked('tagsUtilizadas'),
+    topByVehicles: ranked('veiculosUtilizados'),
+    mostActive,
+    overdue,
+    growth,
+    totals: {
+      tenants: tenants.length,
+      active: tenants.filter(t => t.active !== false && !t.deletedAt).length,
+      deleted: tenants.filter(t => t.deletedAt).length,
+    },
+  };
+});

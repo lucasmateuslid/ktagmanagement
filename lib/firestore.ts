@@ -48,6 +48,17 @@ export function tenantRootDoc(tenantId: string): DocumentReference {
 }
 
 /**
+ * Espelho público do tenant: `/tenants/{tenantId}/public_settings/meta`.
+ * Contém só { name, active, plan } — sem billing.* nem IDs do Asaas.
+ * Legível sem auth (regra pública em /tenants/{...}/public_settings/{...}),
+ * usado pelo TenantContext no boot pra checar existência + suspensão antes do login.
+ */
+export function tenantPublicMetaDoc(tenantId: string): DocumentReference {
+  const firestore = requireDb();
+  return doc(firestore, 'tenants', tenantId, 'public_settings', 'meta');
+}
+
+/**
  * Helper para coleções de sistema (fora do escopo de tenant).
  * Use com parcimônia — apenas para entidades que precisam ser cross-tenant
  * por design (lista de tenants, admins do sistema, push subscriptions, etc).
@@ -60,4 +71,20 @@ export function systemCollection(name: string): CollectionReference {
 export function systemDoc(name: string, id: string): DocumentReference {
   const firestore = requireDb();
   return doc(firestore, name, id);
+}
+
+/**
+ * Identidade global do usuário: `/identities/{uid}`.
+ * Derivada/mantida por Cloud Functions; o cliente só lê a própria (rules).
+ */
+export function identityDoc(uid: string): DocumentReference {
+  return doc(requireDb(), 'identities', uid);
+}
+
+/**
+ * Memberships da identidade: `/identities/{uid}/memberships/{tid}`.
+ * Junção uid↔tenant. Usada pelo seletor de empresa (tenant switcher).
+ */
+export function membershipCollection(uid: string): CollectionReference {
+  return collection(requireDb(), 'identities', uid, 'memberships');
 }

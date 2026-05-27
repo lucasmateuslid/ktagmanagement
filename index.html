@@ -1,16 +1,22 @@
 
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="https://cdn-icons-png.flaticon.com/512/854/854878.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Anti-FOUC: aplica o tema salvo antes do primeiro paint.
+      // Alinhado ao ThemeContext (storage 'ktag_theme', default 'light').
+      try { document.documentElement.classList.add(localStorage.getItem('ktag_theme') === 'dark' ? 'dark' : 'light'); }
+      catch (e) { document.documentElement.classList.add('light'); }
+    </script>
     <title>K-Tag Manager Pro</title>
     
     <!-- Fonts: Manrope for headings, Inter for UI -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..900&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"

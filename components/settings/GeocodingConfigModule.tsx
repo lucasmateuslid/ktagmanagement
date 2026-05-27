@@ -6,6 +6,7 @@ interface Props {
   settings: AppSettings;
   setSettings: (s: AppSettings) => void;
   isAdmin: boolean;
+  embedded?: boolean;
 }
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -43,7 +44,7 @@ const DEFAULT_PREFS: GeocoderPreferences = {
   default_language: 'pt'
 };
 
-export const GeocodingConfigModule: React.FC<Props> = ({ settings, setSettings, isAdmin }) => {
+export const GeocodingConfigModule: React.FC<Props> = ({ settings, setSettings, isAdmin, embedded = false }) => {
   const [prefs, setPrefs] = useState<GeocoderPreferences>(DEFAULT_PREFS);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -142,20 +143,15 @@ export const GeocodingConfigModule: React.FC<Props> = ({ settings, setSettings, 
     }
   };
 
-  return (
-    <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
-      <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
-        <div className="flex items-center gap-3 text-indigo-500">
-          <MapPin size={24} />
-          <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Geocodificação e Mapas (Multi-Provider)</h2>
+  const body = (
+    <>
+      {embedded && isAdmin && (
+        <div className="flex justify-end mb-2">
+          <button onClick={handleReset} className="text-[10px] uppercase font-black tracking-wider px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+            Resetar Padrão
+          </button>
         </div>
-        {isAdmin && (
-           <button onClick={handleReset} className="text-[10px] uppercase font-black tracking-wider px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-              Resetar Padrão
-           </button>
-        )}
-      </div>
-      
+      )}
       <p className="text-xs text-zinc-500 leading-relaxed font-medium">
         Configure a ordem de prioridade dos serviços de busca de endereços arrastando os itens.
         O sistema tentará automaticamente o próximo na lista caso o anterior falhe.
@@ -268,6 +264,27 @@ export const GeocodingConfigModule: React.FC<Props> = ({ settings, setSettings, 
           </div>
         </div>
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-8">{body}</div>;
+  }
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+      <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
+        <div className="flex items-center gap-3 text-indigo-500">
+          <MapPin size={24} />
+          <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Geocodificação e Mapas (Multi-Provider)</h2>
+        </div>
+        {isAdmin && (
+          <button onClick={handleReset} className="text-[10px] uppercase font-black tracking-wider px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+            Resetar Padrão
+          </button>
+        )}
+      </div>
+      {body}
     </div>
   );
 };

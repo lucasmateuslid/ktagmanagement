@@ -8,8 +8,13 @@ import { AdminTenants } from './AdminTenants';
 import { AdminBilling } from './AdminBilling';
 import { AdminInvoices } from './AdminInvoices';
 import { AdminUsers } from './AdminUsers';
+import { AdminAccess } from './AdminAccess';
 import { AdminSystemAdmins } from './AdminSystemAdmins';
 import { AdminAudit } from './AdminAudit';
+import { AdminAsaasConfig } from './AdminAsaasConfig';
+import { AdminPlatformIntegrations } from './AdminPlatformIntegrations';
+import { AdminAccount } from './AdminAccount';
+import { AdminPlansConfig } from './AdminPlansConfig';
 
 const AdminGate = () => {
   const { admin, loading } = useSystemAdmin();
@@ -30,8 +35,13 @@ const AdminGate = () => {
         <Route path="/admin/billing" element={<AdminBilling />} />
         <Route path="/admin/invoices" element={<AdminInvoices />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/access" element={<AdminAccess />} />
         <Route path="/admin/system-admins" element={<AdminSystemAdmins />} />
         <Route path="/admin/audit" element={<AdminAudit />} />
+        <Route path="/admin/asaas-config" element={<AdminAsaasConfig />} />
+        <Route path="/admin/platform-integrations" element={<AdminPlatformIntegrations />} />
+        <Route path="/admin/account" element={<AdminAccount />} />
+        <Route path="/admin/plans" element={<AdminPlansConfig />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>
@@ -40,7 +50,7 @@ const AdminGate = () => {
 
 export const AdminApp = () => (
   <SystemAdminProvider>
-    <HashRouter>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AdminGate />
     </HashRouter>
   </SystemAdminProvider>

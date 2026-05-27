@@ -7,9 +7,11 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import {
-  Receipt, RefreshCw, Loader2, ExternalLink, Filter, Calendar, TrendingUp, CheckCircle2, AlertTriangle, RotateCw,
+  Receipt, RefreshCw, Loader2, ExternalLink, Filter, Calendar, TrendingUp, CheckCircle2, AlertTriangle, RotateCw, Download, Search,
 } from 'lucide-react';
 import type { Invoice, Tenant } from '../../types';
+import { Select } from '../../components/ui/select';
+import { SkeletonRows } from '../../components/ui/skeleton';
 
 interface InvoiceRow extends Invoice {
   tenantName?: string;
@@ -64,6 +66,7 @@ export const AdminInvoices = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterTenant, setFilterTenant] = useState<string>('all');
   const [filterMonths, setFilterMonths] = useState<number>(6);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!db) return;
@@ -128,6 +131,45 @@ export const AdminInvoices = () => {
     () => history.reduce((a, p) => a + p.revenueCents, 0),
     [history]
   );
+
+  // Busca textual local sobre as faturas já carregadas (filtros de status/tenant/período rodam no backend)
+  const filteredInvoices = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return invoices;
+    return invoices.filter(inv =>
+      inv.tenantName?.toLowerCase().includes(term) ||
+      inv.tenantId?.toLowerCase().includes(term) ||
+      inv.description?.toLowerCase().includes(term) ||
+      inv.id?.toLowerCase().includes(term)
+    );
+  }, [invoices, search]);
+
+  const exportCsv = () => {
+    if (filteredInvoices.length === 0) return;
+    const header = ['Empresa', 'Slug', 'Vencimento', 'Pago em', 'Valor (R$)', 'Método', 'Status', 'Descrição', 'ID'];
+    const rows = filteredInvoices.map(inv => [
+      inv.tenantName || '',
+      inv.tenantId || '',
+      inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('pt-BR') : '',
+      inv.paidAt ? new Date(inv.paidAt).toLocaleDateString('pt-BR') : '',
+      ((inv.valueCents || 0) / 100).toFixed(2).replace('.', ','),
+      inv.billingType || '',
+      inv.status,
+      (inv.description || '').replace(/"/g, '""'),
+      inv.id,
+    ]);
+    const csv = [header, ...rows]
+      .map(r => r.map(c => `"${c}"`).join(';'))
+      .join('\n');
+    // BOM para Excel reconhecer UTF-8.
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `faturas-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -247,7 +289,27 @@ export const AdminInvoices = () => {
       </section>
 
       <section className="bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl overflow-hidden">
-        <div className="flex flex-wrap items-center gap-3 p-5 border-b border-white/5">
+        <div className="flex flex-col gap-3 p-5 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por empresa, descrição ou ID…"
+                className="w-full bg-white/[0.03] border border-white/5 hover:border-white/10 focus:border-amber-500/40 focus:bg-white/[0.05] rounded-xl pl-9 pr-3 py-2 text-sm placeholder:text-zinc-600 outline-none transition-colors"
+              />
+            </div>
+            <button
+              onClick={exportCsv}
+              disabled={filteredInvoices.length === 0}
+              title="Exportar para CSV (Excel)"
+              className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-400 hover:text-amber-300 disabled:opacity-40 px-3 py-2 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+            >
+              <Download size={13} /> CSV
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
           <Filter size={14} className="text-zinc-500" />
           <FilterSelect
             label="Status"
@@ -273,18 +335,25 @@ export const AdminInvoices = () => {
             ]}
           />
           <div className="ml-auto text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-            {loading ? 'carregando…' : `${invoices.length} fatura${invoices.length === 1 ? '' : 's'}`}
+            {loading ? 'carregando…' : (
+              search
+                ? `${filteredInvoices.length} de ${invoices.length} fatura${invoices.length === 1 ? '' : 's'}`
+                : `${invoices.length} fatura${invoices.length === 1 ? '' : 's'}`
+            )}
+          </div>
           </div>
         </div>
 
         {loading ? (
-          <div className="p-12 flex items-center justify-center text-zinc-500">
-            <Loader2 className="animate-spin" />
+          <div className="p-5">
+            <SkeletonRows rows={6} cols={7} />
           </div>
-        ) : invoices.length === 0 ? (
+        ) : filteredInvoices.length === 0 ? (
           <div className="p-12 text-center text-zinc-500">
             <Receipt className="mx-auto mb-3 opacity-50" />
-            <p className="text-sm font-bold uppercase tracking-widest">Nenhuma fatura no filtro atual</p>
+            <p className="text-sm font-bold uppercase tracking-widest">
+              {invoices.length === 0 ? 'Nenhuma fatura no filtro atual' : `Nenhuma fatura corresponde a "${search}"`}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -301,7 +370,7 @@ export const AdminInvoices = () => {
                 </tr>
               </thead>
               <tbody>
-                {invoices.map(inv => (
+                {filteredInvoices.map(inv => (
                   <tr key={`${inv.tenantId}-${inv.id}`} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -372,16 +441,16 @@ const StatTile = ({
 const FilterSelect = ({
   label, value, onChange, options,
 }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
-  <label className="inline-flex items-center gap-2">
-    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{label}</span>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-white/[0.03] border border-white/5 hover:border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold focus:border-amber-500/40 focus:outline-none transition-colors"
-    >
-      {options.map(o => <option key={o.value} value={o.value} className="bg-zinc-900">{o.label}</option>)}
-    </select>
-  </label>
+  <div className="inline-flex items-center gap-2 min-w-[180px]">
+    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 shrink-0">{label}</span>
+    <div className="flex-1">
+      <Select<string>
+        value={value}
+        onChange={onChange}
+        options={options}
+      />
+    </div>
+  </div>
 );
 
 const InvoiceStatusBadge = ({ status }: { status: string }) => {

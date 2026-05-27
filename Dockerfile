@@ -17,6 +17,22 @@ RUN npm ci --no-audit --no-fund
 # Copia o resto do código-fonte
 COPY . .
 
+# Vite injeta variáveis VITE_* no bundle no momento do build. O CI/CD passa
+# esses valores via --build-arg para que a SPA conecte no Firebase correto
+# (sandbox ou produção) sem precisar de configuração em runtime.
+ARG VITE_FIREBASE_API_KEY
+ARG VITE_FIREBASE_AUTH_DOMAIN
+ARG VITE_FIREBASE_PROJECT_ID
+ARG VITE_FIREBASE_STORAGE_BUCKET
+ARG VITE_FIREBASE_MESSAGING_SENDER_ID
+ARG VITE_FIREBASE_APP_ID
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
+    VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
+    VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID \
+    VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET \
+    VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID \
+    VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+
 # Vite build → produz /app/dist
 RUN npm run build
 
@@ -29,22 +45,18 @@ ENV PORT=8080
 
 # Copia apenas o necessário para rodar (sem node_modules de build)
 COPY --from=builder /app/package.json /app/package-lock.json ./
+# tsx agora é dep de produção (precisamos dele para executar server.ts).
+# npm ci --omit=dev já instala tsx no node_modules/.bin com permissões corretas.
 RUN npm ci --omit=dev --no-audit --no-fund
-
-# tsx é dev dep no projeto; precisamos dele em runtime porque server.ts é TS.
-# Solução: instala apenas tsx (e seu peer) sem voltar a instalar devDependencies.
-RUN npm i --no-save --no-audit --no-fund tsx@4
 
 # Bundle do front e código do servidor
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/services ./services
-COPY --from=builder /app/utils ./utils
-COPY --from=builder /app/lib ./lib
 
 EXPOSE 8080
 
 # Não rodar como root
 USER node
 
-CMD ["npx", "tsx", "server.ts"]
+# Chama o binário direto (sem npx) para evitar download em runtime.
+CMD ["node_modules/.bin/tsx", "server.ts"]

@@ -17,7 +17,7 @@ const getRoleStyle = (role?: string) => {
 };
 
 export const ProfileModule = () => {
-    const { user: currentUser, updateProfile, customRoles } = useAuth();
+    const { user: currentUser, updateProfile, changePassword, customRoles } = useAuth();
     const { addNotification } = useNotification();
     
     const [profileForm, setProfileForm] = useState({ 
@@ -78,13 +78,22 @@ export const ProfileModule = () => {
 
         setPwdLoading(true);
         try {
-            // Em um app real chamaria o provider de auth, aqui faremos uma atualização fictícia caso use jwt custom
-            // como jwtService.updatePassword(current, new)
-            // Mas iremos apenas limpar ou disparar erro simulado se não tiver API.
+            await changePassword(pwdForm.current, pwdForm.new);
             addNotification('success', 'Senha Atualizada', 'Sua senha foi alterada com sucesso.');
             setPwdForm({ current: '', new: '', confirm: '' });
-        } catch (error) {
-            addNotification('error', 'Erro', 'Senha atual incorreta ou erro interno.');
+        } catch (error: any) {
+            const code = error?.code || '';
+            if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+                addNotification('error', 'Senha atual incorreta', 'Verifique sua senha atual e tente novamente.');
+            } else if (code === 'auth/weak-password') {
+                addNotification('error', 'Senha muito fraca', 'Escolha uma senha mais forte.');
+            } else if (code === 'auth/requires-recent-login') {
+                addNotification('error', 'Sessão expirada', 'Faça login novamente para alterar a senha.');
+            } else if (code === 'auth/too-many-requests') {
+                addNotification('error', 'Muitas tentativas', 'Aguarde alguns minutos antes de tentar de novo.');
+            } else {
+                addNotification('error', 'Erro', error?.message || 'Não foi possível alterar a senha.');
+            }
         } finally {
             setPwdLoading(false);
         }

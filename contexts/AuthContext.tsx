@@ -6,6 +6,8 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   updatePassword as fbUpdatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User as FirebaseUser,
 } from 'firebase/auth';
 import { getDoc, setDoc, updateDoc } from 'firebase/firestore';
@@ -15,6 +17,7 @@ import { rateLimitService } from '../services/rateLimit';
 import { auth } from '../services/firebase';
 import { tenantDoc } from '../lib/firestore';
 import { encryption } from '../services/encryption';
+import { loadMyIdentity, type MyIdentity } from '../services/identity';
 import { useTenant } from './TenantContext';
 
 interface AuthContextType {
@@ -23,9 +26,20 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<string | void>;
   register: (name: string, email: string, password: string, ip: string) => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** Poder de PAINEL (super admin). NÃO concede permissões dentro do tenant. */
+  isGlobalAdmin: boolean;
+  /** Memberships aprovadas da identidade (para o seletor de empresa). */
+  memberships: MyIdentity['memberships'];
+  /**
+   * Definido quando o usuário se autenticou com sucesso mas NÃO é membro deste
+   * tenant — porém tem acesso a outros (ou é super admin). A tela de login
+   * mostra o seletor de empresa em vez de um erro. A sessão Firebase é mantida.
+   */
+  crossTenantOptions: MyIdentity | null;
   loading: boolean;
 }
 
@@ -54,11 +68,8 @@ function translateAuthError(err: any): string {
   if (code === 'auth/network-request-failed') {
     return 'Falha de rede. Verifique sua conexão.';
   }
-  if (code === 'auth/email-already-in-use') {
-    return 'Já existe uma conta com este e-mail.';
-  }
-  if (code === 'auth/weak-password') {
-    return 'Senha muito fraca. Use ao menos 6 caracteres.';
+  if (code === 'auth/email-already-in-use' || code === 'auth/weak-password') {
+    return 'Dados inválidos. Verifique e tente novamente.';
   }
   // Fallback: nunca devolver mensagens cruas do Firebase para o usuário.
   return GENERIC_LOGIN_ERROR;
@@ -68,14 +79,28 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const { tenantId } = useTenant();
   const [user, setUser] = useState<User | null>(null);
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const [identity, setIdentity] = useState<MyIdentity | null>(null);
+  const [crossTenantOptions, setCrossTenantOptions] = useState<MyIdentity | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Carrega o User decriptado a partir de /tenants/{tenantId}/users/{uid}.
   // Retorna null se o doc não existe (usuário não é membro deste tenant) ou
   // se o status não está aprovado.
+  //
+  // Importante: as rules de /tenants/{tid}/users/{uid} exigem que o próprio
+  // doc exista para liberar leitura. Quando o doc não existe, o Firestore
+  // devolve PERMISSION_DENIED em vez de snap.exists()===false — então
+  // tratamos esse erro como "não-membro" e devolvemos null. Outros erros
+  // (rede, etc.) sobem para o caller.
   const loadUserDoc = async (fbUser: FirebaseUser): Promise<User | null> => {
     if (!auth) return null;
-    const snap = await getDoc(tenantDoc(USERS_COLLECTION, fbUser.uid));
+    let snap;
+    try {
+      snap = await getDoc(tenantDoc(USERS_COLLECTION, fbUser.uid));
+    } catch (e: any) {
+      if (e?.code === 'permission-denied') return null;
+      throw e;
+    }
     if (!snap.exists()) return null;
     const raw = { ...snap.data(), id: snap.id } as User;
 
@@ -109,12 +134,21 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
           return;
         }
 
-        // Garante que o usuário pertence ao tenant atual. Em produção, custom
-        // claims (token.tenantId) também são validadas, mas o doc lookup é
-        // a fonte da verdade para a UI.
+        // Garante que o usuário pertence ao tenant atual. O doc lookup é a fonte
+        // da verdade para a UI; as claims (token.tn[tid]) aceleram as rules.
         const doc = await loadUserDoc(fbUser);
         if (!doc) {
-          console.warn(`Usuário ${fbUser.uid} sem doc em /tenants/${tenantId}/users — deslogando.`);
+          // Não é membro DESTE tenant. Em vez de deslogar (o que mataria a
+          // sessão global do Firebase), carrega a identidade unificada: se o
+          // usuário tem acesso a OUTROS tenants ou é super admin, mostramos o
+          // seletor de empresa. Sem nenhum acesso → desloga limpo.
+          const id = await loadMyIdentity(fbUser);
+          if (id.memberships.length > 0 || id.pending.length > 0 || id.isGlobalAdmin) {
+            setCrossTenantOptions(id);
+            setUser(null);
+            return;
+          }
+          console.warn(`Usuário ${fbUser.uid} sem vínculo a nenhum tenant — deslogando.`);
           await fbSignOut(authInstance);
           setUser(null);
           return;
@@ -136,8 +170,14 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         }
 
         setUser(doc);
+        setCrossTenantOptions(null);
+        // Carrega identidade unificada (memberships + isGlobalAdmin) em paralelo.
+        loadMyIdentity(fbUser).then(setIdentity).catch(() => {});
       } catch (e) {
+        // Erro inesperado (rede, etc.) — força signOut para não deixar o
+        // Firebase Auth e o estado da UI dessincronizados.
         console.error('Auth boot error:', e);
+        try { await fbSignOut(authInstance); } catch { /* noop */ }
         setUser(null);
       } finally {
         setLoading(false);
@@ -151,7 +191,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     if (!auth) return 'Serviço de autenticação indisponível.';
     if (!password) return GENERIC_LOGIN_ERROR;
 
-    const limitCheck = rateLimitService.check('login_attempt', 5, 900);
+    // Backoff progressivo: 4 tentativas por stage, escalando o bloqueio
+    // 30 → 60 → 120 → 240 → 480 → 960s. Sucesso reseta tudo via clear().
+    const limitCheck = rateLimitService.checkProgressive('login_attempt');
     if (!limitCheck.allowed) {
       return `Muitas tentativas. Tente novamente em ${limitCheck.waitTime} segundos.`;
     }
@@ -160,12 +202,23 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
 
+      // Força refresh do ID token para puxar claims recém-mintadas (nova shape
+      // {superadmin, tn}) — evita que as rules vejam claims defasadas no 1º acesso.
+      try { await cred.user.getIdToken(true); } catch { /* segue com token atual */ }
+
       const doc = await loadUserDoc(cred.user);
       if (!doc) {
-        // Auth OK mas usuário não é membro deste tenant — esconde a razão.
+        // Credencial VÁLIDA, mas não é membro deste tenant. Não conta como
+        // falha de login. Se tem acesso a outros tenants / é super admin,
+        // oferece o seletor de empresa; senão, mensagem clara.
+        rateLimitService.clear('login_attempt');
+        const id = await loadMyIdentity(cred.user);
+        if (id.memberships.length > 0 || id.pending.length > 0 || id.isGlobalAdmin) {
+          setCrossTenantOptions(id);
+          return;
+        }
         await fbSignOut(auth);
-        rateLimitService.record('login_attempt');
-        return GENERIC_LOGIN_ERROR;
+        return 'Sua conta não está vinculada a esta empresa.';
       }
 
       if (doc.tenantId && doc.tenantId !== tenantId) {
@@ -180,9 +233,11 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
       rateLimitService.clear('login_attempt');
       setUser(doc);
+      setCrossTenantOptions(null);
+      loadMyIdentity(cred.user).then(setIdentity).catch(() => {});
       return;
     } catch (e: any) {
-      rateLimitService.record('login_attempt');
+      rateLimitService.recordFailProgressive('login_attempt');
       console.warn('Login error:', e?.code || e?.message);
       return translateAuthError(e);
     } finally {
@@ -245,9 +300,29 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     setUser({ ...user, ...dataToUpdate });
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!auth?.currentUser?.email) {
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
+    const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    try {
+      await reauthenticateWithCredential(auth.currentUser, credential);
+    } catch (e: any) {
+      if (INVALID_CREDENTIAL_CODES.has(e?.code)) {
+        const err = new Error('Senha atual incorreta.');
+        (err as any).code = 'auth/wrong-password';
+        throw err;
+      }
+      throw e;
+    }
+    await fbUpdatePassword(auth.currentUser, newPassword);
+  };
+
   const logout = async () => {
     if (auth) await fbSignOut(auth);
     setUser(null);
+    setIdentity(null);
+    setCrossTenantOptions(null);
   };
 
   if (loading) {
@@ -263,9 +338,12 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, customRoles, login, register, updateProfile, logout,
+      user, customRoles, login, register, updateProfile, changePassword, logout,
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'superadmin' || false,
+      isGlobalAdmin: identity?.isGlobalAdmin ?? false,
+      memberships: identity?.memberships ?? [],
+      crossTenantOptions,
       loading,
     }}>
       {children}

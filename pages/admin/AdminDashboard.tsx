@@ -6,13 +6,17 @@ import { db, functions } from '../../services/firebase';
 import { systemCollection } from '../../lib/firestore';
 import {
   Building2, CheckCircle2, XCircle, Shield, TrendingUp, AlertTriangle, CreditCard, Sparkles,
-  ArrowUpRight, Receipt, Activity, Crown,
+  ArrowUpRight, Receipt, Activity, Crown, Tag as TagIcon, Trophy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import type { Tenant } from '../../types';
+import { useTenantsStats } from '../../hooks/useTenantsStats';
+import { UsageBadge } from '../../components/ui/progress-bar';
+import { Skeleton } from '../../components/ui/skeleton';
+import { useAdminTheme } from '../../hooks/useAdminTheme';
 
 interface Counts {
   totalTenants: number;
@@ -58,6 +62,9 @@ function monthlyEquivalent(priceCents?: number, cycle?: string): number {
 }
 
 export const AdminDashboard = () => {
+  const { theme } = useAdminTheme();
+  const isLight = theme === 'light';
+
   const [counts, setCounts] = useState<Counts>({
     totalTenants: 0,
     activeTenants: 0,
@@ -71,6 +78,7 @@ export const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const { stats: tenantStats, loading: statsLoading } = useTenantsStats();
 
   useEffect(() => {
     if (!db) return;
@@ -157,9 +165,36 @@ export const AdminDashboard = () => {
     return Math.round(((last - prev) / prev) * 100);
   }, [history]);
 
+  // Paleta do gráfico — adapta ao tema
+  const chart = isLight
+    ? {
+        grid: '#e2e8f0',
+        axisMain: '#64748b',
+        axisSecondary: '#94a3b8',
+        stroke: '#d97706',
+        fillTop: 0.28,
+        tooltipBg: '#ffffff',
+        tooltipBorder: '#e2e8f0',
+        tooltipText: '#0f172a',
+        tooltipLabel: '#475569',
+        tooltipShadow: '0 10px 30px -10px rgba(15,23,42,0.15)',
+      }
+    : {
+        grid: '#27272a',
+        axisMain: '#71717a',
+        axisSecondary: '#52525b',
+        stroke: '#f59e0b',
+        fillTop: 0.4,
+        tooltipBg: 'rgba(9, 9, 11, 0.95)',
+        tooltipBorder: 'rgba(245, 158, 11, 0.2)',
+        tooltipText: '#ffffff',
+        tooltipLabel: '#a1a1aa',
+        tooltipShadow: '0 10px 30px -10px rgba(0,0,0,0.6)',
+      };
+
   return (
     <div className="space-y-6">
-      <header className="flex items-end justify-between gap-4">
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-black uppercase tracking-widest">Dashboard</h1>
           <p className="text-zinc-500 text-sm mt-1">Visão geral da plataforma · {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
@@ -173,7 +208,7 @@ export const AdminDashboard = () => {
         </Link>
       </header>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <HeroStat
           label="MRR"
           value={loading ? '—' : fmtBRL(counts.mrrCents)}
@@ -181,6 +216,7 @@ export const AdminDashboard = () => {
           subtitle="Receita recorrente"
           icon={TrendingUp}
           spark={history.map(h => h.revenueCents)}
+          isLight={isLight}
         />
         <SoftStat label="Empresas" value={counts.totalTenants} icon={Building2} loading={loading} hint={`${counts.activeTenants} ativas`} />
         <SoftStat label="Em dia" value={counts.activeTenants} icon={CheckCircle2} loading={loading} tone="emerald" />
@@ -203,54 +239,57 @@ export const AdminDashboard = () => {
             </div>
             <Activity className="text-amber-500/60" size={18} />
           </div>
-          <div className="h-56 -mx-2">
+          <div className="h-64 -mx-2">
             {historyLoading ? (
               <div className="h-full flex items-center justify-center text-zinc-600 text-xs uppercase tracking-widest">Carregando histórico…</div>
             ) : history.length === 0 ? (
               <div className="h-full flex items-center justify-center text-zinc-600 text-xs uppercase tracking-widest">Sem dados ainda</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history}>
+                <AreaChart data={history} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="mrrFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+                      <stop offset="0%" stopColor={chart.stroke} stopOpacity={chart.fillTop} />
+                      <stop offset="100%" stopColor={chart.stroke} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                   <XAxis
                     dataKey="month"
                     tickFormatter={monthLabel}
-                    tick={{ fill: '#71717a', fontSize: 10, fontWeight: 700 }}
+                    tick={{ fill: chart.axisMain, fontSize: 11, fontWeight: 600 }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
                     tickFormatter={(v) => fmtBRLShort(v)}
-                    tick={{ fill: '#52525b', fontSize: 10, fontWeight: 700 }}
+                    tick={{ fill: chart.axisSecondary, fontSize: 10, fontWeight: 600 }}
                     axisLine={false}
                     tickLine={false}
-                    width={50}
+                    width={56}
                   />
                   <Tooltip
-                    cursor={{ stroke: '#f59e0b', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: chart.stroke, strokeWidth: 1, strokeDasharray: '4 4' }}
                     contentStyle={{
-                      background: 'rgba(9, 9, 11, 0.95)',
-                      border: '1px solid rgba(245, 158, 11, 0.2)',
+                      background: chart.tooltipBg,
+                      border: `1px solid ${chart.tooltipBorder}`,
                       borderRadius: '12px',
                       fontSize: '12px',
+                      boxShadow: chart.tooltipShadow,
+                      color: chart.tooltipText,
                     }}
+                    labelStyle={{ color: chart.tooltipLabel, fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}
                     formatter={(v: number, n) => n === 'revenueCents' ? [fmtBRL(v), 'Receita'] : [v, n]}
                     labelFormatter={monthLabel}
                   />
                   <Area
                     type="monotone"
                     dataKey="revenueCents"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
+                    stroke={chart.stroke}
+                    strokeWidth={2.5}
                     fill="url(#mrrFill)"
                     dot={false}
-                    activeDot={{ r: 4, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }}
+                    activeDot={{ r: 5, fill: chart.stroke, stroke: isLight ? '#fff' : '#fff', strokeWidth: 2 }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -305,21 +344,21 @@ export const AdminDashboard = () => {
           ) : (
             <ul className="divide-y divide-white/5">
               {recent.map(t => (
-                <li key={t.id} className="py-3 flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400/20 to-orange-600/10 border border-amber-500/20 flex items-center justify-center font-display font-black text-amber-400 text-sm">
+                <li key={t.id} className="py-3 flex items-center justify-between text-sm gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400/20 to-orange-600/10 border border-amber-500/20 flex items-center justify-center font-display font-black text-amber-400 text-sm shrink-0">
                       {t.name?.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <div className="font-bold">{t.name}</div>
+                    <div className="min-w-0">
+                      <div className="font-bold truncate">{t.name}</div>
                       <code className="text-amber-500 text-[11px]">{t.slug}</code>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 shrink-0">
                     <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${planBadgeCls(t.plan)}`}>
                       {t.plan || 'basic'}
                     </span>
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-500 hidden sm:block">
                       {t.createdAt ? new Date(t.createdAt).toLocaleDateString('pt-BR') : '—'}
                     </div>
                   </div>
@@ -357,9 +396,154 @@ export const AdminDashboard = () => {
           </div>
         </div>
       </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <RankingCard
+          title="Top empresas por tags"
+          icon={<TagIcon size={14} />}
+          loading={statsLoading}
+          items={(tenantStats?.topByTags || []).map(t => ({
+            slug: t.slug,
+            name: t.name,
+            plan: t.plan,
+            primary: t.value,
+            secondary: t.limit,
+            unit: 'tags',
+          }))}
+          renderTrailing={(it) => it.secondary
+            ? <UsageBadge value={it.primary} max={it.secondary} />
+            : <span className="text-[11px] font-mono text-zinc-300">{it.primary.toLocaleString('pt-BR')} tags</span>}
+        />
+
+        <RankingCard
+          title="Mais ativas"
+          icon={<Activity size={14} />}
+          loading={statsLoading}
+          items={(tenantStats?.mostActive || []).map(t => ({
+            slug: t.slug,
+            name: t.name,
+            plan: t.plan,
+            primary: t.lastActivityAt,
+          }))}
+          renderTrailing={(it) => (
+            <span className="text-[11px] font-mono text-zinc-400">
+              {it.primary ? new Date(it.primary).toLocaleDateString('pt-BR') : '—'}
+            </span>
+          )}
+        />
+
+        <OverdueCard
+          loading={statsLoading}
+          items={tenantStats?.overdue || []}
+        />
+      </section>
     </div>
   );
 };
+
+interface RankingItem {
+  slug: string;
+  name: string;
+  plan: string;
+  primary: number;
+  secondary?: number;
+  unit?: string;
+}
+
+const RankingCard = ({
+  title, icon, loading, items, renderTrailing,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  loading: boolean;
+  items: RankingItem[];
+  renderTrailing: (it: RankingItem) => React.ReactNode;
+}) => (
+  <div className="bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl p-5">
+    <div className="flex items-center gap-2 mb-4">
+      <Trophy size={14} className="text-amber-500" />
+      <h2 className="font-display text-sm font-black uppercase tracking-widest text-zinc-300">{title}</h2>
+    </div>
+    {loading ? (
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} h={36} rounded="lg" />)}
+      </div>
+    ) : items.length === 0 ? (
+      <div className="text-[10px] uppercase tracking-widest text-zinc-600 py-6 text-center inline-flex items-center justify-center gap-1.5 w-full">
+        Sem dados ainda <span>{icon}</span>
+      </div>
+    ) : (
+      <ul className="space-y-1.5">
+        {items.slice(0, 5).map((it, i) => (
+          <li key={it.slug} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.03] transition-colors">
+            <span className={`w-6 h-6 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-black ${
+              i === 0 ? 'bg-amber-500/20 text-amber-400' :
+                i === 1 ? 'bg-zinc-700/40 text-zinc-300' :
+                  i === 2 ? 'bg-orange-700/30 text-orange-300' :
+                    'bg-white/[0.03] text-zinc-500'
+            }`}>{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold truncate">{it.name}</div>
+              <code className="text-[10px] text-amber-500/80">{it.slug}</code>
+            </div>
+            <div className="shrink-0 text-right">{renderTrailing(it)}</div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
+
+const OverdueCard = ({
+  loading, items,
+}: {
+  loading: boolean;
+  items: { slug: string; name: string; plan: string; priceCents: number; nextDueDate?: number }[];
+}) => (
+  <div className="bg-red-500/[0.04] border border-red-500/15 backdrop-blur-xl rounded-3xl p-5">
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-2">
+        <AlertTriangle size={14} className="text-red-400" />
+        <h2 className="font-display text-sm font-black uppercase tracking-widest text-red-400">Inadimplentes</h2>
+      </div>
+      <Link to="/admin/billing" className="text-[10px] font-bold uppercase tracking-widest text-red-400/80 hover:text-red-300 inline-flex items-center gap-1">
+        Gerenciar <ArrowUpRight size={10} />
+      </Link>
+    </div>
+    {loading ? (
+      <div className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={36} rounded="lg" />)}
+      </div>
+    ) : items.length === 0 ? (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <CheckCircle2 className="text-emerald-400" size={28} />
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">Tudo em dia</p>
+        <p className="text-[10px] text-zinc-500">Nenhuma empresa com fatura vencida</p>
+      </div>
+    ) : (
+      <ul className="space-y-1.5">
+        {items.slice(0, 5).map(t => (
+          <li key={t.slug} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-red-500/5 transition-colors">
+            <div className="w-7 h-7 shrink-0 rounded-lg bg-red-500/15 border border-red-500/20 flex items-center justify-center text-red-400 font-display font-black text-[11px]">
+              {t.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold truncate text-zinc-200">{t.name}</div>
+              {t.nextDueDate && (
+                <div className="text-[10px] text-red-400/80">
+                  Venceu em {new Date(t.nextDueDate).toLocaleDateString('pt-BR')}
+                </div>
+              )}
+            </div>
+            <span className="shrink-0 text-[11px] font-mono text-red-300">
+              {t.priceCents ? fmtBRL(t.priceCents) : '—'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
 
 function planBadgeCls(plan?: string) {
   return plan === 'enterprise' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
@@ -368,8 +552,8 @@ function planBadgeCls(plan?: string) {
 }
 
 const HeroStat = ({
-  label, value, delta, subtitle, icon: Icon, spark,
-}: { label: string; value: string; delta: number; subtitle: string; icon: any; spark: number[] }) => {
+  label, value, delta, subtitle, icon: Icon, spark, isLight,
+}: { label: string; value: string; delta: number; subtitle: string; icon: any; spark: number[]; isLight: boolean }) => {
   const trendPositive = delta >= 0;
   return (
     <div className="relative bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl p-5 overflow-hidden">
@@ -387,13 +571,13 @@ const HeroStat = ({
             {trendPositive ? '↑' : '↓'} {Math.abs(delta)}%
           </div>
         </div>
-        <Sparkline values={spark} className="mt-3" />
+        <Sparkline values={spark} className="mt-3" stroke={isLight ? '#d97706' : '#f59e0b'} fillOpacity={isLight ? 0.35 : 0.5} />
       </div>
     </div>
   );
 };
 
-const Sparkline = ({ values, className }: { values: number[]; className?: string }) => {
+const Sparkline = ({ values, className, stroke, fillOpacity }: { values: number[]; className?: string; stroke: string; fillOpacity: number }) => {
   if (!values || values.length < 2) return <div className={`h-8 ${className || ''}`} />;
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
@@ -405,16 +589,17 @@ const Sparkline = ({ values, className }: { values: number[]; className?: string
     const y = h - ((v - min) / range) * h;
     return `${x},${y}`;
   }).join(' ');
+  const id = React.useId();
   return (
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={`w-full h-8 ${className || ''}`}>
       <defs>
-        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.5} />
-          <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+        <linearGradient id={`sparkFill-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity={fillOpacity} />
+          <stop offset="100%" stopColor={stroke} stopOpacity={0} />
         </linearGradient>
       </defs>
-      <polyline points={points} fill="none" stroke="#f59e0b" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      <polygon points={`0,${h} ${points} ${w},${h}`} fill="url(#sparkFill)" />
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <polygon points={`0,${h} ${points} ${w},${h}`} fill={`url(#sparkFill-${id})`} />
     </svg>
   );
 };

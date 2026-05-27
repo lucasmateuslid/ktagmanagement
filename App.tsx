@@ -1,6 +1,7 @@
 
 import React, { useEffect, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -122,11 +123,13 @@ const TenantRoutes = () => (
       <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
       <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
       <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
+      {/* /settings é acessível por qualquer usuário autenticado — a tela
+          interna gateia cards por hasPermission(). */}
       <Route path="/settings" element={<Settings />} />
 
       {/* Agendamentos */}
       <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
-      <Route path="/schedules" element={<Schedules />} />
+      <Route path="/schedules" element={<RoleProtectedRoute permission="ROUTE_SCHEDULES"><Schedules /></RoleProtectedRoute>} />
       <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
       <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
       <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
@@ -154,7 +157,7 @@ const TenantApp = () => (
   <AuthProvider>
     <ThemeProvider>
       <WhitelabelStyles />
-      <HashRouter>
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Suspense fallback={<div className="h-screen w-screen bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>}>
           <TenantRoutes />
         </Suspense>
@@ -172,15 +175,18 @@ const AppRouter = () => {
 
 function App() {
   return (
-    <NotificationProvider>
-      <ConnectionProvider>
-        <LanguageProvider>
-          <TenantProvider>
-            <AppRouter />
-          </TenantProvider>
-        </LanguageProvider>
-      </ConnectionProvider>
-    </NotificationProvider>
+    // reducedMotion="user" faz TODO o framer-motion respeitar prefers-reduced-motion (UI-001).
+    <MotionConfig reducedMotion="user">
+      <NotificationProvider>
+        <ConnectionProvider>
+          <LanguageProvider>
+            <TenantProvider>
+              <AppRouter />
+            </TenantProvider>
+          </LanguageProvider>
+        </ConnectionProvider>
+      </NotificationProvider>
+    </MotionConfig>
   );
 }
 

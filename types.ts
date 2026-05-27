@@ -52,7 +52,26 @@ export interface TenantSettings {
   maxUsers?: number;
   features?: string[];
   integrations?: TenantIntegrationFlags;
+  /** Limite máximo de tags que este tenant pode cadastrar. 0/undefined = ilimitado. */
+  limiteTags?: number;
+  /** Limite máximo de veículos. 0/undefined = ilimitado. */
+  limiteVeiculos?: number;
 }
+
+/** Contadores cacheados no doc do tenant — atualizados via Cloud Function. */
+export interface TenantUsage {
+  tagsUtilizadas?: number;
+  veiculosUtilizados?: number;
+  usuariosAtivos?: number;
+  agendamentosAtivos?: number;
+  /** Última vez que o agregado foi recalculado. */
+  lastComputedAt?: number;
+  /** Última atividade detectada (mais recente entre todas as entidades). */
+  lastActivityAt?: number;
+}
+
+/** Estratégia de exclusão de tenant. */
+export type TenantDeletionMode = 'soft' | 'hard';
 
 export type BillingStatus =
   | 'none'        // sem assinatura criada ainda
@@ -83,6 +102,11 @@ export interface TenantBilling {
   payerEmail?: string;
   /** Última sync bem-sucedida com Asaas (epoch ms). */
   lastSyncedAt?: number;
+  /** Trial period (epoch ms em que o trial expira = data da 1ª cobrança). */
+  trialEndsAt?: number;
+  trialDays?: number;
+  /** Adesão (taxa de setup única) — opcional. */
+  setupFee?: SetupFee;
 }
 
 export interface Tenant {
@@ -95,6 +119,14 @@ export interface Tenant {
   createdAt: number;
   settings?: TenantSettings;
   billing?: TenantBilling;
+  /** Contadores cacheados de uso. Atualizado por getTenantUsage. */
+  usage?: TenantUsage;
+  /** Marcado quando soft-deleted. Tenant ainda existe no Firestore. */
+  deletedAt?: number;
+  /** UID do super admin que executou a exclusão. */
+  deletedBy?: string;
+  /** Modo de exclusão executado. */
+  deletionMode?: TenantDeletionMode;
 }
 
 export type InvoiceStatus =
@@ -116,8 +148,10 @@ export interface Invoice {
   paidAt?: number;
   billingType: BillingMethod;
   invoiceUrl?: string;        // página de pagamento Asaas
-  bankSlipUrl?: string;       // boleto PDF
-  pixQrCode?: string;
+  bankSlipUrl?: string;       // boleto PDF (link externo)
+  boletoBarcode?: string;     // linha digitável do boleto (identificationField)
+  pixQrCode?: string;         // base64 PNG do QR code PIX (encodedImage)
+  pixPayload?: string;        // texto copia-e-cola PIX (payload)
   description?: string;
   createdAt: number;
   updatedAt: number;
@@ -127,9 +161,43 @@ export interface Invoice {
 export interface PlanConfig {
   id: TenantPlan;
   name: string;
+  /** Valor mensal em centavos (referência usada para preencher novas assinaturas). */
   priceCents: number;
+  /** Limite default sugerido de usuários. */
   maxUsers: number;
+  /** Limite default sugerido de tags. 0 = ilimitado. */
+  defaultLimiteTags?: number;
+  /** Adesão sugerida em centavos (pode ser sobrescrita na criação). */
+  defaultSetupFeeCents?: number;
+  /** Dia do vencimento sugerido (1-28). */
+  defaultDueDay?: number;
   features: string[];
+}
+
+/** Doc completo em /system_config/plans. Mapa por id de plano. */
+export interface PlansConfigDoc {
+  basic: PlanConfig;
+  pro: PlanConfig;
+  enterprise: PlanConfig;
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+/** Status da adesão (setup fee) de uma assinatura. */
+export type SetupFeeStatus = 'paid' | 'pending' | 'waived';
+
+export interface SetupFee {
+  valueCents: number;
+  status: SetupFeeStatus;
+  description?: string;
+  /** Quando foi registrada (epoch ms). */
+  registeredAt: number;
+  /** UID do super admin que registrou. */
+  registeredBy?: string;
+  /** Quando foi marcada como paga (epoch ms). */
+  paidAt?: number;
+  /** Se gerou uma fatura no Asaas (status=pending), id do payment. */
+  asaasPaymentId?: string;
 }
 
 export interface Company {
@@ -412,6 +480,12 @@ export interface AppSettings {
   customAppName?: string;
   customLogoUrlLight?: string;
   customLogoUrlDark?: string;
+  // Upload local (PNG/JPG/SVG codificado em base64). Tem prioridade sobre
+  // customLogoUrl* na renderização — permite ao admin trocar a logo sem
+  // depender de hosting externo. Tamanho máx ~280KB encodado (caber dentro
+  // do limite de 1MB do doc do Firestore).
+  customLogoBase64Light?: string;
+  customLogoBase64Dark?: string;
   themeColors?: ThemeColors;
   ktagUrl: string;
   ktagUser: string;
