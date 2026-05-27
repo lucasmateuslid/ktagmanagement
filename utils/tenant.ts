@@ -90,3 +90,33 @@ export function isAdminPanelHost(hostname?: string): boolean {
 export function isApexHost(hostname?: string): boolean {
   return getTenantFromHostname(hostname) === APEX_TENANT;
 }
+
+/**
+ * Constrói a URL absoluta para entrar em um tenant (ou no painel 'admin').
+ * Usado pelo seletor de empresa (TenantSwitcher).
+ *
+ *  - Produção (subdomínio): https://{slug}.{baseDomain}/
+ *  - Desenvolvimento (localhost): mantém o host atual e usa ?tenant={slug}
+ *
+ * Mudar de tenant = navegar para outro subdomínio. NOTA: a persistência do
+ * Firebase Auth (browserLocalPersistence/localStorage) é POR ORIGEM, e cada
+ * subdomínio é uma origem distinta — então o usuário re-autentica no destino
+ * com as MESMAS credenciais (mesmo UID/identidade no projeto). O seletor serve
+ * para descobrir e navegar até os ambientes a que tem acesso.
+ */
+export function buildTenantHref(slug: string): string {
+  if (typeof window === 'undefined') return '/';
+  const { protocol, hostname, port } = window.location;
+  const isLocal =
+    !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+
+  if (isLocal) {
+    const p = port ? `:${port}` : '';
+    return `${protocol}//${hostname}${p}/?tenant=${encodeURIComponent(slug)}`;
+  }
+
+  // Domínio registrável = últimos dois rótulos (ex.: ktagfinder.app).
+  const parts = hostname.split('.');
+  const baseDomain = parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+  return `${protocol}//${slug}.${baseDomain}/`;
+}

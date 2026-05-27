@@ -239,14 +239,6 @@ export const useScheduleNotifications = () => {
                     const lastHistory = schedule.history[schedule.history.length - 1];
                     const whoChanged = lastHistory?.actionBy || 'O Técnico';
                     playSound('admin');
-                    
-                    if ('speechSynthesis' in window && user?.id === schedule.requesterId) {
-                        const utterance = new SpeechSynthesisUtterance(`Agendamento de ${schedule.vehiclePlate}, foi finalizado pelo técnico, aguardando a confirmação de vínculo!`);
-                        utterance.lang = 'pt-BR';
-                        utterance.rate = 1.0;
-                        window.speechSynthesis.speak(utterance);
-                    }
-                    
                     addNotification('info', 'Serviço finalizado aguardando vínculo', `Placa ${schedule.vehiclePlate}: Técnico finalizou o serviço, confirme o vínculo.`, true);
                 }
                 // Se mudou para qualquer outro status importante (Confirmada, Concluída, etc)

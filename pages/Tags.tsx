@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import * as XLSX from 'xlsx';
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 
@@ -611,18 +612,11 @@ export const Tags = () => {
 
   const handleDownloadTemplate = () => {
     const headers = [
-      { 
-        "Identificacao": "Tag Exemplo 01", 
+      {
+        "Identificacao": "Tag Exemplo 01",
         "Serial/IMEI": "ABC12345",
-        "Chave Publica (Opcional K-Tag)": "key_hash...",
-        "Chave Privada (Opcional K-Tag)": "priv_key..."
-      },
-      { 
-        "Key名称": "Tag Exemplo 02", 
-        "SN码": "DEF67890",
-        "MAC地址": "00:11:22:33:44:55",
-        "hashedAdvKey值": "key_hash...",
-        "privateKey值": "priv_key..."
+        "Chave Publica (Obrigatório K-Tag)": "key_hash...",
+        "Chave Privada (Obrigatório K-Tag)": "priv_key..."
       }
     ];
     const ws = XLSX.utils.json_to_sheet(headers);
@@ -683,10 +677,10 @@ export const Tags = () => {
     try {
       for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          const name = row['Identificacao'] || row['nome'] || row['name'] || row['Key名称'] || `Equip-${Math.floor(Math.random()*10000)}`;
+          const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
           const serial = row._serial;
-          const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'] || row['hashedAdvKey值'];
-          const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'] || row['privateKey值'];
+          const pubKey = row['Chave Publica (Obrigatório K-Tag)'] || row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
+          const privKey = row['Chave Privada (Obrigatório K-Tag)'] || row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
 
           const exists = tags.some(t => t.accessoryId === serial || t.imei === serial);
           if (!exists) {
@@ -1249,17 +1243,19 @@ export const Tags = () => {
         )}
       </AnimatePresence>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto animate-in fade-in zoom-in-95">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
-                        {formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
-                    </h2>
-                    <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X size={24}/></button>
-                </div>
-
-                <form onSubmit={handleSave} className="space-y-5">
+      <ResponsiveModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        size="lg"
+        title={formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
+        footer={
+          <button type="submit" form="tag-equip-form" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg">
+            <Save size={16} /> Salvar Equipamento
+          </button>
+        }
+      >
+        <ModalSection>
+                <form id="tag-equip-form" onSubmit={handleSave} className="space-y-5">
                     <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                         <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
                             K-Tag (Padrão)
@@ -1316,16 +1312,12 @@ export const Tags = () => {
                         <input type="number" min="1" max="10" value={formData.batteryWarrantyYears || 1} onChange={e => setFormData({...formData, batteryWarrantyYears: parseInt(e.target.value)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                     </div>
 
-                    <button type="submit" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg mt-4">
-                        <Save size={16} /> Salvar Equipamento
-                    </button>
                 </form>
-            </div>
-        </div>
-      )}
+        </ModalSection>
+      </ResponsiveModal>
 
       {isImportModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
               <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto flex flex-col max-h-[90vh]">
                   <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-950/50 rounded-t-[32px]">
                       <div>
@@ -1457,7 +1449,7 @@ export const Tags = () => {
         {reportProgress && (
           <MotionDiv 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           >
               <div className="bg-white dark:bg-[#0a0a0a] border border-zinc-100 dark:border-zinc-800 p-8 rounded-3xl w-full max-w-md shadow-2xl flex flex-col items-center text-center">
                   <div className="w-16 h-16 bg-primary-500/10 rounded-full flex items-center justify-center mb-6">

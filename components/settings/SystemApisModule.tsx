@@ -376,22 +376,23 @@ export const SystemApisModule = () => {
         return <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} embedded />;
 
       case 'ktag':
+        if (!isAdmin) return null;
         return (
           <div className="space-y-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
-              <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.ktagUrl || '') : '••••••••••••••••'} onChange={e => setSettings({ ...settings, ktagUrl: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[11px] outline-none focus:border-primary-500 disabled:opacity-50" placeholder="https://api.ktag.example.com" />
+              <input type="text" value={settings.ktagUrl || ''} onChange={e => setSettings({ ...settings, ktagUrl: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[11px] outline-none focus:border-primary-500" placeholder="https://api.ktag.example.com" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
-                <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUser : '••••••••••••••••'} onChange={e => setSettings({ ...settings, ktagUser: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" />
+                <input type="text" value={settings.ktagUser || ''} onChange={e => setSettings({ ...settings, ktagUser: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
                 <div className="relative">
-                  <input type={showKTagPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.ktagPass : '••••••••••••••••'} onChange={e => setSettings({ ...settings, ktagPass: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12 disabled:opacity-50" />
-                  {isAdmin && <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
+                  <input type={showKTagPass ? 'text' : 'password'} value={settings.ktagPass || ''} onChange={e => setSettings({ ...settings, ktagPass: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" />
+                  <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
               </div>
             </div>
@@ -737,7 +738,7 @@ export const SystemApisModule = () => {
         </button>
         {mobileNavOpen && (
           <div className="mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2 space-y-1 max-h-[60vh] overflow-y-auto">
-            {SECTIONS.map(s => {
+            {SECTIONS.filter(s => s.id !== 'ktag' || isAdmin).map(s => {
               const Icon = s.icon;
               const st = getSectionStatus(s.id, settings);
               const isActive = s.id === activeSection;
@@ -765,7 +766,7 @@ export const SystemApisModule = () => {
             <div key={group} className="mb-6 last:mb-0">
               <h4 className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400 dark:text-zinc-500 px-3 mb-3">{group}</h4>
               <div className="space-y-1">
-                {items.map(s => {
+                {items.filter(s => s.id !== 'ktag' || isAdmin).map(s => {
                   const Icon = s.icon;
                   const st = getSectionStatus(s.id, settings);
                   const isActive = s.id === activeSection;

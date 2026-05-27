@@ -8,6 +8,7 @@ import { AdminTenants } from './AdminTenants';
 import { AdminBilling } from './AdminBilling';
 import { AdminInvoices } from './AdminInvoices';
 import { AdminUsers } from './AdminUsers';
+import { AdminAccess } from './AdminAccess';
 import { AdminSystemAdmins } from './AdminSystemAdmins';
 import { AdminAudit } from './AdminAudit';
 import { AdminAsaasConfig } from './AdminAsaasConfig';
@@ -34,6 +35,7 @@ const AdminGate = () => {
         <Route path="/admin/billing" element={<AdminBilling />} />
         <Route path="/admin/invoices" element={<AdminInvoices />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/access" element={<AdminAccess />} />
         <Route path="/admin/system-admins" element={<AdminSystemAdmins />} />
         <Route path="/admin/audit" element={<AdminAudit />} />
         <Route path="/admin/asaas-config" element={<AdminAsaasConfig />} />

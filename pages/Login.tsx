@@ -2,6 +2,8 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
+import { TenantSwitcher } from '../components/TenantSwitcher';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNavigate } from 'react-router-dom';
@@ -63,7 +65,8 @@ function FloatingPaths({ position }: { position: number }) {
 }
 
 export const Login = () => {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, crossTenantOptions, logout } = useAuth();
+  const { tenantId } = useTenant();
   const { t } = useLanguage();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
@@ -151,6 +154,31 @@ export const Login = () => {
       if (lowerMsg.includes('usuário') || lowerMsg.includes('encontrado')) return 'invalid_user.png';
       return null;
   };
+
+  // Identidade unificada: o usuário autenticou mas não é membro DESTA empresa,
+  // tendo acesso a outras (ou sendo super admin). Mostra o seletor de empresa.
+  if (crossTenantOptions) {
+    return (
+      <main className="relative min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-6">
+          <TenantSwitcher
+            memberships={crossTenantOptions.memberships}
+            pending={crossTenantOptions.pending}
+            isGlobalAdmin={crossTenantOptions.isGlobalAdmin}
+            currentTenantId={tenantId}
+            subtitle={`Sua conta não tem acesso a "${tenantId}". Escolha um ambiente disponível.`}
+          />
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="block mx-auto text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-amber-500 transition-colors"
+          >
+            Sair e usar outra conta
+          </button>
+        </div>
+      </main>
+    );
+  }
 
 	return (
 		<main className="relative md:h-screen md:overflow-hidden lg:grid lg:grid-cols-2 bg-black text-white">

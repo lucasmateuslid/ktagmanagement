@@ -3,22 +3,38 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================================
-    // K-Tag Manager Pro — Firestore Rules (Multi-tenant Fase 2)
+    // K-Tag Manager Pro — Firestore Rules (Identidade Unificada)
     // ============================================================
     //
     // Modelo:
-    //   /tenants/{tenantId}                       — metadata do tenant
-    //   /tenants/{tenantId}/users/{uid}           — usuários do tenant
-    //   /tenants/{tenantId}/<entity>/{id}         — qualquer entidade de domínio
-    //   /system_admins/{uid}                      — superadmins da plataforma
+    //   /tenants/{tenantId}                       — metadata do tenant (CONTROL PLANE)
+    //   /tenants/{tenantId}/users/{uid}           — registro operacional por-tenant
+    //   /tenants/{tenantId}/<entity>/{id}         — dados operacionais do tenant
+    //   /system_admins/{uid}                      — flag de super admin global
+    //   /identities/{uid}                         — identidade global (derivada)
+    //   /identities/{uid}/memberships/{tid}       — junção uid↔tenant (derivada)
     //
-    // Autenticação: Firebase Auth (Fase 2). request.auth.uid é o uid do user doc.
-    // request.auth.token.tenantId é setado por Cloud Function onTenantUserCreate.
+    // Autenticação: Firebase Auth. request.auth.uid é o uid global do usuário.
     //
-    // Estratégia: as rules permitem fast-path via custom claims (token.tenantId)
-    // e fallback para exists() do doc. Custom claims podem demorar um ciclo de
-    // refresh para propagar após criação — o fallback evita race condition no
-    // primeiro login.
+    // CLAIMS (JWT payload), mantidos por Cloud Functions (rebuildIdentityAndClaims):
+    //   { superadmin?: true, tn?: { [tid]: role }, tnBig?: true }
+    //   - `tn` lista SÓ memberships APROVADAS (tid → role).
+    //   - `tnBig` indica que o mapa estourou o limite de claims → fallback por doc.
+    //   - `superadmin` é poder de PAINEL. NÃO libera dados operacionais de tenant.
+    //
+    // ISOLAMENTO ESTRITO (decisão de projeto):
+    //   Super admin NÃO tem acesso de cliente aos dados operacionais de NENHUM
+    //   tenant (um token de super admin é válido em qualquer subdomínio, e as
+    //   rules não enxergam o subdomínio). Operações de super admin sobre dados
+    //   de tenant passam por Cloud Functions (Admin SDK, auditadas). Por isso
+    //   isSuperAdmin() aparece SOMENTE no control plane (root doc + coleções de
+    //   sistema), nunca nas subcoleções operacionais de /tenants/{tid}/...
+    //
+    // COMPAT DE MIGRAÇÃO:
+    //   Sessões antigas têm claims legadas {tenantId, role, approved}. Os helpers
+    //   aceitam claim nova (tn), claim legada e fallback por doc — para não
+    //   quebrar tokens vivos durante a migração. Remover o ramo legado só após
+    //   um ciclo completo de refresh de token + backfill (migrateIdentities).
 
     // ---------- HELPERS ----------
 
@@ -26,207 +42,212 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Poder de PAINEL apenas (control plane). Claim nova/legada usa a mesma key
+    // `superadmin`; fallback por doc enquanto a claim não propagou.
     function isSuperAdmin() {
-      // Fast-path via custom claim (setada por addSystemAdmin callable).
-      // Fallback via lookup do doc — útil enquanto a claim não propagou.
       return isAuthenticated()
         && (request.auth.token.superadmin == true
             || exists(/databases/$(database)/documents/system_admins/$(request.auth.uid)));
     }
 
-    // Fast-path via custom claim setada por onTenantUserCreate/Update.
-    function hasTenantClaim(tenantId) {
+    // Role do tenant via claim nova (token.tn[tid]). '' quando ausente.
+    function claimRole(tenantId) {
       return isAuthenticated()
-        && request.auth.token.tenantId == tenantId
-        && request.auth.token.approved == true;
+        ? request.auth.token.get('tn', {}).get(tenantId, '')
+        : '';
     }
 
-    // Fallback (custa 1 read) — útil enquanto a claim não propagou no token atual.
-    function hasTenantDoc(tenantId) {
+    // Claim legada singular {tenantId, role, approved} — compat de migração.
+    function hasLegacyClaim(tenantId) {
+      return isAuthenticated()
+        && request.auth.token.get('tenantId', '') == tenantId
+        && request.auth.token.get('approved', false) == true;
+    }
+
+    // Doc de membership do próprio usuário neste tenant existe?
+    function memberDocExists(tenantId) {
       return isAuthenticated()
         && exists(/databases/$(database)/documents/tenants/$(tenantId)/users/$(request.auth.uid));
     }
 
-    function isMemberOf(tenantId) {
-      return hasTenantClaim(tenantId) || hasTenantDoc(tenantId);
-    }
-
-    function memberData(tenantId) {
+    function memberDoc(tenantId) {
       return get(/databases/$(database)/documents/tenants/$(tenantId)/users/$(request.auth.uid)).data;
     }
 
+    // Fallback por doc, AGORA exigindo status == 'approved'.
+    // (Antes, a mera existência do doc liberava acesso — usuários 'pending'
+    // ganhavam acesso de membro. Corrigido.)
+    function approvedMemberDoc(tenantId) {
+      return memberDocExists(tenantId) && memberDoc(tenantId).status == 'approved';
+    }
+
+    // Membro APROVADO do tenant (claim nova OU legada OU doc aprovado).
+    function isMemberOf(tenantId) {
+      return claimRole(tenantId) != ''
+          || hasLegacyClaim(tenantId)
+          || approvedMemberDoc(tenantId);
+    }
+
+    // Role efetiva no tenant: claim nova → claim legada → doc aprovado.
+    function tenantRole(tenantId) {
+      return claimRole(tenantId) != ''
+        ? claimRole(tenantId)
+        : (hasLegacyClaim(tenantId)
+            ? request.auth.token.get('role', '')
+            : (approvedMemberDoc(tenantId) ? memberDoc(tenantId).role : ''));
+    }
+
     function isTenantAdmin(tenantId) {
-      // Fast-path via claim
-      return (hasTenantClaim(tenantId)
-              && (request.auth.token.role == 'admin'
-                  || request.auth.token.role == 'admin_tecnico'))
-          // Fallback via doc
-          || (hasTenantDoc(tenantId)
-              && (memberData(tenantId).role == 'admin'
-                  || memberData(tenantId).role == 'admin_tecnico'));
+      return tenantRole(tenantId) == 'admin' || tenantRole(tenantId) == 'admin_tecnico';
     }
 
     function isTenantModerator(tenantId) {
-      return (hasTenantClaim(tenantId)
-              && (request.auth.token.role == 'admin'
-                  || request.auth.token.role == 'admin_tecnico'
-                  || request.auth.token.role == 'moderator'))
-          || (hasTenantDoc(tenantId)
-              && (memberData(tenantId).role == 'admin'
-                  || memberData(tenantId).role == 'admin_tecnico'
-                  || memberData(tenantId).role == 'moderator'));
+      return isTenantAdmin(tenantId) || tenantRole(tenantId) == 'moderator';
     }
 
-    // ---------- TENANT ROOT ----------
+    // ---------- IDENTIDADE GLOBAL (derivada; só Admin SDK escreve) ----------
+
+    match /identities/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if false;
+
+      match /memberships/{tenantId} {
+        allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
+        allow write: if false;
+      }
+    }
+
+    // ---------- TENANT ROOT (CONTROL PLANE) ----------
     //
-    // NOTA DE SEGURANÇA (OWASP A01 — Broken Access Control):
-    // Em Firestore Rules, múltiplas `match` que casam no mesmo path são
-    // combinadas com OR — não há "regra mais específica vence". Por isso o
-    // catch-all `match /tenants/{tenantId}/{document=**}` foi REMOVIDO daqui;
-    // ele tornaria as regras restritivas de invoices/audit_logs/etc dead code.
-    // Cada subcoleção é declarada explicitamente. Coleções novas começam
-    // negadas por padrão — adicione um `match` específico antes de gravar.
+    // O root doc carrega metadata + billing (admin-plane). Membros do tenant
+    // leem o próprio; super admin lê/escreve para o painel. Subcoleções abaixo
+    // são tratadas EXPLICITAMENTE (catch-all removido de propósito — múltiplos
+    // `match` combinam com OR e tornariam regras restritivas dead code).
 
     match /tenants/{tenantId} {
       allow read: if isMemberOf(tenantId) || isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
     }
 
-    // ---------- REGRAS ESPECÍFICAS POR COLEÇÃO ----------
+    // ---------- SUBCOLEÇÕES OPERACIONAIS (somente membros do tenant) ----------
+    //
+    // SEM isSuperAdmin() aqui — isolamento estrito. Super admin usa callables.
 
-    // Usuários: dono lê/atualiza o próprio; admin do tenant controla os demais.
-    // Pendentes (status != approved) só podem ser lidos por admins — evita que
-    // um usuário "esperando aprovação" descubra outros usuários pendentes.
+    // Usuários: dono lê/edita o próprio (mesmo pendente, pra ver o status);
+    // moderador/admin controla os demais. Pendentes só visíveis a moderador+.
     match /tenants/{tenantId}/users/{userId} {
-      allow read: if (hasTenantDoc(tenantId) && request.auth.uid == userId)
-                     || isTenantModerator(tenantId)
-                     || isSuperAdmin();
+      allow read: if (isAuthenticated() && request.auth.uid == userId)
+                     || isTenantModerator(tenantId);
 
-      // Registro novo: precisa ser o próprio uid + bater com o tenantId atual.
-      // Status forçado a 'pending' previne self-promotion.
-      allow create: if (request.auth != null && request.auth.uid == userId
+      // Auto-registro: precisa ser o próprio uid + tenant atual + pending/user
+      // (previne self-promotion). Admin do tenant pode criar livremente.
+      allow create: if (isAuthenticated() && request.auth.uid == userId
                         && request.resource.data.tenantId == tenantId
                         && request.resource.data.status == 'pending'
                         && request.resource.data.role == 'user')
-                       || isTenantAdmin(tenantId)
-                       || isSuperAdmin();
+                       || isTenantAdmin(tenantId);
 
-      // Update: dono pode editar campos não-sensíveis; admin pode tudo.
-      allow update: if (hasTenantDoc(tenantId) && request.auth.uid == userId
+      // Update: dono edita campos não-sensíveis (não pode mudar role/status/tenant);
+      // admin pode tudo.
+      allow update: if (isAuthenticated() && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
                         && request.resource.data.status == resource.data.status
                         && request.resource.data.tenantId == resource.data.tenantId)
-                       || isTenantAdmin(tenantId)
-                       || isSuperAdmin();
+                       || isTenantAdmin(tenantId);
 
-      allow delete: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow delete: if isTenantAdmin(tenantId);
     }
 
-    // Settings (credenciais de terceiros do tenant): leitura para membros, write
-    // só admin.
+    // Settings (credenciais de terceiros do tenant): leitura p/ membros, write admin.
     match /tenants/{tenantId}/settings/{docId} {
       allow read: if isMemberOf(tenantId);
-      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow write: if isTenantAdmin(tenantId);
     }
 
-    // Public settings: espelho com APENAS whitelabel/tema (sem segredos),
-    // mantido por storage.saveSettings. Leitura pública para que Login e
-    // splash possam pintar o tema antes do auth. Escrita restrita a admin.
-    //
-    // ATENÇÃO: nunca colocar credenciais ou tokens aqui — qualquer pessoa
-    // que conheça o subdomínio pode ler este doc.
+    // Public settings: espelho só com whitelabel/tema (SEM segredos). Leitura
+    // pública (login/splash pintam tema pré-auth). Escrita restrita a admin.
     match /tenants/{tenantId}/public_settings/{docId} {
       allow read: if true;
-      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow write: if isTenantAdmin(tenantId);
     }
 
-    // Faturas de mensalidade. Espelho do Asaas — escrita só via Admin SDK
-    // (Cloud Functions ignoram regras). Leitura limitada a admin do tenant +
-    // super admin para não vazar dados financeiros aos demais membros.
+    // Faturas: espelho do Asaas — escrita só Admin SDK. Leitura: admin do tenant.
+    // (Painel super admin lê via callable listTenantInvoices, não por estas rules.)
     match /tenants/{tenantId}/invoices/{invoiceId} {
-      allow read: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow read: if isTenantAdmin(tenantId);
       allow write: if false;
     }
 
-    // Audit logs: append-only para membros, leitura só admin. update/delete bloqueados.
+    // Audit logs: append-only para membros, leitura só admin do tenant.
     match /tenants/{tenantId}/audit_logs/{logId} {
-      allow read: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow read: if isTenantAdmin(tenantId);
       allow create: if isMemberOf(tenantId);
       allow update, delete: if false;
     }
 
-    // Custom roles: leitura para membros (usado em hasPermission), write só admin.
+    // Custom roles: leitura p/ membros (usado em hasPermission), write admin.
     match /tenants/{tenantId}/custom_roles/{roleId} {
       allow read: if isMemberOf(tenantId);
-      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow write: if isTenantAdmin(tenantId);
     }
 
-    // Stolen records: leitura via trackingToken na URL para terceiros (ex.: polícia)
-    // mas o token DEVE ser secreto / impossível de listar. Write restrito a membros.
-    //
-    // OBS: leitura via trackingToken não pode ser feita por list/query pública —
-    // o cliente já precisa saber o ID do doc para acessar. Em Firestore Rules
-    // isso significa que list/query externa retorna PERMISSION_DENIED, mas get
-    // de um doc específico funciona se o doc carrega trackingToken.
+    // Stolen records: get por trackingToken secreto (terceiros), list/write só membros.
     match /tenants/{tenantId}/stolen_records/{recordId} {
       allow get: if isMemberOf(tenantId)
-                    || isSuperAdmin()
                     || (resource != null && resource.data.trackingToken != null);
-      allow list: if isMemberOf(tenantId) || isSuperAdmin();
+      allow list: if isMemberOf(tenantId);
       allow create: if isMemberOf(tenantId);
-      allow update, delete: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow update, delete: if isTenantAdmin(tenantId);
     }
 
-    // ---------- COLEÇÕES DE DOMÍNIO (acesso livre p/ membros do tenant) ----------
-    // Estas são as coleções operacionais — read/write para qualquer membro
-    // aprovado é o comportamento esperado. Adicionar novas aqui quando criadas.
+    // ---------- COLEÇÕES DE DOMÍNIO (read/write p/ membros aprovados) ----------
 
     match /tenants/{tenantId}/tags/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/trackers/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/vehicles/{vehicleId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
       match /history/{histId} {
-        allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+        allow read, write: if isMemberOf(tenantId);
       }
     }
     match /tenants/{tenantId}/clients/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/companies/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/categories/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/schedules/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/technicians/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/technician_payments/{docId} {
-      allow read: if isTenantModerator(tenantId) || isSuperAdmin();
-      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow read: if isTenantModerator(tenantId);
+      allow write: if isTenantAdmin(tenantId);
     }
     match /tenants/{tenantId}/feedbacks/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/system_updates/{docId} {
-      allow read: if isMemberOf(tenantId) || isSuperAdmin();
-      allow write: if isTenantAdmin(tenantId) || isSuperAdmin();
+      allow read: if isMemberOf(tenantId);
+      allow write: if isTenantAdmin(tenantId);
     }
     match /tenants/{tenantId}/shipments/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
     match /tenants/{tenantId}/shipping_addresses/{docId} {
-      allow read, write: if isMemberOf(tenantId) || isSuperAdmin();
+      allow read, write: if isMemberOf(tenantId);
     }
 
-    // ---------- SISTEMA (cross-tenant) ----------
+    // ---------- SISTEMA (cross-tenant / control plane) ----------
 
     match /system_admins/{uid} {
       allow read: if isAuthenticated() && request.auth.uid == uid;
@@ -239,31 +260,22 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Forensics de cada entrega do webhook Asaas. Escrita exclusiva pelo Admin SDK
-    // (Cloud Functions ignoram regras). Leitura restrita a superadmin.
     match /system_billing_events/{eventId} {
       allow read: if isSuperAdmin();
       allow write: if false;
     }
 
-    // Config global da plataforma (whitelabel, anúncios). Leitura pública
-    // para usuários autenticados; escrita restrita a superadmins.
     match /ktag_settings_v3/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
 
-    // Inventário global de rastreadores físicos (cross-tenant, usado em Envios).
-    // Leitura: qualquer autenticado (catálogo compartilhado).
-    // Escrita: somente super admin — evita que um tenant adultere o catálogo
-    // global usado por outros tenants. (Issue OWASP A01 — Broken Access Control.)
     match /ktag_trackers/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
 
-    // Push subscriptions ficam flat (Functions varre cross-tenant para envio
-    // global de notificações por preferência). Cada doc carrega userId.
+    // Push subscriptions flat (Functions varre cross-tenant). Cada doc tem userId.
     match /push_subscriptions/{subId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;

@@ -13,6 +13,7 @@
       --ds-gray-700: hsla(0, 0%, 56%, 1);
       --ds-gray-1000: hsla(0, 0%, 9%, 1);
       --ds-background-100: hsla(0, 0%, 100%, 1);
+      --ds-focus: #b45309; /* primary-700 — contraste AA do anel de foco sobre fundo claro */
   }
 
   .dark {
@@ -23,6 +24,7 @@
       --ds-gray-700: hsla(0, 0%, 56%, 1);
       --ds-gray-1000: hsla(0, 0%, 93%, 1);
       --ds-background-100: hsla(0,0%,4%, 1);
+      --ds-focus: #fbbf24; /* primary-400 — anel de foco visível sobre fundo escuro */
   }
 
   /* Garante contraste em formulários */
@@ -33,6 +35,14 @@
   /* Placeholder color */
   input::placeholder, textarea::placeholder {
     @apply text-zinc-400 dark:text-zinc-500;
+  }
+
+  /* Anel de foco consistente para navegação por teclado (UI-010).
+     :where() tem especificidade 0 — componentes com ring próprio continuam vencendo,
+     mas todo elemento interativo sem estilo ganha um foco visível por padrão. */
+  :where(a, button, [role="button"], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ds-focus);
+    outline-offset: 2px;
   }
 
   /* Reset de autofill do Chrome para não estragar o tema escuro */
@@ -111,6 +121,21 @@ button:active {
   transform: scale(0.96);
 }
 
+/* Acessibilidade: respeita usuários que pedem menos movimento (UI-001).
+   Cobre animações/transições CSS, o shimmer, o animate-pulse e o scale do :active.
+   As animações JS do framer-motion são tratadas globalmente via <MotionConfig reducedMotion="user">. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  button:active {
+    transform: none;
+  }
+}
+
 /* Garantir que inputs não deem zoom no iOS */
 @media screen and (max-width: 768px) {
   input, select, textarea {
@@ -155,6 +180,7 @@ button:active {
  * ============================================================= */
 .admin-light {
   color-scheme: light;
+  --ds-focus: #b45309;          /* anel de foco escuro p/ superfície clara do admin (UI-010) */
   --admin-bg: #f8fafc;          /* slate-50 */
   --admin-surface: #ffffff;
   --admin-surface-2: #f1f5f9;   /* slate-100 */

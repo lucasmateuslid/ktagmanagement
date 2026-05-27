@@ -17,6 +17,7 @@ import { rateLimitService } from '../services/rateLimit';
 import { auth } from '../services/firebase';
 import { tenantDoc } from '../lib/firestore';
 import { encryption } from '../services/encryption';
+import { loadMyIdentity, type MyIdentity } from '../services/identity';
 import { useTenant } from './TenantContext';
 
 interface AuthContextType {
@@ -29,6 +30,16 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** Poder de PAINEL (super admin). NÃO concede permissões dentro do tenant. */
+  isGlobalAdmin: boolean;
+  /** Memberships aprovadas da identidade (para o seletor de empresa). */
+  memberships: MyIdentity['memberships'];
+  /**
+   * Definido quando o usuário se autenticou com sucesso mas NÃO é membro deste
+   * tenant — porém tem acesso a outros (ou é super admin). A tela de login
+   * mostra o seletor de empresa em vez de um erro. A sessão Firebase é mantida.
+   */
+  crossTenantOptions: MyIdentity | null;
   loading: boolean;
 }
 
@@ -68,6 +79,8 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const { tenantId } = useTenant();
   const [user, setUser] = useState<User | null>(null);
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const [identity, setIdentity] = useState<MyIdentity | null>(null);
+  const [crossTenantOptions, setCrossTenantOptions] = useState<MyIdentity | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Carrega o User decriptado a partir de /tenants/{tenantId}/users/{uid}.
@@ -121,12 +134,21 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
           return;
         }
 
-        // Garante que o usuário pertence ao tenant atual. Em produção, custom
-        // claims (token.tenantId) também são validadas, mas o doc lookup é
-        // a fonte da verdade para a UI.
+        // Garante que o usuário pertence ao tenant atual. O doc lookup é a fonte
+        // da verdade para a UI; as claims (token.tn[tid]) aceleram as rules.
         const doc = await loadUserDoc(fbUser);
         if (!doc) {
-          console.warn(`Usuário ${fbUser.uid} sem doc em /tenants/${tenantId}/users — deslogando.`);
+          // Não é membro DESTE tenant. Em vez de deslogar (o que mataria a
+          // sessão global do Firebase), carrega a identidade unificada: se o
+          // usuário tem acesso a OUTROS tenants ou é super admin, mostramos o
+          // seletor de empresa. Sem nenhum acesso → desloga limpo.
+          const id = await loadMyIdentity(fbUser);
+          if (id.memberships.length > 0 || id.pending.length > 0 || id.isGlobalAdmin) {
+            setCrossTenantOptions(id);
+            setUser(null);
+            return;
+          }
+          console.warn(`Usuário ${fbUser.uid} sem vínculo a nenhum tenant — deslogando.`);
           await fbSignOut(authInstance);
           setUser(null);
           return;
@@ -148,6 +170,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
         }
 
         setUser(doc);
+        setCrossTenantOptions(null);
+        // Carrega identidade unificada (memberships + isGlobalAdmin) em paralelo.
+        loadMyIdentity(fbUser).then(setIdentity).catch(() => {});
       } catch (e) {
         // Erro inesperado (rede, etc.) — força signOut para não deixar o
         // Firebase Auth e o estado da UI dessincronizados.
@@ -177,12 +202,23 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
 
+      // Força refresh do ID token para puxar claims recém-mintadas (nova shape
+      // {superadmin, tn}) — evita que as rules vejam claims defasadas no 1º acesso.
+      try { await cred.user.getIdToken(true); } catch { /* segue com token atual */ }
+
       const doc = await loadUserDoc(cred.user);
       if (!doc) {
-        // Auth OK mas usuário não é membro deste tenant — esconde a razão.
+        // Credencial VÁLIDA, mas não é membro deste tenant. Não conta como
+        // falha de login. Se tem acesso a outros tenants / é super admin,
+        // oferece o seletor de empresa; senão, mensagem clara.
+        rateLimitService.clear('login_attempt');
+        const id = await loadMyIdentity(cred.user);
+        if (id.memberships.length > 0 || id.pending.length > 0 || id.isGlobalAdmin) {
+          setCrossTenantOptions(id);
+          return;
+        }
         await fbSignOut(auth);
-        rateLimitService.recordFailProgressive('login_attempt');
-        return GENERIC_LOGIN_ERROR;
+        return 'Sua conta não está vinculada a esta empresa.';
       }
 
       if (doc.tenantId && doc.tenantId !== tenantId) {
@@ -197,6 +233,8 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
 
       rateLimitService.clear('login_attempt');
       setUser(doc);
+      setCrossTenantOptions(null);
+      loadMyIdentity(cred.user).then(setIdentity).catch(() => {});
       return;
     } catch (e: any) {
       rateLimitService.recordFailProgressive('login_attempt');
@@ -283,6 +321,8 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const logout = async () => {
     if (auth) await fbSignOut(auth);
     setUser(null);
+    setIdentity(null);
+    setCrossTenantOptions(null);
   };
 
   if (loading) {
@@ -301,6 +341,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       user, customRoles, login, register, updateProfile, changePassword, logout,
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'superadmin' || false,
+      isGlobalAdmin: identity?.isGlobalAdmin ?? false,
+      memberships: identity?.memberships ?? [],
+      crossTenantOptions,
       loading,
     }}>
       {children}

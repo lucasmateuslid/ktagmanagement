@@ -9,13 +9,14 @@ import { AiAssistant } from './AiAssistant';
 import { pushService } from '../services/pushService'; 
 import { ChangelogModal } from './ChangelogModal'; // Import Changelog
 import { hasPermission } from '../utils/permissions';
+import { buildTenantHref } from '../utils/tenant';
 import {
   LayoutGrid, Map, ShieldAlert, Tags, CarFront, FileText,
   Users, ClipboardList, Settings, Menu, LogOut, Sun, Moon,
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home, Package, Receipt
+  Home, Package, Receipt, Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -131,8 +132,12 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
 };
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
-  const { user, customRoles, logout, isAdmin, updateProfile } = useAuth();
+  const { user, customRoles, logout, isAdmin, updateProfile, memberships, isGlobalAdmin } = useAuth();
   const { tenantId } = useTenant();
+  // Identidade unificada: oferece troca de empresa quando o usuário tem mais de
+  // um vínculo (ou é super admin). Cada item navega para o subdomínio do tenant.
+  const otherMemberships = memberships.filter((m) => m.tenantId !== tenantId);
+  const canSwitch = otherMemberships.length > 0 || isGlobalAdmin;
   const { theme, toggleTheme } = useTheme();
   const { notifications, activeToast, criticalAlerts, markAsRead, clearAll, closeToast, addNotification } = useNotification();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -161,7 +166,6 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   };
   const [appSettings, setAppSettings] = useState<any>(null);
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
-  const hasPlayedAlert = React.useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -180,56 +184,27 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
   useEffect(() => {
      let isM = true;
-     
-     if (!db) {
-         storage.getSettings().then(s => {
-             if (isM) setAppSettings(s);
+     // Assina as settings DO TENANT (logo whitelabel, nome, anúncio). Antes lia o
+     // doc global legado ktag_settings_v3/config, que não tem mais o whitelabel
+     // após a migração D4 (settings por tenant) — por isso o logo caía no fallback.
+     const unsubscribe = storage.subscribeSettings((data: any) => {
+         if (!isM) return;
+         setAppSettings((prev: any) => {
+             // Reseta o "dispensado" quando o anúncio muda
+             const annPrev = prev?.announcement || {};
+             const annNew = data?.announcement || {};
+             if (annPrev.title !== annNew.title || annPrev.message !== annNew.message || annPrev.isActive !== annNew.isActive) {
+                 setTimeout(() => setAnnouncementDismissed(false), 0);
+             }
+             return data;
          });
-         return () => { isM = false; };
-     }
-
-     const unsubscribe = onSnapshot(doc(db, 'ktag_settings_v3', 'config'), (snap) => {
-         if (snap.exists() && isM) {
-             const data = snap.data() as any;
-             // Remove the log because of token vulnerabilities
-             
-             setAppSettings((prev: any) => {
-                 // Check if announcement changed to reset dismissal
-                 const annPrev = prev?.announcement || {};
-                 const annNew = data?.announcement || {};
-                 if (annPrev.title !== annNew.title || annPrev.message !== annNew.message || annPrev.isActive !== annNew.isActive) {
-                     setTimeout(() => setAnnouncementDismissed(false), 0);
-                 }
-                 return data;
-             });
-         } else if (isM && !snap.exists()) {
-             setAppSettings({});
-         }
      });
 
-     return () => { 
-         isM = false; 
-         unsubscribe(); 
+     return () => {
+         isM = false;
+         unsubscribe();
      };
-  }, []);
-
-  useEffect(() => {
-     if (vehiclesReview.length > 0 && !hasPlayedAlert.current && !isExempt) {
-        hasPlayedAlert.current = true;
-        // Tenta tocar um som de alerta
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-        audio.volume = 0.5;
-        audio.play().catch(e => console.log('Autoplay do audio bloqueado pelo navegador', e));
-        
-        // IA Voice (Text to Speech)
-        if ('speechSynthesis' in window) {
-           const text = `Atenção ${user?.name || 'usuário'}. você tem ${vehiclesReview.length} veículo${vehiclesReview.length > 1 ? 's' : ''} com pendência. Atualização de K TAG obrigatória e pendente no sistema.`;
-           const utterance = new SpeechSynthesisUtterance(text);
-           utterance.lang = 'pt-BR';
-           window.speechSynthesis.speak(utterance);
-        }
-     }
-  }, [vehiclesReview, isExempt]);
+  }, [tenantId]);
 
   useEffect(() => {
      if (user) {
@@ -597,14 +572,16 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                   
                   <div className="hidden md:flex items-center gap-4 h-10">
                     {(() => {
-                      const logoSrc = theme === 'dark'
-                        ? (appSettings?.customLogoBase64Dark || appSettings?.customLogoUrlDark)
-                        : (appSettings?.customLogoBase64Light || appSettings?.customLogoUrlLight);
+                      const darkLogo = appSettings?.customLogoBase64Dark || appSettings?.customLogoUrlDark;
+                      const lightLogo = appSettings?.customLogoBase64Light || appSettings?.customLogoUrlLight;
+                      // Cross-fallback: se só um tema tiver logo, usa ele nos dois (evita cair no "K").
+                      const logoSrc = theme === 'dark' ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+                      const appName = appSettings?.customAppName || appSettings?.appName || 'Manager Pro';
                       return logoSrc ? (
-                        <img src={logoSrc} alt="Logo" className="w-10 h-10 object-contain" />
+                        <img src={logoSrc} alt={appName} className="w-10 h-10 object-contain" />
                       ) : (
                         <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-800 dark:border-zinc-200">
-                          <span className="font-display font-black text-white dark:text-black text-lg">K</span>
+                          <span className="font-display font-black text-white dark:text-black text-lg">{appName.charAt(0).toUpperCase()}</span>
                         </div>
                       );
                     })()}
@@ -826,6 +803,25 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         <Package size={18} className="text-zinc-400"/> Rastreamento
                       </a>
                   </div>
+                  {canSwitch && (
+                    <div className="mb-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-2 px-1">Trocar ambiente</p>
+                      <div className="space-y-1.5">
+                        {isGlobalAdmin && (
+                          <a href={buildTenantHref('admin')} className="flex items-center gap-3 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold text-sm hover:bg-amber-500/15 transition-all">
+                            <ShieldCheck size={16} className="text-amber-400" /> Painel da plataforma
+                            <ChevronRight size={14} className="ml-auto opacity-60" />
+                          </a>
+                        )}
+                        {otherMemberships.map((m) => (
+                          <a key={m.tenantId} href={buildTenantHref(m.tenantId)} className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                            <Building2 size={16} className="text-zinc-400" /> <span className="truncate">{m.tenantId}</span>
+                            <ChevronRight size={14} className="ml-auto opacity-60" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 mt-auto hover:bg-red-500 hover:text-white transition-all"><LogOut size={16}/> Sair do App</button>
                 </MotionDiv>
               </>

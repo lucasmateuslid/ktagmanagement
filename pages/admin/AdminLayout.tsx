@@ -4,7 +4,7 @@ import { useSystemAdmin } from '../../contexts/SystemAdminContext';
 import {
   LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt,
   Search, ChevronRight, Settings2, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
-  Sun, Moon,
+  Sun, Moon, KeyRound,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BottomNav, type BottomNavItem } from '../../components/ui/bottom-nav';
@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { to: '/admin/billing', label: 'Mensalidades', icon: CreditCard, group: 'billing' },
   { to: '/admin/plans', label: 'Planos', icon: Layers, group: 'billing' },
   { to: '/admin/invoices', label: 'Faturas', icon: Receipt, group: 'billing' },
+  { to: '/admin/access', label: 'Acessos', icon: KeyRound, group: 'system' },
   { to: '/admin/system-admins', label: 'Super Admins', icon: Shield, group: 'system' },
   { to: '/admin/audit', label: 'Auditoria', icon: FileText, group: 'system' },
   { to: '/admin/asaas-config', label: 'Config. Asaas', icon: Settings2, group: 'system' },
