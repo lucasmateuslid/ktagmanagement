@@ -8,7 +8,7 @@ export const useAiTools = () => {
       return [
             {
                 name: 'get_vehicle_location',
-                description: 'Localiza um veículo pela placa informada, retornando a localização no mapa de tempo real, além do seu status geral de saúde e hardware.',
+                description: 'Localiza UM veículo específico pela placa e retorna status sistêmico, vínculo com Tag GPS e link do grid de mapa ao vivo. QUANDO USAR: sempre que o usuário citar uma placa (ex.: "cadê o ABC1D23?", "status do carro XYZ", "esse veículo está online?"). CORRELAÇÃO ESPERADA APÓS O RESULTADO: se temTagGps=false ou status diferente de "active", recomendar vistoria presencial e/ou abertura de OS urgente; se houver link de mapa, oferecer rastreio ao vivo.',
                 parameters: {
                     type: 'OBJECT',
                     properties: { plate: { type: 'STRING', description: 'Placa do veículo' } },
@@ -17,12 +17,12 @@ export const useAiTools = () => {
             },
             {
                 name: 'get_fleet_stats',
-                description: 'Lê as tabelas de Hardware (Tags) e Frotas registradas (Veículos), retornando quanto está vinculado na nuvem e o que está livre em prateleira de estoque.',
+                description: 'Panorama de HARDWARE e estoque: total da frota, veículos com Tag vinculada, Tags compradas, ociosas (em prateleira) e em manutenção. QUANDO USAR: perguntas sobre estoque, hardware parado, rastreadores livres ou cobertura da frota (ex.: "quantas tags sobrando?", "qual nossa cobertura?", "tem hardware parado?"). CORRELAÇÃO: percentualOcioso alto = capital imobilizado — recomendar acelerar instalações; tags em manutenção = avaliar reparo/descarte.',
                 parameters: { type: 'OBJECT', properties: {} }
             },
             {
                 name: 'search_external_data',
-                description: 'Busca os dados crús da integração do integrador parceiro (SGA do cliente) como Chassi pelo Hinova.',
+                description: 'Consulta a base do integrador parceiro (Hinova/SGA) por placa ou chassi — ativos que podem NÃO existir na base local. QUANDO USAR: quando o usuário pedir um veículo/cliente que não apareceu localmente, ou citar um chassi (ex.: "procura no Hinova", "esse chassi existe no SGA?", "de quem é esse carro?"). CORRELAÇÃO: se o ativo existe no parceiro mas não na base local, sugerir plano de captação/instalação para a equipe comercial/técnica.',
                 parameters: {
                     type: 'OBJECT',
                     properties: { query: { type: 'STRING', description: 'Placa ou Chassi' } },
@@ -31,7 +31,7 @@ export const useAiTools = () => {
             },
             {
                 name: 'analyze_operations',
-                description: 'Ação crítica: Faz uma varredura cruzada no volume da frota, disponibilidade de estoque, fila pendente de Ordem de Serviços aguardando resposta humana e a quantidade atual de técnicos disponiveis. Use isso quando o gerente pedir um sumario analitico de status.',
+                description: 'Diagnóstico operacional cruzado: frota + estoque + Ordens de Serviço pendentes + técnicos, com NOMES de técnicos, detalhe de cada OS (tipo, dispositivo, data, solicitante) e métricas derivadas (ratio OS:técnico, % de estoque ocioso). QUANDO USAR: qualquer pedido de panorama/saúde da operação, gargalos, capacidade, risco de SLA ou resumo executivo (ex.: "como estamos hoje?", "temos gente suficiente?", "risco de atraso?", "me dá um diagnóstico"). CORRELAÇÃO: ratio OS:técnico > 3 indica ruptura iminente de SLA; estoque ocioso > 30% indica capital parado.',
                 parameters: { type: 'OBJECT', properties: {} }
             }
       ];
@@ -86,16 +86,25 @@ export const useAiTools = () => {
         const vehicles = await storage.getVehicles();
         const cleanPlate = (args.plate || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
         const v = vehicles.find(veh => veh.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === cleanPlate);
-        
+
         if (!v) return {
-            visual: React.createElement("div", { className: "text-amber-500 font-mono text-[10px] w-full" }, `O veículo ${cleanPlate} não existe no banco local de rastreamento.`),
-            textual: `O veículo da placa solicitada (${cleanPlate}) não consta em nossa base unificada local de GPS.`
+            // textual: dados brutos — o comportamento analítico vive no system prompt.
+            textual: JSON.stringify({ encontrado: false, placaConsultada: cleanPlate }),
+            visual: React.createElement("div", { className: "text-amber-500 font-mono text-[10px] w-full" }, `O veículo ${cleanPlate} não existe no banco local de rastreamento.`)
         };
-        
+
         const resultLink = v.tagId ? `${window.location.origin}/#/map?tagId=${v.tagId}&autoStart=true` : null;
-        
+
         return {
-            textual: `Veículo ${v.plate} (${v.model}): Status sistêmico: '${v.status}'. Vinculado a uma Tag GPS: ${v.tagId ? 'SIM' : 'NÃO'}. Como especialista, analise este resultado. Se o status for offline ou sem GPS, sugira agendar uma OS urgente ou procurar na base externa.`,
+            textual: JSON.stringify({
+                encontrado: true,
+                placa: v.plate,
+                modelo: v.model,
+                status: v.status,
+                temTagGps: !!v.tagId,
+                tagId: v.tagId || null,
+                linkMapa: resultLink,
+            }),
             visual: React.createElement("div", { className: "bg-zinc-800/80 p-3 rounded-xl border border-zinc-700 w-full mb-1" },
                 React.createElement("div", { className: "flex items-center gap-2 mb-2 text-primary-500" },
                     React.createElement(MapPin, { size: 14 }),
@@ -119,9 +128,16 @@ export const useAiTools = () => {
         const totalTags = tags.length;
         const availableTags = tags.filter(t => t.status === 'disponível').length;
         const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
-        
+
         return {
-            textual: `Resultados do hardware: Frota atual é de ${vehs.length} veículos. Total de Tags compradas pela companhia: ${totalTags}. Destas, ${availableTags} estão ociosas aguardando instalação e ${maintenanceTags} em manutenção/defeito. Como engenheiro chefe, critique o percentual de ociosidade, e sugira o que fazer com os aparelhos quebrados.`,
+            textual: JSON.stringify({
+                frotaTotal: vehs.length,
+                veiculosComTag: linkedCount,
+                totalTags,
+                tagsOciosas: availableTags,
+                tagsManutencao: maintenanceTags,
+                percentualOcioso: totalTags ? Math.round((availableTags / totalTags) * 100) : 0,
+            }),
             visual: React.createElement("div", { className: "grid grid-cols-2 gap-2 w-full mb-1" },
                 React.createElement("div", { className: "bg-zinc-800/80 p-2 rounded-xl border border-zinc-700 text-center" },
                     React.createElement("p", { className: "text-[8px] text-zinc-400 font-black uppercase tracking-widest" }, "Frota Ativa"),
@@ -139,12 +155,17 @@ export const useAiTools = () => {
         const query = (args.query || '').toUpperCase();
         const data = await hinovaService.searchVehicle(query).catch(() => null);
         if (!data) return {
-            textual: "Fui à API parceira do sistema legado (Hinova/SGA) e recebi falha. Este carro ou chassi realmente não existe por lá.",
+            textual: JSON.stringify({ encontrado: false, consulta: query, fonte: 'Hinova/SGA' }),
             visual: React.createElement("div", { className: "text-red-400 font-mono text-[10px] w-full" }, "Vínculo SGA quebrado ou desativado remotamente.")
         };
-        
+
         return {
-            textual: `Busca no SGA (Hinova) trouxe o ativo pertencente ao cliente '${data.client.name}' (Modelo: '${data.vehicle.model}', Placa: '${data.vehicle.plate}'). Analise isso: Se não estava na nossa base local, devemos instalá-lo? Crie um plano de ação para a equipe comercial/técnica sobre esta descoberta na base ERP parceira.`,
+            textual: JSON.stringify({
+                encontrado: true,
+                fonte: 'Hinova/SGA',
+                cliente: data.client.name,
+                veiculo: { modelo: data.vehicle.model, placa: data.vehicle.plate, chassi: data.vehicle.chassis },
+            }),
             visual: React.createElement("div", { className: "bg-zinc-800/80 p-3 rounded-xl border border-zinc-700 w-full mb-1" },
                 React.createElement("div", { className: "flex items-center gap-2 mb-2 text-emerald-500" },
                     React.createElement(Sparkles, { size: 12 }),
@@ -163,25 +184,63 @@ export const useAiTools = () => {
         const [vehs, tags, scheds, techs] = await Promise.all([
              storage.getVehicles(), storage.getTags(), storage.getSchedules('admin', ''), storage.getTechnicians()
         ]);
-        
+
         const pendingSchedules = scheds.filter(s => s.status === 'Solicitada' || s.status === 'Em análise' || s.status === 'Reagendada');
         const activeTechs = techs.filter(t => t.active);
-        
+        const offlineVehicles = vehs.filter(v => v.status === 'maintenance' || v.status === 'stolen');
+        const availableTags = tags.filter(t => t.status === 'disponível').length;
+        const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
+        const inUseTags = tags.filter(t => t.status === 'em_uso').length;
+        const CAP = 30; // limita arrays para não estourar contexto; totais ficam nas métricas.
+
+        // textual: SOMENTE dados estruturados (arrays de objetos + fatos derivados).
+        // Nada de instruções — a análise/thresholds vivem no SYSTEM_INSTRUCTION.
         const payload = JSON.stringify({
-            data_warehouse: {
-                frotas_cadastradas: vehs.length,
-                frotas_offline: vehs.filter(v => v.status === 'maintenance' || v.status === 'stolen').length,
-                total_hardware_comprado: tags.length,
-                hardware_parado_estoque: tags.filter(t => t.status === 'disponível').length,
-                hardware_com_defeito: tags.filter(t => t.status === 'manutencao').length,
-                tecnicos_atendendo_rua: activeTechs.length,
-                tecnicos_indisponiveis: techs.length - activeTechs.length,
-                ordens_servico_pendentes: pendingSchedules.length
-            }
+            metricas: {
+                tecnicosAtivos: activeTechs.length,
+                tecnicosInativos: techs.length - activeTechs.length,
+                totalOsPendentes: pendingSchedules.length,
+                ratioOsPorTecnico: activeTechs.length ? Number((pendingSchedules.length / activeTechs.length).toFixed(2)) : pendingSchedules.length,
+                percentualEstoqueOcioso: tags.length ? Math.round((availableTags / tags.length) * 100) : 0,
+            },
+            tecnicos: techs.map(t => ({
+                nome: t.name,
+                ativo: t.active,
+                especialidades: t.services || [],
+                tipoAtendimento: t.serviceLocationType || null,
+            })),
+            ordensServicoPendentes: pendingSchedules.slice(0, CAP).map(s => ({
+                placa: s.vehiclePlate,
+                modelo: s.vehicleModel,
+                tipoServico: s.serviceType,
+                dispositivo: s.deviceType,
+                status: s.status,
+                dataPreferida: s.preferredDate,
+                horaPreferida: s.preferredTime,
+                solicitante: s.requesterName,
+                tecnicoId: s.technicianId || null,
+                criadoEm: s.createdAt,
+            })),
+            frotaOffline: offlineVehicles.slice(0, CAP).map(v => ({
+                placa: v.plate,
+                modelo: v.model,
+                status: v.status,
+            })),
+            frota: {
+                total: vehs.length,
+                comTag: vehs.filter(v => v.tagId).length,
+                offline: offlineVehicles.length,
+            },
+            estoque: {
+                totalTags: tags.length,
+                ociosas: availableTags,
+                manutencao: maintenanceTags,
+                emUso: inUseTags,
+            },
         });
 
         return {
-            textual: `Dados em tempo real extraídos via Cluster: ${payload}. Analise e explique de forma ESTRATÉGICA estes eixos operacionais. Faça inferências sobre a correlação (ex: temos OS demais para pouca gente? Há dinheiro parado em estoque?). Deixe recomendações executivas.`,
+            textual: payload,
             visual: React.createElement("div", { className: "bg-[#121214] border border-zinc-800 p-3 rounded-xl w-full mb-1" },
                 React.createElement("div", { className: "flex items-center gap-2 text-primary-500 mb-2" },
                     React.createElement(BarChart3, { size: 14 }),
@@ -192,9 +251,9 @@ export const useAiTools = () => {
         };
       }
 
-      return { textual: "Sem dados para esta operação especial.", visual: React.createElement(React.Fragment, null) };
+      return { textual: JSON.stringify({ erro: 'tool_desconhecida', tool: name }), visual: React.createElement(React.Fragment, null) };
     } catch (e: any) {
-      return { textual: `Um erro fatal derrubou a ferramenta: ${e.message}`, visual: React.createElement("div", { className: "text-red-500 text-xs w-full mt-1 bg-red-900/10 p-2 rounded" }, `API Crashing: ${e.message}`) };
+      return { textual: JSON.stringify({ erro: true, mensagem: e?.message || String(e) }), visual: React.createElement("div", { className: "text-red-500 text-xs w-full mt-1 bg-red-900/10 p-2 rounded" }, `API Crashing: ${e.message}`) };
     }
   };
 

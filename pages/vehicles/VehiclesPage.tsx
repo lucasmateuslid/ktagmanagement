@@ -65,11 +65,11 @@ export const VehiclesPage = () => {
 
   // 5. Form Logic
   const { 
-    isModalOpen, setIsModalOpen, 
-    formData, setFormData, 
-    clientData, setClientData, 
-    tagSearch, setTagSearch, 
-    handleSave, checkExistingClient, openNew, openEdit 
+    isModalOpen, setIsModalOpen, isSaving,
+    formData, setFormData,
+    clientData, setClientData,
+    tagSearch, setTagSearch,
+    handleSave, checkExistingClient, openNew, openEdit
   } = useVehicleForm(vehicles, clients, currentUser, reload);
 
   // 6. External Services
@@ -506,6 +506,7 @@ export const VehiclesPage = () => {
             isTagListOpen={isTagListOpen}
             setIsTagListOpen={setIsTagListOpen}
             isPlateValid={isPlateValid}
+            isSaving={isSaving}
         />
       )}
 

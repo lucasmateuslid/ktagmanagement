@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../services/firebase';
 import type { Tenant, Invoice, BillingCycle, BillingMethod, SetupFeeStatus, PlansConfigDoc } from '../../types';
@@ -161,6 +162,13 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant.id]);
 
+  // Trava o scroll da página enquanto o modal está aberto (evita layout shift).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const loadInvoices = async () => {
     if (!functions) return;
     setLoadingInvoices(true);
@@ -283,11 +291,11 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
 
   const canRemind = (inv: Invoice) => inv.status === 'PENDING' || inv.status === 'OVERDUE';
 
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="relative bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-3xl w-full max-w-3xl my-8 shadow-2xl shadow-black/50 overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="relative bg-zinc-950/90 backdrop-blur-xl border border-white/10 rounded-t-3xl sm:rounded-3xl w-full max-w-3xl sm:my-8 max-h-[100dvh] sm:max-h-[90vh] flex flex-col shadow-2xl shadow-black/50 overflow-hidden">
         <div aria-hidden className="pointer-events-none absolute -top-32 -right-24 w-72 h-72 rounded-full bg-amber-500/10 blur-[100px]" />
-        <header className="relative flex items-start justify-between gap-4 p-6 border-b border-white/5">
+        <header className="relative shrink-0 flex items-start justify-between gap-4 p-4 sm:p-6 border-b border-white/5">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-600/10 border border-amber-500/20 flex items-center justify-center font-display font-black text-amber-400 text-lg">
               {tenant.name?.charAt(0).toUpperCase()}
@@ -305,7 +313,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           </button>
         </header>
 
-        <div className="relative p-6 space-y-6">
+        <div className="relative flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
           {error && (
             <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -322,7 +330,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           {/* Assinatura recorrente */}
           <section>
             <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3">Plano + cobrança</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Valor" hint="Mínimo R$ 5,00">
                 <CurrencyInput
                   value={form.priceCents}
@@ -368,7 +376,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           {!hasSubscription && (
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3">Dados do pagador</h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Nome / Razão social">
                   <input value={form.payerName} onChange={e => setForm({ ...form, payerName: e.target.value })} className={inputCls} required />
                 </Field>
@@ -502,7 +510,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
 
               {showChargeForm && (
                 <div className="mt-3 bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Valor">
                       <CurrencyInput
                         value={chargeForm.valueCents}
@@ -548,7 +556,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           )}
         </div>
 
-        <footer className="relative flex items-center justify-between gap-3 p-6 border-t border-white/5 bg-zinc-950/40">
+        <footer className="relative shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6 border-t border-white/5 bg-zinc-950/40">
           <div className="text-[10px] text-zinc-600">
             {billing?.lastSyncedAt && <>Última sincronização: {new Date(billing.lastSyncedAt).toLocaleString('pt-BR')}</>}
             {billing?.trialEndsAt && (
@@ -557,7 +565,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             {hasSubscription && (
               <button
                 onClick={cancel}
@@ -578,7 +586,8 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -705,7 +714,7 @@ const SetupFeeSection = ({
             className="overflow-hidden"
           >
             <div className="space-y-3 pt-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">
                     Valor da adesão
@@ -742,7 +751,7 @@ const SetupFeeSection = ({
                 <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">
                   Status do pagamento
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <PaymentStatusOption
                     active={state.status === 'paid'}
                     onClick={() => onChange({ ...state, status: 'paid' })}

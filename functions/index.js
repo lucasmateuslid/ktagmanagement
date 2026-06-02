@@ -2359,7 +2359,16 @@ exports.remindTenantPayment = onCall(ASAAS_OPTS, async (request) => {
   if (!invSnap.exists) throw new HttpsError('not-found', 'Fatura não encontrada neste tenant.');
 
   const apiKey = ASAAS_API_KEY.value();
-  await asaas.sendPaymentNotification(apiKey, paymentId);
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  try {
+    await asaas.sendPaymentNotification(apiKey, paymentId);
+  } catch (e) {
+    const status = e?.response?.status;
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    console.error('[remindTenantPayment] falha Asaas:', { slug, paymentId, status, msg });
+    throw new HttpsError('internal', `Falha ao reenviar lembrete: ${msg}`);
+  }
 
   await logAudit(null, 'REMIND', 'Invoice',
     `Lembrete reenviado: payment=${paymentId}`, slug, callerUid);

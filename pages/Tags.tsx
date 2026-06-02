@@ -108,6 +108,7 @@ export const Tags = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isConfirmMassDeleteOpen, setIsConfirmMassDeleteOpen] = useState(false);
   const [isMassActionMenuOpen, setIsMassActionMenuOpen] = useState(false);
@@ -552,10 +553,15 @@ export const Tags = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Idempotência: impede reentrância (duplo-clique / rede lenta) que, com o id
+    // via crypto.randomUUID() a cada submit, cadastrava o mesmo equipamento 2x.
+    if (isSaving) return;
+    // id estável: gera UMA vez e fixa no estado para que retry reuse o mesmo doc.
+    const tagId = formData.id || crypto.randomUUID();
+    setIsSaving(true);
     try {
-        const isNew = !formData.id;
         const tag: Tag = {
-            id: formData.id || crypto.randomUUID(),
+            id: tagId,
             name: formData.name || '',
             type: formData.type || 'K_TAG',
             accessoryId: formData.accessoryId || '',
@@ -572,13 +578,16 @@ export const Tags = () => {
         if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
         if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI / MAC Address é obrigatório para XADTAG");
 
+        setFormData(prev => ({ ...prev, id: tagId }));
         await storage.saveTag(tag);
-        
+
         addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
         setIsModalOpen(false);
         loadData();
     } catch (error: any) {
         addNotification('error', 'Erro', error.message);
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -1249,8 +1258,8 @@ export const Tags = () => {
         size="lg"
         title={formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
         footer={
-          <button type="submit" form="tag-equip-form" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg">
-            <Save size={16} /> Salvar Equipamento
+          <button type="submit" form="tag-equip-form" disabled={isSaving} className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed">
+            <Save size={16} /> {isSaving ? 'Salvando...' : 'Salvar Equipamento'}
           </button>
         }
       >

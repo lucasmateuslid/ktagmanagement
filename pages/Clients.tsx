@@ -26,6 +26,7 @@ export const Clients = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
@@ -187,63 +188,72 @@ export const Clients = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Idempotência: impede reentrância (duplo-clique / rede lenta) que, com o id
+    // gerado via crypto.randomUUID() a cada submit, criava clientes duplicados.
+    if (isSaving) return;
     if (!selectedClient.name || !selectedClient.cpf) return;
 
-    const isNew = !selectedClient.id;
+    // id estável: gera UMA vez e fixa no estado, para que retry reuse o mesmo
+    // doc (setDoc sobrescreve em vez de duplicar).
     const clientId = selectedClient.id || crypto.randomUUID();
     const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
-    
-    const clientData: Client = {
-      ...selectedClient as Client,
-      id: clientId,
-      name: selectedClient.name,
-      cpf: selectedClient.cpf,
-      phone: selectedClient.phone || '',
-      createdAt: selectedClient.createdAt || Date.now()
-    };
 
-    await storage.saveClient(clientData);
-    
-    // Auditoria
-    storage.logAction(
-        currentUser, 
-        isNew ? 'CREATE' : 'UPDATE', 
-        'Client', 
-        `${isNew ? 'Cadastrou' : 'Editou'} cliente: ${clientData.name}`, 
-        clientId
-    );
+    setIsSaving(true);
+    try {
+      const clientData: Client = {
+        ...selectedClient as Client,
+        id: clientId,
+        name: selectedClient.name,
+        cpf: selectedClient.cpf,
+        phone: selectedClient.phone || '',
+        createdAt: selectedClient.createdAt || Date.now()
+      };
+      setSelectedClient(prev => ({ ...prev, id: clientId }));
 
-    // Se o acesso for habilitado, garante que existe um usuário no USERS_DB
-    if (clientData.hasAccess) {
-        const clientEmail = `${cleanCpf}@client.ktag`;
-        const existingUser = await storage.findUserByEmail(clientEmail);
-        
-        if (!existingUser) {
-            const newUser: User = {
-                id: crypto.randomUUID(),
-                name: clientData.name,
-                email: clientEmail,
-                cpf: cleanCpf,
-                password: cleanCpf.substring(0, 6), // Senha inicial: 6 primeiros dígitos
-                role: 'client',
-                status: 'approved',
-                createdAt: Date.now()
-            };
-            await storage.registerUserRequest(newUser);
-        }
+      // storage.saveClient já registra a auditoria (CREATE/UPDATE Client) —
+      // não duplicar o log aqui.
+      await storage.saveClient(clientData);
+
+      // Se o acesso for habilitado, garante que existe um usuário no USERS_DB.
+      // findUserByEmail torna esta etapa idempotente: re-salvar não recria o user.
+      if (clientData.hasAccess) {
+          const clientEmail = `${cleanCpf}@client.ktag`;
+          const existingUser = await storage.findUserByEmail(clientEmail);
+
+          if (!existingUser) {
+              const newUser: User = {
+                  // id determinístico pelo CPF: evita usuários-cliente duplicados
+                  // mesmo sob corrida (dois submits resolvem para o mesmo doc).
+                  id: `client_${cleanCpf}`,
+                  name: clientData.name,
+                  email: clientEmail,
+                  cpf: cleanCpf,
+                  password: cleanCpf.substring(0, 6), // Senha inicial: 6 primeiros dígitos
+                  role: 'client',
+                  status: 'approved',
+                  createdAt: Date.now()
+              };
+              await storage.registerUserRequest(newUser);
+          }
+      }
+
+      const updatePromises = allVehicles.map(async (v) => {
+        const isSelected = selectedVehicleIds.has(v.id);
+        const wasMine = v.clientId === clientId;
+        if (isSelected && !wasMine) await storage.saveVehicle({ ...v, clientId });
+        else if (!isSelected && wasMine) await storage.saveVehicle({ ...v, clientId: undefined });
+      });
+
+      await Promise.all(updatePromises);
+      addNotification('success', 'Sucesso', 'Perfil e frota do cliente atualizados.');
+      setIsModalOpen(false);
+      loadData();
+    } catch (err: any) {
+      console.error('Falha ao salvar cliente:', err);
+      addNotification('error', 'Erro', err?.message || 'Não foi possível salvar o cliente. Tente novamente.');
+    } finally {
+      setIsSaving(false);
     }
-
-    const updatePromises = allVehicles.map(async (v) => {
-      const isSelected = selectedVehicleIds.has(v.id);
-      const wasMine = v.clientId === clientId;
-      if (isSelected && !wasMine) await storage.saveVehicle({ ...v, clientId });
-      else if (!isSelected && wasMine) await storage.saveVehicle({ ...v, clientId: undefined });
-    });
-
-    await Promise.all(updatePromises);
-    addNotification('success', 'Sucesso', 'Perfil e frota do cliente atualizados.');
-    setIsModalOpen(false);
-    loadData();
   };
 
   const handleDelete = async (id: string) => {
@@ -567,8 +577,8 @@ export const Clients = () => {
 
             {/* FOOTER FIXED */}
             <div className="p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-800 shrink-0 bg-zinc-50/50 dark:bg-zinc-950 rounded-b-[30px] md:rounded-b-[40px]">
-               <button form="client-form" type="submit" className="w-full py-5 md:py-6 bg-primary-500 text-black rounded-[24px] md:rounded-[32px] font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary-500/30 active:scale-95 transition-all flex items-center justify-center gap-4">
-                  <Save size={24} /> SALVAR ALTERAÇÕES
+               <button form="client-form" type="submit" disabled={isSaving} className="w-full py-5 md:py-6 bg-primary-500 text-black rounded-[24px] md:rounded-[32px] font-black uppercase tracking-[0.2em] text-sm shadow-2xl shadow-primary-500/30 active:scale-95 transition-all flex items-center justify-center gap-4 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed">
+                  <Save size={24} /> {isSaving ? 'SALVANDO...' : 'SALVAR ALTERAÇÕES'}
                </button>
             </div>
 

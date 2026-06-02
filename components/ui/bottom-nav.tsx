@@ -97,7 +97,7 @@ const Inner = ({ active, label, icon }: { active: boolean; label: string; icon: 
     {active && (
       <motion.span
         layoutId="bottom-nav-active"
-        className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-b-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+        className="absolute top-0 inset-x-0 mx-auto h-0.5 w-8 rounded-b-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
         transition={{ type: 'spring', stiffness: 400, damping: 32 }}
       />
     )}

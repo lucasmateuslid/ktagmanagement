@@ -262,7 +262,9 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       createdAt: Date.now(),
     };
 
-    // O Cloud Function `onTenantUserWrite` vai setar customClaims após este write.
+    // O Cloud Function `onTenantUserCreate` vai espelhar a membership e setar
+    // os custom claims após este write. setDoc no UID do Auth = idempotente:
+    // re-tentar o cadastro sobrescreve o mesmo doc, nunca cria um duplicado.
     await setDoc(tenantDoc(USERS_COLLECTION, cred.user.uid), {
       ...newUser,
       name: await encryption.encrypt(name),

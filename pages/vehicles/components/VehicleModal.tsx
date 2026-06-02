@@ -26,13 +26,14 @@ interface VehicleModalProps {
   isTagListOpen: boolean;
   setIsTagListOpen: (open: boolean) => void;
   isPlateValid: boolean;
+  isSaving?: boolean;
 }
 
 export const VehicleModal: React.FC<VehicleModalProps> = ({
   onClose, onSubmit, formData, setFormData, clientData, setClientData,
   companies, categories, tags, allVehicles, tagSearch, setTagSearch,
   onHinovaLookup, hinovaStatus, onCheckClient, onFipeOpen,
-  isTagListOpen, setIsTagListOpen, isPlateValid
+  isTagListOpen, setIsTagListOpen, isPlateValid, isSaving = false
 }) => {
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false);
   const [isCompanyOpen, setIsCompanyOpen] = React.useState(false);
@@ -431,13 +432,13 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
 
         {/* FOOTER FIXED */}
         <div className="p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-900 shrink-0 bg-zinc-50/50 dark:bg-zinc-950 rounded-b-[32px]">
-            <button 
+            <button
               form="vehicle-form"
-              type="submit" 
-              disabled={!isPlateValid}
-              className="w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
+              type="submit"
+              disabled={!isPlateValid || isSaving}
+              className="w-full h-16 bg-[#f59e0b] hover:bg-[#fbbf24] text-black rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
             >
-                <Save size={20} /> SALVAR VEÍCULO
+                <Save size={20} /> {isSaving ? 'SALVANDO...' : 'SALVAR VEÍCULO'}
             </button>
         </div>
 
