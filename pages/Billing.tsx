@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { useNotification } from '../contexts/NotificationContext';
+import { useTenant } from '../contexts/TenantContext';
 import type { Invoice, BillingCycle, BillingMethod, BillingStatus, TenantPlan } from '../types';
 import {
   Receipt, CreditCard, RefreshCw, ExternalLink, Copy, Check, Loader2,
@@ -47,6 +48,7 @@ const METHOD_LABEL: Record<BillingMethod, string> = {
 
 export const Billing = () => {
   const { addNotification } = useNotification();
+  const { tenantId } = useTenant();
   const [data, setData] = useState<MyBillingResp | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,7 @@ export const Billing = () => {
     try {
       const fnBilling = httpsCallable<any, MyBillingResp>(functions, 'getMyTenantBilling');
       const fnInvoices = httpsCallable<any, { invoices: Invoice[] }>(functions, 'listMyTenantInvoices');
-      const [b, i] = await Promise.all([fnBilling({}), fnInvoices({})]);
+      const [b, i] = await Promise.all([fnBilling({ tenantId }), fnInvoices({ tenantId })]);
       setData(b.data);
       setInvoices(i.data.invoices || []);
     } catch (e: any) {
@@ -79,7 +81,7 @@ export const Billing = () => {
     setError('');
     try {
       const fn = httpsCallable(functions, 'syncMyTenantBilling');
-      await fn({});
+      await fn({ tenantId });
       await loadAll();
       addNotification?.('success', 'Sincronizado', 'Status de cobrança atualizado com o Asaas.');
     } catch (e: any) {

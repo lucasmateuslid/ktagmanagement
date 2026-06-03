@@ -1228,6 +1228,27 @@ exports.superAdminRevokeMembership = onCall(async (request) => {
 });
 
 /**
+ * Resolve o tenantId-alvo de uma request, na ordem:
+ *   1. request.data.tenantId (explícito — sempre vence).
+ *   2. claim novo `tn` ({ [tid]: role }) SE houver exatamente uma membership.
+ *      Com múltiplas memberships é ambíguo, então exigimos tenantId explícito.
+ *   3. claim legado `tenantId` (modelo antigo, removido pelo rebuild de claims;
+ *      mantido só por compat com tokens ainda não renovados).
+ * Retorna '' se não for possível resolver com segurança.
+ */
+function resolveTenantId(request) {
+  const explicit = request.data?.tenantId;
+  if (explicit) return String(explicit).toLowerCase().trim();
+  const token = request.auth?.token || {};
+  const tn = token.tn;
+  if (tn && typeof tn === 'object') {
+    const keys = Object.keys(tn);
+    if (keys.length === 1) return keys[0];
+  }
+  return token.tenantId ? String(token.tenantId).toLowerCase().trim() : '';
+}
+
+/**
  * Resolve quem é o caller e em que tenant ele está, validando que é admin
  * daquele tenant. Throws HttpsError se não autorizado.
  */
@@ -1236,7 +1257,7 @@ async function requireTenantAdmin(request) {
     throw new HttpsError('unauthenticated', 'Login obrigatório.');
   }
   const callerUid = request.auth.uid;
-  const tenantId = request.data?.tenantId || request.auth.token?.tenantId;
+  const tenantId = resolveTenantId(request);
   if (!tenantId) {
     throw new HttpsError('invalid-argument', 'tenantId não informado.');
   }
@@ -1726,7 +1747,7 @@ exports.sendPushNotification = onCall(
       throw new HttpsError('unauthenticated', 'Login obrigatório.');
     }
 
-    const tenantId = request.data?.tenantId || request.auth.token?.tenantId;
+    const tenantId = resolveTenantId(request);
     if (!tenantId) {
       throw new HttpsError('invalid-argument', 'tenantId não informado.');
     }
