@@ -69,7 +69,7 @@ const TechnicianStatsModal = ({ technician, schedules, onClose }: { technician: 
     }, [filteredSchedules, technician.serviceRates]);
 
     return (
-        <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+        <div className="modal-shell">
             <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col max-h-[90vh]">
                 <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-start">
                     <div className="flex items-center gap-4">

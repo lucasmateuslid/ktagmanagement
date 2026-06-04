@@ -78,7 +78,7 @@ export const calculateCompanyDistribution = (vehiclesList: Vehicle[], companiesL
     const id = v.companyId || 'unknown';
     counts[id] = (counts[id] || 0) + 1;
   });
-  let data = companiesList.map(c => ({
+  const data = companiesList.map(c => ({
     name: c.prefix || c.name.substring(0, 8),
     fullName: c.name,
     contador: counts[c.id] || 0

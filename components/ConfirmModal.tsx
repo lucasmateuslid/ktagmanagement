@@ -1,8 +1,12 @@
-
 import * as React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, Check, Info } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
+import { Modal } from './ui/modal';
+import { Button } from './ui/button';
 
+/**
+ * Modal de confirmação genérico — agora sobre <Modal> (Radix Dialog).
+ * Mantém a API original para que call sites existentes não quebrem.
+ */
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,7 +18,11 @@ interface ConfirmModalProps {
   type?: 'danger' | 'warning' | 'info';
 }
 
-const MotionDiv = motion.div as any;
+const TONE = {
+  danger:  { icon: AlertTriangle, accent: 'text-danger bg-danger/10 border-danger/20', btn: 'danger' as const },
+  warning: { icon: AlertTriangle, accent: 'text-warning bg-warning/10 border-warning/20', btn: 'primary' as const },
+  info:    { icon: Info,          accent: 'text-info bg-info/10 border-info/20',          btn: 'primary' as const },
+};
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
@@ -24,72 +32,40 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   message,
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
-  type = 'danger'
+  type = 'danger',
 }) => {
-  const colors = {
-    danger: 'text-red-500 bg-red-500/10 border-red-500/20 hover:bg-red-600',
-    warning: 'text-amber-500 bg-amber-500/10 border-amber-500/20 hover:bg-amber-600',
-    info: 'text-blue-500 bg-blue-500/10 border-blue-500/20 hover:bg-blue-600'
-  };
-
-  const icons = {
-    danger: <AlertTriangle size={32} />,
-    warning: <AlertTriangle size={32} />,
-    info: <Info size={32} />
-  };
+  const t = TONE[type];
+  const Icon = t.icon;
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-confirm flex items-center justify-center p-4">
-          <MotionDiv
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-          />
-          
-          <MotionDiv
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800"
-          >
-            <div className="p-8 text-center">
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border ${type === 'danger' ? 'text-red-500 bg-red-500/10 border-red-500/20' : type === 'warning' ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' : 'text-blue-500 bg-blue-500/10 border-blue-500/20'}`}>
-                {icons[type]}
-              </div>
-              
-              <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight mb-2">
-                {title}
-              </h3>
-              
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium leading-relaxed">
-                {message}
-              </p>
-            </div>
-            
-            <div className="flex border-t border-zinc-100 dark:border-zinc-800">
-              <button
-                onClick={onClose}
-                className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-r border-zinc-100 dark:border-zinc-800"
-              >
-                {cancelText}
-              </button>
-              <button
-                onClick={() => {
-                  onConfirm();
-                  onClose();
-                }}
-                className={`flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-white transition-all ${type === 'danger' ? 'bg-red-600 hover:bg-red-500' : type === 'warning' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}
-              >
-                {confirmText}
-              </button>
-            </div>
-          </MotionDiv>
+    <Modal open={isOpen} onOpenChange={(v) => !v && onClose()} size="sm" hideCloseButton>
+      <div className="text-center -m-6 p-8">
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border ${t.accent}`}>
+          <Icon size={32} aria-hidden />
         </div>
-      )}
-    </AnimatePresence>
+        <h3 className="font-display text-xl font-black text-content uppercase tracking-tight mb-2">
+          {title}
+        </h3>
+        <p className="text-sm text-content-muted font-medium leading-relaxed">
+          {message}
+        </p>
+      </div>
+      <Modal.Footer className="grid grid-cols-2 gap-0 p-0 bg-transparent border-t border-border">
+        <button
+          onClick={onClose}
+          className="py-5 text-label-xs uppercase text-content-muted hover:bg-surface-sunken transition-colors border-r border-border focus-visible:outline-none focus-visible:bg-surface-sunken"
+        >
+          {cancelText}
+        </button>
+        <Button
+          variant={t.btn}
+          size="lg"
+          onClick={() => { onConfirm(); onClose(); }}
+          className="rounded-none h-auto py-5 shadow-none"
+        >
+          {confirmText}
+        </Button>
+      </Modal.Footer>
+    </Modal>
   );
 };

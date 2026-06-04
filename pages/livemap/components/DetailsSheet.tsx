@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-    ChevronDown, ChevronUp, User, Tag as TagIcon, 
-    BatteryCharging, MapPin, Navigation, History, X, Box, Clock, RefreshCw, Share2, CheckCircle2
+import {
+    ChevronDown, ChevronUp, User, Tag as TagIcon,
+    BatteryCharging, MapPin, Navigation, History, X, Box, Clock, RefreshCw, Share2, CheckCircle2,
+    Bike as FaMotorcycle, Truck as FaTruck, Car as FaCar,
 } from 'lucide-react';
-import { FaMotorcycle, FaTruck, FaCar } from 'react-icons/fa';
 import { Vehicle, Tag, VehicleCategory, Client, LocationHistory } from '../../../types';
 import { useNotification } from '../../../contexts/NotificationContext';
 

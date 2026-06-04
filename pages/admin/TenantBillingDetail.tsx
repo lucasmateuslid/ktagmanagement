@@ -300,20 +300,20 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-600/10 border border-amber-500/20 flex items-center justify-center font-display font-black text-amber-400 text-lg">
               {tenant.name?.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h3 className="font-display font-black text-xl uppercase tracking-widest">{tenant.name}</h3>
+            <div className="min-w-0">
+              <div className="flex items-center gap-3 mb-1 flex-wrap">
+                <h3 id="billing-modal-title" className="font-display font-black text-lg sm:text-xl uppercase tracking-widest truncate">{tenant.name}</h3>
                 <BillingStatusBadge status={billing?.status || 'none'} />
               </div>
               <code className="text-amber-500 text-xs">{tenant.slug}</code>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors">
+          <button type="button" aria-label="Fechar" onClick={onClose} className="shrink-0 text-zinc-500 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors">
             <X size={18} />
           </button>
         </header>
 
-        <div className="relative flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
+        <div className="modal-card-body relative p-6 space-y-6">
           {error && (
             <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -556,7 +556,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           )}
         </div>
 
-        <footer className="relative shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6 border-t border-white/5 bg-zinc-950/40">
+        <footer className="modal-card-footer relative flex items-center justify-between gap-3 p-4 sm:p-6 border-t border-white/5 bg-zinc-950/40 flex-wrap">
           <div className="text-[10px] text-zinc-600">
             {billing?.lastSyncedAt && <>Última sincronização: {new Date(billing.lastSyncedAt).toLocaleString('pt-BR')}</>}
             {billing?.trialEndsAt && (

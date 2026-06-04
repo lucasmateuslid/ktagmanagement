@@ -442,7 +442,7 @@ export const Clients = () => {
 
       {/* MODAL RESET SENHA */}
       {isResetModalOpen && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+        <div className="modal-shell">
           <MotionDiv initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-900 rounded-[30px] md:rounded-[40px] w-full max-w-md p-6 md:p-10 border border-zinc-200 dark:border-zinc-800 shadow-2xl max-h-[95vh] overflow-y-auto custom-scrollbar flex flex-col">
              <div className="flex justify-between items-center mb-8 shrink-0">
                 <div className="flex items-center gap-3 text-primary-500">
@@ -483,7 +483,7 @@ export const Clients = () => {
 
       {/* MODAL FICHA CLIENTE */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 md:p-4 overflow-hidden">
+        <div className="modal-shell">
           <div className="bg-white dark:bg-zinc-900 rounded-[30px] md:rounded-[40px] w-full max-w-5xl shadow-2xl relative border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
             
             {/* HEADER FIXED */}

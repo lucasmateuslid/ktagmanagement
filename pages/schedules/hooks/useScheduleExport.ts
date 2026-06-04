@@ -94,7 +94,7 @@ export const useScheduleExport = (
                 styles: { fontSize: 9 }
             });
 
-            let currentY = (doc as any).lastAutoTable.finalY + 15;
+            const currentY = (doc as any).lastAutoTable.finalY + 15;
             doc.text("Análise Financeira e Produtividade", 14, currentY);
 
             const techData = dashboardData.byTech.map(([name, value]: [string, number]) => [

@@ -12,10 +12,18 @@ function readInitial(): AdminTheme {
 
 /**
  * Tema do painel admin. Persiste em localStorage e aplica:
- *  - `.admin-light` no <body> (ativa overrides CSS escopados em index.css)
- *  - retorna a className do container raiz com as utilidades base (`admin-light` ou `dark`)
+ *  - `data-theme="light"`/`"dark"` em <html> — fonte semântica nova,
+ *    ativa CSS vars (`--surface`, `--content`, etc.) em qualquer
+ *    componente que use tokens (Button/Input/Modal/Field).
+ *  - `.admin-light` em <body> — overrides legados em index.css que
+ *    cobrem páginas admin ainda escritas com classes Tailwind dark
+ *    hardcoded (bg-zinc-900, text-white...). Será removido após
+ *    migração das pages para tokens semânticos.
+ *  - `class="dark"` em <html> quando admin theme === dark, para
+ *    manter `dark:` modifiers funcionando.
  *
- * O tenant não é afetado: o efeito limpa as classes ao desmontar.
+ * O efeito reseta os atributos ao desmontar, então o tenant não é
+ * afetado.
  */
 export function useAdminTheme() {
   const [theme, setThemeState] = React.useState<AdminTheme>(readInitial);
@@ -30,23 +38,39 @@ export function useAdminTheme() {
   }, [theme, setTheme]);
 
   React.useEffect(() => {
+    const html = document.documentElement;
     const body = document.body;
+
+    // Salva estado anterior para restaurar
+    const prevHtmlDark = html.classList.contains('dark');
+    const prevDataTheme = html.getAttribute('data-theme');
+
+    html.setAttribute('data-theme', theme);
+
     if (theme === 'light') {
+      html.classList.remove('dark');
       body.classList.add('admin-light');
       body.classList.remove('admin-dark');
     } else {
+      html.classList.add('dark');
       body.classList.remove('admin-light');
       body.classList.add('admin-dark');
     }
+
     return () => {
       body.classList.remove('admin-light');
       body.classList.remove('admin-dark');
+      // tenant default é dark — restaura
+      if (prevHtmlDark) html.classList.add('dark');
+      else html.classList.remove('dark');
+      if (prevDataTheme) html.setAttribute('data-theme', prevDataTheme);
+      else html.removeAttribute('data-theme');
     };
   }, [theme]);
 
   const rootClass = theme === 'light'
-    ? 'admin-light bg-slate-50 text-slate-900'
-    : 'dark bg-zinc-950 text-white';
+    ? 'admin-light bg-surface text-content'
+    : 'dark bg-surface text-content';
 
   return { theme, setTheme, toggle, rootClass };
 }

@@ -262,7 +262,7 @@ export const ShipmentDetails = () => {
       </div>
 
       {showTrackingModal && (
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="modal-shell">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl p-6 shadow-xl border border-zinc-200 dark:border-zinc-800">
             <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">Adicionar Código de Rastreio</h3>
             <input 

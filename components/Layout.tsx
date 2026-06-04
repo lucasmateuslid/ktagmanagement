@@ -799,7 +799,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                         {theme === 'dark' ? <Sun size={18} className="text-yellow-500"/> : <Moon size={18} className="text-blue-300"/>} 
                         <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>
                       </button>
-                      <a href="https://www.siterastreio.com.br/" target="_blank" className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all">
+                      <a href="https://www.siterastreio.com.br/" target="_blank" className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-800/50 border border-zinc-800 text-white font-bold text-sm hover:bg-zinc-800 transition-all" rel="noreferrer">
                         <Package size={18} className="text-zinc-400"/> Rastreamento
                       </a>
                   </div>

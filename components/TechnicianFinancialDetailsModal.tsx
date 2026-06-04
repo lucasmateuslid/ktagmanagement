@@ -83,7 +83,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     const txid = "KTAG" + Date.now().toString().substring(7);
     const additionalDataField = `62${formatLength(`05${formatLength(txid)}${txid}`)}05${formatLength(txid)}${txid}`;
     
-    let payload = `${payloadFormatIndicator}${merchantAccountInfo}${merchantCategoryCode}${transactionCurrency}${transactionAmount}${countryCode}${merchantNameField}${merchantCityField}${additionalDataField}6304`;
+    const payload = `${payloadFormatIndicator}${merchantAccountInfo}${merchantCategoryCode}${transactionCurrency}${transactionAmount}${countryCode}${merchantNameField}${merchantCityField}${additionalDataField}6304`;
     
     let crc = 0xFFFF;
     for (let i = 0; i < payload.length; i++) {
@@ -448,7 +448,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+    <div className="modal-shell">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-6xl rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col max-h-[90vh]">
         <div className="p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-800 flex flex-col gap-6 relative">
           <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 p-2 text-zinc-400 hover:text-zinc-600 transition-colors bg-zinc-100 dark:bg-zinc-800 rounded-xl z-10"><X size={20}/></button>
@@ -755,7 +755,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
 
       {/* PIX Payment Modal */}
       {isPixModalOpen && (
-        <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="modal-shell">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase">Pagamento PIX</h3>

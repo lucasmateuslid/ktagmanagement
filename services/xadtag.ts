@@ -9,7 +9,7 @@ const REQUEST_TIMEOUT = 20000;
 ===================================================== */
 
 const MAX_REQUESTS_PER_MINUTE = 100;
-let requestQueue: (() => void)[] = [];
+const requestQueue: (() => void)[] = [];
 let requestCount = 0;
 
 setInterval(() => {
@@ -118,7 +118,7 @@ const callApi = async (
     const targetUrl = buildUrl(path, params);
 
     const response = await rateLimitedFetch(async () => {
-        let proxyUrl = settings.customProxyUrl || '/api/proxy';
+        const proxyUrl = settings.customProxyUrl || '/api/proxy';
         
         try {
             return await fetchWithTimeout(proxyUrl, {

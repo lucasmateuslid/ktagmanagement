@@ -47,8 +47,6 @@ const BOTTOM_NAV_PRIMARY: BottomNavItem[] = [
   { to: '/admin/invoices', label: 'Faturas', icon: <Receipt size={18} /> },
 ];
 
-const SIDEBAR_OPEN_KEY = 'ktag-admin-sidebar-collapsed';
-
 export const AdminLayout = () => {
   const { admin, logout } = useSystemAdmin();
   const navigate = useNavigate();
@@ -57,16 +55,8 @@ export const AdminLayout = () => {
 
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(SIDEBAR_OPEN_KEY) === '1';
-  });
 
   React.useEffect(() => { setMobileOpen(false); }, [location.pathname]);
-
-  React.useEffect(() => {
-    try { localStorage.setItem(SIDEBAR_OPEN_KEY, collapsed ? '1' : '0'); } catch (_) { /* noop */ }
-  }, [collapsed]);
 
   const handleLogout = async () => {
     await logout();
@@ -89,8 +79,6 @@ export const AdminLayout = () => {
 
       <div className="relative z-10 flex min-h-screen">
         <DesktopSidebar
-          collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed(v => !v)}
           adminEmail={admin?.email || undefined}
           onLogout={handleLogout}
           theme={theme}
@@ -219,33 +207,27 @@ const ThemeToggle = ({
 // DESKTOP SIDEBAR
 // ============================================================
 
+/* Sidebar admin — largura fixa em w-64 (sem collapse). A altura
+ * usa h-screen sticky, mantendo a barra estável em qualquer
+ * resolução desktop. Mobile abre via drawer separado. */
 const DesktopSidebar = ({
-  collapsed, onToggleCollapsed, adminEmail, onLogout, theme, onToggleTheme,
+  adminEmail, onLogout, theme, onToggleTheme,
 }: {
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
   adminEmail?: string;
   onLogout: () => void;
   theme: AdminTheme;
   onToggleTheme: () => void;
 }) => (
-  <aside
-    className={cn(
-      'hidden md:flex shrink-0 border-r border-white/5 bg-zinc-950/60 backdrop-blur-xl flex-col transition-[width] duration-200',
-      collapsed ? 'w-16' : 'w-64',
-    )}
-  >
-    <div className={cn('px-3 pt-6 pb-5 flex items-center', collapsed ? 'justify-center' : 'gap-3 px-5')}>
+  <aside className="hidden md:flex shrink-0 w-64 sticky top-0 h-screen border-r border-white/5 bg-zinc-950/60 backdrop-blur-xl flex-col">
+    <div className="pt-6 pb-5 px-5 flex items-center gap-3">
       <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
         <span className="font-display font-black text-zinc-950 text-sm">K</span>
         <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/20" />
       </div>
-      {!collapsed && (
-        <div className="min-w-0 flex-1">
-          <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">K-TAG Platform</div>
-          <div className="font-display font-black text-base leading-tight">Super Admin</div>
-        </div>
-      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">K-TAG Platform</div>
+        <div className="font-display font-black text-base leading-tight">Super Admin</div>
+      </div>
     </div>
 
     <nav className="flex-1 px-2.5 pb-4 space-y-5 overflow-y-auto">
@@ -254,22 +236,18 @@ const DesktopSidebar = ({
         if (items.length === 0) return null;
         return (
           <div key={g.key}>
-            {!collapsed && (
-              <div className="px-3 mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600">
-                {g.label}
-              </div>
-            )}
+            <div className="px-3 mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600">
+              {g.label}
+            </div>
             <div className="space-y-0.5">
               {items.map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
                   to={to}
                   end={end}
-                  title={collapsed ? label : undefined}
                   className={({ isActive }) =>
                     cn(
-                      'group relative flex items-center rounded-xl text-xs font-bold uppercase tracking-widest transition-all',
-                      collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5',
+                      'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all',
                       isActive
                         ? 'bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent text-amber-400 border border-amber-500/20 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]'
                         : 'text-zinc-500 hover:text-white hover:bg-white/[0.03] border border-transparent',
@@ -282,8 +260,8 @@ const DesktopSidebar = ({
                         <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-amber-400" />
                       )}
                       <Icon size={15} className={isActive ? 'text-amber-400' : 'text-zinc-500 group-hover:text-zinc-300'} />
-                      {!collapsed && <span className="flex-1">{label}</span>}
-                      {!collapsed && isActive && <ChevronRight size={12} className="text-amber-400/60" />}
+                      <span className="flex-1">{label}</span>
+                      {isActive && <ChevronRight size={12} className="text-amber-400/60" />}
                     </>
                   )}
                 </NavLink>
@@ -294,85 +272,46 @@ const DesktopSidebar = ({
       })}
     </nav>
 
-    <div className={cn('pb-5 pt-4 border-t border-white/5 space-y-2', collapsed ? 'px-2' : 'px-3')}>
-      {!collapsed && (
-        <NavLink
-          to="/admin/account"
-          className={({ isActive }) => cn(
-            'group flex items-center gap-3 px-3 py-2 rounded-xl border transition-colors',
-            isActive
-              ? 'bg-amber-500/10 border-amber-500/30'
-              : 'bg-white/[0.02] border-white/5 hover:border-amber-500/20 hover:bg-amber-500/[0.04]',
-          )}
-          title="Minha conta"
-        >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-zinc-950 font-black text-xs shrink-0">
-            {(adminEmail || '?').charAt(0).toUpperCase()}
+    <div className="pb-5 pt-4 px-3 border-t border-white/5 space-y-2">
+      <NavLink
+        to="/admin/account"
+        className={({ isActive }) => cn(
+          'group flex items-center gap-3 px-3 py-2 rounded-xl border transition-colors',
+          isActive
+            ? 'bg-amber-500/10 border-amber-500/30'
+            : 'bg-white/[0.02] border-white/5 hover:border-amber-500/20 hover:bg-amber-500/[0.04]',
+        )}
+        title="Minha conta"
+      >
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-zinc-950 font-black text-xs shrink-0">
+          {(adminEmail || '?').charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover:text-amber-400 truncate transition-colors">
+            {adminEmail?.split('@')[0] || 'admin'}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover:text-amber-400 truncate transition-colors">
-              {adminEmail?.split('@')[0] || 'admin'}
-            </div>
-            <div className="text-[9px] text-zinc-600 truncate">{adminEmail}</div>
-          </div>
-          <UserCog size={12} className="text-zinc-600 group-hover:text-amber-400 shrink-0 transition-colors" />
-        </NavLink>
-      )}
-      {collapsed && (
-        <NavLink
-          to="/admin/account"
-          className={({ isActive }) => cn(
-            'flex items-center justify-center rounded-xl border transition-colors p-2',
-            isActive
-              ? 'bg-amber-500/10 border-amber-500/30'
-              : 'bg-white/[0.02] border-white/5 hover:border-amber-500/20',
-          )}
-          title="Minha conta"
-        >
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-zinc-950 font-black text-xs">
-            {(adminEmail || '?').charAt(0).toUpperCase()}
-          </div>
-        </NavLink>
-      )}
-      <div className={cn('flex', collapsed ? 'flex-col gap-1.5' : 'gap-1.5')}>
+          <div className="text-[9px] text-zinc-600 truncate">{adminEmail}</div>
+        </div>
+        <UserCog size={12} className="text-zinc-600 group-hover:text-amber-400 shrink-0 transition-colors" />
+      </NavLink>
+      <div className="flex gap-1.5">
         <button
           onClick={onToggleTheme}
           aria-label={theme === 'light' ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
           title={theme === 'light' ? 'Tema escuro' : 'Tema claro'}
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors',
-            'text-zinc-500 hover:text-amber-400 hover:bg-white/[0.04] border border-transparent hover:border-white/10',
-            collapsed ? 'p-2' : 'flex-1 py-2',
-          )}
+          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors text-zinc-500 hover:text-amber-400 hover:bg-white/[0.04] border border-transparent hover:border-white/10"
         >
           {theme === 'light' ? <Moon size={13} /> : <Sun size={13} />}
-          {!collapsed && <span>{theme === 'light' ? 'Dark' : 'Light'}</span>}
-        </button>
-        <button
-          onClick={onToggleCollapsed}
-          aria-label={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-          title={collapsed ? 'Expandir' : 'Recolher'}
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors',
-            'text-zinc-500 hover:text-amber-400 hover:bg-white/[0.04] border border-transparent hover:border-white/10',
-            collapsed ? 'p-2' : 'flex-1 py-2',
-          )}
-        >
-          {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-          {!collapsed && <span>Recolher</span>}
+          <span>{theme === 'light' ? 'Dark' : 'Light'}</span>
         </button>
         <button
           onClick={onLogout}
           aria-label="Sair"
           title="Sair"
-          className={cn(
-            'flex items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors',
-            'text-zinc-500 hover:bg-red-500/10 hover:text-red-400 border border-transparent hover:border-red-500/20',
-            collapsed ? 'p-2' : 'flex-1 py-2',
-          )}
+          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors text-zinc-500 hover:bg-red-500/10 hover:text-red-400 border border-transparent hover:border-red-500/20"
         >
           <LogOut size={12} />
-          {!collapsed && <span>Sair</span>}
+          <span>Sair</span>
         </button>
       </div>
     </div>

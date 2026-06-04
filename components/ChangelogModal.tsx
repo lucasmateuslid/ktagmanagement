@@ -152,28 +152,28 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[6000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <MotionDiv 
-        initial={{ opacity: 0, scale: 0.95 }} 
-        animate={{ opacity: 1, scale: 1 }} 
-        className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[32px] overflow-hidden border border-zinc-200 dark:border-zinc-800 shadow-2xl relative flex flex-col max-h-[85vh]"
+    <div className="modal-shell" role="dialog" aria-modal="true" aria-labelledby="changelog-modal-title">
+      <MotionDiv
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="modal-card sm:max-w-2xl"
       >
         {/* Header */}
-        <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/50">
-            <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary-500 rounded-xl text-black shadow-lg shadow-primary-500/20">
+        <div className="modal-card-header p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/50">
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-primary-500 rounded-xl text-black shadow-lg shadow-primary-500/20 shrink-0">
                     <Megaphone size={20} strokeWidth={2.5}/>
                 </div>
-                <div>
-                    <h2 className="text-xl font-display font-black uppercase tracking-tight text-zinc-900 dark:text-white">Novidades & Updates</h2>
-                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">O que há de novo no sistema</p>
+                <div className="min-w-0">
+                    <h2 id="changelog-modal-title" className="text-lg sm:text-xl font-display font-black uppercase tracking-tight text-zinc-900 dark:text-white truncate">Novidades & Updates</h2>
+                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest truncate">O que há de novo no sistema</p>
                 </div>
             </div>
-            <button onClick={onClose} className="p-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 rounded-xl transition-all"><X size={20}/></button>
+            <button type="button" aria-label="Fechar" onClick={onClose} className="shrink-0 p-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 rounded-xl transition-all"><X size={20}/></button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+        <div className="modal-card-body custom-scrollbar p-5 sm:p-6 space-y-6">
             
             {/* Admin Controls */}
             {isAdmin && !isAdding && (

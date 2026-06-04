@@ -22,7 +22,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const formatBearerToken = (token: string) => {
     if (!token) return '';
-    let raw = token.trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '');
+    const raw = token.trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '');
     return `Bearer ${raw}`;
 };
 
@@ -191,7 +191,7 @@ export const hinovaService = {
 
     const searchPromise = (async () => {
         const settings = await storage.getSettings();
-        let userToken = await getToken(settings);
+        const userToken = await getToken(settings);
         const baseUrl = (settings.hinovaUrl || 'https://api.hinova.com.br/api/sga/v2').replace(/\/$/, '');
         const typeSearch = query.length === 7 ? 'placa' : 'chassi'; 
         const targetUrl = `${baseUrl}/veiculo/buscar/${query}/${typeSearch}`;

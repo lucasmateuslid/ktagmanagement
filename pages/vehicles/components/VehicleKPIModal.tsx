@@ -157,29 +157,21 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center p-2 md:p-6">
-      <motion.div 
-        initial={{ opacity: 0 }} 
-        animate={{ opacity: 1 }} 
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-      
+    <div className="modal-shell" role="dialog" aria-modal="true" aria-labelledby="kpi-modal-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-6xl bg-white dark:bg-zinc-900 rounded-[32px] md:rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]"
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        className="modal-card sm:max-w-6xl"
       >
         {/* Header */}
-        <div className="p-4 md:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/50">
+        <div className="modal-card-header p-4 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20 shrink-0">
               <Activity size={20} className="text-black" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg md:text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate">Relatório de KPIs</h2>
+              <h2 id="kpi-modal-title" className="text-lg md:text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate">Relatório de KPIs</h2>
               <p className="text-[9px] font-medium text-zinc-500 uppercase tracking-widest truncate">Indicadores de desempenho da frota</p>
             </div>
           </div>
@@ -198,7 +190,9 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
             >
               <Download size={16} /> <span className="hidden sm:inline">PDF</span>
             </button>
-            <button 
+            <button
+              type="button"
+              aria-label="Fechar"
               onClick={onClose}
               className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-xl transition-colors"
             >
@@ -208,7 +202,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
+        <div className="modal-card-body p-4 md:p-6 space-y-6 custom-scrollbar">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <KPICard icon={<Car size={16}/>} label="Total" value={stats.total} color="zinc" />

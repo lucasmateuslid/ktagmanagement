@@ -26,7 +26,7 @@ export const filterFleetList = (
     // Se tem busca, procura em Veículos e em Tags Soltas
     
     // 1. Veículos
-    let matchingVehicles = vehicles.filter(v => {
+    const matchingVehicles = vehicles.filter(v => {
         if (!v.tagId) return false;
         
         if (user?.role === 'client') {
@@ -81,7 +81,7 @@ export const filterLocationsToRender = (
     const activeVehicleTagIds = new Set(vehicles.map(v => v.tagId));
     
     // Mostra todas as localizações que têm tagId
-    let base = fleetLocations.filter(l => l.tagId);
+    const base = fleetLocations.filter(l => l.tagId);
 
     // Se filter === 'online', já está implícito pois fleetLocations são os onlines
     

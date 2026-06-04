@@ -1,84 +1,70 @@
-import React from "react";
+import * as React from 'react';
+import * as RxCheckbox from '@radix-ui/react-checkbox';
+import { Check, Minus } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
-interface CheckboxProps {
+/**
+ * Checkbox acessível (Radix). Suporta `indeterminate`.
+ *
+ * API mantida compatível com a versão anterior:
+ *   <Checkbox checked={x} onChange={setX}>Lembrar</Checkbox>
+ */
+export interface CheckboxProps {
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   disabled?: boolean;
   indeterminate?: boolean;
+  id?: string;
+  name?: string;
   children?: React.ReactNode;
+  className?: string;
 }
 
-const getInputClasses = (checked: boolean, disabled : boolean, indeterminate: boolean) => {
-  let className = "relative border w-4 h-4 duration-200 rounded inline-flex items-center justify-center";
-  if (disabled) {
-    if (!checked || indeterminate) {
-      className += " bg-gray-100 border-gray-500";
-      if (indeterminate) {
-        className += " stroke-gray-500"
-      } else {
-        className += " fill-gray-100 stroke-gray-100"
-      }
-    } else {
-      className += " bg-gray-600 border-gray-600 fill-gray-600 stroke-gray-100";
-    }
+export const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
+  ({ checked = false, onChange, disabled, indeterminate, id, name, children, className }, ref) => {
+    const state: RxCheckbox.CheckedState = indeterminate
+      ? 'indeterminate'
+      : checked;
 
-  } else {
-    if (!checked || indeterminate) {
-      className += " bg-background-100 border-gray-700 group-hover:bg-gray-200";
-      if (indeterminate) {
-        className += " stroke-gray-700"
-      } else {
-        className += " fill-background-100 stroke-background-100 group-hover:stroke-gray-200 group-hover:fill-gray-200"
-      }
-    } else {
-      className += " bg-gray-1000 border-gray-1000 fill-gray-1000 stroke-gray-100";
-    }
-  }
-
-  return className;
-};
-
-export const Checkbox = ({ checked = false, onChange, disabled = false, indeterminate = false, children }: CheckboxProps) => {
-  return (
-    <div
-      className={`flex items-center cursor-pointer text-[13px] font-sans group ${disabled ? "text-gray-500" : "text-gray-1000"}`}
-      onClick={() => onChange && !indeterminate && onChange(!checked)}
-    >
-      <input
-        disabled={disabled}
-        type="checkbox"
-        checked={checked}
-        readOnly
-        className="absolute w-[1px] h-[1px] p-0 overflow-hidden whitespace-nowrap border-none"
-      />
-      <span className={getInputClasses(checked, disabled, indeterminate)}>
-        <svg
-          className="shrink-0"
-          height="16"
-          viewBox="0 0 20 20"
-          width="16"
-        >
-          {indeterminate ? (
-            <line
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              x1="5"
-              x2="15"
-              y1="10"
-              y2="10"
-            />
-          ) : (
-            <path
-              d="M14 7L8.5 12.5L6 10"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-            />
+    return (
+      <label
+        htmlFor={id}
+        className={cn(
+          'group inline-flex items-center gap-2 cursor-pointer select-none',
+          disabled && 'cursor-not-allowed opacity-50',
+          className,
+        )}
+      >
+        <RxCheckbox.Root
+          ref={ref}
+          id={id}
+          name={name}
+          checked={state}
+          disabled={disabled}
+          onCheckedChange={(v) => {
+            if (indeterminate) return;
+            onChange?.(v === true);
+          }}
+          className={cn(
+            'shrink-0 h-4 w-4 rounded border border-border-strong bg-surface-sunken',
+            'inline-flex items-center justify-center transition-colors',
+            'data-[state=checked]:bg-brand-500 data-[state=checked]:border-brand-500',
+            'data-[state=indeterminate]:bg-brand-500 data-[state=indeterminate]:border-brand-500',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
+            'group-hover:border-brand-500/50',
           )}
-        </svg>
-      </span>
-      {children && <span className="ml-2">{children}</span>}
-    </div>
-  );
-};
+        >
+          <RxCheckbox.Indicator>
+            {indeterminate ? (
+              <Minus size={12} strokeWidth={3} className="text-content-inverse" />
+            ) : (
+              <Check size={12} strokeWidth={3} className="text-content-inverse" />
+            )}
+          </RxCheckbox.Indicator>
+        </RxCheckbox.Root>
+        {children && <span className="text-[13px] text-content">{children}</span>}
+      </label>
+    );
+  },
+);
+Checkbox.displayName = 'Checkbox';

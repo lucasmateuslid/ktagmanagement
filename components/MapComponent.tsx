@@ -6,8 +6,7 @@ import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
-import { FaCar, FaMotorcycle, FaTruck, FaQuestion, FaBox } from 'react-icons/fa';
-import { BatteryCharging } from 'lucide-react';
+import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging } from 'lucide-react';
 
 const { BaseLayer } = LayersControl;
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };

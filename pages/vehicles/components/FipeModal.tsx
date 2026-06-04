@@ -22,7 +22,7 @@ export const FipeModal: React.FC<FipeModalProps> = ({
   selectedBrand, selectedModel, filteredList, handleSelection, handleBack
 }) => {
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+    <div className="modal-shell">
       <div className="bg-white dark:bg-zinc-950 w-full max-w-md rounded-[32px] shadow-2xl relative border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center shrink-0">

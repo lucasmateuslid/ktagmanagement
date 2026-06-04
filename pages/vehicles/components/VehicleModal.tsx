@@ -85,19 +85,19 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   const selectedTag = tags.find(t => t.id === formData.tagId);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-hidden">
-      <div className="bg-white dark:bg-zinc-950 rounded-[32px] w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
-        
+    <div className="modal-shell" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title">
+      <div className="modal-card sm:max-w-4xl animate-in fade-in zoom-in-95 duration-200">
+
         {/* HEADER FIXED */}
-        <div className="flex justify-between items-center p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-900 shrink-0">
-            <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
+        <div className="modal-card-header flex justify-between items-center p-5 sm:p-6 md:p-8 border-b border-zinc-100 dark:border-zinc-900">
+            <h2 id="vehicle-modal-title" className="text-lg sm:text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate">
                 {formData.id ? 'EDITAR VEÍCULO' : 'NOVO VEÍCULO'}
             </h2>
-            <button type="button" onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={24}/></button>
+            <button type="button" aria-label="Fechar" onClick={onClose} className="shrink-0 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"><X size={24}/></button>
         </div>
 
         {/* CONTENT SCROLLABLE */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+        <div className="modal-card-body custom-scrollbar p-5 sm:p-6 md:p-8">
             <form id="vehicle-form" onSubmit={onSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-10">
                 {/* COLUNA 1: DADOS DO VEÍCULO */}
                 <div className="space-y-5">
@@ -431,8 +431,8 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
         </div>
 
         {/* FOOTER FIXED */}
-        <div className="p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-900 shrink-0 bg-zinc-50/50 dark:bg-zinc-950 rounded-b-[32px]">
-            <button
+        <div className="modal-card-footer p-4 sm:p-6 md:p-8 border-t border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-950">
+            <button 
               form="vehicle-form"
               type="submit"
               disabled={!isPlateValid || isSaving}

@@ -534,12 +534,11 @@ export const Security = () => {
                             <CheckCircle size={32} />
                             <h2 className="text-2xl font-display font-black uppercase tracking-tight">Recuperação</h2>
                         </div>
-                        <button onClick={() => setIsRecoverModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors"><X size={24}/></button>
+                        <button type="button" aria-label="Fechar" onClick={() => setIsRecoverModalOpen(false)} className="shrink-0 text-zinc-400 hover:text-zinc-600 transition-colors"><X size={24}/></button>
                     </div>
 
-                    <p className="text-zinc-500 text-sm mb-6">Confirme a recuperação do veículo <strong>{selectedRecordToRecover?.vehiclePlate}</strong> e informe o valor recuperado (patrimônio salvo).</p>
-
-                    <form onSubmit={handleRecover} className="space-y-6">
+                    <form onSubmit={handleRecover} className="modal-card-body p-6 sm:p-8 space-y-6">
+                        <p className="text-zinc-500 text-sm">Confirme a recuperação do veículo <strong>{selectedRecordToRecover?.vehiclePlate}</strong> e informe o valor recuperado (patrimônio salvo).</p>
                         <div className="space-y-1">
                             <div className="flex justify-between items-end mb-1">
                                 <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Valor Recuperado (R$)</label>

@@ -31,15 +31,15 @@ import {
 import { TechnicianDashboard } from './TechnicianDashboard';
 import { useNotification } from '../contexts/NotificationContext';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { getChartTheme, getChartPalette, getTooltipStyle, getTooltipItemStyle } from '../lib/chartTheme';
 
-// --- CORES PREMIUM (C6 STYLE) --- // Cache invalidation
+const CHART = getChartTheme();
 const COLORS = {
-  primary: 'var(--theme-primary, #f59e0b)',   // Amber 500 (Destaque Principal)
-  darkBase: 'var(--theme-card-dark, #18181b)',  // Zinc 900
-  lightBase: 'var(--theme-card-light, #ffffff)', // White
-  gridLine: '#3f3f46',  // Zinc 700
-  // Gradação Monocromática para Gráficos
-  chartPalette: ['var(--theme-chart-0, #f59e0b)', 'var(--theme-chart-1, #52525b)', 'var(--theme-chart-2, #71717a)', 'var(--theme-chart-3, #a1a1aa)', 'var(--theme-chart-4, #d4d4d8)']
+  primary: CHART.brand,
+  darkBase: CHART.surface,
+  lightBase: '#ffffff',
+  gridLine: CHART.border,
+  chartPalette: getChartPalette(),
 };
 
 export const Dashboard = () => {
@@ -290,8 +290,7 @@ export const Dashboard = () => {
                                   ))}
                               </Pie>
                               <Tooltip 
-                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }}
-                                itemStyle={{ color: '#e4e4e7' }}
+                                contentStyle={getTooltipStyle()} itemStyle={getTooltipItemStyle()}
                               />
                           </PieChart>
                       </ResponsiveContainer>
@@ -330,9 +329,8 @@ export const Dashboard = () => {
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.1} />
                               <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} dy={10} />
                               <Tooltip 
-                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                                contentStyle={getTooltipStyle()} itemStyle={getTooltipItemStyle()} 
                                 cursor={{ stroke: '#3f3f46' }} 
-                                itemStyle={{ color: '#e4e4e7' }}
                                 labelStyle={{ color: '#e4e4e7' }}
                               />
                               <Area type="monotone" dataKey=" entradas" stroke={COLORS.primary} strokeWidth={3} fill="url(#gradTrend)" />
@@ -355,8 +353,7 @@ export const Dashboard = () => {
                           <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
                           <Tooltip 
                             cursor={{fill: 'transparent'}} 
-                            contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
-                            itemStyle={{ color: '#e4e4e7' }}
+                            contentStyle={getTooltipStyle()} itemStyle={getTooltipItemStyle()} 
                             labelStyle={{ color: '#e4e4e7' }}
                           />
                           <Bar dataKey="contador" radius={[0, 4, 4, 0]} barSize={20}>
@@ -447,8 +444,7 @@ export const Dashboard = () => {
                                   ))}
                               </Pie>
                               <Tooltip 
-                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
-                                itemStyle={{ color: '#e4e4e7' }}
+                                contentStyle={getTooltipStyle()} itemStyle={getTooltipItemStyle()} 
                               />
                               <Legend verticalAlign="bottom" height={36} iconSize={8} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', paddingTop: '10px', color: '#71717a' }}/>
                           </PieChart>
@@ -474,9 +470,8 @@ export const Dashboard = () => {
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.1} />
                               <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#71717a', fontWeight: 'bold' }} axisLine={false} tickLine={false} dy={10} />
                               <Tooltip 
-                                contentStyle={{ backgroundColor: '#18181b', border: 'none', borderRadius: '8px', fontSize: '12px', color: '#fff' }} 
+                                contentStyle={getTooltipStyle()} itemStyle={getTooltipItemStyle()} 
                                 cursor={{ stroke: '#3f3f46' }} 
-                                itemStyle={{ color: '#e4e4e7' }}
                                 labelStyle={{ color: '#e4e4e7' }}
                               />
                               <Area type="monotone" dataKey="total" stroke={COLORS.primary} strokeWidth={3} fill="url(#gradService)" />
