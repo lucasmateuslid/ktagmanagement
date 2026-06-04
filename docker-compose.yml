@@ -1,0 +1,109 @@
+# K-Tag Manager — ambiente local completo
+#
+# Serviços:
+#   postgres  — banco de dados (ktag + traccar)
+#   traccar   — servidor GPS Traccar v6 (imagem oficial, config customizada)
+#   backend   — K-Tag Backend Express (alternativa ao `npm run dev:backend`)
+#
+# Uso rápido:
+#   cp .env.example .env            # preencher variáveis
+#   docker compose up postgres -d   # só o banco
+#   docker compose up -d            # tudo junto
+#   docker compose logs -f traccar  # acompanhar logs do Traccar
+#
+# O frontend web (packages/web) roda fora do Docker em dev:
+#   npm run dev:web  →  http://localhost:3005
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  traccar_logs:
+
+services:
+  # ─────────────────────────────── PostgreSQL ────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ktag
+      POSTGRES_USER: ktag_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      # 5433 no host → 5432 no container (5432 do host pode estar em uso pelo PG local)
+      - "${PG_HOST_PORT:-5433}:5432"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ktag_user -d ktag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────────────────────── Traccar ───────────────────────────────────
+  traccar:
+    build:
+      context: ./infra/traccar
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # Fase 4: descomente quando o endpoint receptor do backend estiver pronto
+      # INTERNAL_SECRET: ${INTERNAL_SECRET}
+      # BACKEND_URL: http://backend:4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # ── Portas GPS: rastreadores físicos conectam aqui ──
+      - "5001:5001"   # GPS103 / TK103 / Coban
+      - "5020:5020"   # Meitrack
+      - "5023:5023"   # GT06 / Suntech ST300
+      - "5027:5027"   # Teltonika (FMB920, FMB140, FMC130)
+      - "5055:5055"   # OsmAnd (app celular — ideal para testes)
+      # ── 8082 exposta só em localhost para dev/validate — NÃO expor em produção ──
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - traccar_logs:/opt/traccar/logs
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/api/server > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  # ─────────────────────────────── K-Tag Backend ─────────────────────────────
+  # Alternativa ao `npm run dev:backend` — use quando quiser o backend em container
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Traccar interno — nota: porta 8082 não exposta ao host, só via rede Docker
+      TRACCAR_INTERNAL_URL: http://traccar:8082
+      TRACCAR_ADMIN_TOKEN: ${TRACCAR_ADMIN_TOKEN:-}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
+      CF_ORIGIN_SECRET: ${CF_ORIGIN_SECRET:-}
+      PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-}
+      MELHOR_ENVIO_WEBHOOK_SECRET: ${MELHOR_ENVIO_WEBHOOK_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      traccar:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    networks:
+      - internal
+    profiles:
+      - full   # só sobe com: docker compose --profile full up

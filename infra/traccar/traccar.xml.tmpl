@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+  <!--
+    K-Tag Manager — Configuração do Traccar
+    Fase 3: preencher após completar o build do tracker-server.jar
+
+    Variáveis substituídas pelo Docker:
+      ${POSTGRES_PASSWORD}   → senha do banco
+      ${INTERNAL_SECRET}     → secret para autenticação dos webhooks internos
+  -->
+
+  <!-- ─── Banco de dados PostgreSQL ─── -->
+  <entry key='database.driver'>org.postgresql.Driver</entry>
+  <entry key='database.url'>jdbc:postgresql://postgres:5432/traccar</entry>
+  <entry key='database.user'>ktag_user</entry>
+  <entry key='database.password'>${POSTGRES_PASSWORD}</entry>
+  <entry key='database.maxPoolSize'>20</entry>
+
+  <!-- ─── API Web interna (porta 8082 — só rede Docker interna) ─── -->
+  <entry key='web.port'>8082</entry>
+  <entry key='web.address'>0.0.0.0</entry>
+
+  <!-- Permite cadastro do primeiro admin via API -->
+  <entry key='server.registration'>true</entry>
+
+  <!-- ─── Encaminhar posições para o K-Tag Backend ─── -->
+  <!-- Ativo quando BACKEND_URL estiver definido (docker compose --profile full) -->
+  <!-- Em dev local (backend no host), deixar comentado e usar TRACCAR_POLL_INTERVAL=5000 -->
+  <!-- <entry key='forward.url'>${BACKEND_URL}/api/internal/traccar/position</entry> -->
+  <!-- <entry key='forward.json'>true</entry> -->
+  <!-- <entry key='forward.headers'>X-Internal-Secret: ${INTERNAL_SECRET}</entry> -->
+
+  <!-- ─── Encaminhar eventos para o K-Tag Backend ─── -->
+  <!-- <entry key='event.forward.url'>${BACKEND_URL}/api/internal/traccar/event</entry> -->
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       PROTOCOLOS GPS — habilitar somente os que você usa.
+       Cada protocolo que você não usa é uma porta aberta desnecessária.
+       Consulte https://www.traccar.org/protocols/ para a lista completa.
+  ──────────────────────────────────────────────────────────────────────── -->
+
+  <!-- GPS103 / TK103 / Coban TK100 (genéricos populares no Brasil) -->
+  <entry key='gps103.port'>5001</entry>
+
+  <!-- Meitrack (T399, T333, T366) -->
+  <entry key='meitrack.port'>5020</entry>
+
+  <!-- GT06 / Coban / Suntech ST300 (muito comum em frotas brasileiras) -->
+  <entry key='gt06.port'>5023</entry>
+
+  <!-- Teltonika (FMB920, FMB140, FMC130, GH5200) -->
+  <entry key='teltonika.port'>5027</entry>
+
+  <!-- OsmAnd — app no celular, útil para testes sem hardware -->
+  <entry key='osmand.port'>5055</entry>
+
+  <!-- ─── Desabilitar o servidor web de administração padrão do Traccar ───
+       Toda a gestão é feita via K-Tag Backend (Fase 4).
+       O endpoint /api continua funcionando para consumo interno. -->
+  <!-- <entry key='web.console.enable'>false</entry> -->
+
+</properties>
