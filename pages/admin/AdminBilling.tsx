@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import type { Tenant } from '../../types';
 import { TenantBillingDetail } from './TenantBillingDetail';
-import { FinancialSummary } from './billing/FinancialSummary';
 import { useTenants } from '../../hooks/useTenants';
 import { Select, type SelectOption } from '../../components/ui/select';
 import { Skeleton, SkeletonRows } from '../../components/ui/skeleton';
@@ -51,8 +50,6 @@ export const AdminBilling = () => {
           <p className="text-zinc-500 text-sm mt-1">Assinaturas, faturas e cobrança via Asaas</p>
         </div>
       </header>
-
-      <FinancialSummary tenants={tenants} loading={loading} />
 
       <div className="flex flex-col md:flex-row gap-3">
         <div className="flex-1 relative">

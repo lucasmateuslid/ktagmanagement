@@ -265,6 +265,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Contas a pagar/receber e categorias de despesa — só acessível via Cloud
+    // Functions (Admin SDK ignora rules). Bloqueado explicitamente no client.
+    match /system_finance/{document=**} {
+      allow read, write: if false;
+    }
+
     match /ktag_settings_v3/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();

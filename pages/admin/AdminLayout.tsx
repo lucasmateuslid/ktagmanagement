@@ -2,8 +2,8 @@ import * as React from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useSystemAdmin } from '../../contexts/SystemAdminContext';
 import {
-  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt,
-  Search, ChevronRight, Settings2, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
+  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard,
+  Search, ChevronRight, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
   Sun, Moon, KeyRound,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -23,14 +23,12 @@ const NAV: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true, group: 'main' },
   { to: '/admin/tenants', label: 'Empresas', icon: Building2, group: 'main' },
   { to: '/admin/users', label: 'Usuários', icon: Users, group: 'main' },
-  { to: '/admin/billing', label: 'Mensalidades', icon: CreditCard, group: 'billing' },
+  { to: '/admin/financeiro', label: 'Financeiro', icon: CreditCard, group: 'billing' },
   { to: '/admin/plans', label: 'Planos', icon: Layers, group: 'billing' },
-  { to: '/admin/invoices', label: 'Faturas', icon: Receipt, group: 'billing' },
   { to: '/admin/access', label: 'Acessos', icon: KeyRound, group: 'system' },
   { to: '/admin/system-admins', label: 'Super Admins', icon: Shield, group: 'system' },
   { to: '/admin/audit', label: 'Auditoria', icon: FileText, group: 'system' },
-  { to: '/admin/asaas-config', label: 'Config. Asaas', icon: Settings2, group: 'system' },
-  { to: '/admin/platform-integrations', label: 'Integrações', icon: Cloud, group: 'system' },
+  { to: '/admin/integrations', label: 'Integrações', icon: Cloud, group: 'system' },
   { to: '/admin/account', label: 'Minha conta', icon: UserCog, group: 'system' },
 ];
 
@@ -43,8 +41,8 @@ const GROUPS = [
 const BOTTOM_NAV_PRIMARY: BottomNavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} />, end: true },
   { to: '/admin/tenants', label: 'Empresas', icon: <Building2 size={18} /> },
-  { to: '/admin/billing', label: 'Mensalid.', icon: <CreditCard size={18} /> },
-  { to: '/admin/invoices', label: 'Faturas', icon: <Receipt size={18} /> },
+  { to: '/admin/financeiro', label: 'Financeiro', icon: <CreditCard size={18} /> },
+  { to: '/admin/plans', label: 'Planos', icon: <Layers size={18} /> },
 ];
 
 const SIDEBAR_OPEN_KEY = 'ktag-admin-sidebar-collapsed';

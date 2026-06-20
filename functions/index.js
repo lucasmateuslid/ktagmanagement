@@ -1467,9 +1467,12 @@ async function writeTenantPublicMeta(slug, fields) {
  * Cria um novo tenant + opcional admin inicial (Auth user + doc).
  * Retorna { slug, ownerEmail?, ownerPassword? } se ownerEmail foi passado.
  */
-exports.createTenant = onCall(async (request) => {
+exports.createTenant = onCall({ secrets: [ASAAS_API_KEY] }, async (request) => {
   const { uid: callerUid } = await requireSuperAdmin(request);
-  const { slug, name, plan = 'basic', active = true, ownerEmail, ownerName } = request.data || {};
+  const {
+    slug, name, plan = 'basic', active = true, ownerEmail, ownerName,
+    billing: billingInput, logoBase64Light, logoBase64Dark,
+  } = request.data || {};
 
   const slugError = validateSlug(slug);
   if (slugError) throw new HttpsError('invalid-argument', slugError);
@@ -1493,10 +1496,21 @@ exports.createTenant = onCall(async (request) => {
       settings: { maxUsers: 10, features: [], integrations: {} },
     });
 
-    await tenantRef.collection('settings').doc('config').set(
-      { language: 'pt', customAppName: name },
-      { merge: true }
-    );
+    const configPatch = { language: 'pt', customAppName: name };
+    const MAX_LOGO_BASE64_BYTES = 400 * 1024; // teto defensivo — espelha o limite já aplicado no client
+    if (typeof logoBase64Light === 'string' && logoBase64Light.length > 0) {
+      if (logoBase64Light.length > MAX_LOGO_BASE64_BYTES) {
+        throw new HttpsError('invalid-argument', 'Logo (modo claro) excede o tamanho máximo permitido.');
+      }
+      configPatch.customLogoBase64Light = logoBase64Light;
+    }
+    if (typeof logoBase64Dark === 'string' && logoBase64Dark.length > 0) {
+      if (logoBase64Dark.length > MAX_LOGO_BASE64_BYTES) {
+        throw new HttpsError('invalid-argument', 'Logo (modo escuro) excede o tamanho máximo permitido.');
+      }
+      configPatch.customLogoBase64Dark = logoBase64Dark;
+    }
+    await tenantRef.collection('settings').doc('config').set(configPatch, { merge: true });
 
     // Espelho público — necessário pro SPA carregar o subdomínio sem login.
     await writeTenantPublicMeta(slug, { name, active, plan });
@@ -1564,7 +1578,22 @@ exports.createTenant = onCall(async (request) => {
 
     await logAudit(null, 'CREATE', 'Tenant', `Super admin criou tenant ${slug} (${plan})`, slug, callerUid);
 
-    return { slug, ownerEmail: ownerEmail || null, ownerPassword, ownerUid };
+    // Assinatura opcional — reaproveita a mesma lógica de createTenantSubscription.
+    // Falha aqui NÃO desfaz o tenant já criado: o admin pode configurar a cobrança
+    // manualmente depois em Financeiro → Assinaturas.
+    let billing = null;
+    let billingError = null;
+    if (billingInput) {
+      try {
+        const subResult = await createSubscriptionForTenant(slug, { ...billingInput, slug }, callerUid);
+        billing = subResult.billing;
+      } catch (e) {
+        console.error('[createTenant] criação de assinatura falhou', { slug, code: e?.code, message: e?.message });
+        billingError = e?.message || 'Falha ao criar assinatura.';
+      }
+    }
+
+    return { slug, ownerEmail: ownerEmail || null, ownerPassword, ownerUid, billing, billingError };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
     console.error('[createTenant] erro não-tratado', { slug, code: e?.code, message: e?.message, stack: e?.stack });
@@ -1719,9 +1748,12 @@ exports.backfillTenantPublicMeta = onCall(async (request) => {
  */
 exports.listAllUsers = onCall(async (request) => {
   await requireSuperAdmin(request);
-  const tenantsSnap = await admin.firestore().collection('tenants').get();
+  const { tenantId } = request.data || {};
+  const tenantsSnap = tenantId
+    ? [await admin.firestore().collection('tenants').doc(tenantId).get()].filter(d => d.exists)
+    : (await admin.firestore().collection('tenants').get()).docs;
   const users = [];
-  for (const t of tenantsSnap.docs) {
+  for (const t of tenantsSnap) {
     const usSnap = await t.ref.collection('users').get();
     usSnap.forEach(u => {
       const data = u.data();
@@ -1736,6 +1768,36 @@ exports.listAllUsers = onCall(async (request) => {
     });
   }
   return { users };
+});
+
+/**
+ * Lista quem tem acesso a um tenant (memberships via collectionGroup) e marca
+ * quais desses uids são superadmins globais (system_admins). Usado na aba
+ * "Usuários" do detalhe da empresa, para mostrar superadmins com acesso
+ * concedido — complementa listAllUsers (usuários internos do tenant).
+ */
+exports.listTenantMemberships = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const { tenantId } = request.data || {};
+  if (!tenantId) throw new HttpsError('invalid-argument', 'tenantId é obrigatório.');
+
+  const [membersSnap, adminsSnap] = await Promise.all([
+    admin.firestore().collectionGroup('memberships').where('tenantId', '==', tenantId).get(),
+    admin.firestore().collection('system_admins').get(),
+  ]);
+  const adminUids = new Set(adminsSnap.docs.map(d => d.id));
+
+  const memberships = membersSnap.docs.map(d => {
+    const data = d.data();
+    return {
+      uid: data.uid,
+      email: data.email || null,
+      role: data.role || 'user',
+      status: data.status || 'pending',
+      isGlobalAdmin: adminUids.has(data.uid),
+    };
+  });
+  return { memberships };
 });
 
 exports.sendPushNotification = onCall(
@@ -1845,13 +1907,12 @@ function buildNextDueDate(dueDay) {
 }
 
 /**
- * Cria (ou recria) a assinatura do tenant no Asaas.
+ * Lógica de criação de assinatura no Asaas, compartilhada entre o callable
+ * `createTenantSubscription` e a criação opcional de billing dentro de
+ * `createTenant` (cadastro de empresa já com cobrança configurada).
  * Body: { slug, priceCents, cycle?, billingType?, dueDay?, payer: { name, email, cpfCnpj, phone? } }
  */
-exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
-  const { uid: callerUid } = await requireSuperAdmin(request);
-  const data = request.data || {};
-  const slug = ensureBillingPayload(data);
+async function createSubscriptionForTenant(slug, data, callerUid) {
   const { ref, data: tenant } = await getTenantOrThrow(slug);
 
   const priceCents = Number(data.priceCents);
@@ -1973,6 +2034,13 @@ exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
     slug, callerUid);
 
   return { ok: true, billing, asaasSubscription: sub };
+}
+
+exports.createTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const data = request.data || {};
+  const slug = ensureBillingPayload(data);
+  return createSubscriptionForTenant(slug, data, callerUid);
 });
 
 /**
@@ -2739,7 +2807,7 @@ exports.getTenantUsage = onCall(async (request) => {
  */
 exports.updateTenantLimits = onCall(async (request) => {
   const { uid: callerUid } = await requireSuperAdmin(request);
-  const { slug, limiteTags, limiteVeiculos, maxUsers } = request.data || {};
+  const { slug, limiteTags, limiteVeiculos, maxUsers, features } = request.data || {};
   if (!slug) throw new HttpsError('invalid-argument', 'slug obrigatório.');
 
   const tenantRef = admin.firestore().collection('tenants').doc(slug);
@@ -2765,6 +2833,22 @@ exports.updateTenantLimits = onCall(async (request) => {
     if (prev.maxUsers !== maxUsers) {
       changes.push(`maxUsers: ${prev.maxUsers ?? 'ilimitado'} → ${maxUsers || 'ilimitado'}`);
       next.maxUsers = maxUsers;
+    }
+  }
+  // features = override de módulos por empresa (sobrescreve os módulos do plano quando definido).
+  // null limpa o override (volta a herdar do plano); array define a lista explícita.
+  if (features !== undefined) {
+    if (features === null) {
+      if (prev.features !== undefined) {
+        changes.push('features: override removido (volta a herdar do plano)');
+        delete next.features;
+      }
+    } else if (Array.isArray(features)) {
+      const cleaned = features.filter((f) => typeof f === 'string');
+      if (JSON.stringify(prev.features || []) !== JSON.stringify(cleaned)) {
+        changes.push(`features: [${(prev.features || []).join(', ')}] → [${cleaned.join(', ')}]`);
+        next.features = cleaned;
+      }
     }
   }
   if (changes.length === 0) return { slug, changed: false };
@@ -2994,6 +3078,151 @@ exports.updatePlansConfig = onCall(async (request) => {
     null, callerUid);
 
   return { ok: true, plans: payload };
+});
+
+// ============================================================
+// CONTAS A PAGAR/RECEBER (despesas manuais por categoria)
+// ============================================================
+
+const EXPENSE_CATEGORIES_DOC = ['system_config', 'expense_categories'];
+
+function expenseCategoriesDocRef() {
+  return admin.firestore().collection(EXPENSE_CATEGORIES_DOC[0]).doc(EXPENSE_CATEGORIES_DOC[1]);
+}
+
+function expensesCollectionRef() {
+  return admin.firestore().collection('system_finance').doc('root').collection('expenses');
+}
+
+exports.listExpenseCategories = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const snap = await expenseCategoriesDocRef().get();
+  const categories = snap.exists ? (snap.data().categories || []) : [];
+  return { categories };
+});
+
+exports.upsertExpenseCategory = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { id, label, color } = request.data || {};
+  const cleanLabel = String(label || '').trim();
+  if (!cleanLabel) throw new HttpsError('invalid-argument', 'label é obrigatório.');
+
+  const ref = expenseCategoriesDocRef();
+  const snap = await ref.get();
+  const categories = snap.exists ? (snap.data().categories || []) : [];
+  const categoryId = id || `cat_${Date.now().toString(36)}`;
+  const idx = categories.findIndex(c => c.id === categoryId);
+  const next = { id: categoryId, label: cleanLabel, color: color || undefined };
+  if (idx >= 0) categories[idx] = next; else categories.push(next);
+
+  await ref.set({ categories, updatedAt: Date.now() }, { merge: true });
+  await logAudit(null, 'UPDATE', 'ExpenseCategory', `Categoria "${cleanLabel}" salva`, null, callerUid);
+  return { categories };
+});
+
+exports.deleteExpenseCategory = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { id } = request.data || {};
+  if (!id) throw new HttpsError('invalid-argument', 'id é obrigatório.');
+
+  const ref = expenseCategoriesDocRef();
+  const snap = await ref.get();
+  const categories = snap.exists ? (snap.data().categories || []) : [];
+  const next = categories.filter(c => c.id !== id);
+
+  await ref.set({ categories: next, updatedAt: Date.now() }, { merge: true });
+  await logAudit(null, 'DELETE', 'ExpenseCategory', `Categoria ${id} removida`, null, callerUid);
+  return { categories: next };
+});
+
+exports.listExpenses = onCall(async (request) => {
+  await requireSuperAdmin(request);
+  const { type, status, categoryId, limit } = request.data || {};
+
+  // Filtra só por `type` no servidor (1 índice composto: type+dueDate). status/categoryId
+  // são aplicados no client sobre o resultado já limitado — evita explosão de índices
+  // compostos para uma tabela pequena gerenciada manualmente pelo admin.
+  let query = expensesCollectionRef().orderBy('dueDate', 'desc');
+  if (type === 'payable' || type === 'receivable') query = query.where('type', '==', type);
+
+  const snap = await query.limit(Math.min(500, Number(limit) || 200)).get();
+  let expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (status) expenses = expenses.filter(e => e.status === status);
+  if (categoryId) expenses = expenses.filter(e => e.categoryId === categoryId);
+  return { expenses };
+});
+
+exports.createExpense = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { categoryId, description, amountCents, type, dueDate, notes } = request.data || {};
+
+  if (type !== 'payable' && type !== 'receivable') {
+    throw new HttpsError('invalid-argument', 'type deve ser "payable" ou "receivable".');
+  }
+  const cleanAmount = Number(amountCents);
+  if (!Number.isFinite(cleanAmount) || cleanAmount < 1) {
+    throw new HttpsError('invalid-argument', 'amountCents deve ser >= 1.');
+  }
+  const cleanDescription = String(description || '').trim();
+  if (!cleanDescription) throw new HttpsError('invalid-argument', 'description é obrigatório.');
+
+  const doc = {
+    categoryId: categoryId || null,
+    description: cleanDescription,
+    amountCents: cleanAmount,
+    type,
+    status: 'pending',
+    dueDate: dueDate ? Number(dueDate) : null,
+    notes: notes ? String(notes).trim() : null,
+    createdAt: Date.now(),
+    createdBy: callerUid,
+  };
+  const ref = await expensesCollectionRef().add(doc);
+  await logAudit(null, 'CREATE', 'Expense', `Despesa "${cleanDescription}" criada (${type})`, null, callerUid);
+  return { id: ref.id, ...doc };
+});
+
+exports.updateExpense = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { id, categoryId, description, amountCents, dueDate, notes, status } = request.data || {};
+  if (!id) throw new HttpsError('invalid-argument', 'id é obrigatório.');
+
+  const ref = expensesCollectionRef().doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Despesa não encontrada.');
+
+  const patch = {};
+  if (categoryId !== undefined) patch.categoryId = categoryId || null;
+  if (description !== undefined) patch.description = String(description).trim();
+  if (amountCents !== undefined) {
+    const v = Number(amountCents);
+    if (!Number.isFinite(v) || v < 1) throw new HttpsError('invalid-argument', 'amountCents inválido.');
+    patch.amountCents = v;
+  }
+  if (dueDate !== undefined) patch.dueDate = dueDate ? Number(dueDate) : null;
+  if (notes !== undefined) patch.notes = notes ? String(notes).trim() : null;
+  if (status !== undefined) {
+    if (!['pending', 'paid', 'overdue'].includes(status)) {
+      throw new HttpsError('invalid-argument', 'status inválido.');
+    }
+    patch.status = status;
+    if (status === 'paid') patch.paidAt = Date.now();
+  }
+  if (Object.keys(patch).length === 0) return { id, changed: false };
+
+  await ref.update(patch);
+  await logAudit(null, 'UPDATE', 'Expense', `Despesa ${id} atualizada: ${Object.keys(patch).join(', ')}`, null, callerUid);
+  return { id, changed: true };
+});
+
+exports.deleteExpense = onCall(async (request) => {
+  const { uid: callerUid } = await requireSuperAdmin(request);
+  const { id } = request.data || {};
+  if (!id) throw new HttpsError('invalid-argument', 'id é obrigatório.');
+
+  await expensesCollectionRef().doc(id).delete();
+  await logAudit(null, 'DELETE', 'Expense', `Despesa ${id} removida`, null, callerUid);
+  return { id, deleted: true };
 });
 
 /**
