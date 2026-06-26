@@ -1334,10 +1334,10 @@ export const Tags = () => {
                               {importStep === 'upload' ? 'Selecione o arquivo e tipo' : importStep === 'validate' ? 'Validação de Dados' : 'Processando...'}
                           </p>
                       </div>
-                      <button onClick={() => setIsImportModalOpen(false)} disabled={importing} className="p-2 text-zinc-400 hover:text-zinc-600 disabled:opacity-50"><X size={20}/></button>
+                      <button type="button" aria-label="Fechar" onClick={() => setIsImportModalOpen(false)} disabled={importing} className="shrink-0 p-2 text-zinc-400 hover:text-zinc-600 disabled:opacity-50"><X size={20}/></button>
                   </div>
 
-                  <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="modal-card-body p-6 sm:p-8 custom-scrollbar">
                       {importStep === 'upload' && (
                           <div className="space-y-6">
                               <div className="space-y-2">
@@ -1438,7 +1438,7 @@ export const Tags = () => {
                       )}
                   </div>
 
-                  <div className="p-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 rounded-b-[32px] flex justify-end gap-3">
+                  <div className="modal-card-footer p-4 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 flex justify-end gap-3">
                       {importStep === 'validate' && (
                           <>
                               <button onClick={() => { setImportStep('upload'); setImportData([]); }} className="px-6 py-3 rounded-xl font-bold text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>

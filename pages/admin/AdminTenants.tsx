@@ -723,7 +723,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
   const tagsWarning = limiteTags > 0 && tagsUsed > limiteTags;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className="modal-shell">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1002,7 +1002,7 @@ const CreateTenantModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className="modal-shell">
       <motion.form
         onSubmit={submit}
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -1109,7 +1109,7 @@ const FieldInput = ({ label, value, onChange, type = 'text', required, placehold
 );
 
 const CredentialsModal = ({ info, onClose }: { info: CreatedInfo; onClose: () => void }) => (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+  <div className="modal-shell">
     <motion.div
       initial={{ opacity: 0, scale: 0.96, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}

@@ -54,7 +54,7 @@ export const LiveMap = () => {
   const { tags, vehicles, categories, clients } = useFleetData(user);
 
   // 2. Tracking Layer
-  const { fleetLocations, loading, manualRefresh, refreshTag } = useFleetTracking(tags, vehicles, selectedTagId);
+  const { fleetLocations, loading, manualRefresh, refreshTag, injectLocations } = useFleetTracking(tags, vehicles, selectedTagId);
 
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
@@ -195,11 +195,12 @@ export const LiveMap = () => {
         onExport={handleExport}
       />
 
-      <UpdateTagsModal 
+      <UpdateTagsModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         tags={tags}
         vehicles={vehicles}
+        onLocationsUpdated={injectLocations}
       />
     </div>
   );

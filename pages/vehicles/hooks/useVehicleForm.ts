@@ -79,6 +79,13 @@ export const useVehicleForm = (
         return;
       }
     }
+    const finalClientId = existingClient ? existingClient.id : (clientData.id || crypto.randomUUID());
+    const clientToSave: Client = {
+        ...clientData as Client, 
+        id: finalClientId, 
+        createdAt: clientData.createdAt || Date.now()
+    };
+    await storage.saveClient(clientToSave);
 
     // id do cliente: reutiliza só quando o CPF aponta para um cliente existente
     // (ou para o id já fixado num retry). CPF novo => id fresco. Protegido pelo

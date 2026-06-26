@@ -197,8 +197,14 @@ export const useAiLogic = ({
             const forceProxy = !!proxyUrl || model.includes('llama') || model.includes('deepseek');
             let res;
             try {
-                if (forceProxy) {
-                    const proxyBody = JSON.stringify({ url: endpoint, method: 'POST', headers, body: bodyObj });
+                if (proxyUrl || model.includes('llama') || model.includes('deepseek')) {
+                    const proxyBody = JSON.stringify({
+                       url: endpoint,
+                       method: 'POST',
+                       headers: secondPayload.headers,
+                       body: JSON.parse(secondPayload.body)
+                    });
+                    
                     const usingProxy = proxyUrl || '/api/proxy';
                     try {
                         res = await fetch(usingProxy, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: proxyBody });
@@ -282,7 +288,13 @@ export const useAiLogic = ({
             let res;
             try {
                 if (proxyUrl) {
-                    const proxyBody = JSON.stringify({ url: ANTHROPIC_URL, method: 'POST', headers, body: bodyObj });
+                    const proxyBody = JSON.stringify({
+                       url: 'https://api.anthropic.com/v1/messages',
+                       method: 'POST',
+                       headers: secondPayload.headers,
+                       body: JSON.parse(secondPayload.body)
+                    });
+                    
                     const usingProxy = proxyUrl || '/api/proxy';
                     try {
                         res = await fetch(usingProxy, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: proxyBody });

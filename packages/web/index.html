@@ -1,0 +1,88 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="https://cdn-icons-png.flaticon.com/512/854/854878.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Anti-FOUC: aplica o tema salvo antes do primeiro paint.
+      // Alinhado ao ThemeContext (storage 'ktag_theme', default 'light').
+      try { document.documentElement.classList.add(localStorage.getItem('ktag_theme') === 'dark' ? 'dark' : 'light'); }
+      catch (e) { document.documentElement.classList.add('light'); }
+    </script>
+    <title>K-Tag Manager Pro</title>
+    
+    <!-- Fonts: Manrope for headings, Inter for UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..900&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+     
+    <!-- Custom Cluster CSS -->
+    <style>
+      .marker-cluster-custom {
+        background-color: rgba(245, 158, 11, 0.6);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+      }
+      .marker-cluster-custom div {
+        width: 30px;
+        height: 30px;
+        margin-left: 5px;
+        margin-top: 5px;
+        text-align: center;
+        border-radius: 50%;
+        background-color: #f59e0b;
+        color: #000;
+        font-weight: 900;
+        font-family: 'Manrope', sans-serif;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #000;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      }
+    </style>
+</head>
+  <body class="bg-zinc-100 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 transition-colors duration-200 antialiased selection:bg-primary-500/30 selection:text-primary-500">
+    <div id="root"></div>
+    <script>
+      // Fix for "Cannot set property fetch of #<Window> which has only a getter"
+      // This happens when some polyfills (like formdata-polyfill) try to monkey-patch fetch
+      // in environments where window.fetch is read-only.
+      if (typeof window !== 'undefined') {
+        try {
+          if (window.fetch) {
+            const originalFetch = window.fetch;
+            try {
+              Object.defineProperty(window, 'fetch', {
+                value: originalFetch,
+                writable: true,
+                configurable: true,
+                enumerable: true
+              });
+            } catch (e) {}
+          }
+        } catch (e) {}
+      
+        // Some libraries expect 'global' to be defined in the browser
+        if (typeof window.global === 'undefined') {
+          window.global = window;
+        }
+      }
+    </script>
+    <script type="module" src="/index.tsx"></script>
+    
+    <!-- Link obrigatório para validação da API SiteRastreio -->
+    <footer style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;">
+      <a href="https://www.siterastreio.com.br/" target="_blank">Rastreamento</a>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,204 @@
+
+import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
+import { storage } from './storage';
+import { xadtagService } from './xadtag';
+
+// K-Tag API v1.2 (2025-11-06)
+// status field now represents battery level
+// This logic is shared between map and inventory views
+export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
+  switch (status) {
+    case 0:
+      return { level: 100, label: 'Normal', color: '#10b981' }; // Green
+    case 1:
+      return { level: 60, label: 'Médio', color: '#eab308' }; // Yellow
+    case 2:
+      return { level: 30, label: 'Baixo', color: '#f97316' }; // Orange
+    case 3:
+      return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // Red
+    default:
+      return { level: 0, label: 'Desconhecido', color: '#71717a' }; // Gray
+  }
+};
+
+/**
+ * Verifica se a tag mudou de posição além de um limiar (≈5m por padrão).
+ * Usado para registrar histórico apenas quando há movimento real, evitando
+ * milhares de pontos idênticos de veículos parados.
+ * - Sem posição nova: nunca registra.
+ * - Sem posição anterior: registra o primeiro ponto.
+ */
+export const hasMoved = (
+  prev?: { lat: number; lon: number } | null,
+  next?: { lat: number; lon: number } | null,
+  thresholdDeg = 0.00005
+): boolean => {
+  if (!next) return false;
+  if (!prev) return true;
+  return Math.abs(prev.lat - next.lat) > thresholdDeg || Math.abs(prev.lon - next.lon) > thresholdDeg;
+};
+
+/**
+ * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
+ */
+export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1, onProgress?: (index: number, total: number, currentTag: Tag) => void): Promise<KTagLocationResult[]> => {
+  const allResults: KTagLocationResult[] = [];
+  
+  let processedCount = 0;
+  for (let i = 0; i < tags.length; i += chunkSize) {
+    const chunk = tags.slice(i, i + chunkSize);
+    
+    const chunkResults = [];
+    for (const tag of chunk) {
+      if (onProgress) onProgress(processedCount + 1, tags.length, tag);
+      
+      // Tenta buscar a localização com até 5 retentativas em caso de 429
+      let attempts = 0;
+      const maxAttempts = 5;
+      let result = null;
+      
+      while (attempts <= maxAttempts) {
+        try {
+          const res = await fetchTagLocation(tag);
+          result = res.length > 0 ? { ...res[0], tagId: tag.id } : null;
+          break; // Sucesso, sai do loop de tentativas
+        } catch (e: any) {
+          if (e.message.includes('429') && attempts < maxAttempts) {
+            attempts++;
+            // Espera exponencial: 3s, 6s, 9s...
+            await new Promise(resolve => setTimeout(resolve, attempts * 3000));
+            continue;
+          }
+          console.error(`Erro ao rastrear tag ${tag.accessoryId}:`, e.message);
+          break; // Outro erro ou limite de tentativas atingido
+        }
+      }
+      chunkResults.push(result);
+      processedCount++;
+      
+      // Delay entre requisições individuais para evitar sobrecarga (1s)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    const validResults = chunkResults.filter((r): r is any => r !== null);
+    allResults.push(...validResults);
+
+    // Delay maior entre os chunks
+    if (i + chunkSize < tags.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  return allResults;
+};
+
+export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
+  // Dispatcher Baseado no Tipo de Dispositivo
+  if (tag.type === 'XADTAG') {
+      return xadtagService.fetchLocation(tag);
+  }
+
+  // Lógica Legada K-TAG
+  const settings = await storage.getSettings();
+  const payload: any = {
+    accessoryId: tag.accessoryId,
+    hashed_keys: [tag.hashedAdvKey],
+    priv_keys: [tag.privateKey]
+  };
+
+  const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
+  
+  let response: Response | null = null;
+  let lastError: any = null;
+
+  try {
+      const proxyUrl = settings.customProxyUrl || '/api/proxy';
+      response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: settings.ktagUrl,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+          body: payload
+        })
+      });
+  } catch (e: any) {
+      console.warn(`Proxy ${settings.customProxyUrl || '/api/proxy'} failed:`, e.message);
+      lastError = e;
+      
+      if (settings.customProxyUrl) {
+          console.log("Falling back to /api/proxy...");
+          try {
+             response = await fetch('/api/proxy', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                 url: settings.ktagUrl,
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+                 body: payload
+               })
+             });
+          } catch (fallbackErr: any) {
+             console.warn("Fallback /api/proxy failed:", fallbackErr.message);
+             lastError = fallbackErr;
+          }
+      }
+  }
+
+  if (!response) {
+      throw new Error(lastError?.message || "Falha ao conectar via proxy de rastreio.");
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("Acesso Negado (401): Credenciais K-Tag inválidas.");
+    if (response.status === 404) throw new Error("Endpoint K-Tag não encontrado (404).");
+    if (response.status === 429) throw new Error("Erro 429: Muitas requisições. O servidor está limitando o acesso.");
+    throw new Error(`Erro ${response.status}: Falha no Proxy K-Tag.`);
+  }
+  
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    
+    // Parse da Resposta conforme K-Tag API v1.2
+    if (data && Array.isArray(data.results)) {
+        return data.results.map((p: any) => ({
+            lat: p.lat,
+            lon: p.lon,
+            conf: p.conf,
+            status: p.status, // Raw status
+            battery: ktagBatteryStatus(p.status), // New interpreted battery
+            timestamp: p.timestamp, // Already in ms
+            isodatetime: p.isodatetime
+        }));
+    }
+    
+    return [];
+  } catch (jsonErr) {
+    throw new Error("Resposta inválida do servidor K-Tag.");
+  }
+};
+
+export const exportToCSV = (locations: KTagLocationResult[]) => {
+  const headers = ['Timestamp', 'ISO Date', 'Latitude', 'Longitude', 'Confidence', 'Battery Level', 'Battery Label'];
+  const rows = locations.map(l => [
+      l.timestamp, 
+      l.isodatetime, 
+      l.lat, 
+      l.lon, 
+      l.conf, 
+      l.battery.level, 
+      l.battery.label
+  ].join(','));
+  
+  const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `rastreio_${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};

@@ -1,0 +1,36 @@
+{
+  "name": "@ktag/backend",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "docker:build": "docker build -t ktag-backend:local .",
+    "docker:run": "docker run --rm -p 4000:4000 -e PORT=4000 ktag-backend:local"
+  },
+  "dependencies": {
+    "@ktag/shared": "*",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
+    "tsx": "^4.22.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "dotenv": "^17.4.2",
+    "firebase-admin": "^13.10.0",
+    "typescript": "^5.2.2"
+  },
+  "overrides": {
+    "undici": "^6.25.0",
+    "http-proxy-agent": "^7.0.2",
+    "@tootallnate/once": "^3.0.1"
+  }
+}

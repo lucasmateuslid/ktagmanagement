@@ -10,9 +10,10 @@ interface UpdateTagsModalProps {
     onClose: () => void;
     tags: Tag[];
     vehicles: Vehicle[];
+    onLocationsUpdated?: (locs: LocationHistory[]) => void;
 }
 
-export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClose, tags, vehicles }) => {
+export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClose, tags, vehicles, onLocationsUpdated }) => {
     const [isUpdating, setIsUpdating] = useState(false);
     const [progress, setProgress] = useState(0);
     const [results, setResults] = useState<{ tagId: string; status: 'success' | 'error'; label: string }[]>([]);
@@ -63,6 +64,9 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
                     setResults(prev => [{ tagId, status: 'error', label }, ...prev]);
                 }
             }
+
+            // Notifica o mapa para refletir as novas posições imediatamente
+            onLocationsUpdated?.(validLocs as LocationHistory[]);
 
             setProgress(100);
         } catch (error) {

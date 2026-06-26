@@ -1,25 +1,27 @@
 # syntax=docker/dockerfile:1
-# K-Tag Manager Pro — multi-tenant Cloud Run image
+# K-Tag Manager — monorepo multi-stage build
 #
-# Etapa 1: build do front-end Vite e instalação completa de deps
-# Etapa 2: runtime Node minimal servindo dist/ + Express proxy
+# Stage 1: build do frontend Vite (packages/web)
+# Stage 2: runtime Node minimal com Express + dist estático
 #
-# Cloud Run injeta a env PORT (padrão 8080). O server lê via process.env.PORT.
+# Cloud Run injeta PORT (padrão 8080). O server lê via process.env.PORT.
 
 # ---------- STAGE 1: build ----------
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Cache friendly: copia manifests primeiro
+# Copia manifests do workspace root e de cada package
 COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/web/package.json     ./packages/web/
+COPY packages/backend/package.json ./packages/backend/
+
 RUN npm ci --no-audit --no-fund
 
-# Copia o resto do código-fonte
-COPY . .
+# Copia código-fonte de todos os packages
+COPY packages/ ./packages/
 
-# Vite injeta variáveis VITE_* no bundle no momento do build. O CI/CD passa
-# esses valores via --build-arg para que a SPA conecte no Firebase correto
-# (sandbox ou produção) sem precisar de configuração em runtime.
+# Firebase build-time args (injetados pelo CI via --build-arg)
 ARG VITE_FIREBASE_API_KEY
 ARG VITE_FIREBASE_AUTH_DOMAIN
 ARG VITE_FIREBASE_PROJECT_ID
@@ -33,8 +35,8 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
     VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID \
     VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
 
-# Vite build → produz /app/dist
-RUN npm run build
+# Build do frontend → packages/web/dist
+RUN npm run build --workspace=@ktag/web
 
 # ---------- STAGE 2: runtime ----------
 FROM node:20-alpine AS runtime
@@ -43,20 +45,17 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Copia apenas o necessário para rodar (sem node_modules de build)
-COPY --from=builder /app/package.json /app/package-lock.json ./
-# tsx agora é dep de produção (precisamos dele para executar server.ts).
-# npm ci --omit=dev já instala tsx no node_modules/.bin com permissões corretas.
-RUN npm ci --omit=dev --no-audit --no-fund
+# Instala só deps de produção do backend
+COPY packages/backend/package.json ./packages/backend/
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund --workspace=@ktag/backend
 
-# Bundle do front e código do servidor
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.ts ./server.ts
+# Código do servidor e dist do frontend
+COPY --from=builder /app/packages/backend/src ./packages/backend/src
+COPY --from=builder /app/packages/web/dist     ./dist
 
 EXPOSE 8080
 
-# Não rodar como root
 USER node
 
-# Chama o binário direto (sem npx) para evitar download em runtime.
-CMD ["node_modules/.bin/tsx", "server.ts"]
+CMD ["node_modules/.bin/tsx", "packages/backend/src/server.ts"]
