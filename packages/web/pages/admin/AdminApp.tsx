@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SystemAdminProvider, useSystemAdmin } from '../../contexts/SystemAdminContext';
+import { AdminThemeProvider } from '../../hooks/useAdminTheme';
 import { AdminLogin } from './AdminLogin';
 import { AdminLayout } from './AdminLayout';
 import { AdminDashboard } from './AdminDashboard';
@@ -51,9 +52,11 @@ const AdminGate = () => {
 };
 
 export const AdminApp = () => (
-  <SystemAdminProvider>
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <AdminGate />
-    </HashRouter>
-  </SystemAdminProvider>
+  <AdminThemeProvider>
+    <SystemAdminProvider>
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AdminGate />
+      </HashRouter>
+    </SystemAdminProvider>
+  </AdminThemeProvider>
 );

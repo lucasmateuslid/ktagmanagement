@@ -10,22 +10,39 @@ function readInitial(): AdminTheme {
   return v === 'dark' ? 'dark' : 'light';
 }
 
+function applyThemeToDom(theme: AdminTheme) {
+  const html = document.documentElement;
+  const body = document.body;
+  html.setAttribute('data-theme', theme);
+  if (theme === 'light') {
+    html.classList.remove('dark');
+    body.classList.add('admin-light');
+    body.classList.remove('admin-dark');
+  } else {
+    html.classList.add('dark');
+    body.classList.remove('admin-light');
+    body.classList.add('admin-dark');
+  }
+}
+
+// ── Context ──────────────────────────────────────────────────────────────────
+
+interface AdminThemeCtx {
+  theme: AdminTheme;
+  toggle: () => void;
+  setTheme: (t: AdminTheme) => void;
+  rootClass: string;
+}
+
+const AdminThemeContext = React.createContext<AdminThemeCtx | null>(null);
+
 /**
- * Tema do painel admin. Persiste em localStorage e aplica:
- *  - `data-theme="light"`/`"dark"` em <html> — fonte semântica nova,
- *    ativa CSS vars (`--surface`, `--content`, etc.) em qualquer
- *    componente que use tokens (Button/Input/Modal/Field).
- *  - `.admin-light` em <body> — overrides legados em index.css que
- *    cobrem páginas admin ainda escritas com classes Tailwind dark
- *    hardcoded (bg-zinc-900, text-white...). Será removido após
- *    migração das pages para tokens semânticos.
- *  - `class="dark"` em <html> quando admin theme === dark, para
- *    manter `dark:` modifiers funcionando.
- *
- * O efeito reseta os atributos ao desmontar, então o tenant não é
- * afetado.
+ * Provider único que gerencia tema, persiste em localStorage e aplica no DOM.
+ * Deve ficar acima de todo o painel admin (AdminApp) para que todas as páginas
+ * compartilhem o mesmo estado — evita múltiplas instâncias de estado que
+ * brigam pelo DOM e causam dessincronismo entre abas.
  */
-export function useAdminTheme() {
+export function AdminThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<AdminTheme>(readInitial);
 
   const setTheme = React.useCallback((next: AdminTheme) => {
@@ -34,37 +51,21 @@ export function useAdminTheme() {
   }, []);
 
   const toggle = React.useCallback(() => {
-    setTheme(theme === 'light' ? 'dark' : 'light');
-  }, [theme, setTheme]);
+    setThemeState(prev => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem(KEY, next); } catch (_) { /* noop */ }
+      return next;
+    });
+  }, []);
 
+  // Único useEffect que toca o DOM — roda só quando o tema muda no Provider.
   React.useEffect(() => {
-    const html = document.documentElement;
-    const body = document.body;
-
-    // Salva estado anterior para restaurar
-    const prevHtmlDark = html.classList.contains('dark');
-    const prevDataTheme = html.getAttribute('data-theme');
-
-    html.setAttribute('data-theme', theme);
-
-    if (theme === 'light') {
-      html.classList.remove('dark');
-      body.classList.add('admin-light');
-      body.classList.remove('admin-dark');
-    } else {
-      html.classList.add('dark');
-      body.classList.remove('admin-light');
-      body.classList.add('admin-dark');
-    }
-
+    applyThemeToDom(theme);
     return () => {
-      body.classList.remove('admin-light');
-      body.classList.remove('admin-dark');
-      // tenant default é dark — restaura
-      if (prevHtmlDark) html.classList.add('dark');
-      else html.classList.remove('dark');
-      if (prevDataTheme) html.setAttribute('data-theme', prevDataTheme);
-      else html.removeAttribute('data-theme');
+      // Restaura tenant default (dark) ao desmontar o painel admin.
+      document.body.classList.remove('admin-light', 'admin-dark');
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
     };
   }, [theme]);
 
@@ -72,5 +73,20 @@ export function useAdminTheme() {
     ? 'admin-light bg-surface text-content'
     : 'dark bg-surface text-content';
 
-  return { theme, setTheme, toggle, rootClass };
+  const ctx = React.useMemo(
+    () => ({ theme, toggle, setTheme, rootClass }),
+    [theme, toggle, setTheme, rootClass],
+  );
+
+  return React.createElement(AdminThemeContext.Provider, { value: ctx }, children);
+}
+
+/**
+ * Hook consumidor — lê do contexto compartilhado.
+ * Deve ser usado dentro de <AdminThemeProvider>.
+ */
+export function useAdminTheme(): AdminThemeCtx {
+  const ctx = React.useContext(AdminThemeContext);
+  if (!ctx) throw new Error('useAdminTheme must be used inside AdminThemeProvider');
+  return ctx;
 }
