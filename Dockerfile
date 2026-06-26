@@ -45,14 +45,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Instala só deps de produção do backend
+# Instala só deps de produção do backend (inclui @ktag/shared via workspace symlink)
 COPY packages/backend/package.json ./packages/backend/
+COPY packages/shared/package.json  ./packages/shared/
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund --workspace=@ktag/backend
+RUN npm ci --omit=dev --no-audit --no-fund --workspace=@ktag/backend --workspace=@ktag/shared
 
-# Código do servidor e dist do frontend
+# Código do servidor, shared e dist do frontend
 COPY --from=builder /app/packages/backend/src ./packages/backend/src
-COPY --from=builder /app/packages/web/dist     ./dist
+COPY --from=builder /app/packages/shared/src  ./packages/shared/src
+COPY --from=builder /app/packages/web/dist    ./dist
 
 EXPOSE 8080
 

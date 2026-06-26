@@ -17,6 +17,7 @@
     "docker:build": "docker build -f packages/backend/Dockerfile -t ktag-backend:local packages/backend"
   },
   "devDependencies": {
+    "graphemer": "^1.4.0",
     "typescript": "^5.2.2"
   },
   "overrides": {
