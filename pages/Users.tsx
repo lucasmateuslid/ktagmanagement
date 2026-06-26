@@ -7,6 +7,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { hasPermission, PERMISSIONS } from '../utils/permissions';
 import { securityService } from '../services/security';
 import { functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -47,9 +48,13 @@ export const Users = () => {
   const { isAdmin, user: currentUser, customRoles } = useAuth();
   const { tenantId } = useTenant();
 
+  // Acesso à gestão de usuários é governado pela permissão (não mais pelo isAdmin
+  // cru) — assim um cargo customizado com "Usuários" também consegue gerenciar.
+  const canManageUsers = hasPermission(currentUser, customRoles || [], PERMISSIONS.SETTINGS_MODULE_USERS);
+
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
-    if (isAdmin) {
+    if (canManageUsers) {
       const allUsers = await storage.getAllUsers();
       setUsers(allUsers);
       const allTechs = await storage.getTechnicians();
@@ -58,7 +63,7 @@ export const Users = () => {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, [isAdmin]);
+  useEffect(() => { loadData(); }, [canManageUsers]);
 
   const handleSyncDatabase = async () => {
     setSyncing(true);
@@ -364,7 +369,7 @@ export const Users = () => {
     </div>
   );
 
-  if (!isAdmin) return <div className="py-20 text-center text-zinc-500 uppercase font-black">Acesso Negado</div>;
+  if (!canManageUsers) return <div className="py-20 text-center text-zinc-500 uppercase font-black">Acesso Negado</div>;
 
   return (
     <div className="space-y-8 pb-24">

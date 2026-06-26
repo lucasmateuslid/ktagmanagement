@@ -2,8 +2,8 @@ import * as React from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useSystemAdmin } from '../../contexts/SystemAdminContext';
 import {
-  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard, Receipt,
-  Search, ChevronRight, Settings2, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
+  LayoutDashboard, Building2, Users, Shield, LogOut, FileText, CreditCard,
+  Search, ChevronRight, Menu, X, PanelLeftClose, PanelLeftOpen, MoreHorizontal, UserCog, Layers, Cloud,
   Sun, Moon, KeyRound,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -23,14 +23,12 @@ const NAV: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true, group: 'main' },
   { to: '/admin/tenants', label: 'Empresas', icon: Building2, group: 'main' },
   { to: '/admin/users', label: 'Usuários', icon: Users, group: 'main' },
-  { to: '/admin/billing', label: 'Mensalidades', icon: CreditCard, group: 'billing' },
+  { to: '/admin/financeiro', label: 'Financeiro', icon: CreditCard, group: 'billing' },
   { to: '/admin/plans', label: 'Planos', icon: Layers, group: 'billing' },
-  { to: '/admin/invoices', label: 'Faturas', icon: Receipt, group: 'billing' },
   { to: '/admin/access', label: 'Acessos', icon: KeyRound, group: 'system' },
   { to: '/admin/system-admins', label: 'Super Admins', icon: Shield, group: 'system' },
   { to: '/admin/audit', label: 'Auditoria', icon: FileText, group: 'system' },
-  { to: '/admin/asaas-config', label: 'Config. Asaas', icon: Settings2, group: 'system' },
-  { to: '/admin/platform-integrations', label: 'Integrações', icon: Cloud, group: 'system' },
+  { to: '/admin/integrations', label: 'Integrações', icon: Cloud, group: 'system' },
   { to: '/admin/account', label: 'Minha conta', icon: UserCog, group: 'system' },
 ];
 
@@ -43,8 +41,8 @@ const GROUPS = [
 const BOTTOM_NAV_PRIMARY: BottomNavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={18} />, end: true },
   { to: '/admin/tenants', label: 'Empresas', icon: <Building2 size={18} /> },
-  { to: '/admin/billing', label: 'Mensalid.', icon: <CreditCard size={18} /> },
-  { to: '/admin/invoices', label: 'Faturas', icon: <Receipt size={18} /> },
+  { to: '/admin/financeiro', label: 'Financeiro', icon: <CreditCard size={18} /> },
+  { to: '/admin/plans', label: 'Planos', icon: <Layers size={18} /> },
 ];
 
 const SIDEBAR_OPEN_KEY = 'ktag-admin-sidebar-collapsed';
@@ -128,7 +126,7 @@ export const AdminLayout = () => {
               <Menu size={20} />
             </button>
             <div className="flex-1 min-w-0">
-              <div className="text-[9px] font-black uppercase tracking-widest text-amber-500/80">K-TAG Platform</div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-amber-500/80">Monitora 360</div>
               <div className="font-display font-black text-sm truncate">{currentPageTitle(location.pathname)}</div>
             </div>
             <ThemeToggle theme={theme} onToggle={toggleTheme} compact />
@@ -236,13 +234,10 @@ const DesktopSidebar = ({
     )}
   >
     <div className={cn('px-3 pt-6 pb-5 flex items-center', collapsed ? 'justify-center' : 'gap-3 px-5')}>
-      <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-        <span className="font-display font-black text-zinc-950 text-sm">K</span>
-        <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/20" />
-      </div>
+      <img src="/brand/logo-mark.svg" alt="Monitora 360" className="w-10 h-10 object-contain shrink-0" />
       {!collapsed && (
         <div className="min-w-0 flex-1">
-          <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">K-TAG Platform</div>
+          <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">Monitora 360</div>
           <div className="font-display font-black text-base leading-tight">Super Admin</div>
         </div>
       )}
@@ -405,12 +400,9 @@ const MobileDrawer = ({
       className="relative w-72 max-w-[85vw] h-full bg-zinc-950 border-r border-white/5 flex flex-col shadow-2xl shadow-black/60"
     >
       <div className="px-5 pt-6 pb-5 flex items-center gap-3">
-        <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
-          <span className="font-display font-black text-zinc-950 text-sm">K</span>
-          <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/20" />
-        </div>
+        <img src="/brand/logo-mark.svg" alt="Monitora 360" className="w-10 h-10 object-contain shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">K-TAG Platform</div>
+          <div className="text-amber-500/90 text-[9px] font-black uppercase tracking-[0.18em]">Monitora 360</div>
           <div className="font-display font-black text-base leading-tight">Super Admin</div>
         </div>
         <button

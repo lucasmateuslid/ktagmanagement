@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28"></stop>
+      <stop offset="100%" stop-color="#d97706" stop-opacity="0"></stop>
+    </radialGradient>
+  </defs>
+  <circle cx="40" cy="40" r="38" fill="url(#glow)"></circle>
+  <polygon points="77,40 58.5,8 21.5,8 3,40 21.5,72 58.5,72" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linejoin="round"></polygon>
+  <circle cx="37" cy="40" r="18" fill="#18181b" stroke="#f59e0b" stroke-width="5"></circle>
+  <text x="37" y="50" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-weight="900" font-size="26" fill="#fde68a" letter-spacing="-2">M</text>
+  <circle cx="63" cy="40" r="4" fill="#f59e0b"></circle>
+</svg>

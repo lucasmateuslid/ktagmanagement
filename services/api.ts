@@ -98,7 +98,10 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
       return xadtagService.fetchLocation(tag);
   }
 
-  // Lógica Legada K-TAG
+  // Lógica Legada K-TAG.
+  // Credenciais centralizadas na plataforma: enviamos apenas injectAuth:'ktag' e o
+  // relay (server.ts em dev / proxyApi em prod) resolve a URL e injeta o Basic Auth.
+  // O navegador nunca recebe usuário/senha da conta K-TAG.
   const settings = await storage.getSettings();
   const payload: any = {
     accessoryId: tag.accessoryId,
@@ -106,8 +109,8 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
     priv_keys: [tag.privateKey]
   };
 
-  const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
-  
+  const proxyBody = JSON.stringify({ injectAuth: 'ktag', method: 'POST', body: payload });
+
   let response: Response | null = null;
   let lastError: any = null;
 
@@ -116,29 +119,19 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
       response = await fetch(proxyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: settings.ktagUrl,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-          body: payload
-        })
+        body: proxyBody
       });
   } catch (e: any) {
       console.warn(`Proxy ${settings.customProxyUrl || '/api/proxy'} failed:`, e.message);
       lastError = e;
-      
+
       if (settings.customProxyUrl) {
           console.log("Falling back to /api/proxy...");
           try {
              response = await fetch('/api/proxy', {
                method: 'POST',
                headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({
-                 url: settings.ktagUrl,
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-                 body: payload
-               })
+               body: proxyBody
              });
           } catch (fallbackErr: any) {
              console.warn("Fallback /api/proxy failed:", fallbackErr.message);

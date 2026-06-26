@@ -18,8 +18,8 @@ export const AiAssistant: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([{
       id: 'init',
       role: 'model',
-      rawText: 'Olá! Sou a **K-TAG AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?',
-      content: 'Olá! Sou a **K-TAG AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?'
+      rawText: 'Olá! Sou a **Monitora 360 AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?',
+      content: 'Olá! Sou a **Monitora 360 AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?'
   }]);
   const [loading, setLoading] = useState(false);
   
@@ -129,7 +129,7 @@ export const AiAssistant: React.FC = () => {
             <div className="p-3 bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2 px-1">
                 <Sparkles size={14} className="text-emerald-500"/>
-                <span className="font-mono font-bold text-[11px] text-white tracking-widest shadow-sm">K-TAG AI ADMIN</span>
+                <span className="font-mono font-bold text-[11px] text-white tracking-widest shadow-sm">Monitora 360 AI</span>
               </div>
               <div className="flex items-center gap-3">
                   <span className="flex h-2 w-2">

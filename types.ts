@@ -50,6 +50,7 @@ export interface TenantIntegrationFlags {
 
 export interface TenantSettings {
   maxUsers?: number;
+  /** Override de módulos liberados por empresa (ids de MODULE_CATALOG). Quando definido, sobrescreve os módulos do plano; quando ausente, a empresa herda os módulos do plano. */
   features?: string[];
   integrations?: TenantIntegrationFlags;
   /** Limite máximo de tags que este tenant pode cadastrar. 0/undefined = ilimitado. */
@@ -198,6 +199,31 @@ export interface SetupFee {
   paidAt?: number;
   /** Se gerou uma fatura no Asaas (status=pending), id do payment. */
   asaasPaymentId?: string;
+}
+
+/** Categoria de despesa/conta (cadastro manual no admin, sistema-wide). */
+export interface ExpenseCategory {
+  id: string;
+  label: string;
+  color?: string;
+}
+
+export type ExpenseType = 'payable' | 'receivable';
+export type ExpenseStatus = 'pending' | 'paid' | 'overdue';
+
+/** Lançamento manual de conta a pagar/receber (admin → Financeiro → Contas). */
+export interface Expense {
+  id: string;
+  categoryId: string | null;
+  description: string;
+  amountCents: number;
+  type: ExpenseType;
+  status: ExpenseStatus;
+  dueDate: number | null;
+  paidAt?: number;
+  notes?: string | null;
+  createdAt: number;
+  createdBy: string;
 }
 
 export interface Company {
@@ -487,10 +513,9 @@ export interface AppSettings {
   customLogoBase64Light?: string;
   customLogoBase64Dark?: string;
   themeColors?: ThemeColors;
-  ktagUrl: string;
-  ktagUser: string;
-  ktagPass: string;
-  traqcareToken: string;
+  // K-TAG: credenciais agora são centralizadas na plataforma e injetadas server-side
+  // pelo relay (secrets KTAG_API_USER/PASS + env KTAG_API_URL). Não vivem mais por-tenant.
+  traqcareToken: string; // XADTAG (Traqcare) — permanece por-tenant
   googleMapsKey: string;
   mapboxKey: string;
   geocodingProvider?: 'osm' | 'google';

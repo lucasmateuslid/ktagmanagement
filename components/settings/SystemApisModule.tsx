@@ -57,7 +57,7 @@ const SECTIONS: SectionMeta[] = [
   { id: 'geocoding',    label: 'Geocoding & Mapas',    description: 'Cadeia de fallback para resolver endereços (Photon / Nominatim / Google) e provedor de mapas.', icon: MapPin,         color: 'text-teal-500',    group: 'Plataforma' },
   { id: 'regionais',    label: 'Regionais & Categorias', description: 'Cadastro das regionais (empresas) atendidas e das categorias de veículos suportadas.', icon: LayoutGrid,     color: 'text-amber-500',   group: 'Plataforma' },
 
-  { id: 'ktag',         label: 'API K-Tag',            description: 'Endpoint e credenciais (usuário/senha) da sua empresa no K-Tag.', icon: Key,            color: 'text-primary-500', group: 'Integrações' },
+  { id: 'ktag',         label: 'API K-Tag',            description: 'Credenciais centralizadas e gerenciadas pela plataforma.', icon: Key,            color: 'text-primary-500', group: 'Integrações' },
   { id: 'hinova',       label: 'SGA Hinova',           description: 'Integração com o sistema de gestão associativista Hinova/SGA.', icon: Database,       color: 'text-emerald-500', group: 'Integrações' },
   { id: 'proxy',        label: 'Proxy & Relay',        description: 'Cloud Function que roteia as chamadas externas. Gerenciada pela plataforma.', icon: Cloud,          color: 'text-cyan-500',    group: 'Integrações' },
   { id: 'siterastreio', label: 'Site Rastreio',        description: 'API key da plataforma siterastreio.com.br usada para link de rastreamento público.', icon: Box,            color: 'text-orange-500',  group: 'Integrações' },
@@ -78,7 +78,7 @@ function getSectionStatus(id: SectionId, s: AppSettings | null): 'ok' | 'partial
     case 'ai':          return has(s.aiProvider) ? 'ok' : 'empty';
     case 'geocoding':   return has(s.geocodingProvider) ? 'ok' : 'partial';
     case 'regionais':   return 'ok';
-    case 'ktag':        return has(s.ktagUrl) && has(s.ktagUser) && has(s.ktagPass) ? 'ok' : (has(s.ktagUrl) || has(s.ktagUser) ? 'partial' : 'empty');
+    case 'ktag':        return 'ok'; // gerenciada pela plataforma (server-side)
     case 'hinova':      return has(s.hinovaUrl) && has(s.hinovaToken) ? 'ok' : (has(s.hinovaUrl) ? 'partial' : 'empty');
     case 'proxy':       return has(s.customProxyUrl) ? 'ok' : 'empty';
     case 'siterastreio':return has(s.siteRastreioApiKey) ? 'ok' : 'empty';
@@ -376,24 +376,18 @@ export const SystemApisModule = () => {
         return <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} embedded />;
 
       case 'ktag':
-        if (!isAdmin) return null;
         return (
           <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
-              <input type="text" value={settings.ktagUrl || ''} onChange={e => setSettings({ ...settings, ktagUrl: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[11px] outline-none focus:border-primary-500" placeholder="https://api.ktag.example.com" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
-                <input type="text" value={settings.ktagUser || ''} onChange={e => setSettings({ ...settings, ktagUser: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
-                <div className="relative">
-                  <input type={showKTagPass ? 'text' : 'password'} value={settings.ktagPass || ''} onChange={e => setSettings({ ...settings, ktagPass: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" />
-                  <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                </div>
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-6 flex items-start gap-4">
+              <div className="p-3 rounded-2xl bg-primary-500/10 text-primary-500 shrink-0"><Key size={18} /></div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Gerenciada pela plataforma</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
+                  As credenciais da API K-Tag (endpoint, usuário e senha) agora são
+                  centralizadas e injetadas com segurança pelo servidor — não são mais
+                  configuradas por empresa, e o navegador nunca recebe a senha. Para
+                  dispositivos <strong>XADTAG</strong>, configure o token na seção Traqcare.
+                </p>
               </div>
             </div>
           </div>

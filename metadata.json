@@ -1,6 +1,6 @@
 {
-  "name": "K-Tag Manager Pro",
-  "description": "A professional tag management platform featuring real-time tracking, vehicle association, historical data analysis, and seamless integration with the K-Tag API.",
+  "name": "Monitora 360",
+  "description": "Plataforma Monitora 360 de gestão de frota e rastreamento: monitoramento em tempo real, associação de veículos, análise de histórico e integração com dispositivos K-Tag.",
   "requestFramePermissions": [
     "camera"
   ],

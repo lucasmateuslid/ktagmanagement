@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { storage } from '../services/storage';
 import { AuditLog } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { hasPermission, PERMISSIONS } from '../utils/permissions';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
   ClipboardList, 
@@ -31,8 +32,9 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const AuditLogs = () => {
-  const { isAdmin, user: currentUser } = useAuth();
+  const { isAdmin, user: currentUser, customRoles } = useAuth();
   const { t } = useLanguage();
+  const canViewAudit = hasPermission(currentUser, customRoles || [], PERMISSIONS.AUDIT);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -49,15 +51,15 @@ export const AuditLogs = () => {
 
   const loadData = async () => {
     setLoading(true);
-    if (isAdmin) {
+    if (canViewAudit) {
       // Busca logs (limitado aos últimos 2000 para performance)
-      const data = await storage.getAuditLogs(2000); 
+      const data = await storage.getAuditLogs(2000);
       setLogs(data);
     }
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, [isAdmin]);
+  useEffect(() => { loadData(); }, [canViewAudit]);
 
   const entities = useMemo(() => {
     const set = new Set(logs.map(l => l.entity));
@@ -140,7 +142,7 @@ export const AuditLogs = () => {
     return <Database size={14} />;
   };
 
-  if (!isAdmin) return (
+  if (!canViewAudit) return (
     <div className="h-[60vh] flex flex-col items-center justify-center text-zinc-400 gap-4">
         <ShieldAlert size={64} className="opacity-20" />
         <p className="font-black uppercase tracking-[0.3em] text-[10px]">Acesso Restrito ao Administrador</p>

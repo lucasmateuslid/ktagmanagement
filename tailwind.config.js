@@ -42,11 +42,37 @@ export default {
         "gray-600": "var(--ds-gray-600)",
         "gray-700": "var(--ds-gray-700)",
         "gray-1000": "var(--ds-gray-1000)",
-        "background-100": "var(--ds-background-100)"
+        "background-100": "var(--ds-background-100)",
+        // Tokens semânticos Monitora 360 (preenchimentos sólidos).
+        // Respeitam o whitelabel: --accent herda --theme-primary quando o tenant define.
+        // Obs.: modificadores de opacidade (bg-accent/10) NÃO funcionam com var() —
+        // para tints sutis continue usando primary-*/amber-* (interceptados pelo whitelabel).
+        accent: 'var(--accent)',
+        'accent-hover': 'var(--accent-hover)',
+        success: 'var(--success)',
+        danger: 'var(--danger)',
+        info: 'var(--info)',
+        warning: 'var(--warning)',
+        'fg-1': 'var(--fg-1)',
+        'fg-2': 'var(--fg-2)',
+        'fg-3': 'var(--fg-3)',
+        'surface': 'var(--bg-surface)',
+        'surface-2': 'var(--bg-surface-2)',
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         display: ['Manrope', 'sans-serif'],
+      },
+      fontSize: {
+        // O micro-label onipresente de 10px (assinatura da marca).
+        '2xs': ['10px', { lineHeight: '1' }],
+      },
+      letterSpacing: {
+        // Tracking "tático" 0.3em dos eyebrows.
+        mega: '0.3em',
+      },
+      boxShadow: {
+        'glow-amber': 'var(--shadow-glow-amber)',
       },
       keyframes: {
         shimmer: {

@@ -527,7 +527,18 @@ async function startServer() {
   ]);
   app.post("/api/proxy", sensitiveLimiter, async (req, res) => {
     try {
-      const { url, method, headers, body } = req.body || {};
+      let { url, method, headers, body } = req.body || {};
+      const injectAuth = (req.body || {}).injectAuth;
+
+      // K-TAG: credenciais centralizadas — o cliente envia apenas injectAuth:'ktag'
+      // (sem url nem Authorization). O servidor resolve a URL e injeta o Basic Auth.
+      if (injectAuth === 'ktag') {
+        url = process.env.KTAG_API_URL || '';
+        if (!url) {
+          return res.status(500).json({ error: 'K-TAG não configurada no servidor (KTAG_API_URL ausente).' });
+        }
+      }
+
       if (!url || typeof url !== 'string') {
         return res.status(400).json({ error: "Missing 'url' in request body" });
       }
@@ -558,6 +569,12 @@ async function startServer() {
       }
       if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
         safeHeaders['User-Agent'] = process.env.PROXY_USER_AGENT || 'KTagManagerPro-Proxy/1.0';
+      }
+      // K-TAG: injeta Basic Auth a partir do env (cliente nunca vê as credenciais).
+      if (injectAuth === 'ktag') {
+        const u = process.env.KTAG_API_USER || '';
+        const p = process.env.KTAG_API_PASS || '';
+        safeHeaders['Authorization'] = 'Basic ' + Buffer.from(`${u}:${p}`).toString('base64');
       }
 
       const options: RequestInit = {

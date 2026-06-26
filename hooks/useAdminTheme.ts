@@ -10,14 +10,21 @@ function readInitial(): AdminTheme {
   return v === 'dark' ? 'dark' : 'light';
 }
 
+interface AdminThemeValue {
+  theme: AdminTheme;
+  setTheme: (next: AdminTheme) => void;
+  toggle: () => void;
+  rootClass: string;
+}
+
+const AdminThemeContext = React.createContext<AdminThemeValue | null>(null);
+
 /**
- * Tema do painel admin. Persiste em localStorage e aplica:
- *  - `.admin-light` no <body> (ativa overrides CSS escopados em index.css)
- *  - retorna a className do container raiz com as utilidades base (`admin-light` ou `dark`)
- *
- * O tenant não é afetado: o efeito limpa as classes ao desmontar.
+ * Fonte única de verdade do tema do painel admin. Precisa envolver toda a
+ * árvore do admin (login + layout autenticado) uma única vez, senão páginas
+ * que chamam useAdminTheme() de forma independente voltam a dessincronizar.
  */
-export function useAdminTheme() {
+export function AdminThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<AdminTheme>(readInitial);
 
   const setTheme = React.useCallback((next: AdminTheme) => {
@@ -48,5 +55,18 @@ export function useAdminTheme() {
     ? 'admin-light bg-slate-50 text-slate-900'
     : 'dark bg-zinc-950 text-white';
 
-  return { theme, setTheme, toggle, rootClass };
+  const value = React.useMemo(
+    () => ({ theme, setTheme, toggle, rootClass }),
+    [theme, setTheme, toggle, rootClass],
+  );
+
+  return React.createElement(AdminThemeContext.Provider, { value }, children);
+}
+
+export function useAdminTheme(): AdminThemeValue {
+  const ctx = React.useContext(AdminThemeContext);
+  if (!ctx) {
+    throw new Error('useAdminTheme() deve ser usado dentro de <AdminThemeProvider>');
+  }
+  return ctx;
 }

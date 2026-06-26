@@ -5,63 +5,13 @@ import {
   Sun, Moon, AlertTriangle
 } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
+import { readImageAsBase64, MAX_BASE64_BYTES, MAX_UPLOAD_BYTES, ACCEPTED_IMAGE_TYPES as ACCEPTED_TYPES } from '../../lib/imageUpload';
 
 interface Props {
   settings: AppSettings;
   setSettings: (s: AppSettings) => void;
   isAdmin: boolean;
   embedded?: boolean;
-}
-
-const MAX_FILE_BYTES = 256 * 1024;       // 256KB raw → fica ~340KB em base64
-const MAX_BASE64_BYTES = 360 * 1024;     // teto após resize, defensivo
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // hard reject acima disso (evita DoS de memória no canvas/FileReader)
-const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
-
-// Faz resize via canvas para limitar a logo a 512x512 antes de gravar em
-// base64. SVG passa direto (já é vetorial e leve).
-async function readImageAsBase64(file: File): Promise<string> {
-  if (file.type === 'image/svg+xml') {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Falha ao ler SVG.'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  const dataUrl: string = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('Falha ao ler arquivo.'));
-    reader.readAsDataURL(file);
-  });
-
-  // Resize via canvas (mantém aspect ratio, max 512px no maior lado).
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const MAX = 512;
-      let { width, height } = img;
-      if (width > MAX || height > MAX) {
-        const r = Math.min(MAX / width, MAX / height);
-        width = Math.round(width * r);
-        height = Math.round(height * r);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('Canvas indisponível.'));
-      ctx.drawImage(img, 0, 0, width, height);
-      // PNG preserva transparência (essencial para logo). Qualidade não se
-      // aplica a PNG no toDataURL, mas mantemos pra futuros formatos.
-      const out = canvas.toDataURL('image/png', 0.92);
-      resolve(out);
-    };
-    img.onerror = () => reject(new Error('Imagem inválida.'));
-    img.src = dataUrl;
-  });
 }
 
 const LogoUploader: React.FC<{
@@ -235,7 +185,7 @@ export const WhitelabelModule: React.FC<Props> = ({ settings, setSettings, isAdm
             value={settings.customAppName || ''}
             onChange={e => setSettings({ ...settings, customAppName: e.target.value })}
             className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
-            placeholder="Ex: Manager PRO"
+            placeholder="Ex: Monitora 360"
           />
         </div>
 
