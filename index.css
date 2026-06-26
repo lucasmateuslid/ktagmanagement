@@ -207,6 +207,135 @@
     --shadow-2xl: 0 25px 50px -12px rgba(0,0,0,0.70);
   }
 
+  /* =============================================================
+   * MONITORA 360 — TOKENS SEMÂNTICOS
+   * Fonte de verdade: design system claude.ai (colors_and_type.css).
+   * Tema default = light (:root); dark sobrescreve em .dark.
+   * Produto deve referenciar os tokens semânticos (--bg/--fg/--accent/
+   * --radius/--space/--shadow) e as classes .m-* (@layer components).
+   * ============================================================= */
+  :root {
+    /* Palette crua — primary "C6 / Monitora 360 Amber" */
+    --m360-primary-50:  #fffbeb;
+    --m360-primary-100: #fef3c7;
+    --m360-primary-200: #fde68a;
+    --m360-primary-300: #fcd34d;
+    --m360-primary-400: #fbbf24;
+    --m360-primary-500: #f59e0b; /* THE accent */
+    --m360-primary-600: #d97706;
+    --m360-primary-700: #b45309;
+    --m360-primary-800: #92400e;
+    --m360-primary-900: #78350f;
+    --m360-primary-950: #451a03;
+    --m360-primary-bright: #FFC800;
+
+    /* Palette crua — carbon (zinc) */
+    --m360-zinc-50:  #fafafa;
+    --m360-zinc-100: #f4f4f5;
+    --m360-zinc-200: #e4e4e7;
+    --m360-zinc-300: #d4d4d8;
+    --m360-zinc-400: #a1a1aa;
+    --m360-zinc-500: #71717a;
+    --m360-zinc-600: #52525b;
+    --m360-zinc-700: #3f3f46;
+    --m360-zinc-800: #27272a;
+    --m360-zinc-850: #1f1f22;
+    --m360-zinc-900: #18181b;
+    --m360-zinc-950: #09090b;
+
+    /* Semânticos crus */
+    --m360-emerald-500: #10b981;
+    --m360-red-500:     #ef4444;
+    --m360-red-600:     #dc2626;
+    --m360-blue-500:    #3b82f6;
+    --m360-purple-500:  #a855f7;
+
+    /* Surfaces */
+    --bg-app:       var(--m360-zinc-100);
+    --bg-surface:   #ffffff;
+    --bg-surface-2: var(--m360-zinc-50);
+    --bg-elevated:  #ffffff;
+    --bg-hero-dark: var(--m360-zinc-900);
+
+    /* Foregrounds */
+    --fg-1: var(--m360-zinc-900);
+    --fg-2: var(--m360-zinc-500);
+    --fg-3: var(--m360-zinc-400);
+    --fg-on-accent: #000000;
+    --fg-inverse: #ffffff;
+
+    /* Borders */
+    --border-1: var(--m360-zinc-200);
+    --border-2: var(--m360-zinc-100);
+
+    /* Brand accent — respeita o whitelabel via --theme-primary quando definido */
+    --accent:       var(--theme-primary, var(--m360-primary-500));
+    --accent-hover: var(--m360-primary-400);
+    --accent-soft:  color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-ring:  color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-glow:  color-mix(in srgb, var(--accent) 10%, transparent);
+
+    /* State */
+    --success: var(--m360-emerald-500);
+    --warning: var(--m360-primary-500);
+    --danger:  var(--m360-red-500);
+    --info:    var(--m360-blue-500);
+
+    /* Spacing (escala 4px nomeada) */
+    --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+    --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
+
+    /* Radii — a rampa de assinatura */
+    --radius-sm: 6px;    /* botões, inputs, chips */
+    --radius-md: 12px;   /* nav items, icon tiles, toasts */
+    --radius-lg: 16px;   /* cards secundários, modais */
+    --radius-xl: 24px;   /* quick-access cards */
+    --radius-2xl: 32px;  /* KPI cards (assinatura) */
+    --radius-pill: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -2px rgba(0,0,0,0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.10), 0 8px 10px -6px rgba(0,0,0,0.05);
+    --shadow-2xl: 0 25px 50px -12px rgba(0,0,0,0.25);
+    --shadow-glow-amber: 0 10px 30px -5px color-mix(in srgb, var(--accent) 25%, transparent);
+
+    /* Type */
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Manrope', 'Inter', ui-sans-serif, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --text-2xs: 10px;
+
+    /* Tracking */
+    --tracking-tighter: -0.05em;
+    --tracking-tight:   -0.025em;
+    --tracking-wide:     0.025em;
+    --tracking-widest:   0.10em;
+    --tracking-mega:     0.30em; /* tracking "tático" */
+  }
+
+  .dark {
+    --bg-app:       #000000;
+    --bg-surface:   var(--m360-zinc-900);
+    --bg-surface-2: var(--m360-zinc-950);
+    --bg-elevated:  var(--m360-zinc-900);
+    --bg-hero-dark: var(--m360-zinc-900);
+
+    --fg-1: #ffffff;
+    --fg-2: var(--m360-zinc-400);
+    --fg-3: var(--m360-zinc-500);
+
+    --border-1: var(--m360-zinc-800);
+    --border-2: var(--m360-zinc-800);
+
+    --shadow-sm:  0 1px 2px 0 rgba(0,0,0,0.40);
+    --shadow-md:  0 4px 6px -1px rgba(0,0,0,0.40), 0 2px 4px -2px rgba(0,0,0,0.30);
+    --shadow-lg:  0 10px 15px -3px rgba(0,0,0,0.50), 0 4px 6px -4px rgba(0,0,0,0.30);
+    --shadow-xl:  0 20px 25px -5px rgba(0,0,0,0.50), 0 8px 10px -6px rgba(0,0,0,0.30);
+    --shadow-2xl: 0 25px 50px -12px rgba(0,0,0,0.70);
+  }
+
   /* Garante contraste em formulários */
   input, textarea, select {
     @apply text-zinc-900 dark:text-white caret-primary-500;

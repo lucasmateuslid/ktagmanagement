@@ -10,6 +10,13 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
 } from '../../utils/permissions';
 
+// Permissões de governança que NÃO podem ser removidas do cargo 'admin' do sistema —
+// impede que um tenant se tranque para fora da gestão de Cargos/Usuários.
+const ADMIN_GOVERNANCE_PERMS: string[] = [
+  PERMISSIONS.SETTINGS_MODULE_ROLES,
+  PERMISSIONS.SETTINGS_MODULE_USERS,
+];
+
 // Agrupa as permissões em categorias visuais — facilita ao admin enxergar
 // quais áreas ele está liberando para cada cargo. Source of truth: PERMISSIONS.
 const PERMISSION_GROUPS: Array<{
@@ -114,6 +121,7 @@ export const PermissionsModule = () => {
       permissions: []
     };
     await storage.saveCustomRole(newRole);
+    await storage.logAction(null, 'CREATE', 'Role', `Cargo criado: ${newRole.name}`, newRole.id);
     setRoles([...roles, newRole]);
     setNewRoleName('');
     setActiveRoleId(newRole.id);
@@ -128,6 +136,7 @@ export const PermissionsModule = () => {
       return;
     }
     await storage.deleteCustomRole(roleId);
+    await storage.logAction(null, 'DELETE', 'Role', `Cargo apagado: ${role?.name || roleId}`, roleId);
     setRoles(roles.filter(r => r.id !== roleId));
     if (activeRoleId === roleId) setActiveRoleId(roles[0]?.id || null);
     addNotification('success', 'Cargo Apagado', 'O cargo foi excluído.');
@@ -145,12 +154,20 @@ export const PermissionsModule = () => {
       return;
     }
 
+    // Guardrail: não deixar remover a governança (Cargos/Usuários) do cargo Admin —
+    // isso trancaria a empresa para fora da administração.
+    if (roleInfo.id === 'admin' && ADMIN_GOVERNANCE_PERMS.includes(permId) && roleInfo.permissions.includes(permId)) {
+      addNotification('error', 'Bloqueado', 'O cargo Admin precisa manter a gestão de Cargos e Usuários — remover isso trancaria a empresa para fora da administração.');
+      return;
+    }
+
     const currentPerms = new Set(roleInfo.permissions);
     if (currentPerms.has(permId)) currentPerms.delete(permId);
     else currentPerms.add(permId);
 
     const updatedRole = { ...roleInfo, permissions: Array.from(currentPerms) };
     await storage.saveCustomRole(updatedRole);
+    await storage.logAction(null, 'UPDATE', 'Role', `Permissão ${currentPerms.has(permId) ? 'concedida' : 'revogada'} (${permId}) no cargo "${roleInfo.name}"`, roleInfo.id);
 
     const newRoles = [...roles];
     newRoles[roleIndex] = updatedRole;
@@ -164,11 +181,18 @@ export const PermissionsModule = () => {
     const roleInfo = roles[roleIndex];
     if (roleInfo.id === 'sysadmin') return;
 
+    // Guardrail: o cargo Admin não pode ter tudo revogado (lock-out).
+    if (roleInfo.id === 'admin' && !enable) {
+      addNotification('error', 'Bloqueado', 'O cargo Admin não pode ter todas as permissões revogadas.');
+      return;
+    }
+
     const updatedRole = {
       ...roleInfo,
       permissions: enable ? [...ALL_PERMISSION_IDS] : []
     };
     await storage.saveCustomRole(updatedRole);
+    await storage.logAction(null, 'UPDATE', 'Role', `${enable ? 'Todas as permissões concedidas' : 'Permissões revogadas'} no cargo "${roleInfo.name}"`, roleInfo.id);
     const newRoles = [...roles];
     newRoles[roleIndex] = updatedRole;
     setRoles(newRoles);
@@ -257,19 +281,27 @@ export const PermissionsModule = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {group.items.map(perm => {
                       const isChecked = activeRole.permissions.includes(perm.id);
+                      // Governança do Admin é obrigatória (anti-lockout) — trava o toggle.
+                      const isGovLocked = activeRole.id === 'admin' && ADMIN_GOVERNANCE_PERMS.includes(perm.id);
+                      const isLocked = isReadOnlyRole || isGovLocked;
                       return (
                         <label
                           key={perm.id}
-                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isChecked ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800'} ${isReadOnlyRole ? 'opacity-70 cursor-not-allowed' : 'hover:border-primary-500/50'}`}
+                          className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${isChecked ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/50' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800'} ${isLocked ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-primary-500/50'}`}
                         >
                           <Checkbox
                             checked={isChecked}
-                            disabled={isReadOnlyRole}
+                            disabled={isLocked}
                             onChange={() => handleTogglePermission(perm.id)}
                           />
                           <div className="flex-1">
-                            <span className={`text-[11px] font-black uppercase tracking-tight block ${isChecked ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-zinc-400'}`}>{perm.label}</span>
-                            {perm.hint && <span className="text-[10px] text-zinc-400 mt-0.5 block">{perm.hint}</span>}
+                            <span className={`text-[11px] font-black uppercase tracking-tight flex items-center gap-1.5 ${isChecked ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                              {perm.label}
+                              {isGovLocked && <Lock size={11} className="text-amber-500 shrink-0" />}
+                            </span>
+                            {isGovLocked
+                              ? <span className="text-[10px] text-amber-600/80 dark:text-amber-500/70 mt-0.5 block">Obrigatória no Admin (evita lock-out)</span>
+                              : perm.hint && <span className="text-[10px] text-zinc-400 mt-0.5 block">{perm.hint}</span>}
                           </div>
                         </label>
                       );

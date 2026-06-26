@@ -14,6 +14,10 @@ import type {
   PlansConfigDoc,
   PlanConfig,
   SetupFeeStatus,
+  ExpenseCategory,
+  Expense,
+  ExpenseType,
+  ExpenseStatus,
 } from '../types';
 
 function ensureFns() {
@@ -25,7 +29,34 @@ function call<TIn, TOut>(name: string): HttpsCallable<TIn, TOut> {
   return httpsCallable<TIn, TOut>(ensureFns(), name);
 }
 
+export interface TenantUserRow {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: string;
+  status: string;
+  createdAt: number;
+}
+
+export interface TenantMembershipRow {
+  uid: string;
+  email: string | null;
+  role: string;
+  status: string;
+  isGlobalAdmin: boolean;
+}
+
 // ----- Tenants core -----
+
+export interface CreateTenantBillingInput {
+  priceCents: number;
+  cycle?: BillingCycle;
+  billingType?: BillingMethod;
+  dueDay?: number;
+  trialDays?: number;
+  payer: { name: string; email: string; cpfCnpj: string; phone?: string };
+  setupFee?: { valueCents: number; status: SetupFeeStatus; description?: string; billingType?: BillingMethod };
+}
 
 export interface CreateTenantInput {
   slug: string;
@@ -34,12 +65,17 @@ export interface CreateTenantInput {
   active?: boolean;
   ownerEmail?: string;
   ownerName?: string;
+  billing?: CreateTenantBillingInput;
+  logoBase64Light?: string;
+  logoBase64Dark?: string;
 }
 
 export interface CreateTenantOutput {
   slug: string;
   ownerEmail: string | null;
   ownerPassword: string | null;
+  billing?: Tenant['billing'] | null;
+  billingError?: string | null;
 }
 
 export const adminApi = {
@@ -57,7 +93,7 @@ export const adminApi = {
   getTenantUsage: (slug: string) =>
     call<{ slug: string }, { slug: string; usage: TenantUsage }>('getTenantUsage')({ slug }).then(r => r.data),
 
-  updateTenantLimits: (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number }) =>
+  updateTenantLimits: (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number; features?: string[] | null }) =>
     call<{ slug: string } & typeof limits, { slug: string; changed: boolean; changes?: string[] }>('updateTenantLimits')({ slug, ...limits }).then(r => r.data),
 
   deleteTenant: (slug: string, mode: TenantDeletionMode, confirmName: string) =>
@@ -84,6 +120,12 @@ export const adminApi = {
   syncTenantBilling: (slug: string) =>
     call<{ slug: string }, void>('syncTenantBilling')({ slug }).then(r => r.data),
 
+  getAsaasBalance: () =>
+    call<{}, { balanceCents: number; balanceReal: number; env: string }>('getAsaasBalance')({}).then(r => r.data),
+
+  syncAllTenantsBilling: () =>
+    call<{}, { synced: number; errors: string[]; total: number }>('syncAllTenantsBilling')({}).then(r => r.data),
+
   // ----- Plans config -----
 
   getPlansConfig: () =>
@@ -105,6 +147,37 @@ export const adminApi = {
 
   revokeMembership: (input: { tenantId: string; uid?: string; email?: string }) =>
     call<{ tenantId: string; uid?: string; email?: string }, { ok: boolean }>('superAdminRevokeMembership')(input).then(r => r.data),
+
+  // ----- Usuários por tenant -----
+
+  listAllUsers: (tenantId?: string) =>
+    call<{ tenantId?: string }, { users: TenantUserRow[] }>('listAllUsers')({ tenantId }).then(r => r.data),
+
+  listTenantMemberships: (tenantId: string) =>
+    call<{ tenantId: string }, { memberships: TenantMembershipRow[] }>('listTenantMemberships')({ tenantId }).then(r => r.data),
+
+  // ----- Contas a pagar/receber -----
+
+  listExpenseCategories: () =>
+    call<{}, { categories: ExpenseCategory[] }>('listExpenseCategories')({}).then(r => r.data),
+
+  upsertExpenseCategory: (input: { id?: string; label: string; color?: string }) =>
+    call<typeof input, { categories: ExpenseCategory[] }>('upsertExpenseCategory')(input).then(r => r.data),
+
+  deleteExpenseCategory: (id: string) =>
+    call<{ id: string }, { categories: ExpenseCategory[] }>('deleteExpenseCategory')({ id }).then(r => r.data),
+
+  listExpenses: (filter?: { type?: ExpenseType; status?: ExpenseStatus; categoryId?: string; limit?: number }) =>
+    call<typeof filter, { expenses: Expense[] }>('listExpenses')(filter || {}).then(r => r.data),
+
+  createExpense: (input: { categoryId?: string | null; description: string; amountCents: number; type: ExpenseType; dueDate?: number; notes?: string }) =>
+    call<typeof input, Expense>('createExpense')(input).then(r => r.data),
+
+  updateExpense: (input: { id: string; categoryId?: string | null; description?: string; amountCents?: number; dueDate?: number | null; notes?: string | null; status?: ExpenseStatus }) =>
+    call<typeof input, { id: string; changed: boolean }>('updateExpense')(input).then(r => r.data),
+
+  deleteExpense: (id: string) =>
+    call<{ id: string }, { id: string; deleted: boolean }>('deleteExpense')({ id }).then(r => r.data),
 };
 
 export interface IdentityMembershipRow {

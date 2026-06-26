@@ -86,6 +86,7 @@ export const WhitelabelStyles: React.FC = () => {
                 /* Text utilities */
                 .text-primary-400, .text-primary-500, .text-primary-600,
                 .text-indigo-500, .text-blue-500 { color: ${primaryColor} !important; }
+                .hover\\:text-primary-400:hover, .hover\\:text-primary-500:hover, .hover\\:text-primary-600:hover { color: ${primaryColor} !important; }
 
                 /* Border / ring */
                 .border-primary-500, .border-indigo-500, .border-blue-500 { border-color: ${primaryColor} !important; }

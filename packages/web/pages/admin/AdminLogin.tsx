@@ -61,7 +61,7 @@ export const AdminLogin = () => {
               <ShieldCheck className="text-amber-400" size={30} />
             </div>
           </div>
-          <div className="text-amber-500 text-[10px] font-black uppercase tracking-[0.3em]">K-TAG Platform</div>
+          <div className="text-amber-500 text-[10px] font-black uppercase tracking-[0.3em]">Monitora 360</div>
           <h1 className="font-display text-2xl font-black uppercase tracking-widest">Super Admin</h1>
           <p className="text-[11px] font-bold text-zinc-500 tracking-widest uppercase">Acesso restrito · auditado</p>
         </div>

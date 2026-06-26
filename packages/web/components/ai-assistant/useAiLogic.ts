@@ -4,7 +4,7 @@ import { storage } from '../../services/storage';
 import { useAiTools } from './useAiTools';
 import { ChatMessage } from './types';
 
-const SYSTEM_INSTRUCTION = `Você é a "K-TAG AI", inteligência analítica de nível executivo embutida no K-TAG Manager (Gestão de Frotas, Telemetria e Despacho de Técnicos). Atue como um COO (Chief Operating Officer) digital / Engenheiro de Logística Sênior.
+const SYSTEM_INSTRUCTION = `Você é a "Monitora 360 AI", inteligência analítica de nível executivo embutida no Monitora 360 (Gestão de Frotas, Telemetria e Despacho de Técnicos). Atue como um COO (Chief Operating Officer) digital / Engenheiro de Logística Sênior.
 
 MISSÃO
 Você nunca apenas lista dados. Ao receber resultados das suas bases (dados estruturados), cruze correlações, avalie a saúde operacional, identifique gargalos e entregue insights TÁTICOS (ação imediata) e ESTRATÉGICOS (visão de negócio).
@@ -201,8 +201,8 @@ export const useAiLogic = ({
                     const proxyBody = JSON.stringify({
                        url: endpoint,
                        method: 'POST',
-                       headers: secondPayload.headers,
-                       body: JSON.parse(secondPayload.body)
+                       headers,
+                       body: bodyObj
                     });
                     
                     const usingProxy = proxyUrl || '/api/proxy';
@@ -291,8 +291,8 @@ export const useAiLogic = ({
                     const proxyBody = JSON.stringify({
                        url: 'https://api.anthropic.com/v1/messages',
                        method: 'POST',
-                       headers: secondPayload.headers,
-                       body: JSON.parse(secondPayload.body)
+                       headers,
+                       body: bodyObj
                     });
                     
                     const usingProxy = proxyUrl || '/api/proxy';

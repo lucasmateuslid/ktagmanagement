@@ -34,7 +34,7 @@ function FloatingPaths({ position }: { position: number }) {
 	return (
 		<div className="pointer-events-none absolute inset-0">
 			<svg
-				className="h-full w-full text-amber-500/50"
+				className="h-full w-full text-primary-500/50"
 				viewBox="0 0 696 316"
 				fill="none"
 			>
@@ -171,7 +171,7 @@ export const Login = () => {
           <button
             type="button"
             onClick={() => logout()}
-            className="block mx-auto text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-amber-500 transition-colors"
+            className="block mx-auto text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-primary-500 transition-colors"
           >
             Sair e usar outra conta
           </button>
@@ -188,18 +188,16 @@ export const Login = () => {
                   {appSettings?.appLogo ? (
                      <img src={appSettings.appLogo} alt="Logo" className="w-12 h-12 object-contain" />
                   ) : (
-					<div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-amber-500/20 to-amber-600/10 rounded-xl border border-amber-500/30 shadow-lg shadow-amber-500/10">
-                        <span className="text-2xl font-black text-amber-500 tracking-tighter drop-shadow-lg">K</span>
-                    </div>
+                    <img src="/brand/logo-mark.svg" alt="Monitora 360" className="w-12 h-12 object-contain drop-shadow-lg" />
                   )}
-					<p className="text-xl font-black uppercase tracking-widest text-zinc-300">{appSettings?.appName || 'Manager Pro'}</p>
+					<p className="text-xl font-black uppercase tracking-widest text-zinc-300">{appSettings?.appName || 'Monitora 360'}</p>
 				</div>
 				<div className="z-10 mt-auto mb-10">
 					<blockquote className="space-y-4">
 						<p className="text-xl text-zinc-300 font-medium leading-relaxed">
 							&ldquo;Controle total sobre sua frota e estoque de dispositivos com precisão e velocidade excepcionais.&rdquo;
 						</p>
-						<footer className="font-mono text-sm font-semibold text-amber-500 uppercase tracking-widest">
+						<footer className="font-mono text-sm font-semibold text-primary-500 uppercase tracking-widest">
 							~ Portal de Acesso
 						</footer>
 					</blockquote>
@@ -224,11 +222,9 @@ export const Login = () => {
                         {appSettings?.appLogo ? (
                            <img src={appSettings.appLogo} alt="Logo" className="w-12 h-12 object-contain" />
                         ) : (
-                            <div className="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-amber-500/20 to-amber-600/10 rounded-xl border border-amber-500/30">
-                              <span className="text-2xl font-black text-amber-500 tracking-tighter">K</span>
-                            </div>
+                            <img src="/brand/logo-mark.svg" alt="Monitora 360" className="w-12 h-12 object-contain" />
                         )}
-						<p className="text-xl font-black uppercase tracking-widest">{appSettings?.appName || 'Manager Pro'}</p>
+						<p className="text-xl font-black uppercase tracking-widest">{appSettings?.appName || 'Monitora 360'}</p>
 					</div>
 
 					<div className="flex flex-col space-y-2 mb-8">
@@ -299,10 +295,10 @@ export const Login = () => {
                 <span className="text-[10px] font-bold text-zinc-400 group-hover:text-zinc-300 transition-colors uppercase tracking-widest mt-0.5">Lembrar</span>
               </Checkbox>
               
-              <button type="button" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-amber-500 transition-colors">Esqueci a senha</button>
+              <button type="button" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-primary-500 transition-colors">Esqueci a senha</button>
             </div>
 
-						<Button type="submit" disabled={loading} size="lg" className="w-full font-black uppercase tracking-widest shadow-xl shadow-amber-500/10">
+						<Button type="submit" disabled={loading} size="lg" className="w-full font-black uppercase tracking-widest shadow-xl shadow-primary-500/10">
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
@@ -315,14 +311,14 @@ export const Login = () => {
 						Primeiro acesso? Use CPF + 6 primeiros dígitos. By clicking continue, you agree to our{' '}
 						<a
 							href="#"
-							className="hover:text-amber-500 underline underline-offset-4"
+							className="hover:text-primary-500 underline underline-offset-4"
 						>
 							Terms of Service
 						</a>{' '}
 						and{' '}
 						<a
 							href="#"
-							className="hover:text-amber-500 underline underline-offset-4"
+							className="hover:text-primary-500 underline underline-offset-4"
 						>
 							Privacy Policy
 						</a>

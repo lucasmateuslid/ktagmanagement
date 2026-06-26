@@ -7,11 +7,12 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import {
-  Receipt, RefreshCw, Loader2, ExternalLink, Filter, Calendar, TrendingUp, CheckCircle2, AlertTriangle, RotateCw, Download, Search,
+  Receipt, RefreshCw, Loader2, ExternalLink, Filter, Calendar, TrendingUp, CheckCircle2, AlertTriangle, RotateCw, Download, Search, Building2, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { Invoice, Tenant } from '../../types';
 import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import { adminApi } from '../../services/adminApi';
 
 interface InvoiceRow extends Invoice {
   tenantName?: string;
@@ -67,6 +68,9 @@ export const AdminInvoices = () => {
   const [filterTenant, setFilterTenant] = useState<string>('all');
   const [filterMonths, setFilterMonths] = useState<number>(6);
   const [search, setSearch] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ synced: number; errors: string[] } | null>(null);
+  const [showByTenant, setShowByTenant] = useState(false);
 
   useEffect(() => {
     if (!db) return;
@@ -112,6 +116,20 @@ export const AdminInvoices = () => {
     }
   };
 
+  const handleSyncAsaas = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await adminApi.syncAllTenantsBilling();
+      setSyncResult({ synced: result.synced, errors: result.errors });
+      await loadInvoices();
+    } catch (e: any) {
+      setSyncResult({ synced: 0, errors: [e?.message || 'Erro ao sincronizar'] });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   useEffect(() => { loadHistory(); }, []);
   useEffect(() => { loadInvoices(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filterStatus, filterTenant, filterMonths]);
 
@@ -131,6 +149,22 @@ export const AdminInvoices = () => {
     () => history.reduce((a, p) => a + p.revenueCents, 0),
     [history]
   );
+
+  const byTenant = useMemo(() => {
+    type Row = { name: string; receivedCents: number; pendingCents: number; overdueCents: number; count: number };
+    const map: Record<string, Row> = {};
+    for (const inv of invoices) {
+      if (!map[inv.tenantId]) {
+        map[inv.tenantId] = { name: inv.tenantName || inv.tenantId, receivedCents: 0, pendingCents: 0, overdueCents: 0, count: 0 };
+      }
+      const e = map[inv.tenantId];
+      e.count++;
+      if (inv.status === 'RECEIVED' || inv.status === 'CONFIRMED') e.receivedCents += inv.valueCents || 0;
+      else if (inv.status === 'PENDING') e.pendingCents += inv.valueCents || 0;
+      else if (inv.status === 'OVERDUE') e.overdueCents += inv.valueCents || 0;
+    }
+    return Object.values(map).sort((a, b) => b.receivedCents - a.receivedCents);
+  }, [invoices]);
 
   // Busca textual local sobre as faturas já carregadas (filtros de status/tenant/período rodam no backend)
   const filteredInvoices = useMemo(() => {
@@ -173,20 +207,40 @@ export const AdminInvoices = () => {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-end justify-between gap-4">
+      <header className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-2xl font-black uppercase tracking-widest">Faturas</h1>
           <p className="text-zinc-500 text-sm mt-1">Histórico global de cobranças e receita</p>
         </div>
-        <button
-          onClick={() => { loadHistory(); loadInvoices(); }}
-          disabled={refreshing}
-          className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400 hover:text-amber-300 px-3 py-2 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
-        >
-          <RotateCw size={13} className={refreshing ? 'animate-spin' : ''} />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleSyncAsaas}
+            disabled={syncing}
+            title="Puxa todas as faturas (pagas e não pagas) do Asaas para o Firestore"
+            className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 px-3 py-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Sincronizando…' : 'Sincronizar Asaas'}
+          </button>
+          <button
+            onClick={() => { loadHistory(); loadInvoices(); }}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400 hover:text-amber-300 px-3 py-2 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+          >
+            <RotateCw size={13} className={refreshing ? 'animate-spin' : ''} />
+            Atualizar
+          </button>
+        </div>
       </header>
+
+      {syncResult && (
+        <div className={`text-xs font-bold px-4 py-2.5 rounded-xl border ${syncResult.errors.length > 0 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+          {syncResult.errors.length === 0
+            ? `${syncResult.synced} tenant${syncResult.synced === 1 ? '' : 's'} sincronizado${syncResult.synced === 1 ? '' : 's'} com sucesso.`
+            : `${syncResult.synced} sincronizados · ${syncResult.errors.length} erro${syncResult.errors.length === 1 ? '' : 's'}: ${syncResult.errors.slice(0, 3).join(', ')}${syncResult.errors.length > 3 ? '…' : ''}`
+          }
+        </div>
+      )}
 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatTile
@@ -287,6 +341,49 @@ export const AdminInvoices = () => {
           )}
         </div>
       </section>
+
+      {/* Recebido por cliente */}
+      {!loading && byTenant.length > 0 && (
+        <section className="bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl overflow-hidden">
+          <button
+            onClick={() => setShowByTenant(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 border-b border-white/5 hover:bg-white/[0.02] transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Building2 size={15} className="text-amber-500" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Recebido por cliente</span>
+              <span className="text-[10px] text-zinc-600 font-bold">({byTenant.length})</span>
+            </div>
+            {showByTenant ? <ChevronUp size={14} className="text-zinc-500" /> : <ChevronDown size={14} className="text-zinc-500" />}
+          </button>
+          {showByTenant && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-zinc-500 border-b border-white/5">
+                  <tr>
+                    <th className="text-left px-5 py-3">Empresa</th>
+                    <th className="text-left px-5 py-3">Recebido</th>
+                    <th className="text-left px-5 py-3">Pendente</th>
+                    <th className="text-left px-5 py-3">Em atraso</th>
+                    <th className="text-left px-5 py-3">Faturas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byTenant.map((row, i) => (
+                    <tr key={i} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                      <td className="px-5 py-3 font-bold text-xs text-zinc-200">{row.name}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-emerald-400 font-bold">{fmtBRL(row.receivedCents)}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-amber-400">{fmtBRL(row.pendingCents)}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-red-400">{fmtBRL(row.overdueCents)}</td>
+                      <td className="px-5 py-3 text-xs text-zinc-500">{row.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-3xl overflow-hidden">
         <div className="flex flex-col gap-3 p-5 border-b border-white/5">

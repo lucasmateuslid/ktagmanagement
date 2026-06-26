@@ -2,30 +2,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useTenant } from '../contexts/TenantContext';
 import { MapComponent } from '../components/MapComponent';
-import { useTraccarPositions } from '../hooks/useTraccarPositions';
-import type { LocationHistory } from '../types';
-import type { TraccarPosition } from '@ktag/shared';
 
 // Hooks - Relative Paths
 import { useFleetData } from './livemap/hooks/useFleetData';
 import { useFleetTracking } from './livemap/hooks/useFleetTracking';
 import { useTagHistory } from './livemap/hooks/useTagHistory';
 import { useAddressResolver } from './livemap/hooks/useAddressResolver';
-
-function traccarToLocation(pos: TraccarPosition): LocationHistory {
-  return {
-    id: `traccar:${pos.deviceId}`,
-    tagId: `traccar:${pos.deviceId}`,
-    lat: pos.latitude,
-    lon: pos.longitude,
-    conf: 1,
-    status: 0,
-    timestamp: new Date(pos.fixTime).getTime(),
-    isodatetime: pos.fixTime,
-  };
-}
 
 // Utils - Relative Paths
 import { calculateFleetStats } from './livemap/utils/livemapStats';
@@ -44,7 +27,6 @@ type FleetFilter = 'all' | 'online' | 'offline';
 
 export const LiveMap = () => {
   const { user } = useAuth();
-  const { tenantId } = useTenant();
   const [searchParams] = useSearchParams();
   
   // UI State
@@ -71,11 +53,8 @@ export const LiveMap = () => {
   // 1. Data Layer
   const { tags, vehicles, categories, clients } = useFleetData(user);
 
-  // 2. Tracking Layer (BLE tags via Wonca Labs)
-  const { fleetLocations, loading, manualRefresh, refreshTag } = useFleetTracking(tags, vehicles, selectedTagId);
-
-  // 2b. Traccar GPS positions via WebSocket
-  const { positions: traccarPositions } = useTraccarPositions(tenantId);
+  // 2. Tracking Layer
+  const { fleetLocations, loading, manualRefresh, refreshTag, injectLocations } = useFleetTracking(tags, vehicles, selectedTagId);
 
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
@@ -101,12 +80,9 @@ export const LiveMap = () => {
 
   const locationsToRender = useMemo(() => {
       const filtered = filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles);
-      // Adiciona posições GPS do Traccar (não duplica se o veículo já aparece via BLE)
-      const traccarLocs = Array.from(traccarPositions.values()).map(traccarToLocation);
-      const bleTagIds = new Set(filtered.map(l => l.tagId));
-      const extra = traccarLocs.filter(l => !bleTagIds.has(l.tagId));
-      return [...filtered, ...extra];
-  }, [fleetLocations, selectedTagId, filter, displayLimit, vehicles, traccarPositions]);
+      console.log('Locations to render:', filtered.length, 'out of total:', fleetLocations.length);
+      return filtered;
+  }, [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
 
   const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
   const activeTag = useMemo(() => tags.find(t => t.id === selectedTagId), [tags, selectedTagId]);
@@ -199,7 +175,7 @@ export const LiveMap = () => {
         category={activeCategory}
         client={activeClient}
         lastLoc={lastLoc}
-        resolvedAddress={lastLoc ? resolvedAddresses[lastLoc.id] : undefined}
+        resolvedAddress={lastLoc ? resolvedAddresses[`${lastLoc.lat.toFixed(4)},${lastLoc.lon.toFixed(4)}`] : undefined}
         userRole={user?.role}
         onFetchHistory={fetchHistory}
         onRefreshTag={refreshTag}
@@ -219,11 +195,12 @@ export const LiveMap = () => {
         onExport={handleExport}
       />
 
-      <UpdateTagsModal 
+      <UpdateTagsModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         tags={tags}
         vehicles={vehicles}
+        onLocationsUpdated={injectLocations}
       />
     </div>
   );

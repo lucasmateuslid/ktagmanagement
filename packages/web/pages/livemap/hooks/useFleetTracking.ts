@@ -135,5 +135,15 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       }
   }, [selectedTagId]);
 
-  return { fleetLocations, loading, manualRefresh: fetchUpdate, refreshTag };
+  const injectLocations = (locs: LocationHistory[]) => {
+    setFleetLocations(prev => {
+      const newMap = new Map(prev.map(i => [i.tagId, i]));
+      locs.forEach(v => {
+        if (v.tagId) newMap.set(v.tagId, { ...v, id: v.tagId } as LocationHistory);
+      });
+      return Array.from(newMap.values());
+    });
+  };
+
+  return { fleetLocations, loading, manualRefresh: fetchUpdate, refreshTag, injectLocations };
 };

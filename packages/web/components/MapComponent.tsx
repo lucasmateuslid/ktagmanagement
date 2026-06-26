@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, LayersControl, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -125,6 +125,25 @@ const RecenterMap = ({ lat, lon, zoom }: { lat: number; lon: number, zoom?: numb
   useEffect(() => {
     map.setView([lat, lon], zoom || map.getZoom(), { animate: true, duration: 1.5 });
   }, [lat, lon, map, zoom]);
+  return null;
+};
+
+// Centraliza o mapa na maior concentração de veículos do tenant na primeira carga.
+// Usa fitBounds para escolher zoom automaticamente. Não dispara novamente após a
+// primeira vez (hasFitted ref), então o usuário pode navegar livremente depois.
+const FitFleetBounds = ({ locations }: { locations: LocationHistory[] }) => {
+  const map = useMap();
+  const hasFitted = useRef(false);
+  useEffect(() => {
+    if (hasFitted.current || locations.length === 0) return;
+    hasFitted.current = true;
+    const lls = locations.map(l => [l.lat, l.lon] as [number, number]);
+    if (lls.length === 1) {
+      map.setView(lls[0], 15, { animate: true });
+    } else {
+      map.fitBounds(L.latLngBounds(lls), { padding: [60, 60], maxZoom: 14, animate: true });
+    }
+  }, [locations.length, map]);
   return null;
 };
 
@@ -267,6 +286,8 @@ export const MapComponent: React.FC<MapProps> = ({
             </BaseLayer>
           </LayersControl>
           
+          {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
+          {isFleetMode && !highlightedLoc && <FitFleetBounds locations={locations} />}
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
 
           {isFleetMode ? (

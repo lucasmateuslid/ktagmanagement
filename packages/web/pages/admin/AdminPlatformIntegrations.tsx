@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import {
-  Save, Loader2, CheckCircle2, AlertTriangle, Cloud, Info,
+  Save, Loader2, CheckCircle2, AlertTriangle, Cloud, Info, KeyRound, Terminal,
 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -59,8 +59,8 @@ export const AdminPlatformIntegrations = () => {
       <header>
         <h1 className="font-display text-2xl font-black uppercase tracking-widest">Integrações da Plataforma</h1>
         <p className="text-zinc-500 text-sm mt-1">
-          Configura o proxy/relay compartilhado entre todos os tenants. Endpoints e tokens
-          específicos (K-TAG URL, Traqcare token etc.) continuam sob cada empresa.
+          Configura o proxy/relay compartilhado e a conta única da API K-TAG (centralizada
+          aqui). O token Traqcare/XADTAG permanece sob cada empresa.
         </p>
       </header>
 
@@ -101,6 +101,35 @@ export const AdminPlatformIntegrations = () => {
               placeholder="https://us-central1-projeto.cloudfunctions.net/proxy"
               className="w-full bg-zinc-900/60 border border-white/10 focus:border-amber-500/30 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 placeholder:text-zinc-600 outline-none transition-colors"
             />
+          </div>
+
+          {/* CREDENCIAIS K-TAG (conta única da plataforma) */}
+          <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <KeyRound size={16} className="text-amber-500" />
+              <h2 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Credenciais K-TAG (conta da plataforma)</h2>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              As credenciais da API K-TAG são compartilhadas por todos os tenants e ficam como
+              <strong className="text-zinc-300"> segredos do servidor</strong> — o relay injeta o
+              Basic Auth a cada chamada e o navegador <strong className="text-zinc-300">nunca</strong> recebe
+              usuário/senha. Configure-as via Secret Manager das Cloud Functions:
+            </p>
+            <div className="rounded-2xl bg-zinc-950/60 border border-white/5 p-4 space-y-2 font-mono text-[11px] text-zinc-300 overflow-x-auto">
+              <div className="flex items-center gap-2 text-zinc-500"><Terminal size={12} /> terminal</div>
+              <div>firebase functions:secrets:set <span className="text-amber-400">KTAG_API_USER</span></div>
+              <div>firebase functions:secrets:set <span className="text-amber-400">KTAG_API_PASS</span></div>
+              <div className="text-zinc-500"># URL (não-secreta) via variável de ambiente:</div>
+              <div><span className="text-amber-400">KTAG_API_URL</span>=https://api.ktag.example.com</div>
+            </div>
+            <div className="flex items-start gap-2 text-[11px] text-zinc-500 leading-relaxed">
+              <Info size={13} className="shrink-0 mt-0.5 text-zinc-600" />
+              <p>
+                Após definir os segredos, faça o redeploy das funções (<span className="font-mono text-zinc-400">proxyApi</span> e
+                <span className="font-mono text-zinc-400"> scheduledTagUpdate</span>). Em desenvolvimento, defina
+                <span className="font-mono text-zinc-400"> KTAG_API_URL/USER/PASS</span> no ambiente do server.ts.
+              </p>
+            </div>
           </div>
 
           {/* Metadata + ação */}
