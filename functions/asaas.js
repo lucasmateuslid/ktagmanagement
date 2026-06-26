@@ -209,6 +209,35 @@ async function getAccount(apiKey) {
   return res.data;
 }
 
+/** Retorna saldo disponível da conta Asaas em reais. */
+async function getBalance(apiKey) {
+  const res = await client(apiKey).get('/finance/balance');
+  return res.data; // { balance: number, transfersBalance: number }
+}
+
+/**
+ * Lista TODOS os pagamentos de um cliente (paginado, todos os status).
+ * Preferir sobre listSubscriptionPayments para sync completo — captura
+ * cobranças avulsas além das geradas pela assinatura.
+ * @param {string} customerId ID do cliente Asaas (cus_xxx)
+ * @param {{ maxPages?: number }} opts maxPages * 100 = limite de faturas (default 1000)
+ */
+async function listPaymentsByCustomer(apiKey, customerId, { maxPages = 10 } = {}) {
+  const all = [];
+  let offset = 0;
+  const limit = 100;
+  for (let page = 0; page < maxPages; page++) {
+    const res = await client(apiKey).get('/payments', {
+      params: { customer: customerId, limit, offset },
+    });
+    const data = res.data?.data || [];
+    all.push(...data);
+    if (!res.data?.hasMore || data.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
+
 module.exports = {
   baseUrl,
   findCustomerByEmail,
@@ -219,10 +248,12 @@ module.exports = {
   cancelSubscription,
   getSubscription,
   listSubscriptionPayments,
+  listPaymentsByCustomer,
   getPayment,
   createPayment,
   sendPaymentNotification,
   getAccount,
+  getBalance,
   normalizeStatus,
   paymentToInvoice,
 };

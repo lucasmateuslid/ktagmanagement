@@ -116,6 +116,18 @@ export default {
         "gray-700":  "var(--ds-gray-700)",
         "gray-1000": "var(--ds-gray-1000)",
         "background-100": "var(--ds-background-100)",
+        // Tokens semânticos Monitora 360
+        accent: 'var(--accent)',
+        'accent-hover': 'var(--accent-hover)',
+        success: 'var(--success)',
+        danger: 'var(--danger)',
+        info: 'var(--info)',
+        warning: 'var(--warning)',
+        'fg-1': 'var(--fg-1)',
+        'fg-2': 'var(--fg-2)',
+        'fg-3': 'var(--fg-3)',
+        'surface': 'var(--bg-surface)',
+        'surface-2': 'var(--bg-surface-2)',
       },
 
       fontFamily: {
@@ -125,12 +137,15 @@ export default {
       },
 
       fontSize: {
-        /* Tipografia "label uppercase" — padrão visual dominante do produto.
-         * Substitui `text-[10px] font-black uppercase tracking-widest` etc. */
+        '2xs': ['10px', { lineHeight: '1' }],
         'label-xs': ['10px', { lineHeight: '14px', letterSpacing: '0.2em',  fontWeight: '800' }],
         'label-sm': ['11px', { lineHeight: '15px', letterSpacing: '0.16em', fontWeight: '800' }],
         'label':    ['12px', { lineHeight: '16px', letterSpacing: '0.12em', fontWeight: '700' }],
         'caption':  ['12px', { lineHeight: '16px' }],
+      },
+
+      letterSpacing: {
+        mega: '0.3em',
       },
 
       borderRadius: {
@@ -153,6 +168,7 @@ export default {
         'card-hover': '0 12px 24px -8px rgb(0 0 0 / 0.16)',
         'modal':      '0 24px 48px -12px rgb(0 0 0 / 0.50)',
         'glow-brand': '0 0 24px -4px rgb(var(--brand-500) / 0.4)',
+        'glow-amber': 'var(--shadow-glow-amber)',
       },
 
       keyframes: {

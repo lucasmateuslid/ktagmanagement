@@ -6,16 +6,18 @@ import { functions } from '../../services/firebase';
 import type { Tenant, Invoice, BillingCycle, BillingMethod, SetupFeeStatus, PlansConfigDoc } from '../../types';
 import {
   X, Loader2, RefreshCw, CreditCard, Trash2, ExternalLink, AlertTriangle, CheckCircle2,
-  Bell, PlusCircle, ChevronDown, ChevronUp, Calendar, Banknote, QrCode, FileText, Sparkles,
-  Clock, Wallet,
+  Bell, PlusCircle, ChevronDown, ChevronUp, Calendar, Sparkles,
+  Clock, Wallet, Users, ShieldCheck,
 } from 'lucide-react';
 import { BillingStatusBadge } from './AdminBilling';
-import { Select, type SelectOption } from '../../components/ui/select';
+import { Select } from '../../components/ui/select';
 import { CurrencyInput } from '../../components/ui/currency-input';
 import { TrialTimeline } from './billing/TrialTimeline';
 import { Badge } from '../../components/ui/badge';
-import { adminApi } from '../../services/adminApi';
+import { Skeleton } from '../../components/ui/skeleton';
+import { adminApi, type TenantUserRow, type TenantMembershipRow } from '../../services/adminApi';
 import { cn } from '../../lib/utils';
+import { CYCLES, METHODS, monthlyEquivFactor, cyclesPerYear } from '../../lib/billing';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const fmtBRL = (cents?: number) =>
@@ -23,31 +25,6 @@ const fmtBRL = (cents?: number) =>
 
 const fmtDate = (ms?: number) =>
   ms ? new Date(ms).toLocaleDateString('pt-BR') : '—';
-
-const CYCLES: SelectOption<BillingCycle>[] = [
-  { value: 'MONTHLY', label: 'Mensal', description: 'Cobrança todo mês' },
-  { value: 'QUARTERLY', label: 'Trimestral', description: 'A cada 3 meses · ~17% desconto sugerido' },
-  { value: 'YEARLY', label: 'Anual', description: 'A cada 12 meses · ~25% desconto sugerido' },
-];
-
-/** Multiplicador para converter "valor por ciclo" em "valor por mês". */
-function monthlyEquivFactor(cycle: BillingCycle): number {
-  switch (cycle) {
-    case 'YEARLY': return 1 / 12;
-    case 'QUARTERLY': return 1 / 3;
-    case 'MONTHLY':
-    default: return 1;
-  }
-}
-
-function cyclesPerYear(cycle: BillingCycle): number {
-  switch (cycle) {
-    case 'YEARLY': return 1;
-    case 'QUARTERLY': return 4;
-    case 'MONTHLY':
-    default: return 12;
-  }
-}
 
 /** Estima a data da próxima cobrança baseada em dueDay + trialDays. */
 function previewFirstCharge(dueDay: number, trialDays: number): number {
@@ -62,13 +39,6 @@ function previewFirstCharge(dueDay: number, trialDays: number): number {
   return target.getTime();
 }
 
-const METHODS: SelectOption<BillingMethod>[] = [
-  { value: 'UNDEFINED', label: 'Cliente escolhe', description: 'Asaas exibe PIX, boleto e cartão', icon: <CreditCard size={14} /> },
-  { value: 'PIX', label: 'PIX', description: 'QR Code e copia-e-cola', icon: <QrCode size={14} /> },
-  { value: 'BOLETO', label: 'Boleto', description: 'Bancário com código de barras', icon: <FileText size={14} /> },
-  { value: 'CREDIT_CARD', label: 'Cartão', description: 'Cobrança recorrente automática', icon: <Banknote size={14} /> },
-];
-
 type Props = {
   tenant: Tenant;
   onClose: () => void;
@@ -78,6 +48,8 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
   const billing = tenant.billing;
   const hasSubscription = !!billing?.asaasSubscriptionId;
   const hasCustomer = !!billing?.asaasCustomerId;
+
+  const [activeTab, setActiveTab] = useState<'assinatura' | 'usuarios'>('assinatura');
 
   const [form, setForm] = useState({
     priceCents: billing?.priceCents ?? planDefaultPrice(tenant.plan),
@@ -300,20 +272,47 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-600/10 border border-amber-500/20 flex items-center justify-center font-display font-black text-amber-400 text-lg">
               {tenant.name?.charAt(0).toUpperCase()}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-3 mb-1 flex-wrap">
-                <h3 id="billing-modal-title" className="font-display font-black text-lg sm:text-xl uppercase tracking-widest truncate">{tenant.name}</h3>
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h3 className="font-display font-black text-xl uppercase tracking-widest">{tenant.name}</h3>
                 <BillingStatusBadge status={billing?.status || 'none'} />
               </div>
               <code className="text-amber-500 text-xs">{tenant.slug}</code>
             </div>
           </div>
-          <button type="button" aria-label="Fechar" onClick={onClose} className="shrink-0 text-zinc-500 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors">
+          <button onClick={onClose} className="text-zinc-500 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors">
             <X size={18} />
           </button>
         </header>
 
-        <div className="modal-card-body relative p-6 space-y-6">
+        <div className="relative shrink-0 flex items-center gap-1 px-4 sm:px-6 border-b border-white/5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('assinatura')}
+            className={cn(
+              'flex items-center gap-2 px-3 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
+              activeTab === 'assinatura' ? 'border-amber-500 text-amber-400' : 'border-transparent text-zinc-500 hover:text-zinc-300',
+            )}
+          >
+            <CreditCard size={13} /> Assinatura
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('usuarios')}
+            className={cn(
+              'flex items-center gap-2 px-3 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
+              activeTab === 'usuarios' ? 'border-amber-500 text-amber-400' : 'border-transparent text-zinc-500 hover:text-zinc-300',
+            )}
+          >
+            <Users size={13} /> Usuários
+          </button>
+        </div>
+
+        {activeTab === 'usuarios' ? (
+          <TenantUsersTab tenant={tenant} />
+        ) : (
+        <>
+        <div className="relative flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
           {error && (
             <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -556,7 +555,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
           )}
         </div>
 
-        <footer className="modal-card-footer relative flex items-center justify-between gap-3 p-4 sm:p-6 border-t border-white/5 bg-zinc-950/40 flex-wrap">
+        <footer className="relative shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6 border-t border-white/5 bg-zinc-950/40">
           <div className="text-[10px] text-zinc-600">
             {billing?.lastSyncedAt && <>Última sincronização: {new Date(billing.lastSyncedAt).toLocaleString('pt-BR')}</>}
             {billing?.trialEndsAt && (
@@ -585,9 +584,104 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
             </button>
           </div>
         </footer>
+        </>
+        )}
       </div>
     </div>,
     document.body,
+  );
+};
+
+/** Aba "Usuários" do detalhe da empresa — lista os usuários internos do tenant
+ * (listAllUsers filtrado por tenantId) e quais superadmins têm acesso concedido
+ * a ele (listTenantMemberships, cruzado com system_admins). Aditivo: não altera
+ * AdminUsers/AdminAccess/AdminSystemAdmins, que continuam servindo os casos
+ * cross-tenant (busca por email, registro global de superadmins).
+ */
+const TenantUsersTab = ({ tenant }: { tenant: Tenant }) => {
+  const [users, setUsers] = useState<TenantUserRow[] | null>(null);
+  const [memberships, setMemberships] = useState<TenantMembershipRow[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setError('');
+    Promise.all([
+      adminApi.listAllUsers(tenant.id),
+      adminApi.listTenantMemberships(tenant.id),
+    ]).then(([u, m]) => {
+      if (cancelled) return;
+      setUsers(u.users);
+      setMemberships(m.memberships);
+    }).catch((e: any) => {
+      if (!cancelled) setError(e?.message || 'Falha ao carregar usuários.');
+    });
+    return () => { cancelled = true; };
+  }, [tenant.id]);
+
+  const superAdminsWithAccess = (memberships || []).filter(m => m.isGlobalAdmin);
+
+  return (
+    <div className="relative flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
+      {error && (
+        <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <section>
+        <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-1.5">
+          <Users size={12} /> Usuários da empresa
+        </h4>
+        {users === null ? (
+          <div className="space-y-2">
+            <Skeleton h={44} /><Skeleton h={44} /><Skeleton h={44} />
+          </div>
+        ) : users.length === 0 ? (
+          <div className="text-sm text-zinc-500 bg-white/[0.02] border border-white/5 rounded-xl p-4">Nenhum usuário cadastrado.</div>
+        ) : (
+          <div className="space-y-2">
+            {users.map(u => (
+              <div key={u.id} className="flex items-center justify-between gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold truncate">{u.email}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">{u.role}</div>
+                </div>
+                <Badge tone={u.status === 'approved' ? 'emerald' : 'amber'}>{u.status}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-1.5">
+          <ShieldCheck size={12} /> Superadmins com acesso
+        </h4>
+        {memberships === null ? (
+          <div className="space-y-2">
+            <Skeleton h={44} />
+          </div>
+        ) : superAdminsWithAccess.length === 0 ? (
+          <div className="text-sm text-zinc-500 bg-white/[0.02] border border-white/5 rounded-xl p-4">
+            Nenhum superadmin com acesso concedido a esta empresa. Conceda em Acessos.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {superAdminsWithAccess.map(m => (
+              <div key={m.uid} className="flex items-center justify-between gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold truncate">{m.email || m.uid}</div>
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">{m.role}</div>
+                </div>
+                <Badge tone="purple">Superadmin</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 };
 

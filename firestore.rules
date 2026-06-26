@@ -250,7 +250,9 @@ service cloud.firestore {
     // ---------- SISTEMA (cross-tenant / control plane) ----------
 
     match /system_admins/{uid} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
+      // get do próprio doc (checagem de privilégio pós-login) OU list/get para
+      // o painel super admin (AdminDashboard conta o total de super admins).
+      allow read: if (isAuthenticated() && request.auth.uid == uid) || isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
@@ -263,6 +265,12 @@ service cloud.firestore {
     match /system_billing_events/{eventId} {
       allow read: if isSuperAdmin();
       allow write: if false;
+    }
+
+    // Contas a pagar/receber e categorias de despesa — só acessível via Cloud
+    // Functions (Admin SDK ignora rules). Bloqueado explicitamente no client.
+    match /system_finance/{document=**} {
+      allow read, write: if false;
     }
 
     match /ktag_settings_v3/{docId} {

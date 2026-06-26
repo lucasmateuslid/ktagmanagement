@@ -2,15 +2,17 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import {
   Loader2, Save, AlertTriangle, CheckCircle2, Zap, Rocket, Crown, Sparkles, Tag as TagIcon, Users,
-  Calendar, X, Plus, Info,
+  Calendar, Info, Puzzle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adminApi, type PlanConfig, type PlansConfigDoc } from '../../services/adminApi';
 import { CurrencyInput } from '../../components/ui/currency-input';
+import { Checkbox } from '../../components/ui/checkbox';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Badge } from '../../components/ui/badge';
 import type { TenantPlan } from '../../types';
 import { cn } from '../../lib/utils';
+import { MODULE_CATALOG } from '../../constants/moduleCatalog';
 
 const PLAN_META: Record<TenantPlan, { label: string; tone: 'amber' | 'blue' | 'purple'; Icon: any; gradient: string; description: string }> = {
   basic: {
@@ -342,9 +344,9 @@ const PlanCard = ({
           max={28}
         />
 
-        {/* Features (lista editável) */}
-        <FeatureList
-          features={plan.features}
+        {/* Módulos liberados */}
+        <ModuleGrid
+          selected={plan.features}
           onChange={(features) => onChange({ features })}
         />
       </div>
@@ -380,58 +382,28 @@ const NumField = ({
   </div>
 );
 
-const FeatureList = ({
-  features, onChange,
-}: { features: string[]; onChange: (v: string[]) => void }) => {
-  const [draft, setDraft] = useState('');
-  const add = () => {
-    const v = draft.trim();
-    if (!v) return;
-    if (features.includes(v)) return;
-    onChange([...features, v]);
-    setDraft('');
+export const ModuleGrid = ({
+  selected, onChange,
+}: { selected: string[]; onChange: (v: string[]) => void }) => {
+  const toggle = (id: string, checked: boolean) => {
+    onChange(checked ? [...selected, id] : selected.filter(x => x !== id));
   };
-  const remove = (f: string) => onChange(features.filter(x => x !== f));
 
   return (
     <div>
-      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">
-        Features incluídas
+      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 flex items-center gap-1">
+        <Puzzle size={11} /> Módulos liberados
       </label>
-      <div className="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
-        {features.length === 0 && (
-          <span className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold italic">Nenhuma feature listada</span>
-        )}
-        {features.map(f => (
-          <span key={f} className="inline-flex items-center gap-1 bg-white/[0.04] border border-white/10 rounded-md px-2 py-1 text-[11px] text-zinc-300 font-mono">
-            {f}
-            <button
-              type="button"
-              onClick={() => remove(f)}
-              className="text-zinc-500 hover:text-red-400 transition-colors"
-              aria-label={`Remover ${f}`}
-            >
-              <X size={10} />
-            </button>
-          </span>
+      <div className="space-y-1.5">
+        {MODULE_CATALOG.map(m => (
+          <label key={m.id} className="flex items-start gap-2 bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors">
+            <Checkbox checked={selected.includes(m.id)} onChange={(c) => toggle(m.id, c)} />
+            <span>
+              <span className="block text-[11px] font-bold text-zinc-300">{m.label}</span>
+              <span className="block text-[10px] text-zinc-500">{m.description}</span>
+            </span>
+          </label>
         ))}
-      </div>
-      <div className="flex gap-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          placeholder="Ex: API_ACCESS, WHATSAPP, etc"
-          className="flex-1 bg-white/[0.03] border border-white/5 hover:border-white/10 focus:border-amber-500/40 focus:bg-white/[0.05] rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none placeholder:text-zinc-600 transition-colors"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 text-amber-400 border border-amber-500/20 transition-colors"
-        >
-          <Plus size={12} />
-        </button>
       </div>
     </div>
   );

@@ -1,13 +1,15 @@
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Tenant, TenantDeletionMode } from '../../types';
+import type { Tenant, TenantDeletionMode, BillingCycle, BillingMethod } from '../../types';
 import {
   Building2, Plus, Power, ExternalLink, Loader2, Copy, CreditCard, Crown, Rocket, Zap,
   MoreVertical, Search, Trash2, Settings2, RefreshCw, Activity, AlertTriangle, TrendingUp, Tag as TagIcon,
-  Eye, X,
+  Eye, X, Puzzle,
 } from 'lucide-react';
 import { BillingStatusBadge } from './AdminBilling';
+import { ModuleGrid } from './AdminPlansConfig';
+import { moduleLabel } from '../../constants/moduleCatalog';
 import { Select, type SelectOption } from '../../components/ui/select';
 import { DropdownMenu, type DropdownItem } from '../../components/ui/dropdown-menu';
 import { ConfirmStrongModal } from '../../components/ui/confirm-strong-modal';
@@ -16,9 +18,12 @@ import { Badge } from '../../components/ui/badge';
 import { Skeleton, SkeletonRows } from '../../components/ui/skeleton';
 import { BottomSheet } from '../../components/ui/bottom-sheet';
 import { CurrencyInput } from '../../components/ui/currency-input';
+import { Checkbox } from '../../components/ui/checkbox';
+import { LogoUploader } from '../../components/ui/logo-uploader';
 import { useTenants, type TenantFilter } from '../../hooks/useTenants';
 import { useTenantsStats } from '../../hooks/useTenantsStats';
 import { adminApi } from '../../services/adminApi';
+import { CYCLES, METHODS } from '../../lib/billing';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const PLAN_OPTIONS: SelectOption<'basic' | 'pro' | 'enterprise'>[] = [
@@ -685,11 +690,27 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const [planFeatures, setPlanFeatures] = useState<string[]>([]);
+  const [overrideEnabled, setOverrideEnabled] = useState<boolean>(tenant.settings?.features !== undefined);
+  const [overrideFeatures, setOverrideFeatures] = useState<string[]>(tenant.settings?.features ?? []);
+
+  useEffect(() => {
+    adminApi.getPlansConfig().then(res => {
+      const plan = (res.plans as any)?.[tenant.plan || 'basic'];
+      setPlanFeatures(Array.isArray(plan?.features) ? plan.features : []);
+    }).catch(() => {});
+  }, [tenant.plan]);
+
   const save = async () => {
     setError('');
     setSubmitting(true);
     try {
-      await adminApi.updateTenantLimits(tenant.slug, { limiteTags, limiteVeiculos, maxUsers });
+      await adminApi.updateTenantLimits(tenant.slug, {
+        limiteTags,
+        limiteVeiculos,
+        maxUsers,
+        features: overrideEnabled ? overrideFeatures : null,
+      });
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Falha ao salvar.');
@@ -744,6 +765,32 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
           hint="0 = ilimitado"
           currentUsed={tenant.usage?.usuariosAtivos}
         />
+
+        <div>
+          {!overrideEnabled && (
+            <>
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 flex items-center gap-1">
+                <Puzzle size={11} /> Módulos do plano
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {planFeatures.length === 0 ? (
+                  <span className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold italic">Plano sem módulos liberados</span>
+                ) : planFeatures.map(f => (
+                  <span key={f} className="text-[10px] font-mono px-2 py-1 rounded-md bg-white/[0.04] border border-white/10 text-zinc-300">
+                    {moduleLabel(f)}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer mb-2">
+            <Checkbox checked={overrideEnabled} onChange={setOverrideEnabled} />
+            <span className="text-xs text-zinc-400">Personalizar módulos só para esta empresa (sobrescreve o plano)</span>
+          </label>
+          {overrideEnabled && (
+            <ModuleGrid selected={overrideFeatures} onChange={setOverrideFeatures} />
+          )}
+        </div>
 
         <div className="flex gap-2 pt-2">
           <button
@@ -870,6 +917,8 @@ interface CreatedInfo {
   slug: string;
   ownerEmail: string | null;
   ownerPassword: string | null;
+  billing?: Tenant['billing'] | null;
+  billingError?: string | null;
 }
 
 const CreateTenantModal = ({
@@ -888,6 +937,33 @@ const CreateTenantModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const [billingEnabled, setBillingEnabled] = useState(false);
+  const [billingForm, setBillingForm] = useState({
+    priceCents: 0,
+    setupFeeCents: 0,
+    cycle: 'MONTHLY' as BillingCycle,
+    billingType: 'UNDEFINED' as BillingMethod,
+    dueDay: 10,
+    payerCpfCnpj: '',
+  });
+  const [logoLight, setLogoLight] = useState<string | undefined>();
+  const [logoDark, setLogoDark] = useState<string | undefined>();
+
+  // Pré-preenche preço/adesão a partir do plano escolhido.
+  useEffect(() => {
+    adminApi.getPlansConfig().then(res => {
+      const planConfig = res.plans[form.plan];
+      if (planConfig) {
+        setBillingForm(prev => ({
+          ...prev,
+          priceCents: planConfig.priceCents || 0,
+          setupFeeCents: planConfig.defaultSetupFeeCents || 0,
+          dueDay: planConfig.defaultDueDay || 10,
+        }));
+      }
+    }).catch(() => {});
+  }, [form.plan]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -900,6 +976,22 @@ const CreateTenantModal = ({
         active: true,
         ownerEmail: form.ownerEmail.trim() || undefined,
         ownerName: form.ownerName.trim() || undefined,
+        logoBase64Light: logoLight,
+        logoBase64Dark: logoDark,
+        billing: billingEnabled ? {
+          priceCents: billingForm.priceCents,
+          cycle: billingForm.cycle,
+          billingType: billingForm.billingType,
+          dueDay: billingForm.dueDay,
+          payer: {
+            name: form.ownerName.trim() || form.name.trim(),
+            email: form.ownerEmail.trim(),
+            cpfCnpj: billingForm.payerCpfCnpj.replace(/\D/g, ''),
+          },
+          ...(billingForm.setupFeeCents >= 100 && {
+            setupFee: { valueCents: billingForm.setupFeeCents, status: 'pending' as const },
+          }),
+        } : undefined,
       });
       onCreated(data);
     } catch (e: any) {
@@ -915,7 +1007,7 @@ const CreateTenantModal = ({
         onSubmit={submit}
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl shadow-black/60"
+        className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-lg space-y-4 shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-start justify-between">
           <h3 className="font-display font-black text-lg uppercase tracking-widest">Nova empresa</h3>
@@ -939,6 +1031,56 @@ const CreateTenantModal = ({
           <FieldInput label="Email do admin" value={form.ownerEmail} onChange={(v: string) => setForm({ ...form, ownerEmail: v })} type="email" placeholder="admin@empresa.com" />
           <FieldInput label="Nome do admin" value={form.ownerName} onChange={(v: string) => setForm({ ...form, ownerName: v })} placeholder="João da Silva" />
         </div>
+
+        <div className="border-t border-white/5 pt-4 space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox checked={billingEnabled} onChange={setBillingEnabled} />
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Configurar cobrança agora</span>
+          </label>
+          {billingEnabled && (
+            <div className="space-y-3 bg-white/[0.02] border border-white/5 rounded-2xl p-3">
+              <p className="text-[10px] text-zinc-500">
+                Cria a assinatura no Asaas já vinculada a esta empresa. Requer email do admin (pagador) e CPF/CNPJ.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">Mensalidade</label>
+                  <CurrencyInput value={billingForm.priceCents} onChange={(v) => setBillingForm({ ...billingForm, priceCents: v })} minCents={100} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">Adesão</label>
+                  <CurrencyInput value={billingForm.setupFeeCents} onChange={(v) => setBillingForm({ ...billingForm, setupFeeCents: v })} minCents={0} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">Ciclo</label>
+                  <Select<BillingCycle> value={billingForm.cycle} onChange={(v) => setBillingForm({ ...billingForm, cycle: v })} options={CYCLES} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">Método</label>
+                  <Select<BillingMethod> value={billingForm.billingType} onChange={(v) => setBillingForm({ ...billingForm, billingType: v })} options={METHODS} />
+                </div>
+              </div>
+              <FieldInput
+                label="CPF/CNPJ do pagador"
+                value={billingForm.payerCpfCnpj}
+                onChange={(v: string) => setBillingForm({ ...billingForm, payerCpfCnpj: v })}
+                required={billingEnabled}
+                placeholder="Somente números"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-white/5 pt-4 space-y-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Whitelabel (opcional)</p>
+          <div className="grid grid-cols-2 gap-3">
+            <LogoUploader label="Logo (claro)" variant="light" value={logoLight} onChange={setLogoLight} />
+            <LogoUploader label="Logo (escuro)" variant="dark" value={logoDark} onChange={setLogoDark} />
+          </div>
+        </div>
+
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white py-2.5 rounded-xl border border-white/5 hover:bg-white/[0.04]">
             Cancelar
@@ -981,6 +1123,16 @@ const CredentialsModal = ({ info, onClose }: { info: CreatedInfo; onClose: () =>
           <CredentialRow label="Email" value={info.ownerEmail} />
           <CredentialRow label="Senha" value={info.ownerPassword} />
           <p className="text-[10px] text-zinc-400">Envie ao admin e oriente a trocar a senha no primeiro login. Esta senha não será exibida novamente.</p>
+        </div>
+      )}
+      {info.billing && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs text-emerald-300">
+          Assinatura criada com sucesso no Asaas.
+        </div>
+      )}
+      {info.billingError && (
+        <div className="bg-red-950/40 border border-red-900/50 rounded-xl p-3 text-xs text-red-300">
+          Empresa criada, mas a assinatura falhou: {info.billingError}. Configure manualmente em Financeiro → Assinaturas.
         </div>
       )}
       <button onClick={onClose} className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black uppercase tracking-widest text-xs py-2.5 rounded-xl">

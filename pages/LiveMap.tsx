@@ -175,7 +175,7 @@ export const LiveMap = () => {
         category={activeCategory}
         client={activeClient}
         lastLoc={lastLoc}
-        resolvedAddress={lastLoc ? resolvedAddresses[lastLoc.id] : undefined}
+        resolvedAddress={lastLoc ? resolvedAddresses[`${lastLoc.lat.toFixed(4)},${lastLoc.lon.toFixed(4)}`] : undefined}
         userRole={user?.role}
         onFetchHistory={fetchHistory}
         onRefreshTag={refreshTag}

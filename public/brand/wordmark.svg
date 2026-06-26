@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="340" height="80" viewBox="0 0 340 80">
+  <polygon points="64,40 48.5,13 17.5,13 2,40 17.5,67 48.5,67" fill="none" stroke="#18181b" stroke-width="4.5" stroke-linejoin="round"></polygon>
+  <circle cx="30" cy="40" r="14" fill="#ffffff" stroke="#18181b" stroke-width="4"></circle>
+  <text x="30" y="48" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-weight="900" font-size="22" fill="#18181b" letter-spacing="-1.5">M</text>
+  <circle cx="53" cy="40" r="3.4" fill="#f59e0b"></circle>
+  <g transform="translate(86, 0)">
+    <text x="0" y="36" font-family="Manrope, Inter, sans-serif" font-weight="900" font-size="24" fill="#18181b" letter-spacing="-0.5">MONITORA</text>
+    <g transform="translate(146, 14.5)">
+      <rect x="0" y="0" width="50" height="26" rx="13" fill="#f59e0b"></rect>
+      <text x="25" y="19" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-weight="900" font-size="16" fill="#000000" letter-spacing="-0.5">360</text>
+    </g>
+    <text x="0" y="60" font-family="Inter, sans-serif" font-weight="700" font-size="8" fill="#71717a" letter-spacing="3">CONSOLE DE OPERAÇÕES</text>
+  </g>
+</svg>
