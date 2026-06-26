@@ -27,7 +27,7 @@ export const useTagHistory = (
     
     try {
         const endTime = Date.now();
-        const startTime = endTime - (24 * 60 * 60 * 1000); // Últimas 24h
+        const startTime = endTime - (7 * 24 * 60 * 60 * 1000); // Últimos 7 dias
         
         let results: LocationHistory[] = [];
         if (tag.type === 'XADTAG') {
@@ -57,9 +57,8 @@ export const useTagHistory = (
             results.sort((a, b) => b.timestamp - a.timestamp);
         }
         
-        // Resolve endereços dos 3 primeiros
-        const top3 = results.slice(0, 3);
-        onResolveAddresses(top3);
+        // Resolve endereços de todos os itens (coordKey evita chamadas duplicadas p/ mesma posição)
+        onResolveAddresses(results);
 
         setHistoryItems(results);
     } catch (e) {

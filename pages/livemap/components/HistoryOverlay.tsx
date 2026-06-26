@@ -97,8 +97,8 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                                                 </div>
                                             )}
                                         </div>
-                                        <p className={`text-[14px] font-bold leading-tight transition-colors ${resolvedAddresses[item.id] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-700 italic font-medium'}`}>
-                                            {resolvedAddresses[item.id] || (idx < 3 ? 'Resolvendo...' : `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`)}
+                                        <p className={`text-[14px] font-bold leading-tight transition-colors ${resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-700 italic font-medium'}`}>
+                                            {resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] || (idx < 3 ? 'Resolvendo...' : `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`)}
                                         </p>
                                         <div className="mt-3 flex items-center gap-4">
                                             <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-widest"><Signal size={12}/> Sinal 100%</div>

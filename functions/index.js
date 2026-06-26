@@ -77,6 +77,13 @@ const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 //   firebase functions:secrets:set VAPID_PRIVATE_KEY
 const VAPID_PUBLIC_KEY = defineSecret("VAPID_PUBLIC_KEY");
 const VAPID_PRIVATE_KEY = defineSecret("VAPID_PRIVATE_KEY");
+// K-TAG: credenciais da conta ÚNICA da plataforma (todos os tenants compartilham).
+// Injetadas server-side no relay/scheduler — o cliente nunca recebe usuário/senha.
+//   firebase functions:secrets:set KTAG_API_USER
+//   firebase functions:secrets:set KTAG_API_PASS
+// A URL (não-secreta) vai por env: KTAG_API_URL
+const KTAG_API_USER = defineSecret("KTAG_API_USER");
+const KTAG_API_PASS = defineSecret("KTAG_API_PASS");
 // CORS: em produção, só aceita ktagfinder.app e seus subdomínios.
 // Localhost continua liberado para dev. server-to-server (sem origin) também.
 // Override via ALLOWED_ORIGIN_OVERRIDE=true mantém compat com integrações
@@ -363,7 +370,7 @@ setInterval(cleanupOldRecords, 300000);
 /**
  * PROXY API: Contorna CORS e protege credenciais
  */
-exports.proxyApi = onRequest((req, res) => {
+exports.proxyApi = onRequest({ secrets: [KTAG_API_USER, KTAG_API_PASS] }, (req, res) => {
   return cors(req, res, async () => {
     // The cors middleware already handles headers and preflight (OPTIONS) requests.
     // If we reach this point, the request is allowed by CORS.
@@ -392,7 +399,18 @@ exports.proxyApi = onRequest((req, res) => {
     }
 
     // 2. Extract Data from Request Body
-    const { url, method, headers, body } = req.body || {};
+    let { url, method, headers, body } = req.body || {};
+    const injectAuth = (req.body || {}).injectAuth;
+
+    // K-TAG: credenciais centralizadas — o cliente envia apenas injectAuth:'ktag'
+    // (sem url nem Authorization). O servidor resolve a URL e injeta o Basic Auth.
+    if (injectAuth === 'ktag') {
+      url = process.env.KTAG_API_URL || '';
+      if (!url) {
+        res.status(500).send({ error: 'K-TAG não configurada no servidor (KTAG_API_URL ausente).' });
+        return;
+      }
+    }
 
     if (!url || typeof url !== 'string') {
       res.status(400).send({ error: "Missing 'url' in request body" });
@@ -424,6 +442,12 @@ exports.proxyApi = onRequest((req, res) => {
     }
     if (!safeHeaders['User-Agent'] && !safeHeaders['user-agent']) {
       safeHeaders['User-Agent'] = process.env.PROXY_USER_AGENT || 'KTagManagerPro-Proxy/1.0';
+    }
+    // K-TAG: injeta Basic Auth a partir dos secrets (cliente nunca vê as credenciais).
+    if (injectAuth === 'ktag') {
+      const u = KTAG_API_USER.value() || '';
+      const p = KTAG_API_PASS.value() || '';
+      safeHeaders['Authorization'] = 'Basic ' + Buffer.from(`${u}:${p}`).toString('base64');
     }
     const safeMethod = (typeof method === 'string' && /^(GET|POST|PUT|PATCH|DELETE|HEAD)$/i.test(method))
       ? method.toUpperCase() : 'GET';
@@ -700,18 +724,21 @@ const xadtagBatteryToInfo = (battery) => {
   }
 };
 
-async function fetchKtagLocation(tag, settings) {
+async function fetchKtagLocation(tag) {
+  const url = process.env.KTAG_API_URL;
+  if (!url) { console.warn('[K-Tag] KTAG_API_URL ausente — pulando.'); return null; }
+
   const payload = {
     accessoryId: tag.accessoryId,
     hashed_keys: [tag.hashedAdvKey],
     priv_keys: [tag.privateKey]
   };
 
-  const authHeader = `Basic ${Buffer.from(`${settings.ktagUser}:${settings.ktagPass}`).toString('base64')}`;
-  
+  const authHeader = `Basic ${Buffer.from(`${KTAG_API_USER.value()}:${KTAG_API_PASS.value()}`).toString('base64')}`;
+
   try {
     const response = await axios({
-      url: settings.ktagUrl,
+      url,
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json', 
@@ -792,16 +819,47 @@ function hasMoved(prev, next) {
 }
 
 /**
- * RASTREIO AGENDADO: Atualiza equipamentos a cada 1h.
+ * Geocodificação reversa via Photon (Komoot/OSM) — gratuito, sem API key.
+ * Retorna string de endereço ou null se falhar.
+ */
+async function reverseGeocodePhoton(lat, lon) {
+  try {
+    const r = await axios({
+      url: `https://photon.komoot.io/reverse?lon=${lon}&lat=${lat}`,
+      headers: { 'User-Agent': 'KTagManagerPro/1.0 (ktagfinder-prod)' },
+      timeout: 5000
+    });
+    const f = r.data?.features?.[0]?.properties;
+    if (f) {
+      const parts = [f.name, f.street, f.housenumber, f.city, f.state].filter(Boolean);
+      if (parts.length > 0) return parts.join(', ');
+    }
+  } catch (e) {
+    // Geocoding falhou — continua sem endereço
+  }
+  return null;
+}
+
+/**
+ * RASTREIO AGENDADO: Atualiza equipamentos a cada 30 min com fila stale-first.
  *
  * Tenant-aware: itera /tenants/* ativos e, para cada um, lê settings/tags/vehicles
  * do PRÓPRIO tenant. Credenciais K-TAG/XADTAG nunca vazam entre tenants.
  *
- * Custo: cada tenant adiciona ~N tags * (1 req externa + 1 vehicle write +
- * 1 history write APENAS quando o veículo se moveu). 1h é confortável até
- * ~50 tenants. Acima disso, mover para fila (Cloud Tasks).
+ * Stale-First: dentro de cada tenant, as tags com lastPosition.timestamp mais antigo
+ * (ou sem posição) são processadas primeiro — garante que veículos mais defasados
+ * sejam priorizados a cada ciclo.
+ *
+ * Custo: cada tenant adiciona ~N tags * (1 req GPS + 1 geocoding + 1 vehicle write +
+ * 1 history write apenas quando moveu). ~30 min é confortável até ~50 tenants.
+ * Acima disso, mover para fila (Cloud Tasks).
  */
-exports.scheduledTagUpdate = onSchedule("every 1 hours", async (event) => {
+exports.scheduledTagUpdate = onSchedule({
+  schedule: "every 30 minutes",
+  timeoutSeconds: 1800,
+  memory: "256MiB",
+  secrets: [KTAG_API_USER, KTAG_API_PASS]
+}, async (event) => {
   const db = admin.firestore();
 
   let totalUpdated = 0;
@@ -842,7 +900,15 @@ async function updateTagsForTenant(db, tenantId) {
   }
   const settings = settingsDoc.data();
 
-  // 2. Tags do tenant.
+  // 2. Veículos do tenant — usados para ordenação stale-first e lookup rápido.
+  const vehiclesSnap = await tenantRef.collection('vehicles').get();
+  const vehicleByTagId = {};
+  vehiclesSnap.forEach(doc => {
+    const v = { ...doc.data(), id: doc.id, ref: doc.ref };
+    if (v.tagId) vehicleByTagId[v.tagId] = v;
+  });
+
+  // 3. Tags do tenant.
   const tagsSnapshot = await tenantRef.collection('tags').get();
   if (tagsSnapshot.empty) {
     return 0;
@@ -850,7 +916,15 @@ async function updateTagsForTenant(db, tenantId) {
   const allTags = [];
   tagsSnapshot.forEach(doc => allTags.push({ ...doc.data(), id: doc.id }));
 
-  console.log(`[${tenantId}] Atualizando ${allTags.length} tags`);
+  // Stale-First Queue: processa primeiro as tags com lastPosition.timestamp mais antigo
+  // (ou sem posição — timestamp 0). Garante que veículos defasados têm prioridade.
+  allTags.sort((a, b) => {
+    const tsA = vehicleByTagId[a.id]?.lastPosition?.timestamp ?? 0;
+    const tsB = vehicleByTagId[b.id]?.lastPosition?.timestamp ?? 0;
+    return tsA - tsB;
+  });
+
+  console.log(`[${tenantId}] Atualizando ${allTags.length} tags (stale-first)`);
 
   let updatedCount = 0;
   for (const tag of allTags) {
@@ -860,36 +934,36 @@ async function updateTagsForTenant(db, tenantId) {
         if (!settings.traqcareToken) continue;
         locationResult = await fetchXadtagLocation(tag, settings);
       } else {
-        if (!settings.ktagUrl || !settings.ktagUser) continue;
-        locationResult = await fetchKtagLocation(tag, settings);
+        if (!process.env.KTAG_API_URL) continue;
+        locationResult = await fetchKtagLocation(tag);
       }
 
       if (locationResult) {
-        const vehiclesSnapshot = await tenantRef
-          .collection('vehicles')
-          .where('tagId', '==', tag.id)
-          .limit(1)
-          .get();
+        // Enriquece com endereço (Photon/OSM — grátis, sem API key).
+        const address = await reverseGeocodePhoton(locationResult.lat, locationResult.lon);
+        const enrichedResult = address ? { ...locationResult, address } : locationResult;
 
-        if (!vehiclesSnapshot.empty) {
-          const vehicleDoc = vehiclesSnapshot.docs[0];
-          const prevPosition = vehicleDoc.data().lastPosition;
+        // Usa vehicleByTagId para evitar query extra por tag (já carregamos tudo acima).
+        const vehicle = vehicleByTagId[tag.id];
+        if (vehicle) {
+          const prevPosition = vehicle.lastPosition;
 
-          // lastPosition é sempre atualizado (mantém timestamp/bateria frescos).
-          await vehicleDoc.ref.update({ lastPosition: locationResult });
+          // lastPosition é sempre atualizado (mantém timestamp/bateria/endereço frescos).
+          await vehicle.ref.update({ lastPosition: enrichedResult });
 
-          // Histórico só quando o veículo realmente se moveu (dedup).
-          if (hasMoved(prevPosition, locationResult)) {
-            await vehicleDoc.ref.collection('history')
-              .doc(locationResult.id || Math.random().toString(36).substring(2, 15))
-              .set({
-                ...locationResult,
-                tagId: tag.id,
-                vehicleId: vehicleDoc.id,
-                tenantId,
-                savedAt: Date.now()
-              });
-          }
+          // Histórico: sempre grava a cada ciclo para garantir série temporal completa de 7 dias.
+          // O ID é derivado do timestamp da localização para evitar duplicatas exatas caso a
+          // mesma resposta chegue duas vezes (idempotente via .set() com merge: false).
+          const histId = `${tag.id}_${enrichedResult.timestamp || Date.now()}`;
+          await vehicle.ref.collection('history')
+            .doc(histId)
+            .set({
+              ...enrichedResult,
+              tagId: tag.id,
+              vehicleId: vehicle.id,
+              tenantId,
+              savedAt: Date.now()
+            });
 
           updatedCount++;
         }
@@ -904,6 +978,55 @@ async function updateTagsForTenant(db, tenantId) {
 
   return updatedCount;
 }
+
+/**
+ * CLEANUP DIÁRIO: Remove pontos de histórico com mais de 7 dias de todos os tenants ativos.
+ * Firestore batch delete em chunks de 500 (limite da API).
+ */
+exports.cleanupOldHistory = onSchedule({
+  schedule: "every 24 hours",
+  timeoutSeconds: 1800,
+  memory: "256MiB",
+}, async (event) => {
+  const db = admin.firestore();
+  const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 dias atrás
+  let totalDeleted = 0;
+  let totalTenants = 0;
+
+  try {
+    const tenantsSnap = await db.collection('tenants').where('active', '==', true).get();
+    for (const tenantDoc of tenantsSnap.docs) {
+      const vehiclesSnap = await tenantDoc.ref.collection('vehicles').get();
+      for (const vehicleDoc of vehiclesSnap.docs) {
+        const oldSnap = await vehicleDoc.ref.collection('history')
+          .where('savedAt', '<', cutoff)
+          .get();
+        if (oldSnap.empty) continue;
+
+        // Batch delete em chunks de 500 (limite Firestore por batch)
+        const chunks = [];
+        let batch = db.batch();
+        let count = 0;
+        oldSnap.forEach(doc => {
+          batch.delete(doc.ref);
+          count++;
+          if (count === 500) {
+            chunks.push(batch);
+            batch = db.batch();
+            count = 0;
+          }
+        });
+        if (count > 0) chunks.push(batch);
+        await Promise.all(chunks.map(b => b.commit()));
+        totalDeleted += oldSnap.size;
+      }
+      totalTenants++;
+    }
+    console.log(`[cleanupOldHistory] ${totalDeleted} documentos deletados em ${totalTenants} tenants (> 7 dias).`);
+  } catch (error) {
+    console.error('[cleanupOldHistory] Erro crítico:', error.message);
+  }
+});
 
 // ============================================================
 // Multi-tenant: sync de custom claims + admin user provisioning
@@ -2133,6 +2256,8 @@ exports.cancelTenantSubscription = onCall(ASAAS_OPTS, async (request) => {
 
 /**
  * Faz pull do Asaas e atualiza invoices + status do tenant.
+ * Usa listPaymentsByCustomer (paginado) quando disponível para capturar
+ * cobranças avulsas além das da assinatura.
  */
 exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   await requireSuperAdmin(request);
@@ -2140,7 +2265,8 @@ exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   const { ref, data: tenant } = await getTenantOrThrow(slug);
 
   const subId = tenant.billing?.asaasSubscriptionId;
-  if (!subId) {
+  const custId = tenant.billing?.asaasCustomerId;
+  if (!subId && !custId) {
     return { ok: false, reason: 'sem assinatura' };
   }
 
@@ -2150,15 +2276,17 @@ exports.syncTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   let sub, payments;
   try {
     [sub, payments] = await Promise.all([
-      asaas.getSubscription(apiKey, subId).catch(() => null),
-      asaas.listSubscriptionPayments(apiKey, subId, 50),
+      subId ? asaas.getSubscription(apiKey, subId).catch(() => null) : null,
+      custId
+        ? asaas.listPaymentsByCustomer(apiKey, custId)
+        : asaas.listSubscriptionPayments(apiKey, subId, 100),
     ]);
   } catch (e) {
     const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
     throw new HttpsError('internal', `Falha ao consultar Asaas: ${msg}`);
   }
 
-  // Atualiza invoices
+  // Atualiza invoices (pagas e não pagas)
   const batch = admin.firestore().batch();
   for (const p of payments) {
     const inv = asaas.paymentToInvoice(p, slug);
@@ -2281,7 +2409,8 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   if (!snap.exists) throw new HttpsError('not-found', 'Tenant não encontrado.');
   const tenant = snap.data();
   const subId = tenant.billing?.asaasSubscriptionId;
-  if (!subId) return { ok: false, reason: 'sem assinatura' };
+  const custId = tenant.billing?.asaasCustomerId;
+  if (!subId && !custId) return { ok: false, reason: 'sem assinatura' };
 
   const apiKey = ASAAS_API_KEY.value();
   if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
@@ -2289,8 +2418,10 @@ exports.syncMyTenantBilling = onCall(ASAAS_OPTS, async (request) => {
   let sub, payments;
   try {
     [sub, payments] = await Promise.all([
-      asaas.getSubscription(apiKey, subId).catch(() => null),
-      asaas.listSubscriptionPayments(apiKey, subId, 50),
+      subId ? asaas.getSubscription(apiKey, subId).catch(() => null) : null,
+      custId
+        ? asaas.listPaymentsByCustomer(apiKey, custId)
+        : asaas.listSubscriptionPayments(apiKey, subId, 100),
     ]);
   } catch (e) {
     const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
@@ -2551,6 +2682,79 @@ exports.testAsaasConnection = onCall(ASAAS_OPTS, async (request) => {
   } catch (e) {
     return { ok: false, env, error: String(e.response?.data?.errors?.[0]?.description || e.message || e) };
   }
+});
+
+/** Retorna o saldo disponível da conta Asaas em centavos. */
+exports.getAsaasBalance = onCall(ASAAS_OPTS, async (request) => {
+  await requireSuperAdmin(request);
+  const apiKey = ASAAS_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+  try {
+    const data = await asaas.getBalance(apiKey);
+    return {
+      balanceCents: Math.round((data.balance || 0) * 100),
+      balanceReal: data.balance || 0,
+      env: (process.env.ASAAS_ENV || 'sandbox').toLowerCase(),
+    };
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.[0]?.description || e?.message || 'Erro Asaas';
+    throw new HttpsError('internal', `Falha ao buscar saldo: ${msg}`);
+  }
+});
+
+/**
+ * Sincroniza TODOS os tenants com o Asaas de uma vez.
+ * Para cada tenant com asaasCustomerId (ou asaasSubscriptionId), busca
+ * todos os pagamentos — pagos e não pagos — e atualiza o Firestore.
+ * Timeout de 300s para acomodar muitos tenants.
+ */
+exports.syncAllTenantsBilling = onCall({ ...ASAAS_OPTS, timeoutSeconds: 300 }, async (request) => {
+  await requireSuperAdmin(request);
+  const apiKey = ASAAS_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ASAAS_API_KEY não configurada.');
+
+  const db = admin.firestore();
+  const tenantsSnap = await db.collection('tenants').get();
+
+  let synced = 0;
+  const errors = [];
+
+  for (const t of tenantsSnap.docs) {
+    const tenant = t.data();
+    const custId = tenant.billing?.asaasCustomerId;
+    const subId  = tenant.billing?.asaasSubscriptionId;
+    if (!custId && !subId) continue;
+
+    try {
+      const payments = custId
+        ? await asaas.listPaymentsByCustomer(apiKey, custId)
+        : await asaas.listSubscriptionPayments(apiKey, subId, 100);
+
+      const batch = db.batch();
+      for (const p of payments) {
+        const inv = asaas.paymentToInvoice(p, tenant.slug || t.id);
+        inv.createdAt = inv.createdAt || Date.now();
+        batch.set(t.ref.collection('invoices').doc(p.id), inv, { merge: true });
+      }
+      await batch.commit();
+
+      const hasOverdue = payments.some(p => asaas.normalizeStatus(p.status) === 'OVERDUE');
+      let statusFromSub = hasOverdue ? 'overdue' : 'active';
+      if (subId) {
+        const sub = await asaas.getSubscription(apiKey, subId).catch(() => null);
+        if (sub?.status === 'INACTIVE') statusFromSub = 'canceled';
+      }
+      await t.ref.update({ 'billing.status': statusFromSub, 'billing.lastSyncedAt': Date.now() });
+
+      synced++;
+    } catch (e) {
+      const label = tenant.slug || t.id;
+      console.error(`syncAllTenantsBilling: erro em ${label}`, e.message);
+      errors.push(`${label}: ${e.message}`);
+    }
+  }
+
+  return { synced, errors, total: tenantsSnap.size };
 });
 
 /**

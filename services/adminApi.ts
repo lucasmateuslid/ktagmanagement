@@ -120,6 +120,12 @@ export const adminApi = {
   syncTenantBilling: (slug: string) =>
     call<{ slug: string }, void>('syncTenantBilling')({ slug }).then(r => r.data),
 
+  getAsaasBalance: () =>
+    call<{}, { balanceCents: number; balanceReal: number; env: string }>('getAsaasBalance')({}).then(r => r.data),
+
+  syncAllTenantsBilling: () =>
+    call<{}, { synced: number; errors: string[]; total: number }>('syncAllTenantsBilling')({}).then(r => r.data),
+
   // ----- Plans config -----
 
   getPlansConfig: () =>

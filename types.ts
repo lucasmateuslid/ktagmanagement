@@ -513,10 +513,9 @@ export interface AppSettings {
   customLogoBase64Light?: string;
   customLogoBase64Dark?: string;
   themeColors?: ThemeColors;
-  ktagUrl: string;
-  ktagUser: string;
-  ktagPass: string;
-  traqcareToken: string;
+  // K-TAG: credenciais agora são centralizadas na plataforma e injetadas server-side
+  // pelo relay (secrets KTAG_API_USER/PASS + env KTAG_API_URL). Não vivem mais por-tenant.
+  traqcareToken: string; // XADTAG (Traqcare) — permanece por-tenant
   googleMapsKey: string;
   mapboxKey: string;
   geocodingProvider?: 'osm' | 'google';

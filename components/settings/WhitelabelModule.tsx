@@ -185,7 +185,7 @@ export const WhitelabelModule: React.FC<Props> = ({ settings, setSettings, isAdm
             value={settings.customAppName || ''}
             onChange={e => setSettings({ ...settings, customAppName: e.target.value })}
             className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
-            placeholder="Ex: Manager PRO"
+            placeholder="Ex: Monitora 360"
           />
         </div>
 

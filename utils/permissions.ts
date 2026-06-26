@@ -37,7 +37,7 @@ export const ALL_PERMISSION_IDS: PermissionId[] = Object.values(PERMISSIONS);
 // aqui. Manter sincronizado com o seed em PermissionsModule.tsx.
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionId[]> = {
   sysadmin: [...ALL_PERMISSION_IDS],
-  admin: ALL_PERMISSION_IDS.filter(id => id !== PERMISSIONS.SETTINGS_MODULE_ROLES === false ? true : true),
+  admin: [...ALL_PERMISSION_IDS],
   admin_tecnico: [
     PERMISSIONS.DASHBOARD,
     PERMISSIONS.SCHEDULES,

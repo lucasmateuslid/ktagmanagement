@@ -126,7 +126,7 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
             {t('overview')}
           </h1>
-          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-[0.4em]">Control Center</p>
+          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-black uppercase tracking-[0.3em]">Control Center</p>
         </div>
         <div className="flex items-center gap-3">
             <button 
@@ -237,7 +237,7 @@ export const Dashboard = () => {
               {/* CARD 3: ESTOQUE (REESTILIZADO CONFORME PEDIDO) */}
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 flex flex-col justify-between h-[300px] shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                   <div className="flex justify-between items-start">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">Estoque</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Estoque</p>
                       <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl text-zinc-400"><ShoppingCart size={20}/></div>
                   </div>
                   

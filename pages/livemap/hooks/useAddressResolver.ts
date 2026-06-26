@@ -3,15 +3,21 @@ import { useState } from 'react';
 import { geocodingService } from '../../../services/geocoding';
 import { LocationHistory } from '../../../types';
 
+// Chave baseada em coordenadas — garante que mudar lat/lon força nova geocodificação,
+// mesmo que o tagId (item.id) permaneça o mesmo.
+export const coordKey = (item: Pick<LocationHistory, 'lat' | 'lon'>) =>
+  `${item.lat.toFixed(4)},${item.lon.toFixed(4)}`;
+
 export const useAddressResolver = () => {
   const [resolvedAddresses, setResolvedAddresses] = useState<Record<string, string>>({});
 
-  // Resolve endereço de um item específico (se ainda não resolvido)
+  // Resolve endereço de um item específico (se ainda não resolvido para estas coords)
   const resolveAddress = async (item: LocationHistory) => {
-      if (!resolvedAddresses[item.id]) {
+      const key = coordKey(item);
+      if (!resolvedAddresses[key]) {
           try {
               const addr = await geocodingService.reverseGeocode(item.lat, item.lon);
-              setResolvedAddresses(prev => ({ ...prev, [item.id]: addr }));
+              setResolvedAddresses(prev => ({ ...prev, [key]: addr }));
           } catch {
               // Ignore errors
           }
@@ -21,14 +27,15 @@ export const useAddressResolver = () => {
   // Resolve múltiplos endereços (ex: para histórico)
   const resolveBatch = async (items: LocationHistory[]) => {
       const newAddresses: Record<string, string> = {};
-      
+
       await Promise.all(items.map(async (item) => {
-          if (!resolvedAddresses[item.id]) {
+          const key = coordKey(item);
+          if (!resolvedAddresses[key]) {
               try {
                   const addr = await geocodingService.reverseGeocode(item.lat, item.lon);
-                  newAddresses[item.id] = addr;
+                  newAddresses[key] = addr;
               } catch {
-                  newAddresses[item.id] = "Endereço indisponível";
+                  newAddresses[key] = "Endereço indisponível";
               }
           }
       }));

@@ -11,6 +11,7 @@ import { AdminBilling } from './AdminBilling';
 import { AdminInvoices } from './AdminInvoices';
 import { ContasPanel } from './finance/ContasPanel';
 import { monthlyEquivFactor } from '../../lib/billing';
+import { adminApi } from '../../services/adminApi';
 import type { Tenant } from '../../types';
 
 const fmtBRL = (cents?: number) =>
@@ -45,6 +46,7 @@ export const AdminFinanceiro = () => {
 const FinanceiroDashboard = () => {
   const { tenants, loading } = useTenants();
   const [monthRevenueCents, setMonthRevenueCents] = useState<number | null>(null);
+  const [asaasBalance, setAsaasBalance] = useState<{ balanceCents: number; env: string } | null>(null);
 
   useEffect(() => {
     if (!functions) return;
@@ -56,6 +58,12 @@ const FinanceiroDashboard = () => {
       console.error('aggregateMRRHistory failed', e);
       setMonthRevenueCents(0);
     });
+  }, []);
+
+  useEffect(() => {
+    adminApi.getAsaasBalance()
+      .then(d => setAsaasBalance({ balanceCents: d.balanceCents, env: d.env }))
+      .catch(() => setAsaasBalance({ balanceCents: 0, env: 'erro' }));
   }, []);
 
   const stats = useMemo(() => {
@@ -71,9 +79,15 @@ const FinanceiroDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <DashboardTile
-          label="Saldo do mês (adesões + mensalidade)"
+          label="Saldo Asaas"
+          icon={<Wallet size={16} className="text-emerald-400" />}
+          value={asaasBalance === null ? null : fmtBRL(asaasBalance.balanceCents)}
+          subtitle={asaasBalance ? (asaasBalance.env === 'sandbox' ? 'Ambiente sandbox' : 'Ambiente produção') : 'Consultando conta…'}
+        />
+        <DashboardTile
+          label="Receita do mês"
           icon={<CreditCard size={16} className="text-amber-400" />}
           value={monthRevenueCents === null ? null : fmtBRL(monthRevenueCents)}
           subtitle="Faturas recebidas/confirmadas no mês corrente"

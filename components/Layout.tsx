@@ -576,17 +576,17 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
                       const lightLogo = appSettings?.customLogoBase64Light || appSettings?.customLogoUrlLight;
                       // Cross-fallback: se só um tema tiver logo, usa ele nos dois (evita cair no "K").
                       const logoSrc = theme === 'dark' ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
-                      const appName = appSettings?.customAppName || appSettings?.appName || 'Manager Pro';
+                      const appName = appSettings?.customAppName || appSettings?.appName || 'Monitora 360';
                       return logoSrc ? (
                         <img src={logoSrc} alt={appName} className="w-10 h-10 object-contain" />
                       ) : (
-                        <div className="w-10 h-10 bg-black dark:bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-800 dark:border-zinc-200">
-                          <span className="font-display font-black text-white dark:text-black text-lg">{appName.charAt(0).toUpperCase()}</span>
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-xl border border-zinc-200">
+                          <img src="/brand/logo-mark-dark.svg" alt={appName} className="w-7 h-7 object-contain" />
                         </div>
                       );
                     })()}
                     <div className="flex flex-col border-l-2 border-zinc-100 dark:border-zinc-800 pl-4 justify-center">
-                        <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.customAppName || appSettings?.appName || 'Manager Pro'}</span>
+                        <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em]">{appSettings?.customAppName || appSettings?.appName || 'Monitora 360'}</span>
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                           <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-tight">Console de Operações</span>

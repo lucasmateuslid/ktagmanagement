@@ -250,7 +250,9 @@ service cloud.firestore {
     // ---------- SISTEMA (cross-tenant / control plane) ----------
 
     match /system_admins/{uid} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
+      // get do próprio doc (checagem de privilégio pós-login) OU list/get para
+      // o painel super admin (AdminDashboard conta o total de super admins).
+      allow read: if (isAuthenticated() && request.auth.uid == uid) || isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
