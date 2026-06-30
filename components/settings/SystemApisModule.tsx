@@ -445,6 +445,10 @@ export const SystemApisModule = () => {
                       <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" placeholder="https://api.ktag.example.com" />
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token da API K-Tag (Alternativa ao Usuário/Senha)</label>
+                    <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.ktagToken || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagToken: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" placeholder="Token Bearer (se aplicável)" />
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>

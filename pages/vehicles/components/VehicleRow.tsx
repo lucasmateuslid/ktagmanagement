@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
-import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi } from 'lucide-react';
+import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi, Share2 } from 'lucide-react';
 import { fetchTagLocation } from '../../../services/api';
 import { storage } from '../../../services/storage';
 
@@ -15,9 +15,10 @@ interface VehicleRowProps {
   toggleSelect: (id: string) => void;
   onEdit: (v: Vehicle) => void;
   onDelete: (id: string) => void;
+  onShare?: (v: Vehicle) => void;
 }
 
-export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly, isSelected, toggleSelect }: VehicleRowProps) => {
+export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, onShare, isReadOnly, isSelected, toggleSelect }: VehicleRowProps) => {
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
@@ -234,6 +235,11 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
           <div className="hidden lg:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onShare && (
+              <button onClick={(e) => { e.stopPropagation(); onShare(vehicle); }} title="Compartilhar Acesso Temporário" className="p-1.5 lg:p-2 text-zinc-300 hover:text-blue-500 transition-colors">
+                <Share2 size={14}/>
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 lg:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 lg:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
           </div>

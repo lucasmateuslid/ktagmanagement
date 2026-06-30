@@ -236,6 +236,17 @@ export interface KTagLocationResult {
 }
 
 // Record for vehicle theft/robbery incidents
+export interface SharedVehicleLink {
+  id: string;
+  vehicleId: string;
+  vehiclePlate: string;
+  vehicleModel: string;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
+  createdBy: string;
+}
+
 export interface StolenRecord {
   id: string;
   vehicleId: string;
@@ -342,6 +353,7 @@ export interface AppSettings {
   customLogoUrlDark?: string;
   themeColors?: ThemeColors;
   ktagUrl: string;
+  ktagToken?: string;
   ktagUser: string;
   ktagPass: string;
   traqcareToken?: string;

@@ -593,14 +593,17 @@ export const Tags = () => {
       addLog({ type: 'info', method: 'INFO', url: 'Ping K-TAG', responseBody: { sn: tag.accessoryId } });
       try {
           const settings = await storage.getSettings();
-          const auth = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
-          const res = await fetch(settings.customProxyUrl, {
+          const auth = settings.ktagToken 
+            ? (settings.ktagToken.includes(' ') ? settings.ktagToken : `Bearer ${settings.ktagToken}`)
+            : `Basic ${btoa(`${settings.ktagUser || ''}:${settings.ktagPass || ''}`)}`;
+          const proxyUrl = settings.customProxyUrl || '/api/proxy';
+          const res = await fetch(proxyUrl, {
               method: 'POST', 
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   url: settings.ktagUrl,
                   method: 'POST',
-                  headers: { 'Authorization': auth },
+                  headers: { 'Content-Type': 'application/json', 'Authorization': auth },
                   body: { accessoryId: tag.accessoryId, hashed_keys: [tag.hashedAdvKey], priv_keys: [tag.privateKey] }
               })
           });

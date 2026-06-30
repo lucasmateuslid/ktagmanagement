@@ -89,7 +89,9 @@ export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> 
     priv_keys: [tag.privateKey]
   };
 
-  const authHeader = `Basic ${btoa(`${settings.ktagUser}:${settings.ktagPass}`)}`;
+  const authHeader = settings.ktagToken 
+    ? (settings.ktagToken.includes(' ') ? settings.ktagToken : `Bearer ${settings.ktagToken}`)
+    : `Basic ${btoa(`${settings.ktagUser || ''}:${settings.ktagPass || ''}`)}`;
   
   let response: Response | null = null;
   let lastError: any = null;

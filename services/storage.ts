@@ -1,6 +1,6 @@
 
 // ... keep imports ...
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory, Feedback, SystemUpdate, Shipment, ShippingAddress } from '../types';
+import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, SharedVehicleLink, Client, AuditLog, AppNotification, Schedule, Technician, ScheduleHistory, Feedback, SystemUpdate, Shipment, ShippingAddress } from '../types';
 import { db } from './firebase';
 import { 
   collection, getDocs, addDoc, doc, updateDoc, deleteDoc, 
@@ -21,6 +21,7 @@ const KEYS = {
   COMPANIES: 'ktag_companies',
   CATEGORIES: 'ktag_categories',
   STOLEN_RECORDS: 'ktag_stolen_records',
+  SHARED_LINKS: 'ktag_shared_links',
   AUDIT_LOGS: 'ktag_audit_logs',
   NOTIFICATIONS: 'ktag_notifications',
   SCHEDULES: 'ktag_schedules',
@@ -450,7 +451,11 @@ export const storage = {
   },
 
   getPublicVehicleLocation: async (vehicleId: string): Promise<LocationHistory | null> => {
-    if (!db) return null;
+    if (!db) {
+      const list = cache.get<Vehicle[]>(KEYS.VEHICLES, []);
+      const v = list.find(v => v.id === vehicleId);
+      return v?.lastPosition || null;
+    }
     const vehicleRef = doc(db, KEYS.VEHICLES, vehicleId);
     const snap = await getDoc(vehicleRef);
     if (snap.exists()) {
@@ -460,24 +465,71 @@ export const storage = {
     return null;
   },
 
+  createSharedLink: async (link: SharedVehicleLink): Promise<void> => {
+    if (db) {
+      await setDoc(doc(db, KEYS.SHARED_LINKS, link.id), link);
+    }
+    const list = cache.get<SharedVehicleLink[]>(KEYS.SHARED_LINKS, []);
+    list.push(link);
+    cache.set(KEYS.SHARED_LINKS, list);
+  },
+
+  getSharedLinkByToken: async (token: string): Promise<SharedVehicleLink | null> => {
+    if (!db) {
+      const list = cache.get<SharedVehicleLink[]>(KEYS.SHARED_LINKS, []);
+      return list.find(l => l.token === token) || null;
+    }
+    const q = query(collection(db, KEYS.SHARED_LINKS), where("token", "==", token), limit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return { ...snap.docs[0].data(), id: snap.docs[0].id } as SharedVehicleLink;
+  },
+
+  getSharedLinksByVehicle: async (vehicleId: string): Promise<SharedVehicleLink[]> => {
+    if (!db) {
+      const list = cache.get<SharedVehicleLink[]>(KEYS.SHARED_LINKS, []);
+      return list.filter(l => l.vehicleId === vehicleId);
+    }
+    const q = query(collection(db, KEYS.SHARED_LINKS), where("vehicleId", "==", vehicleId));
+    const snap = await getDocs(q);
+    const links = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as SharedVehicleLink));
+    cache.set(KEYS.SHARED_LINKS, links);
+    return links;
+  },
+
+  deleteSharedLink: async (id: string): Promise<void> => {
+    if (db) {
+      await deleteDoc(doc(db, KEYS.SHARED_LINKS, id));
+    }
+    const list = cache.get<SharedVehicleLink[]>(KEYS.SHARED_LINKS, []);
+    cache.set(KEYS.SHARED_LINKS, list.filter(l => l.id !== id));
+  },
+
   getLocations: async (tagId: string): Promise<LocationHistory[]> => {
     return []; 
   },
 
   getSettings: async (): Promise<AppSettings> => {
+    let data: Partial<AppSettings> = cache.get<AppSettings>(KEYS.SETTINGS, {} as any);
     if (db) {
       try {
         const snap = await getDoc(doc(db, KEYS.SETTINGS, 'config'));
         if (snap.exists()) {
-          const data = snap.data() as AppSettings;
-          cache.set(KEYS.SETTINGS, data);
-          return data;
+          data = snap.data() as AppSettings;
+          cache.set(KEYS.SETTINGS, data as AppSettings);
         }
       } catch (e) {
         console.warn("Settings Fetch failed, using local cache.");
       }
     }
-    return cache.get<AppSettings>(KEYS.SETTINGS, {} as any);
+    
+    // Provide defaults for Tag API if missing
+    return {
+      ...data,
+      ktagUrl: data.ktagUrl || 'http://47.113.127.14:6176',
+      ktagUser: data.ktagUser || 'TagLocation',
+      ktagPass: data.ktagPass || 'a9B3xQ7z',
+    } as AppSettings;
   },
 
   saveSettings: async (s: AppSettings) => {

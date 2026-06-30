@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
-import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { geocodingService } from '../../services/geocoding';
 
@@ -23,6 +23,7 @@ import { VehicleModal } from './components/VehicleModal';
 import { VehicleScanModal } from './components/VehicleScanModal';
 import { FipeModal } from './components/FipeModal';
 import { VehicleKPIModal } from './components/VehicleKPIModal';
+import { ShareLinkModal } from './components/ShareLinkModal';
 import { Vehicle, LocationHistory } from '../../types';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -90,6 +91,7 @@ export const VehiclesPage = () => {
   const [vehicleToDelete, setVehicleToDelete] = useState<string | null>(null);
   const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [shareVehicle, setShareVehicle] = useState<Vehicle | null>(null);
 
   // UI State for Client Mobile
   const [showSearch, setShowSearch] = React.useState(false);
@@ -313,6 +315,15 @@ export const VehiclesPage = () => {
                               <span className="text-[9px] text-zinc-400 font-mono">{timeAgo}</span>
                               {tag && (
                                   <button
+                                      onClick={(e) => { e.stopPropagation(); setShareVehicle(vehicle); }}
+                                      className={`p-1.5 rounded-lg transition-all flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-blue-500 hover:bg-blue-500/10`}
+                                      title="Compartilhar"
+                                  >
+                                      <Share2 size={12} />
+                                  </button>
+                              )}
+                              {tag && (
+                                  <button
                                       onClick={handleUpdateLocation}
                                       disabled={isUpdating}
                                       className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${
@@ -484,6 +495,12 @@ export const VehiclesPage = () => {
         toggleSelect={toggleSelect}
         onEdit={(v) => openEdit(v, tags)}
         onDelete={(id) => { setVehicleToDelete(id); setIsConfirmDeleteOpen(true); }}
+        onShare={(v) => setShareVehicle(v)}
+      />
+
+      <ShareLinkModal 
+        vehicle={shareVehicle}
+        onClose={() => setShareVehicle(null)}
       />
 
       {isKPIModalOpen && (

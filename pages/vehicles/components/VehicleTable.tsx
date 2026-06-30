@@ -14,10 +14,11 @@ interface VehicleTableProps {
   toggleSelect: (id: string) => void;
   onEdit: (v: Vehicle) => void;
   onDelete: (id: string) => void;
+  onShare?: (v: Vehicle) => void;
 }
 
 export const VehicleTable: React.FC<VehicleTableProps> = ({ 
-  vehicles, tags, categories, clients, isReadOnly, selectedVehicles, toggleSelect, onEdit, onDelete 
+  vehicles, tags, categories, clients, isReadOnly, selectedVehicles, toggleSelect, onEdit, onDelete, onShare 
 }) => {
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -48,6 +49,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
                     toggleSelect={toggleSelect}
                     onEdit={onEdit} 
                     onDelete={onDelete} 
+                    onShare={onShare}
                 />
               ))
             )}
