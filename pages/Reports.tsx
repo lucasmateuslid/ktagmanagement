@@ -361,7 +361,7 @@ export const Reports = () => {
             <div className="flex items-center gap-5">
                 <div className="w-16 h-16 rounded-[24px] bg-primary-500/10 text-primary-500 flex items-center justify-center border border-primary-500/20 shadow-lg shadow-primary-500/10"><FileText size={32} /></div>
                 <div>
-                    <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">Insight Reports</h1>
+                    <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">Relatórios e Métricas</h1>
                     <p className="text-zinc-500 mt-2 font-medium">Relatórios analíticos otimizados.</p>
                 </div>
             </div>

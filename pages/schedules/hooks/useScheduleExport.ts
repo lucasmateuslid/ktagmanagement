@@ -121,8 +121,8 @@ export const useScheduleExport = (
         doc.setFont("helvetica", "bold");
         doc.text("Relatório Detalhado de Serviços", 14, 20);
 
-        // Use filteredList or monthly data
-        const sourceData = (isPrivileged && dashboardData) ? dashboardData.monthSchedules : filteredList;
+        // Use filteredList to respect all current view filters
+        const sourceData = filteredList;
         
         const detailedRows = sourceData.map((s: Schedule) => {
             const tech = technicians.find(t => t.id === s.technicianId);
@@ -141,6 +141,7 @@ export const useScheduleExport = (
                 s.vehiclePlate,
                 companyName,
                 s.serviceType,
+                s.deviceType || '-',
                 s.status,
                 techName,
                 disp > 0 ? `R$ ${disp.toFixed(2)}` : '-',
@@ -152,15 +153,16 @@ export const useScheduleExport = (
 
         autoTable(doc, {
             startY: 25,
-            head: [['Data', 'Placa', 'Empresa', 'Serviço', 'Status', 'Técnico', 'Desloc.', 'Valor Total', 'Pago Tec.', 'Data Pag.']],
+            head: [['Data', 'Placa', 'Empresa', 'Serviço', 'Equipamento', 'Status', 'Técnico', 'Desloc.', 'Total', 'Pago T.', 'Data Pag.']],
             body: detailedRows,
             theme: 'striped',
             headStyles: { fillColor: [24, 24, 27] },
-            styles: { fontSize: 7, cellPadding: 2 },
+            styles: { fontSize: 6, cellPadding: 2 },
             columnStyles: {
-                5: { halign: 'right' },
-                6: { halign: 'right', fontStyle: 'bold' },
-                7: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] }
+                7: { halign: 'right' },
+                8: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] },
+                9: { halign: 'right' },
+                10: { halign: 'center' }
             }
         });
 
@@ -178,7 +180,7 @@ export const useScheduleExport = (
   const handleExportExcel = async () => {
       try {
           const XLSX = await import('xlsx');
-          const sourceData = (isPrivileged && dashboardData) ? dashboardData.monthSchedules : filteredList;
+          const sourceData = filteredList;
 
           const data = sourceData.map((s: Schedule) => {
               const tech = technicians.find(t => t.id === s.technicianId);
@@ -196,6 +198,7 @@ export const useScheduleExport = (
                   "Modelo": s.vehicleModel,
                   "Cliente": s.clientName || '-',
                   "Serviço": s.serviceType,
+                  "Equipamento": s.deviceType || '-',
                   "Status": s.status,
                   "Técnico": tech?.name || '-',
                   "Técnico Pago?": s.technicianPaid ? 'SIM' : 'NÃO',

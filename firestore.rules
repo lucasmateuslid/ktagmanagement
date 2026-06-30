@@ -1,286 +1,128 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ============================================================
-    // K-Tag Manager Pro — Firestore Rules (Identidade Unificada)
-    // ============================================================
-    //
-    // Modelo:
-    //   /tenants/{tenantId}                       — metadata do tenant (CONTROL PLANE)
-    //   /tenants/{tenantId}/users/{uid}           — registro operacional por-tenant
-    //   /tenants/{tenantId}/<entity>/{id}         — dados operacionais do tenant
-    //   /system_admins/{uid}                      — flag de super admin global
-    //   /identities/{uid}                         — identidade global (derivada)
-    //   /identities/{uid}/memberships/{tid}       — junção uid↔tenant (derivada)
-    //
-    // Autenticação: Firebase Auth. request.auth.uid é o uid global do usuário.
-    //
-    // CLAIMS (JWT payload), mantidos por Cloud Functions (rebuildIdentityAndClaims):
-    //   { superadmin?: true, tn?: { [tid]: role }, tnBig?: true }
-    //   - `tn` lista SÓ memberships APROVADAS (tid → role).
-    //   - `tnBig` indica que o mapa estourou o limite de claims → fallback por doc.
-    //   - `superadmin` é poder de PAINEL. NÃO libera dados operacionais de tenant.
-    //
-    // ISOLAMENTO ESTRITO (decisão de projeto):
-    //   Super admin NÃO tem acesso de cliente aos dados operacionais de NENHUM
-    //   tenant (um token de super admin é válido em qualquer subdomínio, e as
-    //   rules não enxergam o subdomínio). Operações de super admin sobre dados
-    //   de tenant passam por Cloud Functions (Admin SDK, auditadas). Por isso
-    //   isSuperAdmin() aparece SOMENTE no control plane (root doc + coleções de
-    //   sistema), nunca nas subcoleções operacionais de /tenants/{tid}/...
-    //
-    // COMPAT DE MIGRAÇÃO:
-    //   Sessões antigas têm claims legadas {tenantId, role, approved}. Os helpers
-    //   aceitam claim nova (tn), claim legada e fallback por doc — para não
-    //   quebrar tokens vivos durante a migração. Remover o ramo legado só após
-    //   um ciclo completo de refresh de token + backfill (migrateIdentities).
+    // --- FUNÇÕES AUXILIARES ---
 
-    // ---------- HELPERS ----------
-
+    // Verifica se o usuário está autenticado no Firebase Auth
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Poder de PAINEL apenas (control plane). Claim nova/legada usa a mesma key
-    // `superadmin`; fallback por doc enquanto a claim não propagou.
-    function isSuperAdmin() {
-      return isAuthenticated()
-        && (request.auth.token.superadmin == true
-            || exists(/databases/$(database)/documents/system_admins/$(request.auth.uid)));
+    // Busca os dados do usuário atual no banco de dados para checar a role
+    // Nota: Isso custa 1 leitura de documento por requisição.
+    function getUserData() {
+      return get(/databases/$(database)/documents/ktag_users_db/$(request.auth.uid)).data;
     }
 
-    // Role do tenant via claim nova (token.tn[tid]). '' quando ausente.
-    function claimRole(tenantId) {
-      return isAuthenticated()
-        ? request.auth.token.get('tn', {}).get(tenantId, '')
-        : '';
+    // Verifica se o usuário possui uma role específica
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
     }
 
-    // Claim legada singular {tenantId, role, approved} — compat de migração.
-    function hasLegacyClaim(tenantId) {
-      return isAuthenticated()
-        && request.auth.token.get('tenantId', '') == tenantId
-        && request.auth.token.get('approved', false) == true;
+    function isAdmin() {
+      return hasRole('admin');
     }
 
-    // Doc de membership do próprio usuário neste tenant existe?
-    function memberDocExists(tenantId) {
-      return isAuthenticated()
-        && exists(/databases/$(database)/documents/tenants/$(tenantId)/users/$(request.auth.uid));
+    function isModerator() {
+      return isAuthenticated() && (getUserData().role == 'moderator' || getUserData().role == 'admin');
     }
 
-    function memberDoc(tenantId) {
-      return get(/databases/$(database)/documents/tenants/$(tenantId)/users/$(request.auth.uid)).data;
+    // Verifica se o usuário é dono do documento (comparando IDs)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Fallback por doc, AGORA exigindo status == 'approved'.
-    // (Antes, a mera existência do doc liberava acesso — usuários 'pending'
-    // ganhavam acesso de membro. Corrigido.)
-    function approvedMemberDoc(tenantId) {
-      return memberDocExists(tenantId) && memberDoc(tenantId).status == 'approved';
+    // Validação básica de dados para evitar lixo no banco
+    function hasFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
     }
 
-    // Membro APROVADO do tenant (claim nova OU legada OU doc aprovado).
-    function isMemberOf(tenantId) {
-      return claimRole(tenantId) != ''
-          || hasLegacyClaim(tenantId)
-          || approvedMemberDoc(tenantId);
+    // --- REGRAS DAS COLEÇÕES ---
+
+    // 1. USUÁRIOS (ktag_users_db)
+    // - Leitura: Dono ou Moderador+
+    // - Criação: Apenas se o ID bater com o Auth (Registro) ou Admin criando outros
+    // - Atualização: Dono (campos limitados) ou Admin
+    match /ktag_users_db/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isModerator());
+      allow create: if isAuthenticated() && (isOwner(userId) || isAdmin()) 
+                    && hasFields(['email', 'role']);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
     }
 
-    // Role efetiva no tenant: claim nova → claim legada → doc aprovado.
-    function tenantRole(tenantId) {
-      return claimRole(tenantId) != ''
-        ? claimRole(tenantId)
-        : (hasLegacyClaim(tenantId)
-            ? request.auth.token.get('role', '')
-            : (approvedMemberDoc(tenantId) ? memberDoc(tenantId).role : ''));
+    // 2. VEÍCULOS (ktag_vehicles)
+    // - Leitura: Qualquer usuário autenticado (Operação básica)
+    // - Leitura Pública: Permitida se o veículo estiver marcado como ROUBADO (para rastreamento policial)
+    // - Escrita: Apenas Moderadores ou Admins
+    // - Validação: Deve ter placa e modelo
+    match /ktag_vehicles/{vehicleId} {
+      allow read: if isAuthenticated() || resource.data.status == 'stolen';
+      allow create, update: if isModerator() && hasFields(['plate', 'model', 'status']);
+      allow delete: if isModerator();
     }
 
-    function isTenantAdmin(tenantId) {
-      return tenantRole(tenantId) == 'admin' || tenantRole(tenantId) == 'admin_tecnico';
+    // 3. EQUIPAMENTOS / TAGS (ktag_tags)
+    // - Leitura: Autenticado
+    // - Escrita: Moderador+
+    match /ktag_tags/{tagId} {
+      allow read: if isAuthenticated();
+      allow write: if isModerator();
     }
 
-    function isTenantModerator(tenantId) {
-      return isTenantAdmin(tenantId) || tenantRole(tenantId) == 'moderator';
+    // 4. CLIENTES (ktag_clients)
+    // - Leitura: Autenticado
+    // - Escrita: Moderador+
+    match /ktag_clients/{clientId} {
+      allow read: if isAuthenticated();
+      allow write: if isModerator();
     }
 
-    // ---------- IDENTIDADE GLOBAL (derivada; só Admin SDK escreve) ----------
-
-    match /identities/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
-      allow write: if false;
-
-      match /memberships/{tenantId} {
-        allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
-        allow write: if false;
-      }
+    // 5. REGISTROS DE ROUBO (ktag_stolen_records)
+    // - Leitura: Autenticado ou se possuir um trackingToken (Acesso Policial)
+    // - Criação: Qualquer usuário autenticado (Reportar)
+    // - Atualização/Delete: Apenas Admin (para evitar adulteração de histórico)
+    match /ktag_stolen_records/{recordId} {
+      allow read: if isAuthenticated() || (resource.data.trackingToken != null);
+      allow create: if isAuthenticated() && hasFields(['vehicleId', 'type', 'timestamp']);
+      allow update, delete: if isAdmin();
     }
 
-    // ---------- TENANT ROOT (CONTROL PLANE) ----------
-    //
-    // O root doc carrega metadata + billing (admin-plane). Membros do tenant
-    // leem o próprio; super admin lê/escreve para o painel. Subcoleções abaixo
-    // são tratadas EXPLICITAMENTE (catch-all removido de propósito — múltiplos
-    // `match` combinam com OR e tornariam regras restritivas dead code).
-
-    match /tenants/{tenantId} {
-      allow read: if isMemberOf(tenantId) || isSuperAdmin();
-      allow create, update, delete: if isSuperAdmin();
-    }
-
-    // ---------- SUBCOLEÇÕES OPERACIONAIS (somente membros do tenant) ----------
-    //
-    // SEM isSuperAdmin() aqui — isolamento estrito. Super admin usa callables.
-
-    // Usuários: dono lê/edita o próprio (mesmo pendente, pra ver o status);
-    // moderador/admin controla os demais. Pendentes só visíveis a moderador+.
-    match /tenants/{tenantId}/users/{userId} {
-      allow read: if (isAuthenticated() && request.auth.uid == userId)
-                     || isTenantModerator(tenantId);
-
-      // Auto-registro: precisa ser o próprio uid + tenant atual + pending/user
-      // (previne self-promotion). Admin do tenant pode criar livremente.
-      allow create: if (isAuthenticated() && request.auth.uid == userId
-                        && request.resource.data.tenantId == tenantId
-                        && request.resource.data.status == 'pending'
-                        && request.resource.data.role == 'user')
-                       || isTenantAdmin(tenantId);
-
-      // Update: dono edita campos não-sensíveis (não pode mudar role/status/tenant);
-      // admin pode tudo.
-      allow update: if (isAuthenticated() && request.auth.uid == userId
-                        && request.resource.data.role == resource.data.role
-                        && request.resource.data.status == resource.data.status
-                        && request.resource.data.tenantId == resource.data.tenantId)
-                       || isTenantAdmin(tenantId);
-
-      allow delete: if isTenantAdmin(tenantId);
-    }
-
-    // Settings (credenciais de terceiros do tenant): leitura p/ membros, write admin.
-    match /tenants/{tenantId}/settings/{docId} {
-      allow read: if isMemberOf(tenantId);
-      allow write: if isTenantAdmin(tenantId);
-    }
-
-    // Public settings: espelho só com whitelabel/tema (SEM segredos). Leitura
-    // pública (login/splash pintam tema pré-auth). Escrita restrita a admin.
-    match /tenants/{tenantId}/public_settings/{docId} {
-      allow read: if true;
-      allow write: if isTenantAdmin(tenantId);
-    }
-
-    // Faturas: espelho do Asaas — escrita só Admin SDK. Leitura: admin do tenant.
-    // (Painel super admin lê via callable listTenantInvoices, não por estas rules.)
-    match /tenants/{tenantId}/invoices/{invoiceId} {
-      allow read: if isTenantAdmin(tenantId);
-      allow write: if false;
-    }
-
-    // Audit logs: append-only para membros, leitura só admin do tenant.
-    match /tenants/{tenantId}/audit_logs/{logId} {
-      allow read: if isTenantAdmin(tenantId);
-      allow create: if isMemberOf(tenantId);
-      allow update, delete: if false;
-    }
-
-    // Custom roles: leitura p/ membros (usado em hasPermission), write admin.
-    match /tenants/{tenantId}/custom_roles/{roleId} {
-      allow read: if isMemberOf(tenantId);
-      allow write: if isTenantAdmin(tenantId);
-    }
-
-    // Stolen records: get por trackingToken secreto (terceiros), list/write só membros.
-    match /tenants/{tenantId}/stolen_records/{recordId} {
-      allow get: if isMemberOf(tenantId)
-                    || (resource != null && resource.data.trackingToken != null);
-      allow list: if isMemberOf(tenantId);
-      allow create: if isMemberOf(tenantId);
-      allow update, delete: if isTenantAdmin(tenantId);
-    }
-
-    // ---------- COLEÇÕES DE DOMÍNIO (read/write p/ membros aprovados) ----------
-
-    match /tenants/{tenantId}/tags/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/trackers/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/vehicles/{vehicleId} {
-      allow read, write: if isMemberOf(tenantId);
-      match /history/{histId} {
-        allow read, write: if isMemberOf(tenantId);
-      }
-    }
-    match /tenants/{tenantId}/clients/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/companies/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/categories/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/schedules/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/technicians/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/technician_payments/{docId} {
-      allow read: if isTenantModerator(tenantId);
-      allow write: if isTenantAdmin(tenantId);
-    }
-    match /tenants/{tenantId}/feedbacks/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/system_updates/{docId} {
-      allow read: if isMemberOf(tenantId);
-      allow write: if isTenantAdmin(tenantId);
-    }
-    match /tenants/{tenantId}/shipments/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-    match /tenants/{tenantId}/shipping_addresses/{docId} {
-      allow read, write: if isMemberOf(tenantId);
-    }
-
-    // ---------- SISTEMA (cross-tenant / control plane) ----------
-
-    match /system_admins/{uid} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
-      allow write: if isSuperAdmin();
-    }
-
-    match /system_audit_logs/{logId} {
-      allow read: if isSuperAdmin();
+    // 6. LOGS DE AUDITORIA (ktag_audit_logs)
+    // - Leitura: Apenas Admin
+    // - Criação: Qualquer autenticado (Sistema gera logs automaticamente)
+    // - Atualização/Delete: NINGUÉM (Logs são imutáveis)
+    match /ktag_audit_logs/{logId} {
+      allow read: if isAdmin();
       allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow update, delete: if false; 
     }
 
-    match /system_billing_events/{eventId} {
-      allow read: if isSuperAdmin();
-      allow write: if false;
-    }
-
+    // 7. CONFIGURAÇÕES (ktag_settings_v3)
+    // - Leitura: Autenticado (O app precisa das chaves de API para funcionar)
+    // - Escrita: ESTRITAMENTE ADMIN
     match /ktag_settings_v3/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin();
+      allow write: if isAdmin();
     }
 
-    match /ktag_trackers/{docId} {
+    // 8. EMPRESAS E CATEGORIAS (Listas auxiliares)
+    match /ktag_companies/{companyId} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin();
+      allow write: if isAdmin();
     }
-
-    // Push subscriptions flat (Functions varre cross-tenant). Cada doc tem userId.
-    match /push_subscriptions/{subId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow update: if false;
+    match /ktag_categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // 9. NOTIFICAÇÕES
+    // Usuário só lê/escreve suas próprias notificações se implementado com ID
+    // Como o sistema atual usa array global ou local, permitimos leitura geral
+    match /ktag_notifications/{noteId} {
+      allow read, write: if isAuthenticated();
     }
   }
 }

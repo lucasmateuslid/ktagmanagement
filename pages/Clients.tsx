@@ -175,7 +175,9 @@ export const Clients = () => {
     }
 
     try {
-      await storage.updateUserProfile(userAccount.id, { password: newPassword });
+      const { securityService } = await import('../services/security');
+      const hashed = await securityService.hashPassword(newPassword);
+      await storage.updateUserProfile(userAccount.id, { password: hashed });
       storage.logAction(currentUser, 'UPDATE', 'Client', `Resetou a senha do cliente ${selectedClient.name} (${type})`, userAccount.id);
       addNotification('success', 'Senha Redefinida', `A nova senha é: ${newPassword}`);
     } catch (e) {
@@ -219,12 +221,16 @@ export const Clients = () => {
         const existingUser = await storage.findUserByEmail(clientEmail);
         
         if (!existingUser) {
+            const { securityService } = await import('../services/security');
+            const initialPassword = cleanCpf.substring(0, 6);
+            const hashed = await securityService.hashPassword(initialPassword);
+
             const newUser: User = {
                 id: crypto.randomUUID(),
                 name: clientData.name,
                 email: clientEmail,
                 cpf: cleanCpf,
-                password: cleanCpf.substring(0, 6), // Senha inicial: 6 primeiros dígitos
+                password: hashed, // Senha inicial (6 primeiros dígitos do CPF) com Hash
                 role: 'client',
                 status: 'approved',
                 createdAt: Date.now()
@@ -264,7 +270,11 @@ export const Clients = () => {
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+              <div className="w-1 h-4 bg-primary-500 rounded-full" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">MÓDULO DE CLIENTES</p>
+          </div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight uppercase">Gestão de Clientes</h1>
           <p className="text-zinc-500 mt-1 font-medium">Controle de associados e permissões de acesso ao portal.</p>
         </div>

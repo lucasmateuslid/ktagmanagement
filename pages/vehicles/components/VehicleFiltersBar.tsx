@@ -45,7 +45,7 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
 
   return (
     <div className="sticky top-4 z-20 space-y-2">
-      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
+      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-3 md:p-2 md:pl-4 rounded-xl md:rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all min-h-[60px]">
         <div className="relative flex-1 w-full">
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input 
@@ -57,18 +57,18 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
+        <div className="flex flex-wrap md:flex-nowrap items-center justify-between md:justify-start gap-2 px-2 w-full md:w-auto border-t md:border-t-0 md:border-l border-zinc-100 dark:border-zinc-800 pt-3 md:pt-0 pb-1 md:pb-0 md:pl-4">
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 rounded-xl transition-all flex items-center gap-2 ${showFilters ? 'bg-primary-500 text-black' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700'}`}
+            className={`p-2.5 rounded-xl transition-all flex items-center gap-2 w-full md:w-auto justify-center ${showFilters ? 'bg-primary-500 text-black' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700'}`}
           >
             <Filter size={18} />
-            <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Filtros</span>
+            <span className="text-[10px] font-black uppercase tracking-widest block md:hidden lg:inline">Filtros</span>
           </button>
 
           {/* SELECTION ACTIONS */}
           {!isClientView && (
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden">
+              <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end overflow-hidden flex-wrap md:flex-nowrap mt-2 md:mt-0">
                   <AnimatePresence mode="popLayout">
                       {selectedCount > 0 && (
                           <MotionDiv 
@@ -93,7 +93,7 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
 
                   <button 
                       onClick={handleSelectAll} 
-                      className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center gap-2 transition-all border ${
+                      className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center justify-center gap-2 transition-all border flex-1 md:flex-none ${
                           selectedCount === totalCount && totalCount > 0 
                           ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
                           : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'

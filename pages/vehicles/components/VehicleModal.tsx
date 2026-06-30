@@ -141,7 +141,13 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                                   required 
                                   maxLength={7} 
                                   value={formData.plate || ''} 
-                                  onChange={e => setFormData({...formData, plate: e.target.value.toUpperCase()})} 
+                                  onChange={e => {
+                                      const val = e.target.value.toUpperCase();
+                                      setFormData({...formData, plate: val});
+                                      if (val.length === 7 && /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(val)) {
+                                          setTimeout(() => onHinovaLookup(), 300);
+                                      }
+                                  }}
                                   className={`w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border rounded-xl text-base font-mono font-black shadow-inner outline-none transition-all ${
                                     plateStatus === 'invalid' 
                                       ? 'border-red-500 dark:border-red-500 ring-4 ring-red-500/5' 
@@ -254,21 +260,38 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                         </div>
                     </div>
 
-                    {/* Model & Year */}
-                    <div className="space-y-2">
-                        <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO</label>
-                        <div className="flex gap-2">
-                            <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
-                            <button type="button" onClick={onFipeOpen} className="px-4 h-12 rounded-xl bg-[#f59e0b]/10 hover:bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30 font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap">
-                                <Book size={14}/> BUSCA FIPE
-                            </button>
+                    {/* Model, Year, Chassis, Color */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">MODELO</label>
+                            <div className="flex gap-2">
+                                <input type="text" required value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                                <button type="button" onClick={onFipeOpen} className="px-4 h-12 rounded-xl bg-[#f59e0b]/10 hover:bg-[#f59e0b]/20 text-[#f59e0b] border border-[#f59e0b]/30 font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+                                    <Book size={14}/> BUSCA FIPE
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">ANO</label>
+                            <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">ANO</label>
-                            <input type="text" value={formData.year || ''} onChange={e => setFormData({...formData, year: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CHASSI</label>
+                            <input type="text" value={formData.chassis || ''} onChange={e => setFormData({...formData, chassis: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">COR</label>
+                            <input type="text" value={formData.color || ''} onChange={e => setFormData({...formData, color: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">SITUAÇÃO (SGA)</label>
+                            <input type="text" value={formData.vehicleStatus || ''} onChange={e => setFormData({...formData, vehicleStatus: e.target.value})} className="w-full px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                         </div>
                         
                         <div className="space-y-2">
@@ -404,11 +427,18 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                             <input type="text" required value={clientData.cpf || ''} onBlur={(e) => onCheckClient(e.target.value)} onChange={e => setClientData({...clientData, cpf: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-mono font-bold text-xs outline-none" placeholder="000.000.000-00" />
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TELEFONE</label>
-                            <div className="relative">
-                                <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-200" />
-                                <input type="text" value={clientData.phone || ''} onChange={e => setClientData({...clientData, phone: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="(84) 99999-9999" />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TELEFONE</label>
+                                <div className="relative">
+                                    <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-200" />
+                                    <input type="text" value={clientData.phone || ''} onChange={e => setClientData({...clientData, phone: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="(84) 99999-9999" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">SITUAÇÃO (SGA)</label>
+                                <input type="text" value={clientData.clientStatus || ''} onChange={e => setClientData({...clientData, clientStatus: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" />
                             </div>
                         </div>
 

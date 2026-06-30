@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
     ],
 
     server: {
-      port: 3005,
+      port: 3000,
       strictPort: true,
     },
 
@@ -68,12 +68,9 @@ export default defineConfig(({ mode }) => {
 
     define: {
       /**
-       * Whitelist explícita — nunca despejar todo process.env no bundle.
-       * Why: o dump completo vaza PATH, credenciais e segredos pro cliente.
+       * Compatibilidade com libs que usam process.env
        */
-      'process.env.API_KEY': JSON.stringify(env.API_KEY ?? ''),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY ?? ''),
-      'process.env.NODE_ENV': JSON.stringify(mode),
+      'process.env': env,
     },
 
     resolve: {

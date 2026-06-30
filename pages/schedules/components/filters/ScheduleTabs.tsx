@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { AlertCircle, Calendar, History } from 'lucide-react';
+import { AlertCircle, Calendar, History, LayoutGrid } from 'lucide-react';
 
 interface ScheduleTabsProps {
   isPrivileged: boolean;

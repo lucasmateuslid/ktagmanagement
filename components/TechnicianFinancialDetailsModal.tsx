@@ -5,6 +5,7 @@ import { X, Save, Trash2, Calendar, FileText, Download, CheckSquare, Square, Dol
 import { ConfirmModal } from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import QRCode from 'qrcode'; // FIX 3: npm install qrcode  (+ npm install -D @types/qrcode)
 
 interface Props {
   technician: Technician;
@@ -33,15 +34,17 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
-  
+
   const [pixKey, setPixKey] = useState(technician.pixKey || '');
   const [cpf, setCpf] = useState(technician.cpf || '');
 
-  // NOVO CÓDIGO - INÍCIO
   const [activeTab, setActiveTab] = useState<'services' | 'history'>('services');
   const [payments, setPayments] = useState<any[]>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+
+  // FIX 3: QR gerado localmente (sem depender de api.qrserver.com)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   React.useEffect(() => {
     const fetchPayments = async () => {
@@ -63,28 +66,34 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     }
   };
 
-  const generatePixPayload = (pixKey: string, amount: number) => {
+  const generatePixPayload = (pixKey: string, amount?: number) => {
     if (!pixKey) return '';
-    const formatLength = (val: string) => val.length.toString().padStart(2, '0');
-    
+    // FIX (bônus): tamanho em BYTES (PIX exige bytes, não unidades UTF-16)
+    const formatLength = (val: string) => new TextEncoder().encode(val).length.toString().padStart(2, '0');
+
     const payloadFormatIndicator = "000201";
     const gui = "0014br.gov.bcb.pix";
     const key = `01${formatLength(pixKey)}${pixKey}`;
     const merchantAccountInfo = `26${formatLength(gui + key)}${gui}${key}`;
     const merchantCategoryCode = "52040000";
     const transactionCurrency = "5303986";
-    const amountStr = amount.toFixed(2);
-    const transactionAmount = `54${formatLength(amountStr)}${amountStr}`;
+    
+    let transactionAmount = '';
+    if (amount !== undefined && amount > 0) {
+        const amountStr = amount.toFixed(2);
+        transactionAmount = `54${formatLength(amountStr)}${amountStr}`;
+    }
+    
     const countryCode = "5802BR";
     const name = "K TAG".substring(0, 25).toUpperCase();
     const merchantNameField = `59${formatLength(name)}${name}`;
     const city = "SAO PAULO".substring(0, 15).toUpperCase();
     const merchantCityField = `60${formatLength(city)}${city}`;
-    const txid = "KTAG" + Date.now().toString().substring(7);
+    const txid = "***"; // Standard static PIX without specific txid
     const additionalDataField = `62${formatLength(`05${formatLength(txid)}${txid}`)}05${formatLength(txid)}${txid}`;
-    
+
     let payload = `${payloadFormatIndicator}${merchantAccountInfo}${merchantCategoryCode}${transactionCurrency}${transactionAmount}${countryCode}${merchantNameField}${merchantCityField}${additionalDataField}6304`;
-    
+
     let crc = 0xFFFF;
     for (let i = 0; i < payload.length; i++) {
         crc ^= payload.charCodeAt(i) << 8;
@@ -99,7 +108,6 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     const crcHex = (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
     return payload + crcHex;
   };
-  // NOVO CÓDIGO - FIM
 
   const handleSaveTechnician = async () => {
     await storage.saveTechnician({
@@ -136,11 +144,11 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     }
     const rates = technician.serviceRates || { installation: 0, maintenance: 0, removal: 0, inspection: 0 };
     let amount = calculateBaseAmount(s.serviceType, s.deviceType, rates);
-    
+
     if (s.status === 'Frustrada') {
       amount = amount * 0.5;
     }
-    
+
     return amount;
   };
 
@@ -156,7 +164,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(s => 
+      filtered = filtered.filter(s =>
         s.vehiclePlate?.toLowerCase().includes(term) ||
         s.osNumber?.toLowerCase().includes(term)
       );
@@ -196,7 +204,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     setLocalChanges(prev => {
       const currentChanges = prev[id] || {};
       const updatedChanges = { ...currentChanges, [field]: value };
-      
+
       if (recalculatePayment) {
          const schedule = schedules.find(s => s.id === id);
          if (schedule) {
@@ -220,7 +228,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
         await storage.saveSchedule(updatedSchedule);
       }
     }
-    
+
     setLocalChanges({});
     onUpdate();
   };
@@ -261,8 +269,21 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
       .reduce((sum, s) => sum + getCalculatedPaymentAmount(s) + (s.displacementValue || 0) - (s.amountReceivedByTechnician || 0), 0);
   }, [editingSchedules, selectedServices, technician.serviceRates]);
 
+  // FIX 3: gera o QR localmente sempre que o modal abrir ou a chave/valor mudar
+  React.useEffect(() => {
+    if (isPixModalOpen && pixKey) {
+      const staticPayload = generatePixPayload(pixKey);
+      QRCode.toDataURL(staticPayload, { width: 180, margin: 1 })
+        .then(setQrDataUrl)
+        .catch(() => setQrDataUrl(''));
+    } else {
+      setQrDataUrl('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPixModalOpen, pixKey]);
+
   const toggleSelection = (id: string) => {
-    setSelectedServices(prev => 
+    setSelectedServices(prev =>
       prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]
     );
   };
@@ -275,10 +296,24 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     }
   };
 
-  // NOVO CÓDIGO - INÍCIO
+  // FIX 1 + FIX 2: salva a chave digitada ANTES de abrir o modal e bloqueia valor <= 0
+  const openPixModal = async () => {
+    if (selectedServices.length === 0) return;
+    if (selectedTotal <= 0) {
+      alert('O valor líquido a pagar está zerado ou negativo (provavelmente o "Em Mãos" cobre o valor dos serviços). Revise os valores antes de gerar o PIX.');
+      return;
+    }
+    // garante que a chave/CPF digitados no campo estejam persistidos antes do pagamento
+    if (pixKey !== (technician.pixKey || '') || cpf !== (technician.cpf || '')) {
+      await storage.saveTechnician({ ...technician, pixKey, cpf });
+      onUpdate();
+    }
+    setIsPixModalOpen(true);
+  };
+
   const handlePaySelected = async () => {
     const paidSchedules: Schedule[] = [];
-    
+
     for (const id of selectedServices) {
       const schedule = editingSchedules.find(s => s.id === id);
       if (schedule) {
@@ -352,20 +387,20 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
     setIsPixModalOpen(false);
     setReceiptFile(null);
     setReceiptPreview(null);
+    setQrDataUrl('');
     onUpdate();
   };
-  // NOVO CÓDIGO - FIM
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
-    
+
     doc.setFontSize(18);
     doc.text(`Relatório Financeiro: ${technician.name}`, 14, 22);
-    
+
     doc.setFontSize(11);
     doc.text(`Período: ${new Date(startDate).toLocaleDateString('pt-BR')} a ${new Date(endDate).toLocaleDateString('pt-BR')}`, 14, 30);
-    doc.text(`Chave PIX: ${technician.pixKey || 'Não cadastrada'}`, 14, 36);
-    doc.text(`CPF: ${technician.cpf || 'Não cadastrado'}`, 14, 42);
+    doc.text(`Chave PIX: ${pixKey || 'Não cadastrada'}`, 14, 36);
+    doc.text(`CPF: ${cpf || 'Não cadastrado'}`, 14, 42);
 
     const headers = [['Data', 'Placa', 'Serviço', 'Status', 'Valor Serv.', 'Desloc.', 'Em Mãos', 'Pago Emp.', 'OBS']];
     const data = editingSchedules.map(s => {
@@ -433,11 +468,11 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
         s.technicianPaid ? 'Sim' : 'Não'
       ];
     });
-    
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n" 
+
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + headers.join(",") + "\n"
       + rows.map(e => e.join(",")).join("\n");
-      
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -457,7 +492,6 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
             <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Financeiro: {technician.name}</h2>
           </div>
 
-          {/* NOVO CÓDIGO - INÍCIO */}
           <div className="flex gap-4 border-b border-zinc-200 dark:border-zinc-800">
             <button
               onClick={() => setActiveTab('services')}
@@ -472,7 +506,6 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               Histórico de Pagamentos
             </button>
           </div>
-          {/* NOVO CÓDIGO - FIM */}
         </div>
 
         {activeTab === 'services' && (
@@ -484,14 +517,14 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none w-full" />
                 <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-xs font-bold outline-none w-full" />
-                
+
                 <div className="relative col-span-2 md:col-span-1 lg:col-span-2">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                  <input 
-                    type="text" 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                    placeholder="Pesquisar por placa ou OS..." 
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Pesquisar por placa ou OS..."
                     className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl pl-10 pr-4 py-2 text-xs font-bold outline-none border border-transparent focus:border-primary-500"
                   />
                 </div>
@@ -522,25 +555,25 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex-1 min-w-[120px]">
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Chave PIX</label>
-                  <input 
-                    type="text" 
-                    value={pixKey} 
-                    onChange={e => setPixKey(e.target.value)} 
+                  <input
+                    type="text"
+                    value={pixKey}
+                    onChange={e => setPixKey(e.target.value)}
                     placeholder="Chave PIX"
-                    className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500" 
+                    className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500"
                   />
                 </div>
                 <div className="flex-1 min-w-[120px]">
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">CPF</label>
-                  <input 
-                    type="text" 
-                    value={cpf} 
-                    onChange={e => setCpf(e.target.value)} 
+                  <input
+                    type="text"
+                    value={cpf}
+                    onChange={e => setCpf(e.target.value)}
                     placeholder="CPF"
-                    className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500" 
+                    className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500"
                   />
                 </div>
-                <button 
+                <button
                   onClick={handleSaveTechnician}
                   className="bg-primary-500 hover:bg-primary-600 text-white p-2 rounded-xl transition-colors w-full sm:w-auto flex justify-center h-[38px] items-center"
                   title="Salvar Dados do Técnico"
@@ -549,7 +582,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                 </button>
               </div>
             </div>
-            
+
             {/* Right Column: Totals and Actions */}
             <div className="flex flex-col sm:flex-row xl:flex-col gap-4 xl:w-72 shrink-0">
               <div className="flex gap-4 w-full">
@@ -562,9 +595,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                   <p className="text-lg font-black text-amber-700 dark:text-amber-300">R$ {totalInHand.toFixed(2)}</p>
                 </div>
               </div>
-              
+
               <div className="flex flex-col sm:flex-row gap-2 w-full">
-                <button 
+                <button
                   onClick={onUpdate}
                   className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-2 px-3 rounded-xl transition-colors text-xs"
                 >
@@ -653,7 +686,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               </div>
               <div className="lg:col-span-1 flex items-center justify-between w-full lg:w-auto lg:justify-center">
                 <span className="lg:hidden text-[10px] font-bold text-zinc-400 uppercase">Pago Emp.</span>
-                <button 
+                <button
                   onClick={() => handleLocalChange(s.id, 'technicianPaid', !s.technicianPaid)}
                   className={`p-2 rounded-xl transition-colors ${s.technicianPaid ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700'}`}
                 >
@@ -683,15 +716,15 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
           </div>
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
             {Object.keys(localChanges).length > 0 && (
-              <button 
+              <button
                 onClick={handleSaveAllChanges}
                 className="flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl transition-colors w-full sm:w-auto"
               >
                 <Save size={20} /> Salvar Alterações ({Object.keys(localChanges).length})
               </button>
             )}
-            <button 
-              onClick={() => setIsPixModalOpen(true)}
+            <button
+              onClick={openPixModal}
               disabled={selectedServices.length === 0}
               className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-300 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition-colors w-full sm:w-auto"
             >
@@ -702,7 +735,6 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
         </>
         )}
 
-        {/* NOVO CÓDIGO - INÍCIO */}
         {activeTab === 'history' && (
           <div className="flex-1 overflow-y-auto p-6 md:p-8">
             <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -731,9 +763,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                       </div>
                       <div className="text-right">
                         {payment.proofUrl ? (
-                          <a 
-                            href={payment.proofUrl} 
-                            target="_blank" 
+                          <a
+                            href={payment.proofUrl}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-lg text-xs font-bold hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors"
                           >
@@ -750,7 +782,6 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
             </div>
           </div>
         )}
-        {/* NOVO CÓDIGO - FIM */}
       </div>
 
       {/* PIX Payment Modal */}
@@ -761,14 +792,13 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               <h3 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase">Pagamento PIX</h3>
               <button onClick={() => setIsPixModalOpen(false)} className="p-2 text-zinc-400 hover:text-zinc-600 bg-zinc-100 dark:bg-zinc-800 rounded-xl"><X size={20}/></button>
             </div>
-            
+
             <div className="space-y-6">
               <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-2xl text-center">
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">Valor a Pagar</p>
                 <p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">R$ {selectedTotal.toFixed(2)}</p>
               </div>
 
-              {/* NOVO CÓDIGO - INÍCIO */}
               <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-2xl">
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Resumo do Pagamento</p>
                 <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -782,35 +812,42 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                   </div>
                 </div>
               </div>
-              {/* NOVO CÓDIGO - FIM */}
-              
-              {/* NOVO CÓDIGO - INÍCIO */}
-              {technician.pixKey && (
+
+              {/* FIX 1 + 3: QR usa a chave do STATE (pixKey) e é gerado LOCALMENTE */}
+              {pixKey ? (
                 <div className="flex flex-col items-center justify-center space-y-4">
-                  <div className="bg-white p-2 rounded-xl shadow-sm border border-zinc-200">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generatePixPayload(technician.pixKey, selectedTotal))}`} 
-                      alt="QR Code PIX" 
-                      className="w-32 h-32"
-                    />
+                  <div className="bg-white p-3 rounded-xl shadow-sm border border-zinc-200">
+                    {qrDataUrl ? (
+                      <img src={qrDataUrl} alt="QR Code PIX" className="w-44 h-44" />
+                    ) : (
+                      <div className="w-44 h-44 flex items-center justify-center text-xs text-zinc-400">
+                        Gerando QR...
+                      </div>
+                    )}
                   </div>
-                  <button 
-                    onClick={() => navigator.clipboard.writeText(generatePixPayload(technician.pixKey || '', selectedTotal))}
+                  <button
+                    onClick={() => {
+                      const payload = generatePixPayload(pixKey, selectedTotal);
+                      if (payload) navigator.clipboard.writeText(payload);
+                    }}
                     className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase flex items-center gap-2"
                   >
                     <CheckSquare size={14} /> Copiar PIX Copia e Cola
                   </button>
                 </div>
+              ) : (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 p-4 rounded-2xl text-center text-xs font-bold text-amber-700 dark:text-amber-400">
+                  Cadastre uma chave PIX para gerar o QR Code.
+                </div>
               )}
-              {/* NOVO CÓDIGO - FIM */}
 
               <div>
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Chave PIX do Técnico</p>
                 <div className="flex items-center justify-between bg-zinc-100 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="font-mono font-bold text-zinc-900 dark:text-white">{technician.pixKey || 'Não cadastrada'}</span>
-                  <button 
-                    onClick={() => navigator.clipboard.writeText(technician.pixKey || '')}
-                    className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase"
+                  <span className="font-mono font-bold text-zinc-900 dark:text-white break-all">{pixKey || 'Não cadastrada'}</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(pixKey || '')}
+                    className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase shrink-0 ml-2"
                   >
                     Copiar
                   </button>
@@ -820,9 +857,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
               <div>
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">CPF do Técnico</p>
                 <div className="flex items-center justify-between bg-zinc-100 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <span className="font-mono font-bold text-zinc-900 dark:text-white">{technician.cpf || 'Não cadastrado'}</span>
-                  <button 
-                    onClick={() => navigator.clipboard.writeText(technician.cpf || '')}
+                  <span className="font-mono font-bold text-zinc-900 dark:text-white">{cpf || 'Não cadastrado'}</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(cpf || '')}
                     className="text-xs font-bold text-primary-500 hover:text-primary-600 uppercase"
                   >
                     Copiar
@@ -830,11 +867,10 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                 </div>
               </div>
 
-              {/* NOVO CÓDIGO - INÍCIO */}
               <div>
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Comprovante de Pagamento</p>
                 <div className="flex items-center justify-center w-full">
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-zinc-300 border-dashed rounded-xl cursor-pointer bg-zinc-50 dark:hover:bg-bray-800 dark:bg-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-700 transition-colors">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-zinc-300 border-dashed rounded-xl cursor-pointer bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-700 transition-colors">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       <FileText className="w-8 h-8 mb-3 text-zinc-400" />
                       <p className="mb-2 text-sm text-zinc-500 dark:text-zinc-400"><span className="font-bold">Clique para enviar</span> ou arraste o arquivo</p>
@@ -850,10 +886,9 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                   </div>
                 )}
               </div>
-              {/* NOVO CÓDIGO - FIM */}
 
               <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                <button 
+                <button
                   onClick={handlePaySelected}
                   className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
@@ -868,7 +903,7 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
         </div>
       )}
 
-      <ConfirmModal 
+      <ConfirmModal
           isOpen={isConfirmDeleteOpen}
           onClose={() => { setIsConfirmDeleteOpen(false); setScheduleToDelete(null); }}
           onConfirm={confirmDelete}

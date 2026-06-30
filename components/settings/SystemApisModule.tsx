@@ -2,189 +2,88 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { storage } from '../../services/storage';
-import { AppSettings, Company, VehicleCategory } from '../../types';
+import { AppSettings, User, Company, VehicleCategory } from '../../types';
 import { ConfirmModal } from '../ConfirmModal';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { securityService } from '../../services/security';
 import { Checkbox } from '../ui/checkbox';
-import {
-  Save, Settings as SettingsIcon, Database, Key,
-  Trash2, Plus, ShieldAlert,
-  Edit2, Building2, Server, Eye, EyeOff,
-  LayoutGrid, Cpu, Cloud,
-  Check,
-  MapPin, ShoppingBag, AlertTriangle, Percent, X,
-  Box, Palette,
-  Bot, ChevronDown
+import { 
+  Save, Settings as SettingsIcon, Database, Globe, Key, 
+  Languages, Trash2, Plus, ShieldAlert, 
+  Lock, Edit2, Building2, Server, Eye, EyeOff, 
+  User as UserIcon, LayoutGrid, Cpu, Cloud, Terminal, 
+  UserCircle2, ChevronRight, Check, RefreshCw, Link as LinkIcon,
+  MapPin, ShoppingBag, AlertTriangle, Crown, ShieldCheck, Wallet, Briefcase, Percent, X, Bell,
+  Wrench, CheckCircle2, MessageSquare, CalendarClock, CalendarCheck, Box, Palette
 } from 'lucide-react';
 
 import { GeocodingConfigModule } from './GeocodingConfigModule';
 import { WhitelabelModule } from './WhitelabelModule';
 import { AiConfigModule } from './AiConfigModule';
 
-// ------------------------------------------------------------------
-// Catálogo de seções — fonte única para a sidebar interna e o painel.
-// Cada item descreve o que aquela parte do sistema faz, pra reduzir o
-// "muro de cards" e ajudar o usuário a achar a configuração que precisa.
-// ------------------------------------------------------------------
-type SectionId =
-  | 'stock' | 'whitelabel' | 'ai' | 'geocoding'
-  | 'ktag' | 'hinova' | 'proxy'
-  | 'siterastreio' | 'melhorenvio' | 'regionais' | 'traqcare';
-
-type SectionMeta = {
-  id: SectionId;
-  label: string;
-  description: string;
-  icon: any;
-  color: string; // tailwind text color class
-  group: 'Plataforma' | 'Integrações';
-};
-
-// Agrupado em escopo de módulo — não usa hook, evita Rules of Hooks com
-// early-returns no componente.
-function buildGroupedSections(sections: SectionMeta[]): Record<string, SectionMeta[]> {
-  const g: Record<string, SectionMeta[]> = {};
-  for (const s of sections) { (g[s.group] = g[s.group] || []).push(s); }
-  return g;
-}
-
-const SECTIONS: SectionMeta[] = [
-  { id: 'stock',        label: 'Estoque & Financeiro', description: 'Limites de alerta de estoque e margem mínima de aprovação de orçamentos.', icon: ShoppingBag,    color: 'text-amber-500',   group: 'Plataforma' },
-  { id: 'whitelabel',   label: 'Whitelabel & Marca',   description: 'Nome do sistema, logos (claro/escuro) e paleta de cores aplicada em toda a interface.', icon: Palette,        color: 'text-indigo-500',  group: 'Plataforma' },
-  { id: 'ai',           label: 'Inteligência Artificial', description: 'Provedor de IA do assistente K-Tag (Gemini, OpenAI, Claude, Groq, DeepSeek) e respectivas chaves.', icon: Bot,            color: 'text-purple-500',  group: 'Plataforma' },
-  { id: 'geocoding',    label: 'Geocoding & Mapas',    description: 'Cadeia de fallback para resolver endereços (Photon / Nominatim / Google) e provedor de mapas.', icon: MapPin,         color: 'text-teal-500',    group: 'Plataforma' },
-  { id: 'regionais',    label: 'Regionais & Categorias', description: 'Cadastro das regionais (empresas) atendidas e das categorias de veículos suportadas.', icon: LayoutGrid,     color: 'text-amber-500',   group: 'Plataforma' },
-
-  { id: 'ktag',         label: 'API K-Tag',            description: 'Endpoint e credenciais (usuário/senha) da sua empresa no K-Tag.', icon: Key,            color: 'text-primary-500', group: 'Integrações' },
-  { id: 'hinova',       label: 'SGA Hinova',           description: 'Integração com o sistema de gestão associativista Hinova/SGA.', icon: Database,       color: 'text-emerald-500', group: 'Integrações' },
-  { id: 'proxy',        label: 'Proxy & Relay',        description: 'Cloud Function que roteia as chamadas externas. Gerenciada pela plataforma.', icon: Cloud,          color: 'text-cyan-500',    group: 'Integrações' },
-  { id: 'siterastreio', label: 'Site Rastreio',        description: 'API key da plataforma siterastreio.com.br usada para link de rastreamento público.', icon: Box,            color: 'text-orange-500',  group: 'Integrações' },
-  { id: 'melhorenvio',  label: 'Melhor Envio',         description: 'OAuth, endereço remetente e catálogo de pacotes para emissão de etiquetas de envio.', icon: Box,            color: 'text-emerald-500', group: 'Integrações' },
-  { id: 'traqcare',     label: 'API Traqcare (XADTAG)', description: 'Token de comunicação com dispositivos XADTAG via Traqcare.', icon: Cpu,            color: 'text-primary-500', group: 'Integrações' },
-];
-
-const SECTIONS_GROUPED = buildGroupedSections(SECTIONS);
-
-// Calcula "configurado / incompleto / vazio" pra cada seção — pinta o ícone
-// de status na sidebar sem o usuário precisar abrir cada uma.
-function getSectionStatus(id: SectionId, s: AppSettings | null): 'ok' | 'partial' | 'empty' {
-  if (!s) return 'empty';
-  const has = (v: any) => v != null && String(v).trim() !== '';
-  switch (id) {
-    case 'stock':       return has(s.minStockLevel) && has(s.criticalStockLevel) ? 'ok' : 'partial';
-    case 'whitelabel':  return has(s.customAppName) || has(s.customLogoUrlLight) || has((s as any).customLogoBase64Light) ? 'ok' : 'empty';
-    case 'ai':          return has(s.aiProvider) ? 'ok' : 'empty';
-    case 'geocoding':   return has(s.geocodingProvider) ? 'ok' : 'partial';
-    case 'regionais':   return 'ok';
-    case 'ktag':        return has(s.ktagUrl) && has(s.ktagUser) && has(s.ktagPass) ? 'ok' : (has(s.ktagUrl) || has(s.ktagUser) ? 'partial' : 'empty');
-    case 'hinova':      return has(s.hinovaUrl) && has(s.hinovaToken) ? 'ok' : (has(s.hinovaUrl) ? 'partial' : 'empty');
-    case 'proxy':       return has(s.customProxyUrl) ? 'ok' : 'empty';
-    case 'siterastreio':return has(s.siteRastreioApiKey) ? 'ok' : 'empty';
-    case 'melhorenvio': {
-      const env = s.melhorEnvioEnvironment || 'sandbox';
-      const tok = env === 'production' ? (s as any).melhorEnvioProdToken : (s as any).melhorEnvioSandboxToken;
-      return has(tok) ? 'ok' : (has((s as any).melhorEnvioProdClientId) || has((s as any).melhorEnvioSandboxClientId) ? 'partial' : 'empty');
-    }
-    case 'traqcare':    return has(s.traqcareToken) ? 'ok' : 'empty';
-    default:            return 'empty';
-  }
-}
-
-const StatusDot: React.FC<{ status: 'ok' | 'partial' | 'empty' }> = ({ status }) => {
-  const cls =
-    status === 'ok' ? 'bg-emerald-500' :
-    status === 'partial' ? 'bg-amber-500' :
-    'bg-zinc-300 dark:bg-zinc-700';
-  return <span className={`w-2 h-2 rounded-full ${cls} shrink-0`} aria-label={status} />;
-};
-
-// Banner usado em seções cujos valores vêm do super admin. Mantém o tom
-// neutro do design (sem alarmes) — só sinaliza que o usuário não precisa
-// preencher nada ali.
-const PlatformManagedNote: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
-  <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-amber-700 dark:text-amber-300">
-    <ShieldAlert size={14} className="shrink-0 mt-0.5" />
-    <div className="text-[11px] font-medium leading-relaxed">
-      <span className="font-black uppercase tracking-widest text-[9px] block mb-1 text-amber-600 dark:text-amber-400">Gerenciado pela plataforma</span>
-      {children || 'Esta configuração é definida pelo super administrador e usada por todos os tenants. Para alterar, fale com a equipe K-TAG.'}
-    </div>
-  </div>
-);
-
-// Campo somente-leitura com a aparência dos demais inputs.
-const ReadOnlyField: React.FC<{ label: string; value: string; mono?: boolean; mask?: boolean }> = ({ label, value, mono, mask }) => {
-  const shown = mask && value ? '•'.repeat(Math.min(24, Math.max(8, value.length))) : (value || '—');
-  return (
-    <div className="space-y-2">
-      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">{label}</label>
-      <div className={`w-full px-5 py-4 bg-zinc-100/70 dark:bg-zinc-800/40 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl ${mono ? 'font-mono text-[11px]' : 'font-bold text-xs'} text-zinc-600 dark:text-zinc-300 select-all`}>
-        {shown}
-      </div>
-    </div>
-  );
-};
-
-// Cabeçalho consistente para cada seção (título + descrição + status).
-const SectionHeader: React.FC<{ meta: SectionMeta; status: 'ok' | 'partial' | 'empty'; right?: React.ReactNode }> = ({ meta, status, right }) => {
-  const Icon = meta.icon;
-  const statusLabel = status === 'ok' ? 'Configurado' : status === 'partial' ? 'Incompleto' : 'Não configurado';
-  const statusCls = status === 'ok'
-    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-    : status === 'partial'
-      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-      : 'bg-zinc-500/5 text-zinc-500 border-zinc-300 dark:border-zinc-700';
-  return (
-    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 pb-6 mb-8 border-b border-zinc-100 dark:border-zinc-800">
-      <div className="flex items-start gap-4">
-        <div className={`w-14 h-14 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 flex items-center justify-center shrink-0 ${meta.color}`}>
-          <Icon size={22} strokeWidth={2.25} />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400 dark:text-zinc-500">{meta.group}</span>
-            <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-            <span className={`inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusCls}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${status === 'ok' ? 'bg-emerald-500' : status === 'partial' ? 'bg-amber-500' : 'bg-zinc-400'}`} />
-              {statusLabel}
-            </span>
-          </div>
-          <h2 className="text-xl md:text-2xl font-display font-black uppercase tracking-tight text-zinc-900 dark:text-white leading-tight">{meta.label}</h2>
-          <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 font-medium mt-1.5 max-w-2xl leading-relaxed">{meta.description}</p>
-        </div>
-      </div>
-      {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
-    </div>
-  );
-};
-
 export const SystemApisModule = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
-
-  const [newCompany, setNewCompany] = useState({ name: '', prefix: '', hasSgaIntegration: true });
+  
+  // States para Regionais
+  const [newCompany, setNewCompany] = useState<{name: string, prefix: string, hasSgaIntegration: boolean, sgaUrl?: string, sgaToken?: string, sgaUser?: string, sgaPass?: string, legalName?: string, cnpj?: string, logoUrl?: string}>({ name: '', prefix: '', hasSgaIntegration: true });
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
+
   const [newCategory, setNewCategory] = useState({ name: '', fipeType: 'carros' as const });
+  const [newTraqcareAccount, setNewTraqcareAccount] = useState({ name: '', token: '' });
+  
+  const [profileForm, setProfileForm] = useState({ name: '', avatarInitial: '' });
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' });
+  const [showPwds, setShowPwds] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
 
   const [showHinovaToken, setShowHinovaToken] = useState(false);
   const [showHinovaPass, setShowHinovaPass] = useState(false);
   const [showKTagPass, setShowKTagPass] = useState(false);
   const [showTraqToken, setShowTraqToken] = useState(false);
+  
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    newTechnicalRequest: true,
+    serviceCompleted: true,
+    theftRegistered: true,
+    newComment: true,
+    schedulingNeedsConfirmation: true,
+    schedulingNeedsCompletion: true,
+    schedulingUpdates: true
+  });
+  const [notifLoading, setNotifLoading] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotification();
-  const { setLanguage } = useLanguage();
-  const { isAdmin, user: currentUser } = useAuth();
-
-  const [activeSection, setActiveSection] = useState<SectionId>('whitelabel');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { setLanguage, t, language } = useLanguage();
+  const { isAdmin, user: currentUser, updateProfile } = useAuth();
 
   const loadData = async () => {
     setLoading(true);
     const config = await storage.getSettings();
     setSettings(config);
+    
+    if (currentUser) {
+        setProfileForm({ 
+          name: currentUser.name, 
+          avatarInitial: currentUser.avatarInitial || currentUser.name.charAt(0) 
+        });
+        if (currentUser.notificationPreferences) {
+          setNotificationPrefs({
+            newTechnicalRequest: currentUser.notificationPreferences.newTechnicalRequest ?? true,
+            serviceCompleted: currentUser.notificationPreferences.serviceCompleted ?? true,
+            theftRegistered: currentUser.notificationPreferences.theftRegistered ?? true,
+            newComment: currentUser.notificationPreferences.newComment ?? true,
+            schedulingNeedsConfirmation: currentUser.notificationPreferences.schedulingNeedsConfirmation ?? true,
+            schedulingNeedsCompletion: currentUser.notificationPreferences.schedulingNeedsCompletion ?? true,
+            schedulingUpdates: currentUser.notificationPreferences.schedulingUpdates ?? true,
+          });
+        }
+    }
 
     const [allCompanies, allCategories] = await Promise.all([
       storage.getCompanies(),
@@ -198,7 +97,7 @@ export const SystemApisModule = () => {
   useEffect(() => {
     loadData();
 
-    // Melhor Envio OAuth callback (preservado integralmente).
+    // Check for Melhor Envio OAuth callback
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     const state = searchParams.get('state');
@@ -209,20 +108,31 @@ export const SystemApisModule = () => {
         try {
           const currentSettings = await storage.getSettings();
           const redirectUri = window.location.origin + window.location.pathname;
-
+          
           const clientId = returnedEnv === 'production' ? currentSettings.melhorEnvioProdClientId : currentSettings.melhorEnvioSandboxClientId;
           const clientSecret = returnedEnv === 'production' ? currentSettings.melhorEnvioProdClientSecret : currentSettings.melhorEnvioSandboxClientSecret;
 
           const response = await fetch('/api/melhorenvio/oauth/exchange', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, clientId, clientSecret, redirectUri, environment: returnedEnv })
+            body: JSON.stringify({
+              code,
+              clientId,
+              clientSecret,
+              redirectUri,
+              environment: returnedEnv
+            })
           });
 
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Erro ao trocar token');
 
-          const newSettings = { ...currentSettings, melhorEnvioEnvironment: returnedEnv };
+          // Salvar os tokens correspondentes ao ambiente retornado
+          const newSettings = {
+            ...currentSettings,
+            melhorEnvioEnvironment: returnedEnv // force interface to show what was just authorized
+          };
+
           if (returnedEnv === 'production') {
             newSettings.melhorEnvioProdToken = data.access_token;
             newSettings.melhorEnvioProdRefreshToken = data.refresh_token;
@@ -235,62 +145,154 @@ export const SystemApisModule = () => {
 
           await storage.saveSettings(newSettings);
           setSettings(newSettings);
-          setActiveSection('melhorenvio');
           addNotification('success', 'Sucesso', `Melhor Envio (${returnedEnv === 'production' ? 'Produção' : 'Sandbox'}) autorizado com sucesso!`);
+          
+          // Limpar URL
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (error: any) {
           console.error('Exchange error:', error);
           addNotification('error', 'Falha na Autorização', error.message);
         }
       };
+
       exchangeToken();
     }
   }, [currentUser]);
 
-  const handleSaveSettings = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Helper de Cargo atualizado
+  const getRoleStyle = (role?: string) => {
+    switch (role) {
+      case 'admin': return { color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: null, label: 'Administrador' };
+      case 'admin_tecnico': return { color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20', icon: null, label: 'Admin Técnico' };
+      case 'moderator': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: null, label: 'Moderador' };
+      case 'client': return null;
+      default: return { color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-200 dark:border-zinc-700', icon: UserIcon, label: 'Usuário' };
+    }
+  };
+
+  const roleStyle = getRoleStyle(currentUser?.role);
+  const RoleIcon = roleStyle?.icon;
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!settings) return;
     try {
       await storage.saveSettings(settings);
       setLanguage(settings.language);
       storage.logAction(currentUser, 'CONFIG', 'Settings', 'Atualizou configurações globais do sistema');
       addNotification('success', 'Sucesso', 'Configurações salvas.');
+      // Reload para aplicar a nova chave do Google Maps se alterada
       if ((window as any).google && (window as any).google.maps) {
-        setTimeout(() => window.location.reload(), 1000);
+         setTimeout(() => window.location.reload(), 1000);
       }
     } catch (err) {
       addNotification('error', 'Erro', 'Falha ao salvar configurações.');
     }
   };
 
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setProfileLoading(true);
+    try {
+        await updateProfile({ name: profileForm.name, avatarInitial: profileForm.avatarInitial.substring(0, 2).toUpperCase() });
+        storage.logAction(currentUser, 'UPDATE', 'User', 'Atualizou dados do perfil');
+        addNotification('success', 'Perfil Atualizado', 'Seus dados foram salvos.');
+    } finally { setProfileLoading(false); }
+  };
+
+  const handleSaveNotificationPrefs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setNotifLoading(true);
+    try {
+        await updateProfile({ notificationPreferences: notificationPrefs });
+        storage.logAction(currentUser, 'UPDATE', 'User', 'Atualizou preferências de notificação');
+        addNotification('success', 'Preferências Atualizadas', 'Suas preferências de notificação foram salvas.');
+    } catch (err) {
+        addNotification('error', 'Erro', 'Falha ao salvar preferências de notificação.');
+    } finally { setNotifLoading(false); }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    
+    if (pwdForm.new.length < 6) { addNotification('error', 'Erro', 'A senha deve ter no mínimo 6 caracteres.'); return; }
+    if (pwdForm.new !== pwdForm.confirm) { addNotification('error', 'Erro', 'As senhas não coincidem.'); return; }
+    
+    setPwdLoading(true);
+    try {
+        const dbUser = await storage.findUserByEmail(currentUser.email);
+        if (!dbUser) return;
+
+        const isCurrentValid = await securityService.verifyPassword(pwdForm.current, dbUser.password || '');
+        const isLegacyValid = !isCurrentValid && (dbUser.password === pwdForm.current);
+
+        if (!isCurrentValid && !isLegacyValid) {
+             addNotification('error', 'Erro', 'Senha atual incorreta.'); 
+             return; 
+        }
+
+        await updateProfile({ password: pwdForm.new });
+
+        addNotification('success', 'Sucesso', 'Sua senha foi alterada com segurança.');
+        setPwdForm({ current: '', new: '', confirm: '' });
+    } catch (e) {
+        addNotification('error', 'Erro', 'Falha ao atualizar senha.');
+    } finally { setPwdLoading(false); }
+  };
+
   const handleSaveCompany = async () => {
     if (!newCompany.name || !newCompany.prefix) return;
+    
     const id = editingCompanyId || crypto.randomUUID();
-    const company: Company = {
-      id,
-      name: newCompany.name,
-      prefix: newCompany.prefix.toUpperCase(),
-      hasSgaIntegration: newCompany.hasSgaIntegration
+    const company: Company = { 
+        id: id, 
+        name: newCompany.name, 
+        prefix: newCompany.prefix.toUpperCase(),
+        hasSgaIntegration: newCompany.hasSgaIntegration,
+        sgaUrl: newCompany.sgaUrl,
+        sgaToken: newCompany.sgaToken,
+        sgaUser: newCompany.sgaUser,
+        sgaPass: newCompany.sgaPass,
+        legalName: newCompany.legalName,
+        cnpj: newCompany.cnpj,
+        logoUrl: newCompany.logoUrl
     };
+    
     await storage.saveCompany(company);
+    
     if (editingCompanyId) {
-      setCompanies(companies.map(c => c.id === id ? company : c));
-      addNotification('success', 'Regional Atualizada', 'Dados atualizados com sucesso.');
+        setCompanies(companies.map(c => c.id === id ? company : c));
+        addNotification('success', 'Regional Atualizada', 'Dados atualizados com sucesso.');
     } else {
-      setCompanies([...companies, company]);
-      addNotification('success', 'Regional Criada', 'Nova regional adicionada com sucesso.');
+        setCompanies([...companies, company]);
+        addNotification('success', 'Regional Criada', 'Nova regional adicionada com sucesso.');
     }
+    
     handleCancelEdit();
   };
 
   const handleStartEditCompany = (c: Company) => {
-    setNewCompany({ name: c.name, prefix: c.prefix, hasSgaIntegration: c.hasSgaIntegration ?? true });
-    setEditingCompanyId(c.id);
+      setNewCompany({
+          name: c.name,
+          prefix: c.prefix,
+          hasSgaIntegration: c.hasSgaIntegration ?? true,
+          sgaUrl: c.sgaUrl || '',
+          sgaToken: c.sgaToken || '',
+          sgaUser: c.sgaUser || '',
+          sgaPass: c.sgaPass || '',
+          legalName: c.legalName || '',
+          cnpj: c.cnpj || '',
+          logoUrl: c.logoUrl || ''
+      });
+      setEditingCompanyId(c.id);
   };
 
   const handleCancelEdit = () => {
-    setNewCompany({ name: '', prefix: '', hasSgaIntegration: true });
-    setEditingCompanyId(null);
+      setNewCompany({ name: '', prefix: '', hasSgaIntegration: true, legalName: '', cnpj: '', logoUrl: '' });
+      setEditingCompanyId(null);
   };
 
   const [isConfirmDeleteCompanyOpen, setIsConfirmDeleteCompanyOpen] = useState(false);
@@ -298,7 +300,11 @@ export const SystemApisModule = () => {
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
 
-  const handleDeleteCompany = (id: string) => { setCompanyToDelete(id); setIsConfirmDeleteCompanyOpen(true); };
+  const handleDeleteCompany = (id: string) => {
+    setCompanyToDelete(id);
+    setIsConfirmDeleteCompanyOpen(true);
+  };
+
   const confirmDeleteCompany = async () => {
     if (!companyToDelete) return;
     await storage.deleteCompany(companyToDelete);
@@ -317,7 +323,12 @@ export const SystemApisModule = () => {
     setNewCategory({ name: '', fipeType: 'carros' });
     addNotification('success', 'Categoria Criada', 'Nova categoria adicionada.');
   };
-  const handleDeleteCategory = (id: string) => { setCategoryToDelete(id); setIsConfirmDeleteCategoryOpen(true); };
+
+  const handleDeleteCategory = (id: string) => {
+    setCategoryToDelete(id);
+    setIsConfirmDeleteCategoryOpen(true);
+  };
+
   const confirmDeleteCategory = async () => {
     if (!categoryToDelete) return;
     await storage.deleteCategory(categoryToDelete);
@@ -327,392 +338,30 @@ export const SystemApisModule = () => {
     addNotification('success', 'Sucesso', 'Categoria excluída.');
   };
 
-  if (loading || !settings) return <div className="flex items-center justify-center h-full"><Cpu className="animate-spin text-primary-500" size={48} /></div>;
-
-  const meta = SECTIONS.find(s => s.id === activeSection)!;
-  const status = getSectionStatus(activeSection, settings);
-  const grouped = SECTIONS_GROUPED;
-
-  const renderSection = () => {
-    switch (activeSection) {
-
-      case 'stock':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Mínimo</label>
-              <div className="relative">
-                <AlertTriangle className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={16} />
-                <input type="number" disabled={!isAdmin} value={settings.minStockLevel || 80} onChange={e => setSettings({ ...settings, minStockLevel: parseInt(e.target.value) })} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500 disabled:opacity-50" />
-              </div>
-              <p className="text-[10px] text-zinc-400 mt-1 ml-1">Nível de alerta para reposição preventiva.</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Crítico</label>
-              <div className="relative">
-                <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
-                <input type="number" disabled={!isAdmin} value={settings.criticalStockLevel || 40} onChange={e => setSettings({ ...settings, criticalStockLevel: parseInt(e.target.value) })} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500 disabled:opacity-50" />
-              </div>
-              <p className="text-[10px] text-zinc-400 mt-1 ml-1">Risco de ruptura — bloqueia novas reservas.</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Margem de Lucro (%)</label>
-              <div className="relative">
-                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
-                <input type="number" disabled={!isAdmin} value={settings.budgetMarginThreshold || 25} onChange={e => setSettings({ ...settings, budgetMarginThreshold: parseFloat(e.target.value) })} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500 disabled:opacity-50" />
-              </div>
-              <p className="text-[10px] text-zinc-400 mt-1 ml-1">Limite mínimo para aprovação automática (padrão: 25%).</p>
-            </div>
-          </div>
-        );
-
-      case 'whitelabel':
-        return <WhitelabelModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} embedded />;
-
-      case 'ai':
-        return <AiConfigModule embedded />;
-
-      case 'geocoding':
-        return <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} embedded />;
-
-      case 'ktag':
-        if (!isAdmin) return null;
-        return (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
-              <input type="text" value={settings.ktagUrl || ''} onChange={e => setSettings({ ...settings, ktagUrl: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[11px] outline-none focus:border-primary-500" placeholder="https://api.ktag.example.com" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
-                <input type="text" value={settings.ktagUser || ''} onChange={e => setSettings({ ...settings, ktagUser: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
-                <div className="relative">
-                  <input type={showKTagPass ? 'text' : 'password'} value={settings.ktagPass || ''} onChange={e => setSettings({ ...settings, ktagPass: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12" />
-                  <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'hinova':
-        return (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint SGA</label>
-              <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUrl : '••••••••••••••••'} onChange={e => setSettings({ ...settings, hinovaUrl: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="https://api.hinova.com.br/api/sga/v2" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token SGA (Master)</label>
-              <div className="relative">
-                <input type={showHinovaToken ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaToken : '••••••••••••••••'} onChange={e => setSettings({ ...settings, hinovaToken: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-emerald-500 pr-12 disabled:opacity-50" />
-                {isAdmin && <button type="button" onClick={() => setShowHinovaToken(!showHinovaToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário de Autenticação</label>
-                <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUser : '••••••••••••••••'} onChange={e => setSettings({ ...settings, hinovaUser: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha de Autenticação</label>
-                <div className="relative">
-                  <input type={showHinovaPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaPass : '••••••••••••••••'} onChange={e => setSettings({ ...settings, hinovaPass: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
-                  {isAdmin && <button type="button" onClick={() => setShowHinovaPass(!showHinovaPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaPass ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'proxy':
-        return (
-          <div className="space-y-6">
-            <PlatformManagedNote>
-              O proxy roteia todas as chamadas K-TAG e XADTAG entre os tenants e os servidores externos.
-              Mantido centralizado para garantir consistência e evitar bloqueios de CORS.
-            </PlatformManagedNote>
-            <ReadOnlyField label="Proxy Cloud Function URL" value={settings.customProxyUrl || ''} mono />
-          </div>
-        );
-
-      case 'siterastreio':
-        return (
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">API Key (siterastreio.com.br)</label>
-            <div className="relative">
-              <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-              <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.siteRastreioApiKey || '') : '••••••••••••••••'} onChange={e => setSettings({ ...settings, siteRastreioApiKey: e.target.value })} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none disabled:opacity-50" placeholder="Sua API Key" />
-            </div>
-          </div>
-        );
-
-      case 'melhorenvio':
-        return (
-          <div className="space-y-6">
-            <div className="bg-emerald-50 dark:bg-emerald-500/5 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-500/10 flex flex-col space-y-2">
-              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">URL de Callback (Redirecionamento)</p>
-              <code className="text-xs font-mono bg-white dark:bg-black p-2 rounded-lg text-zinc-600 dark:text-zinc-400 select-all border border-zinc-200 dark:border-zinc-800">
-                {typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''}
-              </code>
-              <p className="text-[10px] text-zinc-500">Cadastre exatamente esta URL no seu painel do Melhor Envio.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Client ID ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})</label>
-                <div className="relative">
-                  <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                  <input type="text" disabled={!isAdmin}
-                    value={isAdmin ? (settings.melhorEnvioEnvironment === 'production' ? (settings.melhorEnvioProdClientId || '') : (settings.melhorEnvioSandboxClientId || '')) : '•••'}
-                    onChange={e => settings.melhorEnvioEnvironment === 'production' ? setSettings({ ...settings, melhorEnvioProdClientId: e.target.value }) : setSettings({ ...settings, melhorEnvioSandboxClientId: e.target.value })}
-                    className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-xs outline-none disabled:opacity-50 focus:border-emerald-500" placeholder="ID do Aplicativo" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Client Secret ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})</label>
-                <div className="relative">
-                  <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                  <input type="password" disabled={!isAdmin}
-                    value={isAdmin ? (settings.melhorEnvioEnvironment === 'production' ? (settings.melhorEnvioProdClientSecret || '') : (settings.melhorEnvioSandboxClientSecret || '')) : '•••'}
-                    onChange={e => settings.melhorEnvioEnvironment === 'production' ? setSettings({ ...settings, melhorEnvioProdClientSecret: e.target.value }) : setSettings({ ...settings, melhorEnvioSandboxClientSecret: e.target.value })}
-                    className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-xs outline-none disabled:opacity-50 focus:border-emerald-500" placeholder="Secret do Aplicativo" />
-                </div>
-              </div>
-            </div>
-
-            <div className="w-full md:w-1/3 space-y-2">
-              <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Ambiente Ativo</label>
-              <select disabled={!isAdmin} value={settings.melhorEnvioEnvironment || 'sandbox'} onChange={e => setSettings({ ...settings, melhorEnvioEnvironment: e.target.value as 'sandbox' | 'production' })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none disabled:opacity-50 focus:border-emerald-500">
-                <option value="sandbox">Sandbox (Testes)</option>
-                <option value="production">Produção (Real)</option>
-              </select>
-            </div>
-
-            {isAdmin && (
-              <div className="w-full flex flex-col md:flex-row gap-4 border-t border-zinc-100 dark:border-zinc-800 pt-6">
-                {((settings.melhorEnvioEnvironment === 'production' && settings.melhorEnvioProdToken) || (settings.melhorEnvioEnvironment === 'sandbox' && settings.melhorEnvioSandboxToken)) && (
-                  <button onClick={async () => {
-                    try {
-                      const env = settings.melhorEnvioEnvironment || 'sandbox';
-                      const token = env === 'production' ? settings.melhorEnvioProdToken : settings.melhorEnvioSandboxToken;
-                      const res = await fetch('/api/melhorenvio/companies', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token, environment: env })
-                      });
-                      const data = await res.json();
-                      if (!res.ok) throw new Error(data.error || 'Erro ao carregar');
-                      addNotification('success', 'Conectado', `Encontrou ${data.length} transportadoras.`);
-                    } catch (e: any) {
-                      addNotification('error', 'Erro', e.message);
-                    }
-                  }} className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95">
-                    Testar Conexão
-                  </button>
-                )}
-                <button onClick={async () => {
-                  const env = settings.melhorEnvioEnvironment || 'sandbox';
-                  const clientId = env === 'production' ? settings.melhorEnvioProdClientId : settings.melhorEnvioSandboxClientId;
-                  const clientSecret = env === 'production' ? settings.melhorEnvioProdClientSecret : settings.melhorEnvioSandboxClientSecret;
-                  if (!clientId || !clientSecret) { addNotification('info', 'Atenção', 'Preencha Client ID e Secret antes de autorizar.'); return; }
-                  await storage.saveSettings(settings);
-                  const baseUrl = env === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
-                  const redirectUri = window.location.origin + window.location.pathname;
-                  const authorizeUrl = `${baseUrl}/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=melhorenvio_${env}&scope=shipping-calculate shipping-companies shipping-generate shipping-checkout shipping-print shipping-cancel shipping-tracking cart-read cart-write`;
-                  window.open(authorizeUrl, '_blank');
-                }} className="w-full flex-1 bg-emerald-500 hover:bg-emerald-400 text-white dark:text-black px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-xl shadow-emerald-500/20 whitespace-nowrap">
-                  Autorizar ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})
-                </button>
-              </div>
-            )}
-
-            {/* SENDER ADDRESS */}
-            <div className="border-t border-zinc-100 dark:border-zinc-800 pt-6">
-              <h3 className="text-sm font-bold mb-4 uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Endereço Remetente Padrão</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {[
-                  { k: 'postalCode', label: 'CEP', col: 1, placeholder: '00000000', cleanNumber: true },
-                  { k: 'street', label: 'Logradouro', col: 2, placeholder: 'Rua...' },
-                  { k: 'number', label: 'Número', col: 1, placeholder: '123' },
-                  { k: 'complement', label: 'Complemento', col: 1, placeholder: 'Sala 1' },
-                  { k: 'neighborhood', label: 'Bairro', col: 1, placeholder: 'Centro' },
-                  { k: 'city', label: 'Cidade', col: 1, placeholder: 'São Paulo' },
-                  { k: 'state', label: 'UF', col: 1, placeholder: 'SP', upper: true, maxLength: 2 },
-                  { k: 'document', label: 'Documento (CPF/CNPJ)', col: 2, placeholder: 'Apenas números', cleanNumber: true },
-                  { k: 'name', label: 'Nome Remetente', col: 1, placeholder: 'Empresa XPTO' },
-                  { k: 'phone', label: 'Telefone', col: 1, placeholder: 'Apenas números', cleanNumber: true },
-                ].map(field => (
-                  <div key={field.k} className={`space-y-2 ${field.col === 2 ? 'md:col-span-2' : ''}`}>
-                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">{field.label}</label>
-                    <input type="text" disabled={!isAdmin}
-                      value={(settings.melhorEnvioSenderAddress as any)?.[field.k] || ''}
-                      onChange={e => {
-                        let v = e.target.value;
-                        if ((field as any).cleanNumber) v = v.replace(/\D/g, '');
-                        if ((field as any).upper) v = v.toUpperCase();
-                        setSettings({ ...settings, melhorEnvioSenderAddress: { ...(settings.melhorEnvioSenderAddress as any), [field.k]: v } });
-                      }}
-                      maxLength={(field as any).maxLength}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500"
-                      placeholder={field.placeholder}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* PACOTES */}
-            <div className="border-t border-zinc-100 dark:border-zinc-800 pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Pacotes Predefinidos</h3>
-                {isAdmin && (
-                  <button onClick={() => {
-                    const newPackage = { id: Math.random().toString(36).substr(2, 9), name: 'Novo Pacote', weight: 0.3, width: 11, height: 2, length: 16, insuranceValue: 100 };
-                    setSettings({ ...settings, melhorEnvioPackages: [...(settings.melhorEnvioPackages || []), newPackage] });
-                  }} className="flex items-center gap-2 text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 rounded-xl text-xs font-bold transition-colors">
-                    <Plus size={14} /> ADICIONAR
-                  </button>
-                )}
-              </div>
-              <div className="space-y-4">
-                {(settings.melhorEnvioPackages || []).map((pkg, idx) => (
-                  <div key={pkg.id} className="grid grid-cols-2 md:grid-cols-7 gap-3 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/50 items-end">
-                    <div className="col-span-2 md:col-span-2 space-y-2">
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome</label>
-                      <input type="text" disabled={!isAdmin} value={pkg.name} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].name = e.target.value; setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Peso (kg)</label>
-                      <input type="number" step="0.1" disabled={!isAdmin} value={pkg.weight} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].weight = parseFloat(e.target.value) || 0; setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">A x L x C (cm)</label>
-                      <div className="flex gap-1">
-                        <input type="number" disabled={!isAdmin} value={pkg.height} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].height = Number(e.target.value); setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full flex-1 px-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Altura" />
-                        <input type="number" disabled={!isAdmin} value={pkg.width} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].width = Number(e.target.value); setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full flex-1 px-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Largura" />
-                        <input type="number" disabled={!isAdmin} value={pkg.length} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].length = Number(e.target.value); setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full flex-1 px-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Comprimento" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Seguro (R$)</label>
-                      <input type="number" disabled={!isAdmin} value={pkg.insuranceValue} onChange={e => { const np = [...(settings.melhorEnvioPackages || [])]; np[idx].insuranceValue = parseFloat(e.target.value) || 0; setSettings({ ...settings, melhorEnvioPackages: np }); }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" />
-                    </div>
-                    <div className="col-span-2 md:col-span-1 flex justify-end">
-                      {isAdmin && (
-                        <button onClick={() => setSettings({ ...settings, melhorEnvioPackages: settings.melhorEnvioPackages?.filter(p => p.id !== pkg.id) })} className="w-full px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-colors flex items-center justify-center" title="Remover">
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {(!settings.melhorEnvioPackages || settings.melhorEnvioPackages.length === 0) && (
-                  <p className="text-xs text-zinc-500 text-center py-4">Nenhum pacote cadastrado.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'regionais':
-        return (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12">
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14} /> Regionais</h4>
-              {isAdmin && (
-                <>
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex gap-2">
-                      <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({ ...newCompany, name: e.target.value })} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                      <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({ ...newCompany, prefix: e.target.value.toUpperCase() })} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
-                    </div>
-                    <div className="flex gap-1">
-                      {editingCompanyId && (
-                        <button onClick={handleCancelEdit} className="p-3.5 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><X size={18} strokeWidth={3} /></button>
-                      )}
-                      <button onClick={handleSaveCompany} className={`p-3.5 ${editingCompanyId ? 'bg-emerald-500 text-white' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black'} rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0`}>
-                        {editingCompanyId ? <Check size={18} strokeWidth={3} /> : <Plus size={18} strokeWidth={3} />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mb-2 pt-2">
-                    <Checkbox checked={newCompany.hasSgaIntegration} onChange={checked => setNewCompany({ ...newCompany, hasSgaIntegration: checked })}>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase">Integração com SGA Ativa</span>
-                    </Checkbox>
-                  </div>
-                </>
-              )}
-              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar p-1">
-                {companies.map(c => (
-                  <div key={c.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
-                      <span className={`text-[9px] font-bold ${c.hasSgaIntegration === false ? 'text-amber-500' : 'text-emerald-500'}`}>{c.hasSgaIntegration === false ? 'Sem Integração SGA' : 'Integrado ao SGA'}</span>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
-                        <button onClick={() => handleStartEditCompany(c)} className="p-1.5 text-zinc-300 hover:text-primary-500"><Edit2 size={14} /></button>
-                        <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500"><Trash2 size={14} /></button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Server size={14} /> Categorias de Veículo</h4>
-              {isAdmin && (
-                <div className="flex gap-2">
-                  <input type="text" placeholder="Ex: Caminhão" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
-                  <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3} /></button>
-                </div>
-              )}
-              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar p-1">
-                {categories.map(cat => (
-                  <div key={cat.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group">
-                    <span className="text-[10px] font-black uppercase tracking-tight truncate">{cat.name}</span>
-                    {isAdmin && <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14} /></button>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-
-      case 'traqcare':
-        return (
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token da API Traqcare</label>
-            <div className="relative">
-              <input type={showTraqToken ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.traqcareToken : '••••••••••••••••'} onChange={e => setSettings({ ...settings, traqcareToken: e.target.value })} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-primary-500 pr-12 disabled:opacity-50" />
-              {isAdmin && <button type="button" onClick={() => setShowTraqToken(!showTraqToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showTraqToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
-            </div>
-            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-tight mt-2">Token de ambiente necessário para comunicação com dispositivos XADTAG.</p>
-          </div>
-        );
-
-      default:
-        return null;
-    }
+  const handleAddTraqcareAccount = () => {
+    if (!newTraqcareAccount.name || !newTraqcareAccount.token) return;
+    const account = { id: crypto.randomUUID(), name: newTraqcareAccount.name, token: newTraqcareAccount.token };
+    setSettings(prev => prev ? { ...prev, traqcareAccounts: [...(prev.traqcareAccounts || []), account] } : null);
+    setNewTraqcareAccount({ name: '', token: '' });
   };
 
+  const handleDeleteTraqcareAccount = (id: string) => {
+    setSettings(prev => prev ? { ...prev, traqcareAccounts: (prev.traqcareAccounts || []).filter(a => a.id !== id) } : null);
+  };
+
+  if (loading || !settings) return <div className="flex items-center justify-center h-full"><Cpu className="animate-spin text-primary-500" size={48} /></div>;
+
   return (
-    <div className="max-w-7xl mx-auto pb-32 font-sans">
+    <div className="max-w-7xl mx-auto space-y-8 md:space-y-12 pb-32 font-sans">
       {/* HEADER PRINCIPAL */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-zinc-200 dark:border-zinc-800 pb-8 mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-zinc-200 dark:border-zinc-800 pb-10">
         <div className="flex items-center gap-4 md:gap-6">
           <div className="w-14 h-14 md:w-20 md:h-20 rounded-[20px] md:rounded-[28px] bg-zinc-900 dark:bg-zinc-800 flex items-center justify-center text-primary-500 border border-zinc-800 shadow-2xl shrink-0">
             <SettingsIcon size={24} className="md:w-8 md:h-8" />
           </div>
           <div>
-            <h1 className="text-2xl md:text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Sistema & APIs</h1>
-            <p className="text-zinc-500 mt-1 md:mt-2 font-medium text-xs md:text-base">Plataforma, integrações e credenciais de terceiros.</p>
+            <h1 className="text-2xl md:text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Configurações</h1>
+            <p className="text-zinc-500 mt-1 md:mt-2 font-medium text-xs md:text-base">Controle total do ecossistema de rastreamento.</p>
           </div>
         </div>
         {isAdmin && (
@@ -722,87 +371,653 @@ export const SystemApisModule = () => {
         )}
       </div>
 
-      {/* MOBILE: dropdown trigger */}
-      <div className="md:hidden mb-4">
-        <button
-          onClick={() => setMobileNavOpen(o => !o)}
-          className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-4 py-3 flex items-center justify-between"
-        >
-          <span className="flex items-center gap-3">
-            <span className={`w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center ${meta.color}`}>
-              <meta.icon size={16} />
-            </span>
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">{meta.label}</span>
-          </span>
-          <ChevronDown size={16} className={`text-zinc-400 transition-transform ${mobileNavOpen ? 'rotate-180' : ''}`} />
-        </button>
-        {mobileNavOpen && (
-          <div className="mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-2 space-y-1 max-h-[60vh] overflow-y-auto">
-            {SECTIONS.filter(s => s.id !== 'ktag' || isAdmin).map(s => {
-              const Icon = s.icon;
-              const st = getSectionStatus(s.id, settings);
-              const isActive = s.id === activeSection;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => { setActiveSection(s.id); setMobileNavOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${isActive ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-                >
-                  <Icon size={16} className={s.color} />
-                  <span className="flex-1 text-xs font-bold uppercase tracking-tight">{s.label}</span>
-                  <StatusDot status={st} />
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <div className="space-y-6 md:space-y-10">
 
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6 lg:gap-8">
+              {/* CONFIGURAÇÃO DE ESTOQUE E FINANCEIRO */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <ShoppingBag size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Estoque & Financeiro</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Mínimo</label>
+                        <div className="relative">
+                            <AlertTriangle className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={16} />
+                            <input 
+                                type="number" 
+                                disabled={!isAdmin}
+                                value={settings.minStockLevel || 80} 
+                                onChange={e => setSettings({...settings, minStockLevel: parseInt(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-amber-500 disabled:opacity-50"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível alerta compra.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estoque Crítico</label>
+                        <div className="relative">
+                            <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500" size={16} />
+                            <input 
+                                type="number" 
+                                disabled={!isAdmin}
+                                value={settings.criticalStockLevel || 40} 
+                                onChange={e => setSettings({...settings, criticalStockLevel: parseInt(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-red-500 disabled:opacity-50"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Nível de risco de ruptura.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Margem de Lucro (%)</label>
+                        <div className="relative">
+                            <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={16} />
+                            <input 
+                                type="number" 
+                                disabled={!isAdmin}
+                                value={settings.budgetMarginThreshold || 25} 
+                                onChange={e => setSettings({...settings, budgetMarginThreshold: parseFloat(e.target.value)})} 
+                                className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+                            />
+                        </div>
+                        <p className="text-[9px] text-zinc-400 mt-1 ml-1">Limite mín. para aprovação (Default: 25%).</p>
+                    </div>
+                </div>
+              </div>
 
-        {/* SIDEBAR INTERNA */}
-        <aside className="hidden md:block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-5 sticky top-4 self-start max-h-[calc(100vh-2rem)] overflow-y-auto custom-scrollbar shadow-sm">
-          {Object.entries(grouped).map(([group, items]) => (
-            <div key={group} className="mb-6 last:mb-0">
-              <h4 className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400 dark:text-zinc-500 px-3 mb-3">{group}</h4>
-              <div className="space-y-1">
-                {items.filter(s => s.id !== 'ktag' || isAdmin).map(s => {
-                  const Icon = s.icon;
-                  const st = getSectionStatus(s.id, settings);
-                  const isActive = s.id === activeSection;
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => setActiveSection(s.id)}
-                      className={`w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group border ${
-                        isActive
-                          ? 'bg-primary-500/10 dark:bg-primary-500/[0.08] text-primary-600 dark:text-primary-400 border-primary-500/20'
-                          : 'border-transparent text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                      title={s.description}
-                    >
-                      {isActive && (
-                        <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-primary-500" />
+              <WhitelabelModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+              
+              <AiConfigModule />
+              
+              <GeocodingConfigModule settings={settings} setSettings={setSettings} isAdmin={isAdmin} />
+
+              {/* CONFIGURAÇÃO API K-TAG */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Key size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">Configuração API K-Tag</h2>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint K-Tag</label>
+                    <div className="relative">
+                      <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300" size={16} />
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagUrl: e.target.value})} className="w-full pl-11 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" placeholder="https://api.ktag.example.com" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário K-Tag</label>
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? settings.ktagUser : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 disabled:opacity-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha K-Tag</label>
+                        <div className="relative">
+                           <input type={showKTagPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.ktagPass : '••••••••••••••••'} onChange={e => setSettings({...settings, ktagPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none focus:border-primary-500 pr-12 disabled:opacity-50" />
+                           {isAdmin && <button type="button" onClick={() => setShowKTagPass(!showKTagPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showKTagPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
+                        </div>
+                      </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TRACCAR API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Database size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">INTEGRAÇÃO TRACCAR</h2>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint Traccar</label>
+                    <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.traccarUrl || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, traccarUrl: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="https://traccar.exemplo.com" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token Traccar (Opcional, se usar Token)</label>
+                    <div className="relative">
+                      <input type="password" disabled={!isAdmin} value={isAdmin ? (settings.traccarToken || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, traccarToken: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-amber-500 disabled:opacity-50" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário (Se não usar Token)</label>
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.traccarUser || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, traccarUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha</label>
+                        <div className="relative">
+                           <input type="password" disabled={!isAdmin} value={isAdmin ? (settings.traccarPass || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, traccarPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
+                        </div>
+                      </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SGA HINOVA */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-emerald-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Database size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">INTEGRAÇÃO SGA (HINOVA)</h2>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL do Endpoint SGA</label>
+                    <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaUrl: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="https://api.hinova.com.br/api/sga/v2" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token SGA (Master / SGA Token)</label>
+                    <div className="relative">
+                      <input type={showHinovaToken ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaToken : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaToken: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-emerald-500 pr-12 disabled:opacity-50" />
+                      {isAdmin && <button type="button" onClick={() => setShowHinovaToken(!showHinovaToken)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaToken ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Usuário de Autenticação</label>
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? settings.hinovaUser : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaUser: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Senha de Autenticação</label>
+                        <div className="relative">
+                           <input type={showHinovaPass ? 'text' : 'password'} disabled={!isAdmin} value={isAdmin ? settings.hinovaPass : '••••••••••••••••'} onChange={e => setSettings({...settings, hinovaPass: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" />
+                           {isAdmin && <button type="button" onClick={() => setShowHinovaPass(!showHinovaPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">{showHinovaPass ? <EyeOff size={16}/> : <Eye size={16}/>}</button>}
+                        </div>
+                      </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* WHATSAPP EVOLUTION API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <div className="flex items-center gap-3 text-emerald-500">
+                    <MessageSquare size={24} />
+                    <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">WhatsApp / Evolution API</h2>
+                  </div>
+                  <Checkbox checked={settings.enableWhatsAppNotifications || false} disabled={!isAdmin} onChange={checked => setSettings({...settings, enableWhatsAppNotifications: checked})}>
+                     <span className={`text-[10px] font-black uppercase tracking-wider ${settings.enableWhatsAppNotifications ? 'text-emerald-500' : 'text-zinc-500'}`}>{settings.enableWhatsAppNotifications ? 'Ativado' : 'Habilitar'}</span>
+                  </Checkbox>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">URL Base da Evolution API</label>
+                    <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.evolutionApiUrl || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, evolutionApiUrl: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="Ex: https://vps.minhaevo.com" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Global API Key</label>
+                        <input type="password" disabled={!isAdmin} value={isAdmin ? (settings.evolutionApiKey || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, evolutionApiKey: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] disabled:opacity-50" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome da Instância</label>
+                        <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.evolutionInstanceName || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, evolutionInstanceName: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs disabled:opacity-50" placeholder="Ex: Principal_KTAG" />
+                      </div>
+                  </div>
+                  <p className="text-[9px] text-zinc-500 italic mt-2">Dispara alertas automáticos para clientes quando a Ordem de Serviço muda de status.</p>
+                </div>
+              </div>
+
+              {/* PROXY & RELAY */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-cyan-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Cloud size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">PROXY & RELAY (FIREBASE)</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Proxy Cloud Function URL</label>
+                    <div className="relative">
+                      <Terminal className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? settings.customProxyUrl : '••••••••••••••••'} onChange={e => setSettings({...settings, customProxyUrl: e.target.value})} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none disabled:opacity-50" />
+                    </div>
+                    <p className="text-[9px] text-zinc-400 font-bold uppercase mt-2">Necessário para contornar bloqueios de CORS em navegadores ao acessar o servidor K-Tag diretamente.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* SITE RASTREIO API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-orange-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Box size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">SITE RASTREIO API</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">API Key (siterastreio.com.br)</label>
+                    <div className="relative">
+                      <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
+                      <input type="text" disabled={!isAdmin} value={isAdmin ? (settings.siteRastreioApiKey || '') : '••••••••••••••••'} onChange={e => setSettings({...settings, siteRastreioApiKey: e.target.value})} className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none disabled:opacity-50" placeholder="Sua API Key" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* MELHOR ENVIO API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <div className="flex items-center gap-3 text-emerald-500">
+                    <Box size={24} />
+                    <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">MELHOR ENVIO API</h2>
+                  </div>
+                  {settings.melhorEnvioToken && (
+                    <div className="bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
+                       <CheckCircle2 size={14} /> AUTORIZADO
+                    </div>
+                  )}
+                </div>
+                
+                <div className="bg-emerald-50 dark:bg-emerald-500/5 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-500/10 mb-6 flex flex-col space-y-2">
+                  <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">URL de Callback (Redirecionamento)</p>
+                  <code className="text-xs font-mono bg-white dark:bg-black p-2 rounded-lg text-zinc-600 dark:text-zinc-400 select-all border border-zinc-200 dark:border-zinc-800">
+                    {typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : ''}
+                  </code>
+                  <p className="text-[10px] text-zinc-500">Cadastre exatamente esta URL no seu Painel do Melhor Envio.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Client ID ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})</label>
+                    <div className="relative">
+                      <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
+                      <input 
+                        type="text" 
+                        disabled={!isAdmin} 
+                        value={isAdmin ? (settings.melhorEnvioEnvironment === 'production' ? (settings.melhorEnvioProdClientId || '') : (settings.melhorEnvioSandboxClientId || '')) : '•••'} 
+                        onChange={e => {
+                          if (settings.melhorEnvioEnvironment === 'production') {
+                            setSettings({...settings, melhorEnvioProdClientId: e.target.value});
+                          } else {
+                            setSettings({...settings, melhorEnvioSandboxClientId: e.target.value});
+                          }
+                        }} 
+                        className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-xs outline-none disabled:opacity-50 focus:border-emerald-500" placeholder="ID do Aplicativo" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Client Secret ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})</label>
+                    <div className="relative">
+                      <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400" size={16}/>
+                      <input 
+                        type="password" 
+                        disabled={!isAdmin} 
+                        value={isAdmin ? (settings.melhorEnvioEnvironment === 'production' ? (settings.melhorEnvioProdClientSecret || '') : (settings.melhorEnvioSandboxClientSecret || '')) : '•••'} 
+                        onChange={e => {
+                          if (settings.melhorEnvioEnvironment === 'production') {
+                            setSettings({...settings, melhorEnvioProdClientSecret: e.target.value});
+                          } else {
+                            setSettings({...settings, melhorEnvioSandboxClientSecret: e.target.value});
+                          }
+                        }} 
+                        className="w-full pl-12 pr-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-xs outline-none disabled:opacity-50 focus:border-emerald-500" placeholder="Secret do Aplicativo" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4 mt-4">
+                  <div className="w-full md:w-1/3 mb-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Ambiente Ativo</label>
+                    <div className="relative">
+                      <select 
+                        disabled={!isAdmin} 
+                        value={settings.melhorEnvioEnvironment || 'sandbox'} 
+                        onChange={e => setSettings({...settings, melhorEnvioEnvironment: e.target.value as 'sandbox'|'production'})}
+                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-bold text-xs outline-none disabled:opacity-50 appearance-none focus:border-emerald-500"
+                      >
+                        <option value="sandbox">Sandbox (Testes)</option>
+                        <option value="production">Produção (Real)</option>
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+                        ▼
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {isAdmin && (
+                    <div className="w-full flex flex-col md:flex-row gap-4 border-t border-zinc-100 dark:border-zinc-800 pt-6">
+                      {((settings.melhorEnvioEnvironment === 'production' && settings.melhorEnvioProdToken) || (settings.melhorEnvioEnvironment === 'sandbox' && settings.melhorEnvioSandboxToken)) && (
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const env = settings.melhorEnvioEnvironment || 'sandbox';
+                              const token = env === 'production' ? settings.melhorEnvioProdToken : settings.melhorEnvioSandboxToken;
+                              const res = await fetch('/api/melhorenvio/companies', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  token: token,
+                                  environment: env
+                                })
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error || 'Erro ao carregar');
+                              // Removed console.log due to vulnerability
+                              addNotification('success', 'Conectado', `Encontrou ${data.length} transportadoras. Verifique o console.`);
+                            } catch (e: any) {
+                              addNotification('error', 'Erro', e.message);
+                            }
+                          }}
+                          className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all transform active:scale-95"
+                        >
+                          Testar Conexão
+                        </button>
                       )}
-                      <Icon size={15} className={isActive ? 'text-primary-500' : s.color} strokeWidth={isActive ? 2.5 : 2} />
-                      <span className="flex-1 text-[10px] font-black uppercase tracking-widest truncate">{s.label}</span>
-                      <StatusDot status={st} />
-                    </button>
-                  );
-                })}
+                      <button 
+                        onClick={async () => {
+                          const env = settings.melhorEnvioEnvironment || 'sandbox';
+                          const clientId = env === 'production' ? settings.melhorEnvioProdClientId : settings.melhorEnvioSandboxClientId;
+                          const clientSecret = env === 'production' ? settings.melhorEnvioProdClientSecret : settings.melhorEnvioSandboxClientSecret;
+                          
+                          if (!clientId || !clientSecret) {
+                            addNotification('info', 'Atenção', 'Preencha o Client ID e Secret do ambiente antes de autorizar.');
+                            return;
+                          }
+                          await storage.saveSettings(settings); // Salva as configurações antes
+                          const baseUrl = env === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
+                          const redirectUri = window.location.origin + window.location.pathname;
+                          const authorizeUrl = `${baseUrl}/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=melhorenvio_${env}&scope=shipping-calculate shipping-companies shipping-generate shipping-checkout shipping-print shipping-cancel shipping-tracking cart-read cart-write`;
+                          
+                          // Abrir em nova aba para não ser bloqueado pelo iframe do AI Studio
+                          window.open(authorizeUrl, '_blank');
+                        }}
+                        className="w-full flex-1 bg-emerald-500 hover:bg-emerald-400 text-white dark:text-black px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all transform active:scale-95 shadow-xl shadow-emerald-500/20 whitespace-nowrap"
+                      >
+                        Autorizar ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* SENDER ADDRESS */}
+                  <div className="border-t border-zinc-100 dark:border-zinc-800 pt-6 mt-6">
+                    <h3 className="text-sm font-bold mb-4 uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Endereço Remetente (Padrão)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CEP</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.postalCode || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), postalCode: e.target.value.replace(/\D/g, '')}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="00000000" />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Logradouro</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.street || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), street: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Rua..." />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Número</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.number || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), number: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="123" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Complemento</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.complement || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), complement: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Sala 1" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Bairro</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.neighborhood || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), neighborhood: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Centro" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Cidade</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.city || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), city: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="São Paulo" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Estado (UF)</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.state || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), state: e.target.value.toUpperCase()}})} maxLength={2} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="SP" />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Documento (CPF/CNPJ)</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.document || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), document: e.target.value.replace(/\D/g, '')}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Apenas números" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome Remetente</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.name || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), name: e.target.value}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Empresa XPTO" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
+                        <input type="text" disabled={!isAdmin} value={settings.melhorEnvioSenderAddress?.phone || ''} onChange={e => setSettings({...settings, melhorEnvioSenderAddress: {...(settings.melhorEnvioSenderAddress as any), phone: e.target.value.replace(/\D/g, '')}})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500" placeholder="Apenas números" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PREDEFINED PACKAGES */}
+                  <div className="border-t border-zinc-100 dark:border-zinc-800 pt-6 mt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Pacotes Predefinidos</h3>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            const newPackage = { id: Math.random().toString(36).substr(2, 9), name: 'Novo Pacote', weight: 0.3, width: 11, height: 2, length: 16, insuranceValue: 100 };
+                            setSettings({...settings, melhorEnvioPackages: [...(settings.melhorEnvioPackages || []), newPackage]});
+                          }}
+                          className="flex items-center gap-2 text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 rounded-xl text-xs font-bold transition-colors"
+                        >
+                          <Plus size={14} /> ADICIONAR
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      {(settings.melhorEnvioPackages || []).map((pkg, idx) => (
+                        <div key={pkg.id} className="grid grid-cols-2 md:grid-cols-7 gap-3 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/50 items-end">
+                          <div className="col-span-2 md:col-span-2 space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Nome</label>
+                            <input type="text" disabled={!isAdmin} value={pkg.name} onChange={e => {
+                                const newPackages = [...(settings.melhorEnvioPackages || [])];
+                                newPackages[idx].name = e.target.value;
+                                setSettings({...settings, melhorEnvioPackages: newPackages});
+                            }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" placeholder="Ex: Caixa P" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Peso (kg)</label>
+                            <input type="number" step="0.1" disabled={!isAdmin} value={pkg.weight} onChange={e => {
+                                const newPackages = [...(settings.melhorEnvioPackages || [])];
+                                newPackages[idx].weight = parseFloat(e.target.value) || 0;
+                                setSettings({...settings, melhorEnvioPackages: newPackages});
+                            }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">A x L x C (cm)</label>
+                            <div className="flex gap-1">
+                              <input type="number" disabled={!isAdmin} value={pkg.height} onChange={e => { const newP = [...(settings.melhorEnvioPackages || [])]; newP[idx].height = Number(e.target.value); setSettings({...settings, melhorEnvioPackages: newP}); }} className="w-full px-1 flex-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Altura" />
+                              <input type="number" disabled={!isAdmin} value={pkg.width} onChange={e => { const newP = [...(settings.melhorEnvioPackages || [])]; newP[idx].width = Number(e.target.value); setSettings({...settings, melhorEnvioPackages: newP}); }} className="w-full px-1 flex-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Largura" />
+                              <input type="number" disabled={!isAdmin} value={pkg.length} onChange={e => { const newP = [...(settings.melhorEnvioPackages || [])]; newP[idx].length = Number(e.target.value); setSettings({...settings, melhorEnvioPackages: newP}); }} className="w-full px-1 flex-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-center outline-none focus:border-emerald-500" title="Comprimento" />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Seguro (R$)</label>
+                            <input type="number" disabled={!isAdmin} value={pkg.insuranceValue} onChange={e => {
+                                const newPackages = [...(settings.melhorEnvioPackages || [])];
+                                newPackages[idx].insuranceValue = parseFloat(e.target.value) || 0;
+                                setSettings({...settings, melhorEnvioPackages: newPackages});
+                            }} className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs outline-none focus:border-emerald-500" />
+                          </div>
+                          <div className="col-span-2 md:col-span-1 flex justify-end">
+                            {isAdmin && (
+                              <button 
+                                onClick={() => {
+                                  setSettings({...settings, melhorEnvioPackages: settings.melhorEnvioPackages?.filter(p => p.id !== pkg.id)});
+                                }}
+                                className="w-full px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-colors flex items-center justify-center"
+                                title="Remover"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {(!settings.melhorEnvioPackages || settings.melhorEnvioPackages.length === 0) && (
+                        <p className="text-xs text-zinc-500 text-center py-4">Nenhum pacote cadastrado.</p>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* REGIONAIS E CATEGORIAS */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-amber-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <LayoutGrid size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">REGIONAIS & CATEGORIAS</h2>
+                </div>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12">
+                   {/* Regionais */}
+                   <div className="space-y-6">
+                      <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Building2 size={14}/> Regionais</h4>
+                      {isAdmin && (
+                        <div className="flex flex-col gap-2">
+                         <div className="flex gap-2">
+                            <div className="flex-1 flex gap-2">
+                                <input type="text" placeholder="Nome" value={newCompany.name} onChange={e => setNewCompany({...newCompany, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                                <input type="text" placeholder="ID" maxLength={4} value={newCompany.prefix} onChange={e => setNewCompany({...newCompany, prefix: e.target.value.toUpperCase()})} className="w-16 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-center" />
+                            </div>
+                            <div className="flex gap-1">
+                                {editingCompanyId && (
+                                   <button onClick={handleCancelEdit} className="p-3.5 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><X size={18} strokeWidth={3}/></button>
+                                )}
+                                <button onClick={handleSaveCompany} className={`p-3.5 ${editingCompanyId ? 'bg-emerald-500 text-white' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black'} rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0`}>
+                                   {editingCompanyId ? <Check size={18} strokeWidth={3}/> : <Plus size={18} strokeWidth={3}/>}
+                                </button>
+                            </div>
+                         </div>
+                         <div className="flex gap-2">
+                             <input type="text" placeholder="Razão Social (Opcional)" value={newCompany.legalName || ''} onChange={e => setNewCompany({...newCompany, legalName: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs" />
+                             <input type="text" placeholder="CNPJ (Opcional)" value={newCompany.cnpj || ''} onChange={e => setNewCompany({...newCompany, cnpj: e.target.value})} className="w-40 shrink-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono" />
+                         </div>
+                         <div className="flex gap-2">
+                             <input type="text" placeholder="URL da Logo (Opcional) p/ OS" value={newCompany.logoUrl || ''} onChange={e => setNewCompany({...newCompany, logoUrl: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono" />
+                         </div>
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <div className="flex flex-col gap-2 mb-2 pt-2">
+                           <div className="flex items-center gap-2">
+                              <Checkbox checked={newCompany.hasSgaIntegration} onChange={checked => setNewCompany({...newCompany, hasSgaIntegration: checked})}>
+                                 <span className="text-[10px] font-bold text-zinc-500 uppercase">Integração com SGA Ativa</span>
+                              </Checkbox>
+                           </div>
+                           
+                           {newCompany.hasSgaIntegration && (
+                               <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50 rounded-xl space-y-3 mt-1">
+                                   <div className="space-y-1">
+                                       <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">URL SGA (Opcional)</label>
+                                       <input type="text" placeholder="Padrão: https://api.hinova.com.br/api/sga/v2" value={newCompany.sgaUrl || ''} onChange={e => setNewCompany({...newCompany, sgaUrl: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-mono" />
+                                   </div>
+                                   <div className="space-y-1">
+                                       <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Token SGA</label>
+                                       <input type="text" placeholder="Deixe em branco para usar o Global" value={newCompany.sgaToken || ''} onChange={e => setNewCompany({...newCompany, sgaToken: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-mono" />
+                                   </div>
+                                   <div className="grid grid-cols-2 gap-2">
+                                       <div className="space-y-1">
+                                           <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Usuário SGA</label>
+                                           <input type="text" placeholder="Usuário" value={newCompany.sgaUser || ''} onChange={e => setNewCompany({...newCompany, sgaUser: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-mono" />
+                                       </div>
+                                       <div className="space-y-1">
+                                           <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Senha SGA</label>
+                                           <input type="password" placeholder="Senha" value={newCompany.sgaPass || ''} onChange={e => setNewCompany({...newCompany, sgaPass: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-mono" />
+                                       </div>
+                                   </div>
+                               </div>
+                           )}
+                        </div>
+                      )}
+                      
+                      <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                         {companies.map(c => (
+                            <div key={c.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
+                               <div className="flex flex-col">
+                                   <span className="text-[10px] font-black uppercase tracking-tight truncate">{c.prefix} - {c.name}</span>
+                                   <span className={`text-[9px] font-bold ${c.hasSgaIntegration === false ? 'text-amber-500' : 'text-emerald-500'}`}>{c.hasSgaIntegration === false ? 'Sem Integração SGA' : 'Integrado ao SGA'}</span>
+                               </div>
+                               {isAdmin && (
+                                 <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
+                                     <button onClick={() => handleStartEditCompany(c)} className="p-1.5 text-zinc-300 hover:text-primary-500"><Edit2 size={14}/></button>
+                                     <button onClick={() => handleDeleteCompany(c.id)} className="p-1.5 text-zinc-300 hover:text-red-500"><Trash2 size={14}/></button>
+                                 </div>
+                               )}
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Categorias */}
+                   <div className="space-y-6">
+                      <h4 className="text-[10px] font-black uppercase text-zinc-400 flex items-center gap-2 tracking-widest"><Server size={14}/> Categorias</h4>
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                           <input type="text" placeholder="Veículo" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})} className="flex-1 min-w-0 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" />
+                           <button onClick={handleAddCategory} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
+                        </div>
+                      )}
+                      <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                         {categories.map(cat => (
+                            <div key={cat.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
+                               <span className="text-[10px] font-black uppercase tracking-tight truncate">{cat.name}</span>
+                               {isAdmin && <button onClick={() => handleDeleteCategory(cat.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>}
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              {/* TRAQCARE API */}
+              <div className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm space-y-8">
+                <div className="flex items-center gap-3 text-primary-500 border-b border-zinc-100 dark:border-zinc-800 pb-6">
+                  <Cpu size={24} />
+                  <h2 className="text-lg md:text-xl font-display font-black uppercase tracking-tight">API Traqcare (XADTAG)</h2>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2 mb-6">
+                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Token da API Traqcare (Padrão)</label>
+                    <div className="relative">
+                      <input 
+                        type="password" 
+                        disabled={!isAdmin}
+                        value={isAdmin ? (settings.traqcareToken || '') : '••••••••••••••••'} 
+                        onChange={e => setSettings({...settings, traqcareToken: e.target.value})} 
+                        className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-[10px] outline-none focus:border-primary-500 disabled:opacity-50" 
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-tight mb-2">Tokens Adicionais (Por Cliente)</p>
+                  
+                  {isAdmin && (
+                    <div className="flex flex-col md:flex-row gap-2 mb-4">
+                       <input 
+                         type="text" 
+                         placeholder="Nome da Conta/Cliente" 
+                         value={newTraqcareAccount.name} 
+                         onChange={e => setNewTraqcareAccount({...newTraqcareAccount, name: e.target.value})} 
+                         className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold" 
+                       />
+                       <input 
+                         type="password" 
+                         placeholder="Token da API" 
+                         value={newTraqcareAccount.token} 
+                         onChange={e => setNewTraqcareAccount({...newTraqcareAccount, token: e.target.value})} 
+                         className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-mono" 
+                       />
+                       <button onClick={handleAddTraqcareAccount} className="p-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black rounded-xl hover:scale-105 active:scale-95 transition-all shrink-0"><Plus size={18} strokeWidth={3}/></button>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                     {(settings.traqcareAccounts || []).map(acc => (
+                        <div key={acc.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-2xl group transition-all">
+                           <div className="flex flex-col">
+                               <span className="text-[10px] font-black uppercase tracking-tight truncate">{acc.name}</span>
+                               <span className="text-[9px] font-mono text-emerald-500 font-bold truncate">Token Cadastrado (••••••)</span>
+                           </div>
+                           {isAdmin && <button onClick={() => handleDeleteTraqcareAccount(acc.id)} className="p-1.5 text-zinc-300 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"><Trash2 size={14}/></button>}
+                        </div>
+                     ))}
+                     {(!settings.traqcareAccounts || settings.traqcareAccounts.length === 0) && (
+                        <div className="text-center p-4 text-xs font-bold text-zinc-400">Nenhuma conta configurada.</div>
+                     )}
+                  </div>
+                </div>
+                </div>
               </div>
             </div>
-          ))}
-        </aside>
-
-        {/* PAINEL ATIVO */}
-        <section className="bg-white dark:bg-zinc-900 p-6 md:p-10 rounded-[32px] md:rounded-[40px] border border-zinc-100 dark:border-zinc-800 shadow-sm min-h-[60vh]">
-          <SectionHeader meta={meta} status={status} />
-          {renderSection()}
-        </section>
-      </div>
-
-      {/* MODAIS */}
+      {/* Modais de Confirmação */}
       <ConfirmModal
         isOpen={isConfirmDeleteCompanyOpen}
         onClose={() => setIsConfirmDeleteCompanyOpen(false)}
@@ -811,6 +1026,7 @@ export const SystemApisModule = () => {
         message="Tem certeza que deseja excluir esta regional? Esta ação não pode ser desfeita."
         type="danger"
       />
+
       <ConfirmModal
         isOpen={isConfirmDeleteCategoryOpen}
         onClose={() => setIsConfirmDeleteCategoryOpen(false)}

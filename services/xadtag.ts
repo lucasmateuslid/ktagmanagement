@@ -72,12 +72,18 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}) => {
     }
 };
 
-const getHeaders = async () => {
+const getHeaders = async (accountId?: string) => {
     const settings = await storage.getSettings();
+
+    let token = settings.traqcareToken || '';
+    if (accountId && settings.traqcareAccounts && settings.traqcareAccounts.length > 0) {
+        const acc = settings.traqcareAccounts.find((a: any) => a.id === accountId);
+        if (acc) token = acc.token;
+    }
 
     return {
         'Content-Type': 'application/json',
-        'api_token': settings.traqcareToken || '',
+        'api_token': token,
         'timestamp': Math.floor(Date.now() / 1000).toString(),
     };
 };
@@ -111,10 +117,11 @@ const callApi = async (
     path: string,
     method: 'GET' | 'PATCH',
     params?: Record<string, string>,
-    body?: any
+    body?: any,
+    accountId?: string
 ) => {
     const settings = await storage.getSettings();
-    const headers = await getHeaders();
+    const headers = await getHeaders(accountId);
     const targetUrl = buildUrl(path, params);
 
     const response = await rateLimitedFetch(async () => {
@@ -166,7 +173,8 @@ export const xadtagService = {
                 '/tag',
                 'PATCH',
                 undefined,
-                [tag.traqcareId]
+                [tag.traqcareId],
+                tag.traqcareAccountId
             );
 
             await unwrapResponse(response);
@@ -178,20 +186,37 @@ export const xadtagService = {
         }
     },
 
-    fetchLocation: async (tag: Tag): Promise<KTagLocationResult[]> => {
+    fetchLocation: async (tag: Tag, logger?: (log: any) => void): Promise<KTagLocationResult[]> => {
         if (!tag.traqcareId) return [];
 
         try {
+            const settings = await storage.getSettings();
+            let tokenUsed = settings.traqcareToken || 'NÃO CONFIGURADO';
+            if (tag.traqcareAccountId && settings.traqcareAccounts && settings.traqcareAccounts.length > 0) {
+                const acc = settings.traqcareAccounts.find((a: any) => a.id === tag.traqcareAccountId);
+                if (acc) tokenUsed = acc.token;
+            }
+            const maskedToken = tokenUsed.length > 8 ? `${tokenUsed.substring(0, 4)}...${tokenUsed.substring(tokenUsed.length - 4)}` : tokenUsed;
+
+            if (logger) logger({ type: 'info', method: 'GET', url: `/tag?ids=${tag.traqcareId}`, responseBody: { message: 'Buscando última localização da Traqcare API...', token: maskedToken } });
+
             const response = await callApi(
                 '/tag',
                 'GET',
-                { ids: tag.traqcareId }
+                { ids: tag.traqcareId },
+                undefined,
+                tag.traqcareAccountId
             );
 
             const data = await unwrapResponse<any[]>(response);
-            if (!data || !Array.isArray(data)) return [];
+            if (!data || !Array.isArray(data)) {
+                if (logger) logger({ type: 'warning', method: 'GET', url: '/tag', responseBody: 'Nenhum dado retornado da Traqcare.' });
+                return [];
+            }
 
             console.log('XADTAG RAW DATA:', data);
+            
+            if (logger) logger({ type: 'success', method: 'GET', url: '/tag', responseBody: 'Localização processada com sucesso.' });
 
             return data.map((loc) => ({
                 lat: Number(loc.lat ?? loc.latitude ?? 0),
@@ -203,8 +228,9 @@ export const xadtagService = {
                 isodatetime: loc.timestamp ? new Date(loc.timestamp * 1000).toISOString() : new Date().toISOString()
             }));
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('Fetch Location Error:', err);
+            if (logger) logger({ type: 'error', method: 'ERROR', url: 'API', responseBody: `Falha ao buscar localização: ${err.message}` });
             return [];
         }
     },
@@ -212,12 +238,23 @@ export const xadtagService = {
     fetchHistory: async (
         tag: Tag,
         startTime: number,
-        endTime: number
+        endTime: number,
+        logger?: (log: any) => void
     ): Promise<KTagLocationResult[]> => {
 
         if (!tag.traqcareId) return [];
 
         try {
+            const settings = await storage.getSettings();
+            let tokenUsed = settings.traqcareToken || 'NÃO CONFIGURADO';
+            if (tag.traqcareAccountId && settings.traqcareAccounts && settings.traqcareAccounts.length > 0) {
+                const acc = settings.traqcareAccounts.find((a: any) => a.id === tag.traqcareAccountId);
+                if (acc) tokenUsed = acc.token;
+            }
+            const maskedToken = tokenUsed.length > 8 ? `${tokenUsed.substring(0, 4)}...${tokenUsed.substring(tokenUsed.length - 4)}` : tokenUsed;
+
+            if (logger) logger({ type: 'info', method: 'GET', url: `/tag/history`, responseBody: { message: `Buscando histórico de localização (Traqcare API)...`, token: maskedToken } });
+
             const response = await callApi(
                 '/tag/history',
                 'GET',
@@ -225,11 +262,18 @@ export const xadtagService = {
                     Id: tag.traqcareId,
                     TimeFrom: Math.floor(startTime / 1000).toString(),
                     TimeTo: Math.floor(endTime / 1000).toString()
-                }
+                },
+                undefined,
+                tag.traqcareAccountId
             );
 
             const points = await unwrapResponse<any[]>(response);
-            if (!points) return [];
+            if (!points) {
+                if (logger) logger({ type: 'warning', method: 'GET', url: '/tag/history', responseBody: 'Histórico vazio retornado da Traqcare.' });
+                return [];
+            }
+            
+            if (logger) logger({ type: 'success', method: 'GET', url: '/tag/history', responseBody: `${points.length} pontos de histórico encontrados.` });
 
             return points.map((p) => ({
                 lat: Number(p.lat ?? p.latitude ?? 0),
@@ -242,13 +286,14 @@ export const xadtagService = {
                 isodatetime: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : new Date().toISOString()
             }));
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('History Error:', err);
+            if (logger) logger({ type: 'error', method: 'ERROR', url: 'API', responseBody: `Falha ao buscar histórico: ${err.message}` });
             return [];
         }
     },
 
-    activateAndDiscover: async (macAddress: string): Promise<{ success: boolean; traqcareId?: string; message: string }> => {
+    activateAndDiscover: async (macAddress: string, accountId?: string, logger?: (log: any) => void): Promise<{ success: boolean; traqcareId?: string; message: string }> => {
         if (!macAddress) {
             return { success: false, message: 'MAC Address não fornecido.' };
         }
@@ -256,20 +301,38 @@ export const xadtagService = {
         const normalizedMac = macAddress.replace(/[^A-Z0-9]/ig, '').toUpperCase();
 
         try {
+            // Get the settings to find out which token is being used
+            const settings = await storage.getSettings();
+            let tokenUsed = settings.traqcareToken || 'NÃO CONFIGURADO';
+            if (accountId && settings.traqcareAccounts && settings.traqcareAccounts.length > 0) {
+                const acc = settings.traqcareAccounts.find((a: any) => a.id === accountId);
+                if (acc) tokenUsed = acc.token;
+            }
+
+            const maskedToken = tokenUsed.length > 8 ? `${tokenUsed.substring(0, 4)}...${tokenUsed.substring(tokenUsed.length - 4)}` : tokenUsed;
+
+            if (logger) logger({ type: 'info', method: 'DISCOVER', url: 'Traqcare API', responseBody: { message: `Iniciando busca do MAC: ${normalizedMac}`, token: maskedToken } });
+
             // Passo 1: Buscar todos os IDs
-            const allResponse = await callApi('/tag/all', 'GET');
+            if (logger) logger({ type: 'info', method: 'GET', url: '/tag/all', responseBody: 'Buscando lista de IDs vinculados ao token...' });
+            const allResponse = await callApi('/tag/all', 'GET', undefined, undefined, accountId);
             const allIds = await unwrapResponse<number[]>(allResponse);
 
             if (!allIds || !Array.isArray(allIds) || allIds.length === 0) {
+                if (logger) logger({ type: 'warning', method: 'GET', url: '/tag/all', responseBody: 'Nenhum dispositivo encontrado na base Traqcare.' });
                 return { success: false, message: 'Nenhum dispositivo encontrado na base Traqcare.' };
             }
 
+            if (logger) logger({ type: 'success', method: 'GET', url: '/tag/all', responseBody: `${allIds.length} dispositivos encontrados.` });
+
             // Passo 2: Buscar detalhes de todos os IDs
             const idsString = allIds.join(',');
-            const detailsResponse = await callApi('/tag', 'GET', { ids: idsString });
+            if (logger) logger({ type: 'info', method: 'GET', url: '/tag?ids=', responseBody: 'Buscando detalhes para cruzar o MAC Address...' });
+            const detailsResponse = await callApi('/tag', 'GET', { ids: idsString }, undefined, accountId);
             const details = await unwrapResponse<any[]>(detailsResponse);
 
             if (!details || !Array.isArray(details)) {
+                if (logger) logger({ type: 'error', method: 'GET', url: '/tag', responseBody: 'Falha ao buscar detalhes dos dispositivos Traqcare.' });
                 return { success: false, message: 'Falha ao buscar detalhes dos dispositivos Traqcare.' };
             }
 
@@ -281,18 +344,23 @@ export const xadtagService = {
             });
 
             if (!targetDevice || !targetDevice.id) {
+                if (logger) logger({ type: 'error', method: 'SEARCH', url: 'Local', responseBody: `Dispositivo com MAC ${normalizedMac} não encontrado na lista de devices do token.` });
                 return { success: false, message: `Dispositivo com MAC ${normalizedMac} não encontrado na base Traqcare.` };
             }
 
             const traqcareId = targetDevice.id.toString();
+            if (logger) logger({ type: 'success', method: 'SEARCH', url: 'Local', responseBody: `Match encontrado! Traqcare ID: ${traqcareId}` });
 
             // Passo 4: Ativar o dispositivo
             try {
-                const activateResponse = await callApi('/tag', 'PATCH', undefined, [traqcareId]);
+                if (logger) logger({ type: 'info', method: 'PATCH', url: '/tag', responseBody: `Enviando comando de ativação para ID ${traqcareId}...` });
+                const activateResponse = await callApi('/tag', 'PATCH', undefined, [traqcareId], accountId);
                 await unwrapResponse(activateResponse);
+                if (logger) logger({ type: 'success', method: 'PATCH', url: '/tag', responseBody: 'Ativação concluída com sucesso!' });
                 return { success: true, traqcareId, message: 'Dispositivo ativado com sucesso.' };
             } catch (activateErr: any) {
                 console.error('Activation Error during discover:', activateErr);
+                if (logger) logger({ type: 'error', method: 'PATCH', url: '/tag', responseBody: `Falha ao ativar: ${activateErr.message}` });
                 return { 
                     success: false, 
                     traqcareId, 
@@ -302,41 +370,67 @@ export const xadtagService = {
 
         } catch (err: any) {
             console.error('Discover Error:', err);
+            if (logger) logger({ type: 'error', method: 'ERROR', url: 'API', responseBody: `Erro de comunicação: ${err.message}` });
             return { success: false, message: `Erro na comunicação com a API: ${err.message}` };
         }
     },
 
-    diagnose: async (tag: Tag): Promise<{ summary: string; raw: any }> => {
+    diagnose: async (tag: Tag, logger?: (log: any) => void): Promise<{ summary: string; raw: any }> => {
         if (!tag.traqcareId) return { summary: 'ID Traqcare não configurado', raw: null };
 
         try {
+            const settings = await storage.getSettings();
+            let tokenUsed = settings.traqcareToken || 'NÃO CONFIGURADO';
+            if (tag.traqcareAccountId && settings.traqcareAccounts && settings.traqcareAccounts.length > 0) {
+                const acc = settings.traqcareAccounts.find((a: any) => a.id === tag.traqcareAccountId);
+                if (acc) tokenUsed = acc.token;
+            }
+
+            const maskedToken = tokenUsed.length > 8 ? `${tokenUsed.substring(0, 4)}...${tokenUsed.substring(tokenUsed.length - 4)}` : tokenUsed;
+
+            if (logger) logger({ type: 'info', method: 'DIAGNOSE', url: 'Traqcare API', responseBody: { message: `Iniciando diagnóstico do ID: ${tag.traqcareId}`, token: maskedToken } });
+
+            if (logger) logger({ type: 'info', method: 'GET', url: `/tag?ids=${tag.traqcareId}`, responseBody: 'Buscando informações do dispositivo...' });
+
             const response = await callApi(
                 '/tag',
                 'GET',
-                { ids: tag.traqcareId }
+                { ids: tag.traqcareId },
+                undefined,
+                tag.traqcareAccountId
             );
             
             const raw = await response.clone().json();
             
-            if (!response.ok) return { summary: `Erro HTTP: ${response.status}`, raw };
+            if (!response.ok) {
+                if (logger) logger({ type: 'error', method: 'GET', url: '/tag', responseBody: `Erro HTTP: ${response.status}` });
+                return { summary: `Erro HTTP: ${response.status}`, raw };
+            }
             
             if (raw.statusCode && raw.statusCode !== 200) {
+                if (logger) logger({ type: 'error', method: 'GET', url: '/tag', responseBody: `API Error: ${raw.message}` });
                 return { summary: `API Error: ${raw.message}`, raw };
             }
 
             const data = raw.data !== undefined ? raw.data : raw;
             const item = Array.isArray(data) ? data[0] : data;
             
-            if (!item) return { summary: 'Dispositivo não encontrado na base TraqCare', raw };
+            if (!item) {
+                if (logger) logger({ type: 'warning', method: 'GET', url: '/tag', responseBody: 'Dispositivo não encontrado na base TraqCare com este token.' });
+                return { summary: 'Dispositivo não encontrado na base TraqCare', raw };
+            }
             
             const bat = batteryToInfo(item.battery);
             const hasLoc = item.lat !== undefined && item.lng !== undefined;
+
+            if (logger) logger({ type: 'success', method: 'GET', url: '/tag', responseBody: 'Diagnóstico concluído com sucesso.' });
 
             return {
                 summary: `Conectado | Bateria: ${bat.label} | ${hasLoc ? 'Localização OK' : 'Sem Localização'}`,
                 raw: item
             };
         } catch (e: any) {
+            if (logger) logger({ type: 'error', method: 'ERROR', url: 'API', responseBody: `Falha Crítica: ${e.message}` });
             return { summary: `Falha Crítica: ${e.message}`, raw: { stack: e.stack } };
         }
     }

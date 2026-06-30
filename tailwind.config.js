@@ -14,11 +14,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        // "Carbon" Palette based on Zinc/Neutral.
-        // zinc-800/900/950 do Tailwind já são #27272a/#18181b/#09090b — não precisam de override.
-        // zinc-750 era duplicata exata de 800 (removido). Mantemos só o 850 customizado.
+        // "Carbon" Palette based on Zinc/Neutral
         zinc: {
-          850: '#1f1f22', // Deep Card (entre o 800 e o 900 padrão)
+          750: '#27272a', // Lighter Carbon
+          800: '#27272a', // Card bg
+          850: '#1f1f22', // Deep Card
+          900: '#18181b', // Sidebar/Main
+          950: '#09090b', // App Background
         },
         // Accent Color: C6 Yellow Style
         primary: {
@@ -47,29 +49,7 @@ export default {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         display: ['Manrope', 'sans-serif'],
-      },
-      keyframes: {
-        shimmer: {
-          '100%': { transform: 'translateX(100%)' },
-        },
-      },
-      animation: {
-        shimmer: 'shimmer 1.6s infinite',
-      },
-      // Escala de z-index semântica (UI-005). Substitui os ~30 valores arbitrários.
-      // Regra: overlays/modais ficam ACIMA do chrome (header/drawer); toasts globais no topo.
-      zIndex: {
-        dropdown: '1000',
-        sticky: '1100',
-        header: '2000',
-        drawer: '3000',   // sidebar
-        overlay: '4000',  // backdrop de modal
-        modal: '4100',
-        popover: '4300',  // selects/menus precisam vencer o modal em que estão
-        confirm: '4500',  // diálogos de confirmação abrem POR CIMA de modais
-        toast: '9000',
-        critical: '9900', // banners críticos / anúncios globais
-      },
+      }
     },
   },
   plugins: [],

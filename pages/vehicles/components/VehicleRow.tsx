@@ -81,155 +81,172 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
   return (
     <div 
         onClick={() => !isReadOnly && toggleSelect && toggleSelect(vehicle.id)}
-        className={`flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-3 md:gap-0 ${isReadOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
+        className={`flex flex-col lg:flex-row items-stretch lg:items-center p-4 lg:px-6 lg:py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-4 lg:gap-0 ${isReadOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
     >
-      {/* PLACA & STATUS */}
-      <div className="w-full md:w-[20%] shrink-0 flex items-center justify-between md:justify-start gap-4">
-        {!isReadOnly && (
-            <div className="hidden md:flex items-center text-zinc-400 group-hover:text-primary-500 transition-colors">
-                {isSelected ? <CheckSquare size={18} className="text-primary-500" /> : <Square size={18} />}
-            </div>
-        )}
-        <div className="flex items-center gap-3 md:gap-4">
+      {/* HEADER MOBILE & DESKTOP 1ST COL (PLACA/STATUS) */}
+      <div className="w-full lg:w-[20%] shrink-0 flex items-center justify-between lg:justify-start gap-4">
+        
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+            {!isReadOnly && (
+                <div className="text-zinc-400 group-hover:text-primary-500 transition-colors shrink-0">
+                    {isSelected ? <CheckSquare size={18} className="text-primary-500" /> : <Square size={18} />}
+                </div>
+            )}
             <div className="flex flex-col gap-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-sm lg:text-xs">
                         {vehicle.plate}
                     </div>
                     {tag && (
-                        <div className="text-[9px] font-mono font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-700">
+                        <div className="text-[9px] font-mono font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-700 truncate max-w-[120px] hidden sm:block">
                             TAG: {tag.accessoryId || tag.imei || tag.name}
                         </div>
                     )}
                 </div>
                 <div className="flex gap-1">
-                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
+                    <span className={`text-[9px] lg:text-[8px] font-black uppercase px-2 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
                         vehicle.status === 'active' ? 'bg-emerald-500' : vehicle.status === 'stolen' ? 'bg-red-500' : 'bg-amber-500'
                     }`}>
                         {vehicle.status === 'active' ? 'ATIVO' : vehicle.status === 'stolen' ? 'ROUBO' : 'MANUT.'}
                     </span>
                 </div>
             </div>
-            <div className="hidden sm:block p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
-                {getIcon(14)}
-            </div>
         </div>
-        {/* Mobile Actions - Ocultar se readonly */}
-        {!isReadOnly && (
-            <div className="flex md:hidden gap-1">
-                <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
-                <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
-            </div>
-        )}
+
+        {/* Mobile Actions/Data */}
+        <div className="flex lg:hidden gap-1 shrink-0 items-center">
+            {isReadOnly && timeAgo && (
+                <span className="text-[10px] text-zinc-500 font-medium whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">
+                    <Clock size={10} className="inline mr-1" /> {timeAgo}
+                </span>
+            )}
+            {!isReadOnly && (
+                <>
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
+                </>
+            )}
+        </div>
       </div>
 
       {/* VEÍCULO */}
-      <div className="w-full md:flex-1 md:w-[30%] px-0 md:px-3 overflow-hidden">
-        <div className="flex items-center gap-2 md:hidden mb-1">
-            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Veículo:</span>
+      <div className="w-full lg:flex-1 lg:w-[30%] px-0 lg:px-3 overflow-hidden flex items-start gap-3 border-t border-zinc-100 dark:border-zinc-800/50 pt-3 lg:border-none lg:pt-0">
+        <div className="p-2.5 bg-zinc-100 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-400 group-hover:text-primary-500 transition-colors shrink-0 hidden sm:block mt-0.5">
+            {getIcon(16)}
         </div>
-        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm md:text-xs truncate leading-tight">{vehicle.model}</h3>
-        <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
-            {vehicle.ownershipStatus && (
-                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
-                    {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
-                </span>
-            )}
-        </div>
-        
-        {/* NOVO CÓDIGO - INÍCIO */}
-        {vehicle.lastPosition && (
-            <div className="flex items-center gap-3 mt-1.5 bg-zinc-50 dark:bg-zinc-800/50 p-1.5 rounded-lg border border-zinc-100 dark:border-zinc-800 w-fit">
-                {vehicle.lastPosition.battery && (
-                    <div className="flex items-center gap-1" title="Bateria">
-                        <BatteryCharging size={10} className="text-zinc-500" />
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
-                            Bat: {vehicle.lastPosition.battery.label}
-                        </span>
-                    </div>
-                )}
-                {vehicle.lastPosition.conf !== undefined && (
-                    <div className="flex items-center gap-1" title="Sinal Confidência">
-                        <Wifi size={10} className="text-zinc-500" />
-                        <span className="text-[8px] font-black uppercase text-zinc-500">
-                            Sinal: {vehicle.lastPosition.conf}
-                        </span>
-                    </div>
+
+        <div className="flex-1 min-w-0">
+            <h3 className="font-black text-zinc-900 dark:text-white uppercase text-base lg:text-xs truncate leading-tight mb-0.5">{vehicle.model}</h3>
+            
+            <div className="flex items-center gap-2 mb-1.5">
+                <p className="text-[11px] lg:text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
+                {vehicle.ownershipStatus && (
+                    <span className={`text-[9px] lg:text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+                        {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
+                    </span>
                 )}
             </div>
-        )}
-        {/* NOVO CÓDIGO - FIM */}
+
+            {/* BAT/SINAL in Veículo row block */}
+            {vehicle.lastPosition && !isReadOnly && (
+                <div className="flex flex-wrap items-center gap-2 mt-2 lg:mt-1.5 w-fit">
+                    {vehicle.lastPosition.battery && (
+                        <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded shadow-sm" title="Bateria">
+                            <BatteryCharging size={10} className="text-zinc-500" />
+                            <span className={`text-[9px] lg:text-[8px] font-black uppercase tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                                Bat: {vehicle.lastPosition.battery.label}
+                            </span>
+                        </div>
+                    )}
+                    {vehicle.lastPosition.conf !== undefined && (
+                        <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded shadow-sm" title="Sinal Confidência">
+                            <Wifi size={10} className="text-zinc-500" />
+                            <span className="text-[9px] lg:text-[8px] font-black uppercase tracking-widest text-zinc-500">
+                                Sinal: {vehicle.lastPosition.conf}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
+            
+            {/* Show simple Tag info on mobile to cover space */}
+            {tag && (
+                <div className="lg:hidden flex items-center gap-2 mt-2 bg-zinc-50 dark:bg-zinc-800/80 p-1.5 rounded-lg border border-zinc-100 dark:border-zinc-700 w-fit">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">TAG</span>
+                    <span className="text-[10px] font-mono font-bold text-zinc-700 dark:text-zinc-300">{tag.accessoryId || tag.imei || tag.name}</span>
+                </div>
+            )}
+        </div>
       </div>
 
       {/* CLIENTE (Apenas Operadores) */}
       {!isReadOnly && (
-          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
-            <div className="flex items-center gap-2 md:hidden mb-1">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cliente:</span>
+          <div className="w-full lg:w-[25%] px-0 lg:px-2 overflow-hidden flex flex-row lg:flex-col items-center lg:items-start justify-between lg:justify-start border-t border-zinc-100 dark:border-zinc-800/50 pt-3 lg:border-none lg:pt-0 mt-1 lg:mt-0">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest lg:hidden">Vínculo:</span>
+            <div className="text-right lg:text-left min-w-0 max-w-[60%] lg:max-w-none">
+                <p className="text-sm lg:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
+                {client && <p className="text-[11px] lg:text-[8px] text-zinc-500 lg:text-zinc-400 font-mono tracking-tighter truncate mt-0.5">{client.cpf}</p>}
             </div>
-            <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
-            {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
           </div>
       )}
 
-      {/* DISPOSITIVO (Apenas Cliente) */}
+      {/* DISPOSITIVO (Apenas Cliente - View ReadOnly) */}
       {isReadOnly && (
-          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
-            <div className="flex items-center gap-2 md:hidden mb-1">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dispositivo:</span>
+          <div className="w-full lg:w-[25%] px-0 lg:px-2 overflow-hidden flex flex-row lg:flex-col items-center lg:items-start justify-between lg:justify-start border-t border-zinc-100 dark:border-zinc-800/50 pt-3 lg:border-none lg:pt-0 mt-1 lg:mt-0">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest lg:hidden">Rastreador:</span>
+            <div className="text-right lg:text-left min-w-0">
+                {tag ? (
+                    <>
+                        <p className="text-sm lg:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
+                            {tag.accessoryId || tag.imei || tag.name}
+                        </p>
+                        {vehicle.lastPosition?.battery && (
+                            <div className="flex items-center justify-end lg:justify-start gap-1 mt-0.5">
+                                <BatteryCharging size={10} className="text-zinc-400" />
+                                <span className={`text-[10px] lg:text-[8px] font-black uppercase tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                                    {vehicle.lastPosition.battery.label}
+                                </span>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <p className="text-sm lg:text-[10px] font-black text-zinc-400 uppercase truncate">Nenhum</p>
+                )}
             </div>
-            {tag ? (
-                <>
-                    <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
-                        TAG: {tag.accessoryId || tag.imei || tag.name}
-                    </p>
-                    {vehicle.lastPosition?.battery && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Bateria:</span>
-                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
-                                {vehicle.lastPosition.battery.label}
-                            </span>
-                        </div>
-                    )}
-                </>
-            ) : (
-                <p className="text-xs md:text-[10px] font-black text-zinc-400 uppercase truncate">Sem Dispositivo</p>
-            )}
           </div>
       )}
 
       {/* RESPONSÁVEL E DATA - Visível só para operadores */}
       {!isReadOnly && (
-          <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
-             <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
-               {vehicle.updatedBy || 'SISTEMA'}
-             </span>
-             <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
-               <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
-             </span>
+          <div className="w-full lg:w-[15%] flex flex-row lg:flex-col justify-between lg:justify-center items-center lg:items-start border-t border-zinc-100 dark:border-zinc-800/50 pt-3 lg:border-none lg:pt-0 mt-1 lg:mt-0">
+             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest lg:hidden">Cadastro:</span>
+             <div className="text-right lg:text-left">
+                 <span className="block text-[11px] lg:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate mb-0.5">
+                   {vehicle.updatedBy || 'SISTEMA'}
+                 </span>
+                 <span className="flex items-center justify-end lg:justify-start gap-1 text-[10px] lg:text-[8px] font-bold text-zinc-500 lg:text-zinc-400 uppercase tracking-widest">
+                   <Calendar size={10} className="lg:w-2 lg:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
+                 </span>
+             </div>
           </div>
       )}
 
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
-          <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+          <div className="hidden lg:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 lg:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 lg:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
           </div>
       )}
 
-      {/* AÇÕES CLIENTE */}
+      {/* AÇÕES CLIENTE - Refresh e Update Map */}
       {isReadOnly && (
-          <div className="w-full md:w-[25%] flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800 gap-2">
-             <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 font-medium">
-                 <Clock size={12} /> {timeAgo}
-             </span>
+          <div className="w-full lg:w-[25%] flex justify-end lg:justify-center border-t border-zinc-100 dark:border-zinc-800/50 pt-3 lg:border-none lg:pt-0 mt-3 lg:mt-0">
              {tag && (
                  <button 
                      onClick={handleUpdateLocation}
                      disabled={isUpdating}
-                     className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                     className={`flex items-center justify-center gap-1.5 px-4 lg:px-3 py-2.5 lg:py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all w-full lg:w-auto ${
                          updateSuccess 
                              ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' 
                              : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'
@@ -242,7 +259,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                      ) : (
                          <RefreshCw size={12} />
                      )}
-                     {isUpdating ? 'Atualizando...' : updateSuccess ? 'Atualizado' : 'Atualizar Tag'}
+                     {isUpdating ? 'Atualizando...' : updateSuccess ? 'Posição Atualizada' : 'Atualizar Posição GPS'}
                  </button>
              )}
           </div>

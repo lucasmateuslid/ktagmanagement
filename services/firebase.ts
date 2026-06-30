@@ -1,8 +1,8 @@
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getAuth, Auth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { getFunctions, Functions } from 'firebase/functions';
 
+import { initializeApp } from 'firebase/app';
+import { initializeFirestore, Firestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+
+// Configuração do Firebase do seu Web App
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -12,36 +12,36 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-let app: FirebaseApp | null = null;
+let app;
 let db: Firestore | null = null;
-let auth: Auth | null = null;
-let functions: Functions | null = null;
 
 try {
   app = initializeApp(firebaseConfig);
-
+  
+  // Inicializa o Firestore com Long Polling forçado para evitar bloqueios de gRPC/WebSocket
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true,
+    // Garante que propriedades undefined não quebrem a gravação no banco
     ignoreUndefinedProperties: true,
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
 
-  auth = getAuth(app);
-  // Persistência local — mantém o usuário logado entre abas/refresh; alinha com
-  // o comportamento offline-first do app.
-  setPersistence(auth, browserLocalPersistence).catch((err) => {
-    console.warn("Firebase Auth persistence fallback (memory):", err?.message);
+  // Habilita persistência offline para que o app funcione mesmo sem conexão
+  // Isso resolve o erro "Failed to get document because the client is offline"
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Múltiplas abas abertas, persistência habilitada apenas na primeira.
+      console.warn("Firestore Persistence: Múltiplas abas detectadas. Cache ativo apenas na aba principal.");
+    } else if (err.code === 'unimplemented') {
+      // Browser não suporta IndexedDB
+      console.warn("Firestore Persistence: Este navegador não suporta armazenamento offline.");
+    }
   });
 
-  functions = getFunctions(app);
-
-  console.log("Firebase initialized: Auth + Firestore (Long Polling + Offline) + Functions.");
+  console.log("Firebase initialized: Long Polling & Offline Persistence enabled.");
 } catch (e: any) {
   console.error("Firebase App initialization error:", e);
   console.warn("Falling back to LocalStorage (Offline Mode Only)");
   db = null;
-  auth = null;
-  functions = null;
 }
 
-export { app, db, auth, functions };
+export { db };

@@ -4,7 +4,7 @@ import { storage } from '../../services/storage';
 import { useShipments, useShippingAddresses, useInventory } from '../../hooks/useShipments';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
-import { User, Vehicle, Shipment, ShipmentItem, ShippingAddress, Tag, Tracker, Client } from '../../types';
+import { User, Vehicle, Shipment, ShipmentItem, ShippingAddress, Tag, Tracker, Client, ShipmentStatus } from '../../types';
 import { ArrowLeft, Save, Plus, Trash2, MapPin, Package, Truck, CheckCircle, Calculator } from 'lucide-react';
 import { geocodingService } from '../../services/geocoding';
 import { SearchableSelect } from '../../components/SearchableSelect';
@@ -19,6 +19,7 @@ export const ShipmentForm = () => {
   const { saveShipment, shipments } = useShipments();
   const { addresses, saveAddress } = useShippingAddresses();
   const { tags, trackers, updateItemStatus } = useInventory();
+  const isAdmin = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
 
   const [step, setStep] = useState(1);
   const [consultants, setConsultants] = useState<User[]>([]);
@@ -31,6 +32,12 @@ export const ShipmentForm = () => {
   const [codigoRemessa, setCodigoRemessa] = useState(`REM-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`);
   const [consultorId, setConsultorId] = useState('');
   const [destinatarioNome, setDestinatarioNome] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [isRural, setIsRural] = useState(false);
+  const [ruralDetails, setRuralDetails] = useState('');
+  const [envelopeType, setEnvelopeType] = useState('Pequeno');
   const [enderecoCompleto, setEnderecoCompleto] = useState('');
   const [lat, setLat] = useState(0);
   const [lng, setLng] = useState(0);
@@ -66,6 +73,12 @@ export const ShipmentForm = () => {
           setCodigoRemessa(existing.codigoRemessa || '');
           setConsultorId(existing.consultorId);
           setDestinatarioNome(existing.destinatario.nome);
+          setEmail(existing.destinatario.email || '');
+          setTelefone(existing.destinatario.telefone || '');
+          setCpf(existing.destinatario.cpf || '');
+          setIsRural(existing.destinatario.isRural || false);
+          setRuralDetails(existing.destinatario.ruralDetails || '');
+          setEnvelopeType(existing.envelopeType || 'Pequeno');
           setEnderecoCompleto(existing.destinatario.enderecoCompleto);
           setLat(existing.destinatario.lat);
           setLng(existing.destinatario.lng);
@@ -139,27 +152,44 @@ export const ShipmentForm = () => {
     setItens(itens.filter(i => i.id !== itemId));
   };
 
-  const handleSave = async (status: 'rascunho' | 'ativo') => {
-    if (!consultorId) return addNotification('error', 'Erro', 'Selecione um consultor');
-    if (!destinatarioNome || !enderecoCompleto) return addNotification('error', 'Erro', 'Preencha os dados do destinatário');
-    if (status === 'ativo' && itens.length === 0) return addNotification('error', 'Erro', 'Adicione pelo menos um item para confirmar o envio');
+  const handleSave = async (status: ShipmentStatus) => {
+    if (user?.role === 'technician' || user?.role === 'user') {
+       if (!consultorId) setConsultorId(user.id);
+    } else {
+       if (!consultorId) return addNotification('error', 'Erro', 'Selecione um consultor');
+    }
 
-    const consultor = consultants.find(c => c.id === consultorId);
+    if (!destinatarioNome || !enderecoCompleto || !email || !cpf || !telefone) return addNotification('error', 'Erro', 'Preencha todos os dados básicos do destinatário');
+    if (isAdmin && status === 'ativo' && itens.length === 0) return addNotification('error', 'Erro', 'Adicione pelo menos um item para confirmar o envio');
+
+    const consultor = consultants.find(c => c.id === (consultorId || user?.id));
     
+    // For non-admins requesting new shipments, status goes to 'em_analise' directly
+    let finalStatus = status;
+    if ((user?.role === 'technician' || user?.role === 'user') && status === 'ativo') {
+        finalStatus = 'em_analise';
+    }
+
     const shipment: Shipment = {
       id: id && id !== 'nova' ? id : Date.now().toString(),
       titulo: titulo || `Remessa ${new Date().toLocaleDateString()}`,
       codigoRemessa,
-      status,
-      consultorId,
-      consultorNome: consultor?.name || '',
+      status: finalStatus,
+      consultorId: consultorId || user?.id || '',
+      consultorNome: consultor?.name || user?.name || '',
       destinatario: {
         nome: destinatarioNome,
+        email,
+        telefone,
+        cpf,
         enderecoCompleto,
+        isRural,
+        ruralDetails,
         lat,
         lng,
         placeId
       },
+      envelopeType,
       codigoRastreio,
       transportadora,
       dataCriacao: Date.now(),
@@ -229,22 +259,32 @@ export const ShipmentForm = () => {
               <input type="text" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Lote SP - João" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
             </div>
             
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Solicitante *</label>
-              <SearchableSelect
-                options={consultants.map(c => ({ id: c.id, label: c.name }))}
-                value={consultorId}
-                onChange={setConsultorId}
-                placeholder="Buscar solicitante..."
-              />
-            </div>
+            {isAdmin && (
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Solicitante *</label>
+                <SearchableSelect
+                  options={consultants.map(c => ({ id: c.id, label: c.name }))}
+                  value={consultorId}
+                  onChange={setConsultorId}
+                  placeholder="Buscar solicitante..."
+                />
+              </div>
+            )}
 
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Nome do Destinatário *</label>
               <SearchableSelect
                 options={clients.map(c => ({ id: c.id, label: c.name, subLabel: c.phone || c.cpf }))}
                 value={clients.find(c => c.name === destinatarioNome)?.id || ''}
-                onChange={(val, option) => setDestinatarioNome(option?.label || '')}
+                onChange={(val, option) => {
+                  setDestinatarioNome(option?.label || '');
+                  const client = clients.find(c => c.id === val);
+                  if (client) {
+                    setEmail(client.email || '');
+                    setTelefone(client.phone || '');
+                    setCpf(client.cpf || '');
+                  }
+                }}
                 placeholder="Buscar cliente..."
               />
               {/* Fallback input for manual entry if client not found */}
@@ -255,6 +295,21 @@ export const ShipmentForm = () => {
                 placeholder="Ou digite o nome manualmente..."
                 className="w-full px-4 py-3 mt-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" 
               />
+            </div>
+
+            <div className="space-y-2 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Email *</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email do destinatário" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Telefone *</label>
+                <input type="text" value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="Telefone do destinatário" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">CPF/CNPJ *</label>
+                <input type="text" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+              </div>
             </div>
 
             <div className="space-y-2 md:col-span-2 relative">
@@ -276,15 +331,44 @@ export const ShipmentForm = () => {
               )}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Transportadora</label>
-              <input type="text" value={transportadora} onChange={e => setTransportadora(e.target.value)} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+            <div className="space-y-4 md:col-span-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={isRural} onChange={e => setIsRural(e.target.checked)} className="w-4 h-4 text-primary-500 rounded border-zinc-300" />
+                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Endereço em Zona Rural? (Requer detalhes manuais)</span>
+              </label>
+              {isRural && (
+                <textarea 
+                  value={ruralDetails} 
+                  onChange={e => setRuralDetails(e.target.value)} 
+                  placeholder="Por favor, forneça referências locais, informações de como chegar, cor da porteira/fachada, etc." 
+                  rows={3} 
+                  className="w-full px-4 py-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 rounded-xl outline-none focus:border-amber-500 text-sm"
+                />
+              )}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Código de Rastreio</label>
-              <input type="text" value={codigoRastreio} onChange={e => setCodigoRastreio(e.target.value)} placeholder="Opcional neste momento" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Tipo de Envelope *</label>
+              <select value={envelopeType} onChange={e => setEnvelopeType(e.target.value)} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500">
+                <option value="Pequeno">Envelope Pequeno (padrão)</option>
+                <option value="Médio">Envelope Médio</option>
+                <option value="Grande">Caixa / Outro</option>
+              </select>
             </div>
+
+            {isAdmin && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Transportadora</label>
+                  <input type="text" value={transportadora} onChange={e => setTransportadora(e.target.value)} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Código de Rastreio</label>
+                  <input type="text" value={codigoRastreio} onChange={e => setCodigoRastreio(e.target.value)} placeholder="Opcional neste momento" className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:border-primary-500" />
+                </div>
+              </>
+            )}
 
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Observações</label>
@@ -292,10 +376,16 @@ export const ShipmentForm = () => {
             </div>
           </div>
           
-          <div className="flex justify-end pt-4">
-            <button onClick={() => setStep(2)} className="bg-primary-500 hover:bg-primary-600 text-white px-8 py-3 rounded-xl font-bold transition-colors">
-              Próximo Passo
-            </button>
+          <div className="flex justify-end pt-4 gap-4">
+            {isAdmin ? (
+               <button onClick={() => setStep(2)} className="bg-primary-500 hover:bg-primary-600 text-white px-8 py-3 rounded-xl font-bold transition-colors">
+                 Próximo Passo
+               </button>
+            ) : (
+               <button onClick={() => handleSave('ativo')} className="bg-primary-500 hover:bg-primary-600 text-white px-8 py-3 rounded-xl font-bold transition-colors flex items-center gap-2">
+                 <CheckCircle size={20} /> Solicitar Envio
+               </button>
+            )}
           </div>
         </div>
       )}
@@ -401,11 +491,25 @@ export const ShipmentForm = () => {
               <div>
                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Destinatário</p>
                 <p className="font-bold text-zinc-900 dark:text-white">{destinatarioNome}</p>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">{enderecoCompleto}</p>
+                {cpf && <p className="text-sm text-zinc-500 mt-1">CPF/CNPJ: {cpf}</p>}
+                {telefone && <p className="text-sm text-zinc-500">Tel: {telefone}</p>}
+                {email && <p className="text-sm text-zinc-500">Email: {email}</p>}
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2">{enderecoCompleto}</p>
+                {isRural && (
+                  <p className="text-sm text-amber-600 mt-1 bg-amber-50 dark:bg-amber-900/10 p-2 rounded">
+                    <strong>Zona Rural:</strong> {ruralDetails}
+                  </p>
+                )}
               </div>
-              <div>
-                <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Consultor</p>
-                <p className="font-bold text-zinc-900 dark:text-white">{consultants.find(c => c.id === consultorId)?.name}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Consultor</p>
+                  <p className="font-bold text-zinc-900 dark:text-white">{consultants.find(c => c.id === (consultorId || user?.id))?.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Tipo Envelope</p>
+                  <p className="font-bold text-zinc-900 dark:text-white">{envelopeType}</p>
+                </div>
               </div>
               {transportadora && (
                 <div>

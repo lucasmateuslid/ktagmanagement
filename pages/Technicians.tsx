@@ -7,7 +7,6 @@ import { useNotification } from '../contexts/NotificationContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { securityService } from '../services/security';
 import { Checkbox } from '../components/ui/checkbox';
-import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff, Layers, Radio, Tag } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
@@ -388,20 +387,11 @@ export const Technicians = () => {
         })}
       </div>
 
-      <ResponsiveModal
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        size="lg"
-        title={formData.id ? 'Editar Técnico' : 'Cadastro de Técnico'}
-        footer={
-          <div className="flex gap-3">
-            <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-black uppercase text-[10px] text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>
-            <button type="submit" form="tech-form" className="flex-1 py-3 bg-primary-500 text-black rounded-xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Salvar</button>
-          </div>
-        }
-      >
-        <ModalSection>
-                <form id="tech-form" onSubmit={handleSave} className="space-y-4">
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 w-full max-w-lg border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
+                <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase mb-6">{formData.id ? 'Editar Técnico' : 'Cadastro de Técnico'}</h2>
+                <form onSubmit={handleSave} className="space-y-4">
                     <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Nome Completo</label>
                         <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" />
@@ -549,9 +539,14 @@ export const Technicians = () => {
                             Registrar Usuário
                         </button>
                     )}
+                    <div className="flex gap-3 pt-4">
+                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl font-black uppercase text-[10px] text-zinc-500 hover:text-zinc-900">Cancelar</button>
+                        <button type="submit" className="flex-1 py-3 bg-primary-500 text-black rounded-xl font-black uppercase text-[10px] shadow-lg hover:scale-105 transition-all">Salvar</button>
+                    </div>
                 </form>
-        </ModalSection>
-      </ResponsiveModal>
+            </div>
+        </div>
+      )}
 
       {selectedTechForDetail && (
           <TechnicianStatsModal 

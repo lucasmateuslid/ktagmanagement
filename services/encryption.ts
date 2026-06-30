@@ -23,18 +23,15 @@ class EncryptionService {
     return this.initializationPromise;
   }
 
-  // Deriva uma chave robusta a partir de um seed (em multi-tenant: o tenantId).
-  // Trocar o seed entre tenants garante que dados criptografados de um tenant
-  // não podem ser descriptografados em sessão de outro tenant.
+  // Deriva uma chave robusta a partir do ID do usuário ou senha
   async initialize(seed: string) {
     if (!seed) return;
-
+    
     try {
       const encoder = new TextEncoder();
-      const composedSeed = `ktag-enterprise-master-key-${seed}-v3`;
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
-        encoder.encode(composedSeed),
+        encoder.encode(seed),
         'PBKDF2',
         false,
         ['deriveKey']

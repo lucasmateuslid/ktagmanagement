@@ -1,6 +1,7 @@
 
 import * as React from 'react';
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { storage } from '../services/storage';
 
 type Language = 'pt' | 'en';
 
@@ -383,29 +384,19 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-const LANGUAGE_STORAGE_KEY = 'ktag-language';
-const SUPPORTED_LANGUAGES: Language[] = ['pt', 'en'];
-
-function readStoredLanguage(): Language {
-  try {
-    const v = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-    if (v && SUPPORTED_LANGUAGES.includes(v as Language)) return v as Language;
-  } catch (_) { /* SSR / disabled storage */ }
-  // Fallback: navegador (pt-BR → pt)
-  try {
-    const browser = navigator.language?.slice(0, 2);
-    if (browser && SUPPORTED_LANGUAGES.includes(browser as Language)) return browser as Language;
-  } catch (_) { /* SSR */ }
-  return 'pt';
-}
-
 export const LanguageProvider = ({ children }: { children?: ReactNode }) => {
-  // Inicializa síncrono — sem efeito assíncrono dependente de tenant/Firestore.
-  const [language, setLanguage] = useState<Language>(() => readStoredLanguage());
+  const [language, setLanguage] = useState<Language>('pt');
+
+  useEffect(() => {
+    const init = async () => {
+      const settings = await storage.getSettings();
+      if (settings.language) setLanguage(settings.language);
+    };
+    init();
+  }, []);
 
   const changeLanguage = (lang: Language) => {
     setLanguage(lang);
-    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, lang); } catch (_) { /* noop */ }
   };
 
   const t = (key: keyof typeof translations['en']): string => {

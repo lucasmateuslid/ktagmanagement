@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { fetchTagsLocationBatch, hasMoved } from '../../../services/api';
+import { fetchTagsLocationBatch } from '../../../services/api';
 import { Tag, Vehicle, LocationHistory } from '../../../types';
 import { storage } from '../../../services/storage';
 
@@ -11,19 +11,6 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
   
   // Controle de última gravação no banco para economizar writes (Throttling)
   const lastSaveRef = useRef<Record<string, number>>({});
-
-  // Última posição registrada no histórico por tag (baseline de dedup por movimento)
-  const lastHistoryPosRef = useRef<Record<string, { lat: number; lon: number }>>({});
-
-  // Registra um ponto de histórico apenas quando o veículo se moveu (dedup).
-  // Baseline: o último ponto registrado nesta sessão ou, na ausência, o lastPosition persistido.
-  const recordHistoryIfMoved = (vehicle: Vehicle, loc: LocationHistory) => {
-    const baseline = lastHistoryPosRef.current[vehicle.tagId!] ?? vehicle.lastPosition;
-    if (hasMoved(baseline, loc)) {
-      storage.appendVehicleHistory(vehicle.id, loc);
-      lastHistoryPosRef.current[vehicle.tagId!] = { lat: loc.lat, lon: loc.lon };
-    }
-  };
 
   // 1. Carrega localizações iniciais persistidas no banco (Offline First)
   useEffect(() => {
@@ -60,7 +47,6 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
         // Persiste se for veículo
         const vehicle = vehicles.find(v => v.tagId === tagId);
         if (vehicle) {
-          recordHistoryIfMoved(vehicle, loc as LocationHistory);
           storage.updateVehiclePosition(vehicle.id, loc as any);
           lastSaveRef.current[tagId] = Date.now();
         }
@@ -92,9 +78,6 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       valid.forEach(loc => {
           const vehicle = vehicles.find(v => v.tagId === loc.tagId);
           if (vehicle) {
-              // Histórico: guardado por movimento (dedup), independente do throttle do lastPosition.
-              recordHistoryIfMoved(vehicle, loc as LocationHistory);
-
               const lastSaveTime = lastSaveRef.current[loc.tagId!] || 0;
               if ((now - lastSaveTime) > 600000) {
                   storage.updateVehiclePosition(vehicle.id, loc as any);
@@ -126,10 +109,9 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [tags.length]);
 
-  // Atualização imediata ao abrir/selecionar o veículo + refresh a cada 1 min enquanto selecionado
+  // Atualização mais frequente apenas para o veículo selecionado
   useEffect(() => {
       if (selectedTagId) {
-          refreshTag(selectedTagId); // atualiza na hora ao abrir a janela do veículo
           const interval = setInterval(() => refreshTag(selectedTagId), 60000); // 1 minuto para o selecionado
           return () => clearInterval(interval);
       }

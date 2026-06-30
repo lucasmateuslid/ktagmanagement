@@ -7,7 +7,7 @@ import { storage } from '../../services/storage';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { Schedule, Technician, Company } from '../../types';
 import { TrackingModal } from '../../components/TrackingModal';
-import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, UserCircle2, ChevronLeft, ChevronRight, LayoutGrid, Calendar, CheckCircle2, XCircle, Search, ChevronDown } from 'lucide-react';
 import { TechnicianAvailabilityAlert } from '../../components/TechnicianAvailabilityAlert';
 import { whatsappService } from '../../services/whatsappService';
 
@@ -25,6 +25,8 @@ import { ScheduleSearchBar } from './components/filters/ScheduleSearchBar';
 import { ScheduleDropdownFilters } from './components/filters/ScheduleDropdownFilters';
 import { AdminScheduleCard } from './components/cards/AdminScheduleCard';
 import { UserScheduleCard } from './components/cards/UserScheduleCard';
+import { TechnicianScheduleCard } from '../../components/TechnicianScheduleCard';
+import { ScheduleKanban } from './components/ScheduleKanban';
 import { EmptyState } from './components/EmptyState';
 
 export const SchedulesPage = () => {
@@ -90,7 +92,11 @@ export const SchedulesPage = () => {
     filterService, setFilterService,
     filterStatusDropdown, setFilterStatusDropdown,
     filterDevice, setFilterDevice,
-    filterDate, setFilterDate
+    filterShift, setFilterShift,
+    filterActiveRequester, setFilterActiveRequester,
+    filterOnlyMine, setFilterOnlyMine,
+    filterStartDate, setFilterStartDate,
+    filterEndDate, setFilterEndDate
   } = useScheduleFilters(schedules, technicians, user, viewDate);
 
   const stats = useScheduleStats(schedules, technicians, viewDate, isPrivileged);
@@ -109,6 +115,36 @@ export const SchedulesPage = () => {
       const newDate = new Date(viewDate);
       newDate.setMonth(viewDate.getMonth() + (direction === 'next' ? 1 : -1));
       setViewDate(newDate);
+  };
+
+  const handleStatusChange = async (scheduleId: string, newStatus: string) => {
+      const schedule = schedules.find(s => s.id === scheduleId);
+      if (!schedule || schedule.status === newStatus) return;
+      
+      try {
+         const newHistory = [...(schedule.history || [])];
+         newHistory.push({
+             action: 'Alteração de Status via Kanban',
+             timestamp: Date.now(),
+             actionBy: user?.name || 'Sistema',
+             statusSnapshot: newStatus
+         } as any);
+         const updated = { ...schedule, status: newStatus as any, history: newHistory };
+         await storage.saveSchedule(updated);
+
+         if (updated.clientPhone) {
+             const msg = whatsappService.getScheduleStatusMessage(
+                 updated.clientName?.split(' ')[0] || updated.requesterName.split(' ')[0], 
+                 updated.vehiclePlate, 
+                 updated.status,
+                 updated.confirmedDate ? `${updated.confirmedDate.split('-').reverse().join('/')} às ${updated.confirmedTime}` : undefined
+             );
+             whatsappService.sendMessage(updated.clientPhone, msg);
+         }
+         addNotification('success', 'Status atualizado', 'Status do agendamento alterado.');
+      } catch(e) {
+         addNotification('error', 'Erro', 'Falha ao atualizar o card.');
+      }
   };
 
   const handleCopyConfirmation = (e: React.MouseEvent, schedule: Schedule) => {
@@ -179,8 +215,69 @@ export const SchedulesPage = () => {
 
   return (
     <div className="space-y-8 pb-24 max-w-[1600px] mx-auto">
-        {/* HEADER */}
-        {isPrivileged ? (
+        {user?.role === 'technician' ? (
+             <div className="space-y-6">
+                 <div className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 shrink-0">
+                     <h1 className="text-xl font-display font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                       Análise Mensal <Search size={18} className="text-red-500"/>
+                     </h1>
+                     <div className="bg-blue-600 text-white rounded-xl px-3 py-1.5 flex items-center gap-2 font-bold text-sm">
+                        <Calendar size={14} /> jun. 2026 <ChevronDown size={14} />
+                     </div>
+                 </div>
+
+                 <div className="px-4">
+                     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-3 mb-6 flex items-center gap-2">
+                        <Search size={18} className="text-zinc-400" />
+                        <input 
+                           type="text" 
+                           placeholder="Pesquisar por número, nome do cliente, veículo"
+                           className="bg-transparent border-none outline-none text-sm w-full font-medium"
+                           value={searchTerm}
+                           onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                     </div>
+
+                     <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6 mb-6 flex items-center justify-between">
+                         <div className="space-y-3">
+                             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-400"></div><span className="font-black text-lg">1</span><span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Abertas</span></div>
+                             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-cyan-400"></div><span className="font-black text-lg">0</span><span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Iniciadas</span></div>
+                             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500"></div><span className="font-black text-lg">0</span><span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Finalizadas</span></div>
+                             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-600"></div><span className="font-black text-lg">0</span><span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Canceladas</span></div>
+                             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-zinc-800"></div><span className="font-black text-lg">0</span><span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Não Realizada</span></div>
+                         </div>
+                         <div className="w-32 h-32 relative">
+                             {/* Donut placeholder */}
+                             <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
+                                 <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f4f4f5" strokeWidth="20" />
+                                 <circle cx="50" cy="50" r="40" fill="transparent" stroke="#fbbf24" strokeWidth="20" strokeDasharray="251.2" strokeDashoffset="0" />
+                             </svg>
+                             <div className="absolute inset-0 flex items-center justify-center font-black text-xl">1</div>
+                         </div>
+                     </div>
+
+                     {/* Custom Scrollable Tabs */}
+                     <div className="flex overflow-x-auto gap-6 hide-scrollbar border-b border-zinc-200 dark:border-zinc-800 mb-6 px-1">
+                         {['Aberto', 'Iniciado', 'Finalizado', 'Cancelado', 'Não realizada'].map(tab => (
+                             <button 
+                                key={tab}
+                                onClick={() => setStatusFilter(tab === 'Aberto' ? 'Confirmada' : tab === 'Iniciado' ? 'Técnico no local' : tab === 'Finalizado' ? 'Concluída' : tab === 'Cancelado' ? 'Cancelada' : 'Frustrada')}
+                                className={`pb-3 text-sm font-bold whitespace-nowrap border-b-2 transition-colors ${
+                                    (statusFilter === 'Confirmada' && tab === 'Aberto') ||
+                                    (statusFilter === 'Técnico no local' && tab === 'Iniciado') ||
+                                    (statusFilter === 'Concluída' && tab === 'Finalizado') ||
+                                    (statusFilter === 'Cancelada' && tab === 'Cancelado') ||
+                                    (statusFilter === 'Frustrada' && tab === 'Não realizada')
+                                        ? 'border-blue-600 text-blue-600' : 'border-transparent text-zinc-500'
+                                }`}
+                             >
+                                 {tab}
+                             </button>
+                         ))}
+                     </div>
+                 </div>
+             </div>
+        ) : isPrivileged ? (
             <div className="space-y-8">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                     <div>
@@ -326,8 +423,10 @@ export const SchedulesPage = () => {
                     onExportPDF={handleExportPDF}
                     onExportExcel={handleExportExcel}
                     isExporting={isExporting}
-                    filterDate={filterDate}
-                    setFilterDate={setFilterDate}
+                    filterStartDate={filterStartDate}
+                    setFilterStartDate={setFilterStartDate}
+                    filterEndDate={filterEndDate}
+                    setFilterEndDate={setFilterEndDate}
                 />
             </div>
 
@@ -338,6 +437,9 @@ export const SchedulesPage = () => {
                     filterService={filterService} setFilterService={setFilterService}
                     filterStatusDropdown={filterStatusDropdown} setFilterStatusDropdown={setFilterStatusDropdown}
                     filterDevice={filterDevice} setFilterDevice={setFilterDevice}
+                    filterShift={filterShift} setFilterShift={setFilterShift}
+                    filterActiveRequester={filterActiveRequester} setFilterActiveRequester={setFilterActiveRequester}
+                    filterOnlyMine={filterOnlyMine} setFilterOnlyMine={setFilterOnlyMine}
                 />
             )}
         </div>
@@ -347,24 +449,31 @@ export const SchedulesPage = () => {
             {filteredList.length === 0 ? (
                 <EmptyState />
             ) : (
-                filteredList.map(item => (isPrivileged && !showMyRequests) ? (
-                    <AdminScheduleCard 
-                        key={item.id} 
-                        item={item} 
-                        technicians={technicians} 
-                        onClick={setSelectedSchedule} 
-                    />
-                ) : (
-                    <UserScheduleCard 
-                        key={item.id} 
-                        item={item} 
-                        technicians={technicians} 
-                        onClick={setSelectedSchedule}
-                        onCopy={handleCopyConfirmation}
-                    />
-                ))
-            )}
-        </div>
+                    filteredList.map(item => (isPrivileged && !showMyRequests) ? (
+                        <AdminScheduleCard 
+                            key={item.id} 
+                            item={item} 
+                            technicians={technicians} 
+                            onClick={setSelectedSchedule} 
+                        />
+                    ) : user?.role === 'technician' ? (
+                        <TechnicianScheduleCard 
+                            key={item.id} 
+                            item={item} 
+                            technicians={technicians} 
+                            onClick={setSelectedSchedule} 
+                        />
+                    ) : (
+                        <UserScheduleCard 
+                            key={item.id} 
+                            item={item} 
+                            technicians={technicians} 
+                            onClick={setSelectedSchedule}
+                            onCopy={handleCopyConfirmation}
+                        />
+                    ))
+                )}
+            </div>
 
         {/* MODAL */}
         {selectedSchedule && (

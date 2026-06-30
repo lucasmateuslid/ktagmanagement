@@ -29,7 +29,13 @@ export const TechnicianFinancials = () => {
   }, [user]);
 
   const financialData = useMemo(() => {
-    return technicians.map(tech => {
+    let filteredTechs = technicians;
+    if (user?.role === 'technician') {
+      const techId = user?.technicianId || technicians.find(t => t.email?.toLowerCase() === user?.email.toLowerCase())?.id || user?.id;
+      filteredTechs = technicians.filter(t => t.id === techId);
+    }
+
+    return filteredTechs.map(tech => {
       const techSchedules = schedules.filter(s => s.technicianId === tech.id);
       const openServices = techSchedules.filter(s => s.status !== 'Concluída' && s.status !== 'Cancelada' && s.status !== 'Frustrada');
       
@@ -85,7 +91,7 @@ export const TechnicianFinancials = () => {
   return (
     <div className="p-6 pb-24 font-sans max-w-[1600px] mx-auto">
       <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-8">
-        Gestão Financeira de Técnicos
+        {user?.role === 'technician' ? 'Meu Financeiro' : 'Gestão Financeira de Técnicos'}
       </h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

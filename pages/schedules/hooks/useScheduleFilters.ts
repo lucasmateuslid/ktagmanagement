@@ -23,12 +23,29 @@ export const useScheduleFilters = (
   const [filterService, setFilterService] = useState('Todos Serviços');
   const [filterStatusDropdown, setFilterStatusDropdown] = useState('Todos Status');
   const [filterDevice, setFilterDevice] = useState('Todos Dispositivos');
+  const [filterShift, setFilterShift] = useState('Todos Turnos');
+  const [filterActiveRequester, setFilterActiveRequester] = useState(false);
+  const [filterOnlyMine, setFilterOnlyMine] = useState(false);
   
   // Date Filter (Overrides month view)
-  const [filterDate, setFilterDate] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
 
   const filteredList = useMemo(() => {
     let filtered = schedules;
+
+    // Helper for date range
+    const hasDateFilter = filterStartDate || filterEndDate;
+    const checkDateRange = (targetStr: string) => {
+        if (filterStartDate && filterEndDate) {
+            return targetStr >= filterStartDate && targetStr <= filterEndDate;
+        } else if (filterStartDate) {
+            return targetStr >= filterStartDate;
+        } else if (filterEndDate) {
+            return targetStr <= filterEndDate;
+        }
+        return true;
+    };
 
     // 1. Search Text
     if (searchTerm) {
@@ -60,17 +77,18 @@ export const useScheduleFilters = (
         } else {
             if (adminTab === 'pendentes') {
                 filtered = filtered.filter(s => ['Solicitada', 'Em análise', 'Em orçamento', 'Autorizada'].includes(s.status));
-                // Para pendentes, filtro de data é opcional (geralmente vê tudo), mas se tiver data, filtra pela preferred
-                if (filterDate) {
-                    filtered = filtered.filter(s => s.preferredDate === filterDate);
+                if (hasDateFilter) {
+                    filtered = filtered.filter(s => s.preferredDate && checkDateRange(s.preferredDate));
                 }
             } else if (adminTab === 'agendados') {
                 filtered = filtered.filter(s => ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
                 
                 // DATE FILTER LOGIC
-                if (filterDate) {
-                    // Filtra pela data exata
-                    filtered = filtered.filter(s => (s.confirmedDate || s.preferredDate) === filterDate);
+                if (hasDateFilter) {
+                    filtered = filtered.filter(s => {
+                        const tgt = s.confirmedDate || s.preferredDate || '';
+                        return tgt && checkDateRange(tgt);
+                    });
                 } else {
                     // Fallback para Filtro de Mês (viewDate)
                     filtered = filtered.filter(s => {
@@ -83,11 +101,10 @@ export const useScheduleFilters = (
                 filtered = filtered.filter(s => ['Concluída', 'Cancelada', 'Frustrada'].includes(s.status));
                 
                 // DATE FILTER LOGIC
-                if (filterDate) {
+                if (hasDateFilter) {
                     filtered = filtered.filter(s => {
-                        // Tenta usar confirmedDate, se não existir (canceladas antes de agendar), usa createdAt
                         const target = s.confirmedDate || new Date(s.createdAt).toISOString().split('T')[0];
-                        return target === filterDate;
+                        return target && checkDateRange(target);
                     });
                 } else {
                     // Month filter
@@ -118,6 +135,23 @@ export const useScheduleFilters = (
                     if (techId) filtered = filtered.filter(s => s.technicianId === techId);
                 }
             }
+            if (filterShift !== 'Todos Turnos') {
+                filtered = filtered.filter(s => {
+                    const timeToCheck = s.confirmedTime || s.preferredTime;
+                    if (!timeToCheck) return false;
+                    const hours = parseInt(timeToCheck.split(':')[0], 10);
+                    if (filterShift === 'Manhã') return hours >= 0 && hours < 12;
+                    if (filterShift === 'Tarde') return hours >= 12 && hours < 18;
+                    if (filterShift === 'Noite') return hours >= 18;
+                    return true;
+                });
+            }
+            if (filterActiveRequester) {
+                filtered = filtered.filter(s => s.clientStatus?.toUpperCase() === 'ATIVO');
+            }
+            if (filterOnlyMine && user) {
+                filtered = filtered.filter(s => s.requesterId === user.id || s.history.some(h => h.actionBy === user.name));
+            }
         }
 
     } else if (user?.role === 'technician') {
@@ -140,7 +174,7 @@ export const useScheduleFilters = (
     }
 
     return filtered;
-  }, [schedules, searchTerm, statusFilter, adminTab, isPrivileged, filterTech, filterService, filterStatusDropdown, filterDevice, filterDate, technicians, showMyRequests, viewDate, user]);
+  }, [schedules, searchTerm, statusFilter, adminTab, isPrivileged, filterTech, filterService, filterStatusDropdown, filterDevice, filterShift, filterActiveRequester, filterOnlyMine, filterStartDate, filterEndDate, technicians, showMyRequests, viewDate, user]);
 
   return {
     searchTerm, setSearchTerm,
@@ -151,7 +185,11 @@ export const useScheduleFilters = (
     filterService, setFilterService,
     filterStatusDropdown, setFilterStatusDropdown,
     filterDevice, setFilterDevice,
-    filterDate, setFilterDate,
+    filterShift, setFilterShift,
+    filterActiveRequester, setFilterActiveRequester,
+    filterOnlyMine, setFilterOnlyMine,
+    filterStartDate, setFilterStartDate,
+    filterEndDate, setFilterEndDate,
     filteredList,
     isPrivileged
   };

@@ -20,6 +20,7 @@ import { useVehicleForm } from './hooks/useVehicleForm';
 import { VehicleTable } from './components/VehicleTable';
 import { VehicleFiltersBar } from './components/VehicleFiltersBar';
 import { VehicleModal } from './components/VehicleModal';
+import { VehicleScanModal } from './components/VehicleScanModal';
 import { FipeModal } from './components/FipeModal';
 import { VehicleKPIModal } from './components/VehicleKPIModal';
 import { Vehicle, LocationHistory } from '../../types';
@@ -88,6 +89,7 @@ export const VehiclesPage = () => {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState<string | null>(null);
   const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
 
   // UI State for Client Mobile
   const [showSearch, setShowSearch] = React.useState(false);
@@ -414,13 +416,23 @@ export const VehiclesPage = () => {
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+              <div className="w-1 h-4 bg-primary-500 rounded-full" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">MÓDULO DE OPERAÇÕES</p>
+          </div>
           <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{isClientView ? 'Minha Frota' : 'Veículos'}</h1>
           <p className="text-zinc-500 text-xs mt-1 font-medium">{isClientView ? 'Gestão dos seus veículos e equipamentos.' : 'Gestão operacional da frota.'}</p>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {!isClientView && (
             <>
+              <button
+                onClick={() => setIsScanModalOpen(true)}
+                className="flex-1 md:flex-none border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <Search size={16} strokeWidth={3} /> VARREDURA
+              </button>
               <button
                 onClick={() => setIsKPIModalOpen(true)}
                 className="flex-1 md:flex-none bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
@@ -482,6 +494,14 @@ export const VehiclesPage = () => {
           tags={tags}
           categories={categories}
           clients={clients}
+        />
+      )}
+
+      {isScanModalOpen && (
+        <VehicleScanModal 
+            isOpen={isScanModalOpen} 
+            onClose={() => setIsScanModalOpen(false)} 
+            vehicles={vehicles}
         />
       )}
 

@@ -12,11 +12,12 @@ export const ShipmentDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canEdit = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
+  const isAdmin = user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'admin_tecnico';
   const canQuote = user?.role !== 'client';
   const { shipments, loading, updateShipmentStatus } = useShipments();
   const { tags, loading: tagsLoading } = useInventory();
   const [shipment, setShipment] = useState<any>(null);
+  const canEdit = isAdmin || (shipment && user?.id === shipment.consultorId && (shipment.status === 'rascunho' || shipment.status === 'em_analise'));
   const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [newTrackingCode, setNewTrackingCode] = useState('');
   
@@ -45,9 +46,17 @@ export const ShipmentDetails = () => {
     return tag ? (tag.accessoryId || tag.imei || tagId) : tagId;
   };
 
+  const getStatusDisplay = (status: ShipmentStatus) => {
+    switch (status) {
+      case 'em_analise': return 'Em Análise';
+      default: return status;
+    }
+  };
+
   const getStatusColor = (status: ShipmentStatus) => {
     switch (status) {
       case 'rascunho': return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400';
+      case 'em_analise': return 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400';
       case 'ativo': return 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400';
       case 'enviado': return 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400';
       case 'entregue': return 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400';
@@ -114,7 +123,7 @@ export const ShipmentDetails = () => {
             <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{shipment.titulo}</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${getStatusColor(shipment.status)}`}>
-                {shipment.status}
+                {getStatusDisplay(shipment.status)}
               </span>
               {shipment.codigoRemessa && (
                 <span className="text-xs font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-md">
@@ -131,7 +140,7 @@ export const ShipmentDetails = () => {
               <Truck size={18} /> Melhor Envio
             </button>
           )}
-          {canEdit && shipment.status === 'rascunho' && (
+          {canEdit && (shipment.status === 'rascunho' || shipment.status === 'em_analise') && (
             <button onClick={() => navigate(`/envios/${shipment.id}/editar`)} className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
               Editar
             </button>
@@ -184,11 +193,26 @@ export const ShipmentDetails = () => {
               <div>
                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Destinatário</p>
                 <p className="font-bold text-zinc-900 dark:text-white">{shipment.destinatario.nome}</p>
+                {shipment.destinatario.cpf && <p className="text-sm text-zinc-500 mt-1">CPF/CNPJ: {shipment.destinatario.cpf}</p>}
+                {shipment.destinatario.telefone && <p className="text-sm text-zinc-500">Tel: {shipment.destinatario.telefone}</p>}
+                {shipment.destinatario.email && <p className="text-sm text-zinc-500">Email: {shipment.destinatario.email}</p>}
               </div>
               <div>
                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Endereço</p>
                 <p className="text-sm text-zinc-700 dark:text-zinc-300">{shipment.destinatario.enderecoCompleto}</p>
+                {shipment.destinatario.isRural && (
+                  <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 rounded-xl">
+                    <p className="text-xs font-bold text-amber-800 dark:text-amber-500 mb-1">Zona Rural (Instruções Adicionais)</p>
+                    <p className="text-sm text-amber-700 dark:text-amber-400">{shipment.destinatario.ruralDetails}</p>
+                  </div>
+                )}
               </div>
+              {shipment.envelopeType && (
+                <div>
+                  <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Tipo de Envelope</p>
+                  <p className="font-bold text-zinc-900 dark:text-white">{shipment.envelopeType}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Consultor Responsável</p>
                 <p className="font-bold text-zinc-900 dark:text-white">{shipment.consultorNome}</p>
@@ -223,7 +247,7 @@ export const ShipmentDetails = () => {
                       <AlertTriangle size={16} className="text-amber-500" />
                       <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pendente</span>
                     </div>
-                    {canEdit && shipment.status !== 'entregue' && shipment.status !== 'cancelado' && (
+                    {isAdmin && shipment.status !== 'entregue' && shipment.status !== 'cancelado' && (
                       <button onClick={() => setShowTrackingModal(true)} className="w-full py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                         Adicionar Rastreio
                       </button>
@@ -262,7 +286,7 @@ export const ShipmentDetails = () => {
       </div>
 
       {showTrackingModal && (
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl p-6 shadow-xl border border-zinc-200 dark:border-zinc-800">
             <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">Adicionar Código de Rastreio</h3>
             <input 

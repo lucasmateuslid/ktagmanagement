@@ -3,8 +3,6 @@
 
 **K-Tag Manager Pro** é uma plataforma Enterprise de gestão de rastreamento, controle de frota e orquestração de serviços técnicos. Desenvolvida como uma SPA (Single Page Application) moderna, ela foca em performance, funcionamento offline-first e integração com múltiplas APIs de telemetria.
 
-> **Multi-tenant + billing + CI/CD**: leia [`MULTITENANT_CHANGES.md`](./MULTITENANT_CHANGES.md) (especialmente a **Fase 6**) antes de mexer em deploy, Asaas, painel super-admin ou pipeline. A última fase tem: setup do CI/CD via GitHub Actions com WIF, integração Asaas completa (assinaturas/faturas/PIX/boleto), página `/billing` do tenant, fixes do Cloud Run (cold start de 40s→2s) e o roadmap dos próximos passos.
-
 ---
 
 ## 🚀 Tecnologias Implementadas

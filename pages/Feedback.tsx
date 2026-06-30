@@ -203,22 +203,11 @@ export const FeedbackPage = () => {
 
                   {fb.attachments && fb.attachments.length > 0 && (
                       <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                          {fb.attachments.map((att, idx) => {
-                              // Abre a URL bruta (atributo data:/blob:/https:) numa aba nova,
-                              // sem injetar HTML construído com a string do anexo —
-                              // document.write com interpolação é XSS direto.
-                              const open = () => {
-                                  const url = typeof att === 'string' ? att : '';
-                                  if (!url) return;
-                                  if (!/^(https?:|data:image\/|blob:)/i.test(url)) return;
-                                  window.open(url, '_blank', 'noopener,noreferrer');
-                              };
-                              return (
-                                  <div key={idx} className="cursor-pointer" onClick={open}>
-                                      <img src={att} className="h-24 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:opacity-80 transition-opacity" alt="attachment"/>
-                                  </div>
-                              );
-                          })}
+                          {fb.attachments.map((att, idx) => (
+                              <div key={idx} className="cursor-pointer" onClick={() => { const w = window.open(); if(w) { w.document.write(`<img src="${att}" style="max-width:100%"/>`); } }}>
+                                  <img src={att} className="h-24 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:opacity-80 transition-opacity" alt="attachment"/>
+                              </div>
+                          ))}
                       </div>
                   )}
               </div>

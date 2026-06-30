@@ -3,7 +3,7 @@ import React from 'react';
 import { Schedule, Technician } from '../../../../types';
 import { User, UserCircle2, Wrench, MapPin, SearchCheck } from 'lucide-react';
 import { getStatusStyle } from '../../utils/scheduleStatusUtils';
-import { getTimeElapsedStr, getDisplayDate, isScheduleOverdue } from '../../utils/scheduleTimeUtils';
+import { getTimeElapsedStr, getDisplayDate, isScheduleOverdue, getDisplayTime } from '../../utils/scheduleTimeUtils';
 import { calculateServiceValue } from '../../utils/scheduleFinancialUtils';
 
 interface AdminScheduleCardProps {
@@ -31,7 +31,8 @@ export const AdminScheduleCard: React.FC<AdminScheduleCardProps> = ({ item, tech
   const techColor = assignedTech ? (assignedTech.color || '#3b82f6') : '#e4e4e7';
   
   const timeElapsedStr = getTimeElapsedStr(item.createdAt);
-  const displayDate = getDisplayDate(item);
+  const scheduledTimeStr = getDisplayTime ? getDisplayTime(item) : (item.confirmedTime || item.preferredTime || '');
+  const displayDate = getDisplayDate(item) + (scheduledTimeStr ? ` às ${scheduledTimeStr}` : '');
   const isOverdue = isScheduleOverdue(item);
 
   const serviceVal = calculateServiceValue(item, assignedTech);

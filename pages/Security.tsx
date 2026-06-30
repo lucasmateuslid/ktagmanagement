@@ -13,7 +13,6 @@ import {
 import { useNotification } from '../contexts/NotificationContext';
 
 import { ConfirmModal } from '../components/ConfirmModal';
-import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 
 const MotionDiv = motion.div as any;
 
@@ -195,7 +194,7 @@ export const Security = () => {
                     <ShieldAlert size={32} />
                 </div>
                 <div>
-                    <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">Security Center</h1>
+                    <h1 className="text-4xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">Centro de Segurança</h1>
                     <p className="text-zinc-500 mt-2 font-medium">Gestão de sinistros e inteligência de recuperação.</p>
                 </div>
             </div>
@@ -407,25 +406,18 @@ export const Security = () => {
         </div>
 
         {/* Modal Registrar Roubo */}
-        <ResponsiveModal
-          open={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          size="xl"
-          accent="red"
-          title={<span className="flex items-center gap-3 text-red-500"><ShieldAlert size={24} /> Novo Sinistro</span>}
-          footer={
-            <button
-              type="submit"
-              form="sinistro-form"
-              disabled={!selectedVehicle}
-              className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-red-600/30 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-3"
-            >
-              <Activity size={18} /> Ativar Alerta Geral
-            </button>
-          }
-        >
-          <ModalSection>
-                    <form id="sinistro-form" onSubmit={handleReport} className="space-y-6">
+        {isModalOpen && (
+             <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+                <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-xl p-8 md:p-10 shadow-2xl border border-red-500/20 animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-8">
+                        <div className="flex items-center gap-3 text-red-500">
+                            <ShieldAlert size={32} />
+                            <h2 className="text-2xl font-display font-black uppercase tracking-tight">Novo Sinistro</h2>
+                        </div>
+                        <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors"><X size={24}/></button>
+                    </div>
+
+                    <form onSubmit={handleReport} className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* DATA DA OCORRÊNCIA */}
                             <div className="space-y-1">
@@ -520,14 +512,22 @@ export const Security = () => {
                             <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:border-red-500 font-medium text-xs min-h-[100px]" placeholder="Informações adicionais relevantes..." />
                         </div>
 
+                        <button 
+                            type="submit" 
+                            disabled={!selectedVehicle}
+                            className="w-full py-5 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-red-600/30 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-3"
+                        >
+                            <Activity size={18} /> Ativar Alerta Geral
+                        </button>
                     </form>
+                </div>
                 {isDropdownOpen && !selectedVehicle && <div className="fixed inset-0 z-[1099]" onClick={() => setIsDropdownOpen(false)} />}
-          </ModalSection>
-        </ResponsiveModal>
+             </div>
+        )}
 
         {/* Modal Recuperação */}
         {isRecoverModalOpen && (
-             <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+             <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
                 <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-8 shadow-2xl border border-emerald-500/20 animate-in fade-in zoom-in-95 duration-200">
                     <div className="flex justify-between items-center mb-8">
                         <div className="flex items-center gap-3 text-emerald-500">

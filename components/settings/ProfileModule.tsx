@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AvatarSelector } from '../AvatarSelector';
+import { storage } from '../../services/storage';
+import { securityService } from '../../services/security';
 
 const getRoleStyle = (role?: string) => {
     switch (role) {
@@ -17,7 +19,7 @@ const getRoleStyle = (role?: string) => {
 };
 
 export const ProfileModule = () => {
-    const { user: currentUser, updateProfile, changePassword, customRoles } = useAuth();
+    const { user: currentUser, updateProfile, customRoles } = useAuth();
     const { addNotification } = useNotification();
     
     const [profileForm, setProfileForm] = useState({ 
@@ -67,6 +69,8 @@ export const ProfileModule = () => {
 
     const handleUpdatePassword = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
+
         if (pwdForm.new !== pwdForm.confirm) {
             addNotification('error', 'Senhas não conferem', 'A nova senha e a confirmação devem ser iguais.');
             return;
@@ -78,22 +82,26 @@ export const ProfileModule = () => {
 
         setPwdLoading(true);
         try {
-            await changePassword(pwdForm.current, pwdForm.new);
+            const dbUser = await storage.findUserByEmail(currentUser.email);
+            if (!dbUser) {
+                addNotification('error', 'Erro', 'Usuário não encontrado.');
+                return;
+            }
+
+            const isCurrentValid = await securityService.verifyPassword(pwdForm.current, dbUser.password || '');
+            // For legacy plain-text passwords that might exist
+            const isLegacyValid = !isCurrentValid && (dbUser.password === pwdForm.current);
+
+            if (!isCurrentValid && !isLegacyValid) {
+                 addNotification('error', 'Erro', 'Senha atual incorreta.'); 
+                 return; 
+            }
+
+            await updateProfile({ password: pwdForm.new });
             addNotification('success', 'Senha Atualizada', 'Sua senha foi alterada com sucesso.');
             setPwdForm({ current: '', new: '', confirm: '' });
-        } catch (error: any) {
-            const code = error?.code || '';
-            if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-                addNotification('error', 'Senha atual incorreta', 'Verifique sua senha atual e tente novamente.');
-            } else if (code === 'auth/weak-password') {
-                addNotification('error', 'Senha muito fraca', 'Escolha uma senha mais forte.');
-            } else if (code === 'auth/requires-recent-login') {
-                addNotification('error', 'Sessão expirada', 'Faça login novamente para alterar a senha.');
-            } else if (code === 'auth/too-many-requests') {
-                addNotification('error', 'Muitas tentativas', 'Aguarde alguns minutos antes de tentar de novo.');
-            } else {
-                addNotification('error', 'Erro', error?.message || 'Não foi possível alterar a senha.');
-            }
+        } catch (error) {
+            addNotification('error', 'Erro', 'Falha ao atualizar senha ou erro interno.');
         } finally {
             setPwdLoading(false);
         }

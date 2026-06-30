@@ -22,7 +22,7 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
          {/* CABEÇALHO TABELA - VISÍVEL APENAS EM DESKTOP */}
-         <div className="hidden md:flex px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
+         <div className="hidden lg:flex px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/20 text-[8px] font-black uppercase tracking-widest text-zinc-400">
             <div className="w-[20%] shrink-0">Placa & Status</div>
             <div className="w-[30%] px-3">Veículo</div>
             <div className="w-[25%] px-2">Cliente</div>

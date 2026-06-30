@@ -6,13 +6,9 @@ import { User } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useTenant } from '../contexts/TenantContext';
 import { securityService } from '../services/security';
-import { functions } from '../services/firebase';
-import { httpsCallable } from 'firebase/functions';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DataTable, DataTableColumn } from '../components/ui/basic-data-table';
-import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
@@ -45,7 +41,6 @@ export const Users = () => {
   const { addNotification } = useNotification();
   const { t } = useLanguage();
   const { isAdmin, user: currentUser, customRoles } = useAuth();
-  const { tenantId } = useTenant();
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -97,75 +92,67 @@ export const Users = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) {
-      addNotification('error', 'Erro', 'Nome e E-mail são obrigatórios.');
-      return;
+        addNotification('error', 'Erro', 'Nome e E-mail são obrigatórios.');
+        return;
     }
 
     try {
       const isEdit = !!selectedUser;
-      const cleanEmail = formData.email!.toLowerCase().trim();
+      const userId = isEdit ? selectedUser!.id! : crypto.randomUUID();
+      
+      let generatedPassword = '';
+      let hashedPassword = '';
 
-      if (isEdit) {
-        // Edit: doc já existe, uid permanece. Apenas atualiza campos do doc.
-        const userId = selectedUser!.id!;
-        const userToSave: Partial<User> = { ...formData };
-        delete (userToSave as any).password;
-        await storage.updateUserProfile(userId, userToSave);
-        if (userToSave.status) await storage.updateUserStatus(userId, userToSave.status);
-        addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso.');
-      } else {
-        // Create: precisa de Firebase Auth user → Cloud Function callable.
-        if (!functions) {
-          addNotification('error', 'Indisponível', 'Serviço de criação de usuários offline.');
-          return;
-        }
-        const createFn = httpsCallable<any, { uid: string; email: string; password: string }>(
-          functions,
-          'createTenantUser'
-        );
-        const res = await createFn({
-          tenantId,
-          email: cleanEmail,
-          name: formData.name,
-          role: formData.role || 'user',
-          customRoleId: formData.customRoleId,
-          cpf: formData.cpf,
-          phone: formData.phone,
-          pixKey: formData.pixKey,
-          technicianId: formData.technicianId,
-        });
-        setNewCredentials({ email: res.data.email, password: res.data.password });
-        setIsCredentialsModalOpen(true);
-        addNotification('success', 'Usuário Criado', 'Credenciais geradas — envie ao colaborador.');
+      // Se for novo usuário, gera senha e hash
+      if (!isEdit) {
+          generatedPassword = securityService.generateStrongPassword();
+          hashedPassword = await securityService.hashPassword(generatedPassword);
       }
 
+      const userToSave: User = { 
+        ...formData as User, 
+        id: userId, 
+        createdAt: formData.createdAt || Date.now(), 
+        status: formData.status || 'approved',
+        email: formData.email!.toLowerCase().trim()
+      };
+
+      if (isEdit) {
+        await storage.updateUserProfile(userId, userToSave);
+        await storage.updateUserStatus(userId, userToSave.status!);
+      } else {
+        userToSave.password = hashedPassword; // Salva o Hash
+        await storage.registerUserRequest(userToSave);
+        
+        // Abre modal de credenciais
+        setNewCredentials({ email: userToSave.email, password: generatedPassword });
+        setIsCredentialsModalOpen(true);
+      }
+      
+      storage.logAction(currentUser, isEdit ? 'UPDATE' : 'CREATE', 'User', `${isEdit ? 'Editou' : 'Criou'} o colaborador ${userToSave.name}`, userId);
+      
+      addNotification('success', 'Dados Gravados', 'Usuário salvo com sucesso.');
       setIsModalOpen(false);
       loadData(true);
-    } catch (err: any) {
-      const msg = err?.message || 'Falha ao salvar o colaborador.';
-      addNotification('error', 'Erro', msg);
+    } catch (err) { 
+        addNotification('error', 'Erro', 'Falha ao salvar o colaborador.'); 
     }
   };
 
   const handleDeleteUser = async (userToDelete: User) => {
-    if (userToDelete.id === currentUser?.id) {
-      addNotification('error', 'Ação Bloqueada', 'Você não pode excluir sua própria conta administrativa.');
-      return;
-    }
-
-    try {
-      if (functions) {
-        const deleteFn = httpsCallable<any, { ok: boolean }>(functions, 'deleteTenantUser');
-        await deleteFn({ tenantId, userId: userToDelete.id });
-      } else {
-        // Fallback degradado: apaga só o doc (Auth user fica órfão).
-        await storage.deleteUser(userToDelete.id);
+      if (userToDelete.id === currentUser?.id) {
+          addNotification('error', 'Ação Bloqueada', 'Você não pode excluir sua própria conta administrativa.');
+          return;
       }
-      addNotification('success', 'Usuário Excluído', 'O registro foi removido com sucesso.');
-      loadData(true);
-    } catch (err: any) {
-      addNotification('error', 'Erro', err?.message || 'Falha ao excluir usuário.');
-    }
+
+      try {
+          await storage.deleteUser(userToDelete.id);
+          storage.logAction(currentUser, 'DELETE', 'User', `Excluiu o usuário ${userToDelete.name}`, userToDelete.id);
+          addNotification('success', 'Usuário Excluído', 'O registro foi removido com sucesso.');
+          loadData(true);
+      } catch (err) {
+          addNotification('error', 'Erro', 'Falha ao excluir usuário.');
+      }
   };
 
   const handleApproveUser = async (userToApprove: User) => {
@@ -180,21 +167,20 @@ export const Users = () => {
   };
 
   const handleResetPassword = async (userId: string, userName: string, userEmail: string) => {
-    if (!functions) {
-      addNotification('error', 'Indisponível', 'Serviço offline.');
-      return;
-    }
     try {
-      const resetFn = httpsCallable<any, { userId: string; email: string; password: string }>(
-        functions,
-        'resetTenantUserPassword'
-      );
-      const res = await resetFn({ tenantId, userId });
-      setNewCredentials({ email: res.data.email, password: res.data.password });
-      setIsCredentialsModalOpen(true);
-      loadData(true);
-    } catch (e: any) {
-      addNotification('error', 'Erro', e?.message || 'Falha ao resetar senha.');
+        const newPassword = securityService.generateStrongPassword();
+        const newHash = await securityService.hashPassword(newPassword);
+
+        await storage.updateUserProfile(userId, { password: newHash });
+        storage.logAction(currentUser, 'UPDATE', 'User', `Resetou a senha do usuário ${userName}`, userId);
+        
+        // Mostra credenciais
+        setNewCredentials({ email: userEmail, password: newPassword });
+        setIsCredentialsModalOpen(true);
+
+        loadData(true);
+    } catch (e) {
+        addNotification('error', 'Erro', 'Falha ao resetar senha.');
     }
   };
 
@@ -370,8 +356,12 @@ export const Users = () => {
     <div className="space-y-8 pb-24">
       {/* Header Responsivo */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
-          <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight uppercase">{t('userManagement')}</h1>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+              <div className="w-1 h-4 bg-primary-500 rounded-full" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">MÓDULO DE ACESSOS</p>
+          </div>
+          <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white tracking-tight uppercase">Gestão de Usuários</h1>
           <p className="text-zinc-500 mt-2 font-medium">Controle total de permissões e credenciais.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
@@ -463,19 +453,15 @@ export const Users = () => {
       {clientUsers.length > 0 && renderUserTable(clientUsers, "Acesso de Clientes", <Briefcase size={16} className="text-zinc-400"/>)}
 
       {/* Modal de Usuário */}
-      <ResponsiveModal
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        size="md"
-        title={selectedUser ? 'Editar Acesso' : 'Novo Colaborador'}
-        footer={
-          <button type="submit" form="user-form" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
-            <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Gerar Acesso Seguro'}
-          </button>
-        }
-      >
-        <ModalSection>
-            <form id="user-form" onSubmit={handleSave} className="space-y-6">
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-zinc-900 rounded-[40px] w-full max-w-md p-8 md:p-10 border border-zinc-200 dark:border-zinc-800 my-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-2xl font-display font-black uppercase tracking-tight">{selectedUser ? 'Editar Acesso' : 'Novo Colaborador'}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X size={24}/></button>
+            </div>
+            
+            <form onSubmit={handleSave} className="space-y-6">
                 <div className="space-y-1">
                     <label className="text-[10px] font-black uppercase text-zinc-500">Nome Completo</label>
                     <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-5 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl outline-none focus:border-primary-500 transition-all font-bold" />
@@ -567,13 +553,19 @@ export const Users = () => {
                     </label>
                 </div>
 
+                <div className="pt-2">
+                    <button type="submit" className="w-full py-5 bg-primary-500 text-black rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-primary-500/20 active:scale-95 transition-all flex items-center justify-center gap-3">
+                        <Save size={18} /> {selectedUser ? 'Atualizar Colaborador' : 'Gerar Acesso Seguro'}
+                    </button>
+                </div>
             </form>
-        </ModalSection>
-      </ResponsiveModal>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Credenciais (Sucesso) */}
       {isCredentialsModalOpen && (
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
             <div className="bg-zinc-900 rounded-[40px] w-full max-w-md p-10 border border-zinc-800 shadow-2xl relative animate-in zoom-in-95">
                 <div className="flex flex-col items-center text-center mb-8">
                     <div className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-black mb-6 shadow-2xl shadow-emerald-500/30">

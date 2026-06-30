@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import * as XLSX from 'xlsx';
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 
@@ -142,15 +141,19 @@ export const Tags = () => {
   const { addNotification } = useNotification();
   const { user } = useAuth();
 
+  const [settings, setSettings] = useState<any>(null);
+  
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [loadedTags, loadedVehicles] = await Promise.all([
+      const [loadedTags, loadedVehicles, appSettings] = await Promise.all([
         storage.getTags(),
-        storage.getVehicles()
+        storage.getVehicles(),
+        storage.getSettings()
       ]);
       setTags(loadedTags);
       setVehicles(loadedVehicles);
+      setSettings(appSettings);
     } finally {
       setIsLoading(false);
     }
@@ -382,40 +385,46 @@ export const Tags = () => {
   };
 
   const handleActivate = async (tag: Tag) => {
-    // Se já tem traqcareId, ativa normalmente
-    if (tag.traqcareId) {
-      const success = await xadtagService.activate(tag);
-      if (success) {
-        addNotification('success', 'Ativação XADTAG', 'Comando enviado.');
-        await storage.saveTag({ ...tag, isActivated: true });
-        loadData();
-      } else {
-        addNotification('error', 'Erro', 'Falha na ativação.');
+    try {
+      // Se já tem traqcareId, ativa normalmente
+      if (tag.traqcareId) {
+        const success = await xadtagService.activate(tag);
+        if (success) {
+          addNotification('success', 'Ativação XADTAG', 'Comando enviado.');
+          await storage.saveTag({ ...tag, isActivated: true });
+          loadData();
+        } else {
+          addNotification('error', 'Erro', 'Falha na ativação.');
+        }
+        return;
       }
-      return;
-    }
 
-    // Se não tem traqcareId, usa o fluxo de descoberta automática
-    // O MAC está salvo no campo tag.imei neste caso
-    addNotification('info', 'Buscando dispositivo...', 'Cruzando MAC com a API Traqcare.');
-    
-    const result = await xadtagService.activateAndDiscover(tag.imei || '');
-    
-    if (result.traqcareId) {
-      // Salva o ID descoberto independente de sucesso na ativação
-      await storage.saveTag({ 
-        ...tag, 
-        traqcareId: result.traqcareId,
-        isActivated: result.success 
-      });
-      loadData();
+      // Se não tem traqcareId, usa o fluxo de descoberta automática
+      // O MAC está salvo no campo tag.imei neste caso
+      addNotification('info', 'Buscando dispositivo...', 'Cruzando MAC com a API Traqcare.');
+      setIsConsoleOpen(true);
+      
+      const result = await xadtagService.activateAndDiscover(tag.imei || '', tag.traqcareAccountId, addLog);
+      
+      if (result.traqcareId) {
+        // Salva o ID descoberto independente de sucesso na ativação
+        await storage.saveTag({ 
+          ...tag, 
+          traqcareId: result.traqcareId,
+          isActivated: result.success 
+        });
+        loadData();
+      }
+      
+      addNotification(
+        result.success ? 'success' : 'error',
+        result.success ? 'Ativação Concluída' : 'Ativação com Pendência',
+        result.message
+      );
+    } catch (e: any) {
+        console.error('Erro na ativação:', e);
+        addNotification('error', 'Erro Inesperado', e.message || 'Falha crítica ao ativar o dispositivo.');
     }
-    
-    addNotification(
-      result.success ? 'success' : 'error',
-      result.success ? 'Ativação Concluída' : 'Ativação com Pendência',
-      result.message
-    );
   };
 
   // --- CONSOLE LOGIC ---
@@ -430,10 +439,10 @@ export const Tags = () => {
 
   const clearConsole = () => setConsoleLogs([]);
 
-  // COMMAND HANDLER FOR XADTAG
-  const handleXadCommand = async (command: 'ping' | 'location' | 'history', tag?: Tag) => {
+  // COMMAND HANDLER FOR XADTAG / TRACCAR
+  const handleConsoleCommand = async (command: 'ping' | 'location' | 'history', tag?: Tag) => {
       const targetTag = tag || activeTestTag;
-      if (!targetTag || targetTag.type !== 'XADTAG') return;
+      if (!targetTag || (targetTag.type !== 'XADTAG' && targetTag.type !== 'TRACCAR')) return;
       setTesting(true);
 
       const label = command === 'ping' ? 'Teste de Conectividade (Ping)' : 
@@ -443,7 +452,7 @@ export const Tags = () => {
           type: 'info',
           method: 'CMD',
           url: `Solicitando: ${label}`,
-          responseBody: { target: targetTag.name, deviceId: targetTag.traqcareId }
+          responseBody: { target: targetTag.name, deviceId: targetTag.type === 'TRACCAR' ? targetTag.imei : targetTag.traqcareId, type: targetTag.type }
       });
 
       const startTime = Date.now();
@@ -451,52 +460,106 @@ export const Tags = () => {
       try {
           let resultData: any;
           
-          if (command === 'ping') {
-              const diagnosis = await xadtagService.diagnose(targetTag);
-              resultData = {
-                  summary: diagnosis.summary,
-                  rawResponse: diagnosis.raw
-              };
-          } 
-          else if (command === 'location') {
-              const locations = await xadtagService.fetchLocation(targetTag);
-              if (locations.length > 0) {
-                  const loc = locations[0];
-                  const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
-                  resultData = {
-                      coords: `${loc.lat}, ${loc.lon}`,
-                      address: address,
-                      battery: `${loc.battery.level}% (${loc.battery.label})`,
-                      lastUpdate: loc.isodatetime,
-                      active: loc.status === 1
-                  };
-              } else {
-                  resultData = { message: "Dispositivo não retornou localização recente." };
-              }
-          } 
-          else if (command === 'history') {
-              const end = Date.now();
-              const start = end - (24 * 60 * 60 * 1000);
-              const history = await xadtagService.fetchHistory(targetTag, start, end);
+          if (targetTag.type === 'TRACCAR') {
+              const { traccarService } = await import('../services/traccar');
+              const uniqueId = targetTag.imei || '';
               
-              if (history.length > 0) {
-                  const first = history[0];
-                  const last = history[history.length - 1];
-                  const address = await geocodingService.reverseGeocode(first.lat, first.lon);
+              const diagnosis = await traccarService.diagnose(uniqueId, addLog);
+              
+              if (command === 'ping') {
                   resultData = {
-                      pointsFound: history.length,
-                      latestPoint: { time: first.isodatetime, coords: `${first.lat}, ${first.lon}`, address },
-                      oldestPoint: { time: last.isodatetime, coords: `${last.lat}, ${last.lon}` }
+                      summary: diagnosis.summary,
+                      rawResponse: diagnosis.raw
                   };
-              } else {
-                  resultData = { message: "Nenhum histórico encontrado nas últimas 24h." };
+              } else if (command === 'location' || command === 'history') {
+                  const deviceId = diagnosis.raw?.id;
+                  if (!deviceId) {
+                      resultData = { message: "Dispositivo não encontrado na Traccar para buscar localização." };
+                  } else {
+                      if (command === 'location') {
+                          const locations = await traccarService.fetchLocation(deviceId, addLog);
+                          if (locations.length > 0) {
+                              const loc = locations[0];
+                              const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+                              resultData = {
+                                  coords: `${loc.lat}, ${loc.lon}`,
+                                  address: address,
+                                  battery: `${loc.battery.level}% (${loc.battery.label})`,
+                                  lastUpdate: loc.isodatetime,
+                                  active: loc.status === 1
+                              };
+                          } else {
+                              resultData = { message: "Dispositivo não retornou localização recente." };
+                          }
+                      } else {
+                          const end = Date.now();
+                          const start = end - (24 * 60 * 60 * 1000);
+                          const history = await traccarService.fetchHistory(deviceId, start, end, addLog);
+                          
+                          if (history.length > 0) {
+                              const first = history[0];
+                              const last = history[history.length - 1];
+                              const address = await geocodingService.reverseGeocode(first.lat, first.lon);
+                              resultData = {
+                                  pointsFound: history.length,
+                                  latestPoint: { time: first.isodatetime, coords: `${first.lat}, ${first.lon}`, address },
+                                  oldestPoint: { time: last.isodatetime, coords: `${last.lat}, ${last.lon}` }
+                              };
+                          } else {
+                              resultData = { message: "Nenhum histórico encontrado nas últimas 24h." };
+                          }
+                      }
+                  }
+              }
+          } else {
+              // XADTAG
+              if (command === 'ping') {
+                  const diagnosis = await xadtagService.diagnose(targetTag, addLog);
+                  resultData = {
+                      summary: diagnosis.summary,
+                      rawResponse: diagnosis.raw
+                  };
+              } 
+              else if (command === 'location') {
+                  const locations = await xadtagService.fetchLocation(targetTag, addLog);
+                  if (locations.length > 0) {
+                      const loc = locations[0];
+                      const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+                      resultData = {
+                          coords: `${loc.lat}, ${loc.lon}`,
+                          address: address,
+                          battery: `${loc.battery.level}% (${loc.battery.label})`,
+                          lastUpdate: loc.isodatetime,
+                          active: loc.status === 1
+                      };
+                  } else {
+                      resultData = { message: "Dispositivo não retornou localização recente." };
+                  }
+              } 
+              else if (command === 'history') {
+                  const end = Date.now();
+                  const start = end - (24 * 60 * 60 * 1000);
+                  const history = await xadtagService.fetchHistory(targetTag, start, end, addLog);
+                  
+                  if (history.length > 0) {
+                      const first = history[0];
+                      const last = history[history.length - 1];
+                      const address = await geocodingService.reverseGeocode(first.lat, first.lon);
+                      resultData = {
+                          pointsFound: history.length,
+                          latestPoint: { time: first.isodatetime, coords: `${first.lat}, ${first.lon}`, address },
+                          oldestPoint: { time: last.isodatetime, coords: `${last.lat}, ${last.lon}` }
+                      };
+                  } else {
+                      resultData = { message: "Nenhum histórico encontrado nas últimas 24h." };
+                  }
               }
           }
 
           addLog({
               type: 'success',
               method: 'GET',
-              url: '/api/xadtag',
+              url: targetTag.type === 'TRACCAR' ? 'Traccar API' : '/api/xadtag',
               status: 200,
               responseBody: resultData,
               duration: Date.now() - startTime
@@ -519,9 +582,9 @@ export const Tags = () => {
       setActiveTestTag(tag);
       setIsConsoleOpen(true);
       
-      // Se for XADTAG, executa o Ping
-      if (tag.type === 'XADTAG') {
-          await handleXadCommand('ping', tag);
+      // Se for XADTAG ou TRACCAR, executa o Ping
+      if (tag.type === 'XADTAG' || tag.type === 'TRACCAR') {
+          await handleConsoleCommand('ping', tag);
           return;
       }
 
@@ -555,6 +618,7 @@ export const Tags = () => {
     try {
         const isNew = !formData.id;
         const tag: Tag = {
+            ...(formData as Tag),
             id: formData.id || crypto.randomUUID(),
             name: formData.name || '',
             type: formData.type || 'K_TAG',
@@ -564,6 +628,7 @@ export const Tags = () => {
             privateKey: formData.privateKey,
             imei: formData.imei,
             traqcareId: formData.traqcareId,
+            traqcareAccountId: formData.traqcareAccountId || undefined,
             powerType: formData.powerType,
             batteryWarrantyYears: formData.batteryWarrantyYears
         };
@@ -612,11 +677,18 @@ export const Tags = () => {
 
   const handleDownloadTemplate = () => {
     const headers = [
-      {
-        "Identificacao": "Tag Exemplo 01",
+      { 
+        "Identificacao": "Tag Exemplo 01", 
         "Serial/IMEI": "ABC12345",
-        "Chave Publica (Obrigatório K-Tag)": "key_hash...",
-        "Chave Privada (Obrigatório K-Tag)": "priv_key..."
+        "Chave Publica (Opcional K-Tag)": "key_hash...",
+        "Chave Privada (Opcional K-Tag)": "priv_key..."
+      },
+      { 
+        "Key名称": "Tag Exemplo 02", 
+        "SN码": "DEF67890",
+        "MAC地址": "00:11:22:33:44:55",
+        "hashedAdvKey值": "key_hash...",
+        "privateKey值": "priv_key..."
       }
     ];
     const ws = XLSX.utils.json_to_sheet(headers);
@@ -677,10 +749,10 @@ export const Tags = () => {
     try {
       for (let i = 0; i < total; i++) {
           const row = validRows[i];
-          const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
+          const name = row['Identificacao'] || row['nome'] || row['name'] || row['Key名称'] || `Equip-${Math.floor(Math.random()*10000)}`;
           const serial = row._serial;
-          const pubKey = row['Chave Publica (Obrigatório K-Tag)'] || row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'];
-          const privKey = row['Chave Privada (Obrigatório K-Tag)'] || row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'];
+          const pubKey = row['Chave Publica (Opcional K-Tag)'] || row['public'] || row['hashed'] || row['hashedAdvKey值'];
+          const privKey = row['Chave Privada (Opcional K-Tag)'] || row['private'] || row['priv'] || row['privateKey值'];
 
           const exists = tags.some(t => t.accessoryId === serial || t.imei === serial);
           if (!exists) {
@@ -719,7 +791,11 @@ export const Tags = () => {
   return (
     <div className="space-y-8 pb-32 relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+              <div className="w-1 h-4 bg-primary-500 rounded-full" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">MÓDULO DE INVENTÁRIO</p>
+          </div>
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Estoque de Equipamentos</h1>
           <p className="text-zinc-500 text-sm mt-1 font-medium italic opacity-70">Gestão e controle de ativos de segurança.</p>
         </div>
@@ -872,6 +948,9 @@ export const Tags = () => {
                                         <button onClick={() => { handleMassChangeType('XADTAG'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:text-cyan-600 rounded-xl transition-colors flex items-center gap-3 group">
                                             <Cpu size={16} className="text-zinc-400 group-hover:text-cyan-500 transition-colors"/> Para XADTAG
                                         </button>
+                                        <button onClick={() => { handleMassChangeType('TRACCAR'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 rounded-xl transition-colors flex items-center gap-3 group">
+                                            <Car size={16} className="text-zinc-400 group-hover:text-amber-500 transition-colors"/> Para Traccar
+                                        </button>
                                         
                                         <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-2 mx-2" />
                                         
@@ -977,12 +1056,12 @@ export const Tags = () => {
                             </td>
                             <td className="p-4">
                               <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
-                                  {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'TRACCAR' ? 'bg-amber-500/10 text-amber-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                  {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'TRACCAR' ? <Car size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
                                 </div>
                                 <div>
                                   <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
-                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>
+                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'TRACCAR' ? 'text-amber-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>
                                       {tag.type || 'Sem Tipo'} {tag.type === 'XADTAG' && tag.powerType === '12v' ? '(12V)' : tag.type === 'XADTAG' && tag.powerType === 'battery' ? '(Bateria)' : ''}
                                   </div>
                                 </div>
@@ -1031,7 +1110,8 @@ export const Tags = () => {
                                 )}
                                 {tag.type === 'XADTAG' && (
                                     <button 
-                                        onClick={() => handleActivate(tag)} 
+                                        type="button"
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleActivate(tag); }} 
                                         className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
                                         title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
                                     >
@@ -1103,16 +1183,16 @@ export const Tags = () => {
                                     <button className={`mt-1 ${isSelected ? 'text-primary-500' : 'text-zinc-300 dark:text-zinc-700'}`}>
                                         {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
                                     </button>
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
-                                        {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'TRACCAR' ? 'bg-amber-500/10 text-amber-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                        {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'TRACCAR' ? <Car size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
                                     </div>
                                     <div>
                                         <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
                                         <div className="flex items-center gap-2 mt-1">
-                                            <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
+                                            <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'TRACCAR' ? 'text-amber-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
                                             <span className="text-zinc-300 dark:text-zinc-700 text-[10px]">•</span>
                                             <div className="font-mono text-[10px] text-zinc-500 font-medium">
-                                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}
+                                                {tag.type === 'XADTAG' || tag.type === 'TRACCAR' ? `IMEI/UniqueId: ${tag.imei}` : `SN: ${tag.accessoryId}`}
                                             </div>
                                         </div>
                                     </div>
@@ -1152,7 +1232,8 @@ export const Tags = () => {
                                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                     {tag.type === 'XADTAG' && (
                                         <button 
-                                            onClick={() => handleActivate(tag)} 
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleActivate(tag); }} 
                                             className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
                                             title={tag.isActivated ? "Reenviar Ativação" : "Ativar Dispositivo"}
                                         >
@@ -1192,15 +1273,15 @@ export const Tags = () => {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        {activeTestTag?.type === 'XADTAG' && (
+                        {(activeTestTag?.type === 'XADTAG' || activeTestTag?.type === 'TRACCAR') && (
                             <div className="flex items-center gap-1 mr-4 bg-zinc-800 rounded-lg p-1 border border-zinc-700">
-                                <button onClick={() => handleXadCommand('ping')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                <button onClick={() => handleConsoleCommand('ping')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
                                     <Activity size={12}/> Ping
                                 </button>
-                                <button onClick={() => handleXadCommand('location')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                <button onClick={() => handleConsoleCommand('location')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
                                     <MapPin size={12}/> Localização
                                 </button>
-                                <button onClick={() => handleXadCommand('history')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
+                                <button onClick={() => handleConsoleCommand('history')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
                                     <History size={12}/> Histórico
                                 </button>
                             </div>
@@ -1222,7 +1303,35 @@ export const Tags = () => {
                             </div>
                             {log.expanded && (
                                 <div className="mt-2 pl-4 border-l-2 border-zinc-800 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
-                                    {log.responseBody && (
+                                    {log.responseBody && typeof log.responseBody === 'object' && log.responseBody.token ? (
+                                        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                                            <div className="flex items-center gap-2 border-b border-zinc-800 pb-2">
+                                                <Search size={14} className="text-cyan-500" />
+                                                <h4 className="text-xs font-black uppercase tracking-widest text-cyan-500">Search Logic Context</h4>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold block">Action / Message</span>
+                                                    <span className="text-xs text-zinc-300 block">{log.responseBody.message}</span>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold block">Authentication Token</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <FileText size={12} className="text-amber-500" />
+                                                        <span className="text-xs text-amber-500 font-mono bg-amber-500/10 px-2 py-0.5 rounded">{log.responseBody.token}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold block">Endpoint / URL</span>
+                                                    <span className="text-xs text-zinc-400 font-mono block">{log.url}</span>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold block">Method</span>
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 inline-block">{log.method}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : log.responseBody ? (
                                         <pre className={`bg-zinc-900 p-3 rounded-lg overflow-x-auto text-[10px] ${log.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
                                             {(() => {
                                                 try {
@@ -1232,7 +1341,7 @@ export const Tags = () => {
                                                 }
                                             })()}
                                         </pre>
-                                    )}
+                                    ) : null}
                                 </div>
                             )}
                         </div>
@@ -1243,25 +1352,26 @@ export const Tags = () => {
         )}
       </AnimatePresence>
 
-      <ResponsiveModal
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        size="lg"
-        title={formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
-        footer={
-          <button type="submit" form="tag-equip-form" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg">
-            <Save size={16} /> Salvar Equipamento
-          </button>
-        }
-      >
-        <ModalSection>
-                <form id="tag-equip-form" onSubmit={handleSave} className="space-y-5">
-                    <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                        <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
+            <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-lg p-8 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto animate-in fade-in zoom-in-95">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">
+                        {formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
+                    </h2>
+                    <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-zinc-600"><X size={24}/></button>
+                </div>
+
+                <form onSubmit={handleSave} className="space-y-5">
+                    <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-zinc-200 dark:border-zinc-800">
+                        <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all min-w-[30%] ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
                             K-Tag (Padrão)
                         </button>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all min-w-[30%] ${formData.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
                             XADTAG (Satélite)
+                        </button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'TRACCAR'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all min-w-[30%] ${formData.type === 'TRACCAR' ? 'bg-amber-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
+                            TRACCAR
                         </button>
                     </div>
 
@@ -1290,13 +1400,27 @@ export const Tags = () => {
                     ) : (
                         <>
                             <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI / MAC Address <span className="text-red-500">*</span></label>
-                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: D04232E7E3FA ou numérico" />
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">{formData.type === 'TRACCAR' ? 'Unique ID (IMEI)' : 'IMEI / MAC Address'} <span className="text-red-500">*</span></label>
+                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder={formData.type === 'TRACCAR' ? "Ex: 123456789012345" : "Ex: D04232E7E3FA ou numérico"} />
                             </div>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
-                                <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Deixe em branco para preencher automaticamente na ativação" />
-                            </div>
+                            
+                            {formData.type === 'XADTAG' && (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Conta Traqcare (Token)</label>
+                                        <select value={formData.traqcareAccountId || ''} onChange={e => setFormData({...formData, traqcareAccountId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-cyan-500">
+                                            <option value="">Token Padrão (Global)</option>
+                                            {(settings?.traqcareAccounts || []).map((acc: any) => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
+                                        <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Deixe em branco para preencher automaticamente na ativação" />
+                                    </div>
+                                </>
+                            )}
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Power size={12}/> Tipo de Alimentação</label>
                                 <select value={formData.powerType || 'battery'} onChange={e => setFormData({...formData, powerType: e.target.value as 'battery' | '12v'})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-cyan-500">
@@ -1312,12 +1436,16 @@ export const Tags = () => {
                         <input type="number" min="1" max="10" value={formData.batteryWarrantyYears || 1} onChange={e => setFormData({...formData, batteryWarrantyYears: parseInt(e.target.value)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                     </div>
 
+                    <button type="submit" className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg mt-4">
+                        <Save size={16} /> Salvar Equipamento
+                    </button>
                 </form>
-        </ModalSection>
-      </ResponsiveModal>
+            </div>
+        </div>
+      )}
 
       {isImportModalOpen && (
-          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
               <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl relative my-auto flex flex-col max-h-[90vh]">
                   <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-950/50 rounded-t-[32px]">
                       <div>
@@ -1337,6 +1465,7 @@ export const Tags = () => {
                                   <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
                                       <button onClick={() => setImportConfig({...importConfig, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-md' : 'text-zinc-500'}`}>K-Tag</button>
                                       <button onClick={() => setImportConfig({...importConfig, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-md' : 'text-zinc-500'}`}>XADTAG</button>
+                                      <button onClick={() => setImportConfig({...importConfig, type: 'TRACCAR'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'TRACCAR' ? 'bg-amber-500 text-white shadow-md' : 'text-zinc-500'}`}>TRACCAR</button>
                                   </div>
                               </div>
                               
@@ -1449,7 +1578,7 @@ export const Tags = () => {
         {reportProgress && (
           <MotionDiv 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           >
               <div className="bg-white dark:bg-[#0a0a0a] border border-zinc-100 dark:border-zinc-800 p-8 rounded-3xl w-full max-w-md shadow-2xl flex flex-col items-center text-center">
                   <div className="w-16 h-16 bg-primary-500/10 rounded-full flex items-center justify-center mb-6">

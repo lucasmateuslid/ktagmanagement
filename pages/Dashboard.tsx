@@ -43,7 +43,7 @@ const COLORS = {
 };
 
 export const Dashboard = () => {
-  // trigger vite HMR
+  // trigger vite HMR!
   const { user } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
@@ -126,7 +126,7 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
             {t('overview')}
           </h1>
-          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-[0.4em]">Control Center</p>
+          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-bold uppercase tracking-[0.4em]">Console de Operações</p>
         </div>
         <div className="flex items-center gap-3">
             <button 
@@ -209,6 +209,10 @@ export const Dashboard = () => {
 
               {/* CARD 2: VEÍCULOS E CATEGORIAS (ALWAYS DARK) */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-lg shadow-zinc-900/20 h-[300px] relative overflow-hidden group">
+                  {/* Glowing Blobs */}
+                  <div className="absolute top-0 left-0 w-[200px] h-[200px] bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute bottom-0 right-0 w-[250px] h-[250px] bg-zinc-800/80 rounded-full blur-3xl translate-x-1/4 translate-y-1/4 pointer-events-none" />
+                  
                   <div className="flex justify-between items-start mb-6 relative z-10">
                       <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total de Veículos</p>

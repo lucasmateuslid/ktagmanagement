@@ -42,7 +42,7 @@ export const useHinovaLookup = (
             const existingClient = clients.find(c => String(c.cpf || '').replace(/\D/g, '') === hinovaCpf);
             
             if (existingClient) {
-                setClientData(existingClient);
+                setClientData({ ...existingClient, clientStatus: result.client.clientStatus, phone: result.client.phone || existingClient.phone });
                 addNotification('success', 'SGA/Hinova', 'Veículo localizado e vinculado ao cliente existente.');
             } else {
                 setClientData(result.client);

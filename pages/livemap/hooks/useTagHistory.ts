@@ -3,7 +3,8 @@ import { useState, useCallback } from 'react';
 import { Tag, LocationHistory, Vehicle } from '../../../types';
 import { xadtagService } from '../../../services/xadtag';
 import { useNotification } from '../../../contexts/NotificationContext';
-import { storage } from '../../../services/storage';
+import { db } from '../../../services/firebase';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 
 export const useTagHistory = (
     selectedTagId: string, 
@@ -41,10 +42,22 @@ export const useTagHistory = (
             // Reordena para ficar cronológico (do mais novo para o mais antigo) - FIM para INICIO
             results.sort((a, b) => b.timestamp - a.timestamp);
         } else {
-            // Busca dos históricos persistidos no banco de dados (tenant-aware)
+            // Busca dos históricos persistidos no banco de dados
             const vehicle = vehicles.find(v => v.tagId === selectedTagId);
-            if (vehicle) {
-                results = await storage.getVehicleHistory(vehicle.id, startTime);
+            if (vehicle && db) {
+                const q = query(
+                    collection(db, `ktag_vehicles/${vehicle.id}/history`),
+                    orderBy('timestamp', 'desc')
+                );
+                const snapshot = await getDocs(q);
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data() as LocationHistory;
+                    // Filtra últimas 24h
+                    if (data.timestamp >= startTime) {
+                        results.push(data);
+                    }
+                });
             }
 
             // Garante que o último ponto atual também seja exibido caso não esteja salvo ainda

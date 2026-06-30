@@ -60,6 +60,27 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
         return () => clearInterval(interval);
     }, [lastLoc?.timestamp]);
 
+    useEffect(() => {
+        if (isExpanded && selectedTagId) {
+            handleAutoUpdate();
+        }
+    }, [isExpanded, selectedTagId]);
+
+    const handleAutoUpdate = async () => {
+        if (isUpdating) return;
+        setIsUpdating(true);
+        setUpdateSuccess(false);
+        try {
+            await onRefreshTag(selectedTagId);
+            setUpdateSuccess(true);
+            setTimeout(() => setUpdateSuccess(false), 3000);
+        } catch (error) {
+            console.error("Failed to auto update location", error);
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     const handleUpdateLocation = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (isUpdating) return;
@@ -103,7 +124,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
         <AnimatePresence>
             {selectedTagId && (
               <MotionDiv initial={{ y: '100%' }} animate={{ y: isExpanded ? 0 : 'calc(100% - 90px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-                className="absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[32px] md:rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden max-h-[85vh] md:max-h-[calc(100vh-7.5rem)]"
+                className="absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[32px] md:rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden max-h-[90vh] md:max-h-[calc(100vh-48px)]"
               >
                 <div className="h-[90px] px-6 md:px-8 flex items-center justify-between cursor-pointer group" onClick={toggleExpanded}>
                   <div className="flex items-center gap-4 md:gap-5">

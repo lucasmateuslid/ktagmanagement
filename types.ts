@@ -21,190 +21,34 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
-  /** @deprecated A senha é gerenciada pelo Firebase Auth desde a Fase 2 — nunca persistir no Firestore. */
   password?: string;
-  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | 'superadmin' | string;
+  role?: 'admin' | 'moderator' | 'user' | 'client' | 'technician' | 'admin_tecnico' | string;
   customRoleId?: string;
   technicianId?: string;
   status?: 'pending' | 'approved' | 'rejected';
   ip?: string;
-  tenantId?: string;
-  companySlug?: string; // @deprecated — substituído por tenantId; mantido por compat até migração concluir
+  companySlug?: string;
   exemptFromKtagAlert?: boolean;
   createdAt?: number;
-  cpf?: string;
+  cpf?: string; 
   avatarInitial?: string;
   avatarUrl?: string;
   pixKey?: string;
   notificationPreferences?: UserNotificationPreferences;
 }
 
-export type TenantPlan = 'basic' | 'pro' | 'enterprise';
-
-export interface TenantIntegrationFlags {
-  ktag?: { enabled: boolean };
-  hinova?: { enabled: boolean };
-  melhorEnvio?: { enabled: boolean };
-  ai?: { provider?: string };
-}
-
-export interface TenantSettings {
-  maxUsers?: number;
-  features?: string[];
-  integrations?: TenantIntegrationFlags;
-  /** Limite máximo de tags que este tenant pode cadastrar. 0/undefined = ilimitado. */
-  limiteTags?: number;
-  /** Limite máximo de veículos. 0/undefined = ilimitado. */
-  limiteVeiculos?: number;
-}
-
-/** Contadores cacheados no doc do tenant — atualizados via Cloud Function. */
-export interface TenantUsage {
-  tagsUtilizadas?: number;
-  veiculosUtilizados?: number;
-  usuariosAtivos?: number;
-  agendamentosAtivos?: number;
-  /** Última vez que o agregado foi recalculado. */
-  lastComputedAt?: number;
-  /** Última atividade detectada (mais recente entre todas as entidades). */
-  lastActivityAt?: number;
-}
-
-/** Estratégia de exclusão de tenant. */
-export type TenantDeletionMode = 'soft' | 'hard';
-
-export type BillingStatus =
-  | 'none'        // sem assinatura criada ainda
-  | 'trialing'    // trial, sem cobrança
-  | 'active'      // em dia
-  | 'overdue'     // tem fatura vencida
-  | 'canceled';   // cancelada
-
-export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
-
-export type BillingMethod = 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'UNDEFINED';
-
-export interface TenantBilling {
-  status: BillingStatus;
-  /** Valor em centavos. Override quando definido; senão pega do plano. */
-  priceCents?: number;
-  cycle?: BillingCycle;
-  method?: BillingMethod;
-  /** Dia do mês para vencimento (1-28). */
-  dueDay?: number;
-  nextDueDate?: number;
-  /** IDs do Asaas — null indica que ainda não foi sincronizado. */
-  asaasCustomerId?: string | null;
-  asaasSubscriptionId?: string | null;
-  /** CPF/CNPJ do responsável pelo pagamento (obrigatório no Asaas). */
-  payerCpfCnpj?: string;
-  payerName?: string;
-  payerEmail?: string;
-  /** Última sync bem-sucedida com Asaas (epoch ms). */
-  lastSyncedAt?: number;
-  /** Trial period (epoch ms em que o trial expira = data da 1ª cobrança). */
-  trialEndsAt?: number;
-  trialDays?: number;
-  /** Adesão (taxa de setup única) — opcional. */
-  setupFee?: SetupFee;
-}
-
-export interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  plan: TenantPlan;
-  active: boolean;
-  ownerUserId?: string;
-  createdAt: number;
-  settings?: TenantSettings;
-  billing?: TenantBilling;
-  /** Contadores cacheados de uso. Atualizado por getTenantUsage. */
-  usage?: TenantUsage;
-  /** Marcado quando soft-deleted. Tenant ainda existe no Firestore. */
-  deletedAt?: number;
-  /** UID do super admin que executou a exclusão. */
-  deletedBy?: string;
-  /** Modo de exclusão executado. */
-  deletionMode?: TenantDeletionMode;
-}
-
-export type InvoiceStatus =
-  | 'PENDING'
-  | 'RECEIVED'
-  | 'CONFIRMED'
-  | 'OVERDUE'
-  | 'REFUNDED'
-  | 'CANCELED';
-
-/** Espelho de um charge (payment) do Asaas no Firestore. */
-export interface Invoice {
-  id: string;                 // = asaasPaymentId
-  tenantId: string;
-  status: InvoiceStatus;
-  /** Valor em centavos. */
-  valueCents: number;
-  dueDate: number;            // epoch ms
-  paidAt?: number;
-  billingType: BillingMethod;
-  invoiceUrl?: string;        // página de pagamento Asaas
-  bankSlipUrl?: string;       // boleto PDF (link externo)
-  boletoBarcode?: string;     // linha digitável do boleto (identificationField)
-  pixQrCode?: string;         // base64 PNG do QR code PIX (encodedImage)
-  pixPayload?: string;        // texto copia-e-cola PIX (payload)
-  description?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-/** Plano centralizado em /system_config/plans. */
-export interface PlanConfig {
-  id: TenantPlan;
-  name: string;
-  /** Valor mensal em centavos (referência usada para preencher novas assinaturas). */
-  priceCents: number;
-  /** Limite default sugerido de usuários. */
-  maxUsers: number;
-  /** Limite default sugerido de tags. 0 = ilimitado. */
-  defaultLimiteTags?: number;
-  /** Adesão sugerida em centavos (pode ser sobrescrita na criação). */
-  defaultSetupFeeCents?: number;
-  /** Dia do vencimento sugerido (1-28). */
-  defaultDueDay?: number;
-  features: string[];
-}
-
-/** Doc completo em /system_config/plans. Mapa por id de plano. */
-export interface PlansConfigDoc {
-  basic: PlanConfig;
-  pro: PlanConfig;
-  enterprise: PlanConfig;
-  updatedAt?: number;
-  updatedBy?: string;
-}
-
-/** Status da adesão (setup fee) de uma assinatura. */
-export type SetupFeeStatus = 'paid' | 'pending' | 'waived';
-
-export interface SetupFee {
-  valueCents: number;
-  status: SetupFeeStatus;
-  description?: string;
-  /** Quando foi registrada (epoch ms). */
-  registeredAt: number;
-  /** UID do super admin que registrou. */
-  registeredBy?: string;
-  /** Quando foi marcada como paga (epoch ms). */
-  paidAt?: number;
-  /** Se gerou uma fatura no Asaas (status=pending), id do payment. */
-  asaasPaymentId?: string;
-}
-
 export interface Company {
   id: string;
   name: string;
+  legalName?: string;
+  cnpj?: string;
+  logoUrl?: string;
   prefix: string;
   hasSgaIntegration?: boolean;
+  sgaUrl?: string;
+  sgaToken?: string;
+  sgaUser?: string;
+  sgaPass?: string;
 }
 
 export interface VehicleCategory {
@@ -213,7 +57,7 @@ export interface VehicleCategory {
   fipeType: 'carros' | 'motos' | 'caminhoes' | 'none';
 }
 
-export type TagType = 'K_TAG' | 'XADTAG';
+export type TagType = 'K_TAG' | 'XADTAG' | 'TRACCAR';
 
 export interface Tag {
   id: string;
@@ -224,6 +68,7 @@ export interface Tag {
   privateKey?: string;
   imei?: string;
   traqcareId?: string;
+  traqcareAccountId?: string;
   powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;
@@ -242,7 +87,7 @@ export interface Tracker {
   createdAt: number;
 }
 
-export type ShipmentStatus = 'rascunho' | 'ativo' | 'enviado' | 'entregue' | 'cancelado';
+export type ShipmentStatus = 'rascunho' | 'ativo' | 'em_analise' | 'enviado' | 'entregue' | 'cancelado';
 export type ShipmentItemType = 'tag' | 'rastreador' | 'outro';
 
 export interface ShipmentItem {
@@ -271,11 +116,17 @@ export interface Shipment {
   consultorNome: string;
   destinatario: {
     nome: string;
+    email?: string;
+    cpf?: string;
+    telefone?: string;
     enderecoCompleto: string;
+    isRural?: boolean;
+    ruralDetails?: string;
     lat: number;
     lng: number;
     placeId?: string;
   };
+  envelopeType?: string;
   codigoRastreio?: string;
   transportadora?: string;
   dataCriacao: number;
@@ -315,6 +166,7 @@ export interface Client {
   address?: string;
   city?: string;
   state?: string;
+  clientStatus?: string;
   hasAccess?: boolean;
   createdAt: number;
   cpfHash?: string;
@@ -348,6 +200,7 @@ export interface Vehicle {
   model: string;
   year?: string;
   color?: string;
+  vehicleStatus?: string;
   tagId?: string;
   companyId?: string;
   clientId?: string;
@@ -473,24 +326,30 @@ export interface ThemeColors {
   chartColors?: string;
 }
 
+export interface TraqcareAccount {
+  id: string;
+  name: string;
+  token: string;
+}
+
 export interface AppSettings {
   language: 'pt' | 'en';
   customProxyUrl: string;
   geocoderPreferences?: GeocoderPreferences;
   customAppName?: string;
+  companyCnpj?: string;
   customLogoUrlLight?: string;
   customLogoUrlDark?: string;
-  // Upload local (PNG/JPG/SVG codificado em base64). Tem prioridade sobre
-  // customLogoUrl* na renderização — permite ao admin trocar a logo sem
-  // depender de hosting externo. Tamanho máx ~280KB encodado (caber dentro
-  // do limite de 1MB do doc do Firestore).
-  customLogoBase64Light?: string;
-  customLogoBase64Dark?: string;
   themeColors?: ThemeColors;
   ktagUrl: string;
   ktagUser: string;
   ktagPass: string;
-  traqcareToken: string;
+  traqcareToken?: string;
+  traqcareAccounts?: TraqcareAccount[];
+  traccarUrl?: string;
+  traccarToken?: string;
+  traccarUser?: string;
+  traccarPass?: string;
   googleMapsKey: string;
   mapboxKey: string;
   geocodingProvider?: 'osm' | 'google';
@@ -572,6 +431,7 @@ export interface Technician {
   phone: string;
   cpf?: string;
   pixKey?: string;
+  signature?: string;
   active: boolean;
   color?: string; 
   serviceLocationType?: 'Ponto Fixo' | 'Domicílio';
@@ -603,6 +463,8 @@ export interface ChecklistItem {
   name: string;
   before: ChecklistStatus;
   after: ChecklistStatus;
+  beforePhoto?: string;
+  afterPhoto?: string;
 }
 
 export const defaultChecklistItems = [
@@ -619,8 +481,15 @@ export interface Schedule {
   requesterName: string;
   clientName?: string; 
   clientPhone?: string;
+  clientCpf?: string;
+  clientAddress?: string;
+  clientEmail?: string;
   vehiclePlate: string;
   vehicleModel: string;
+  vehicleChassis?: string;
+  vehicleColor?: string;
+  vehicleStatus?: string;
+  clientStatus?: string;
   fipeValue: string; 
   deviceType: DeviceType;
   serviceType: ServiceType;
@@ -651,6 +520,7 @@ export interface Schedule {
   locationLng: number;
   status: ScheduleStatus;
   technicianId?: string;
+  responsibleAdmin?: string;
   confirmedDate?: string; 
   confirmedTime?: string; 
   history: ScheduleHistory[];

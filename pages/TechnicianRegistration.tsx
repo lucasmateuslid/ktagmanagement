@@ -25,8 +25,10 @@ export const TechnicianRegistration = () => {
     try {
       if (user) {
         await storage.updateUserProfile(user.id, { cpf, pixKey });
-        // Firebase Auth + AuthContext recarregam o user no próximo
-        // onAuthStateChanged. Aqui apenas forçamos navegação.
+        // Update user in context
+        const updatedUser = { ...user, cpf, pixKey };
+        await storage.setSessionUser(updatedUser);
+        // Force reload to update context
         window.location.href = '/';
       }
     } catch (err) {

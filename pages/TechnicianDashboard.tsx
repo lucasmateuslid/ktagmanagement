@@ -4,58 +4,111 @@ import { useDashboardData } from './dashboard/hooks/useDashboardData';
 import { Schedule } from '../types';
 import { 
   Calendar, CheckCircle2, Clock, MapPin, Wrench, 
-  Wallet, TrendingUp, Activity, Check, FileText, Building, Search, Banknote
+  Wallet, TrendingUp, Activity, Check, FileText, Building, Search, Banknote, XCircle
 } from 'lucide-react';
 import { TrackingModal } from '../components/TrackingModal';
+import { useNotification } from '../contexts/NotificationContext';
+import { storage } from '../services/storage';
+import { whatsappService } from '../services/whatsappService';
 
 export const TechnicianDashboard = () => {
   const { user } = useAuth();
+  const { addNotification } = useNotification();
   const { schedules, technicians, companies, loading } = useDashboardData();
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  const [activeTab, setActiveTab] = useState<'agendados' | 'andamento' | 'concluidos'>('agendados');
+  const [activeTab, setActiveTab] = useState<'agendados' | 'andamento' | 'concluidos' | 'cancelados'>('agendados');
   const [searchTerm, setSearchTerm] = useState('');
+  const [timeFilter, setTimeFilter] = useState<'diario' | 'semanal' | 'mensal'>('diario');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-  const mySchedules = useMemo(() => {
+  const mySchedulesFiltered = useMemo(() => {
     const techId = user?.technicianId || technicians.find(t => t.email?.toLowerCase() === user?.email.toLowerCase())?.id || user?.id;
     let filtered = schedules.filter(s => s.technicianId === techId);
     
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
       filtered = filtered.filter(s => 
-        s.vehiclePlate.toLowerCase().includes(lower) ||
-        s.osNumber?.toLowerCase().includes(lower)
+        (s.vehiclePlate || '').toLowerCase().includes(lower) ||
+        (s.osNumber || '').toLowerCase().includes(lower) ||
+        (s.clientName || '').toLowerCase().includes(lower)
       );
     }
     
-    return filtered;
-  }, [schedules, user?.id, technicians, user?.email, searchTerm]);
+    filtered = filtered.filter(s => {
+      const dateStr = s.confirmedDate || s.preferredDate || new Date(s.createdAt).toISOString().split('T')[0];
+      if (!dateStr) return false;
+      
+      const sDateObj = new Date(dateStr + 'T12:00:00'); 
+      const now = new Date();
+      
+      if (timeFilter === 'diario') {
+         const tzOffset = now.getTimezoneOffset() * 60000;
+         const localISOTime = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 10);
+         return dateStr === localISOTime;
+      }
+      
+      if (timeFilter === 'semanal') {
+          const currDate = new Date();
+          const first = currDate.getDate() - currDate.getDay() + (currDate.getDay() === 0 ? -6 : 1);
+          const startOfWeek = new Date(currDate.setDate(first));
+          startOfWeek.setHours(0,0,0,0);
+          
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(startOfWeek.getDate() + 6);
+          endOfWeek.setHours(23,59,59,999);
+          
+          return sDateObj >= startOfWeek && sDateObj <= endOfWeek;
+      }
+      
+      if (timeFilter === 'mensal') {
+          const [year, month] = selectedMonth.split('-');
+          return sDateObj.getFullYear() === parseInt(year) && (sDateObj.getMonth() + 1) === parseInt(month);
+      }
+      
+      return true;
+    });
 
-  const agendados = mySchedules.filter(s => ['Confirmada', 'Reagendada', 'Autorizada'].includes(s.status));
-  const emAndamento = mySchedules.filter(s => ['Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
-  const concluidos = mySchedules.filter(s => s.status === 'Concluída');
+    // Ensure we sort them by date ascending
+    return filtered.sort((a,b) => {
+        const da = a.confirmedDate || a.preferredDate || '';
+        const ta = a.confirmedTime || a.preferredTime || '';
+        const db = b.confirmedDate || b.preferredDate || '';
+        const tb = b.confirmedTime || b.preferredTime || '';
+        return `${da} ${ta}`.localeCompare(`${db} ${tb}`);
+    });
+  }, [schedules, user?.id, technicians, user?.email, searchTerm, timeFilter, selectedMonth]);
 
-  const totalServices = mySchedules.length;
-  const totalRecebido = mySchedules.reduce((acc, s) => acc + (s.technicianPaid ? (s.technicianPaymentAmount || 0) : 0), 0);
-  const aReceber = mySchedules.reduce((acc, s) => acc + (!s.technicianPaid && (s.status === 'Concluída' || s.status === 'Frustrada') ? (s.technicianPaymentAmount || 0) : 0), 0);
-  const emMaos = mySchedules.reduce((acc, s) => acc + (!s.technicianPaid ? (s.amountReceivedByTechnician || 0) : 0), 0);
+  const agendados = mySchedulesFiltered.filter(s => ['Confirmada', 'Reagendada', 'Autorizada', 'Solicitada', 'Em análise'].includes(s.status));
+  const emAndamento = mySchedulesFiltered.filter(s => ['Técnico no local', 'Cliente no local', 'Aguardando Vínculo'].includes(s.status));
+  const concluidos = mySchedulesFiltered.filter(s => s.status === 'Concluída');
+  const cancelados = mySchedulesFiltered.filter(s => ['Cancelada', 'Frustrada'].includes(s.status));
+
+  const totalServices = mySchedulesFiltered.length;
+  const totalRecebido = mySchedulesFiltered.reduce((acc, s) => acc + (s.technicianPaid ? (s.technicianPaymentAmount || 0) : 0), 0);
+  const aReceber = mySchedulesFiltered.reduce((acc, s) => acc + (!s.technicianPaid && (s.status === 'Concluída' || s.status === 'Frustrada') ? (s.technicianPaymentAmount || 0) : 0), 0);
+  const emMaos = mySchedulesFiltered.reduce((acc, s) => acc + (!s.technicianPaid ? (s.amountReceivedByTechnician || 0) : 0), 0);
 
   const statsByType = {
-    'Instalação': mySchedules.filter(s => s.serviceType === 'Instalação').length,
-    'Manutenção': mySchedules.filter(s => s.serviceType === 'Manutenção').length,
-    'Retirada': mySchedules.filter(s => s.serviceType === 'Retirada').length,
-    'Vistoria': mySchedules.filter(s => s.serviceType === 'Vistoria').length,
-    'Frustrada': mySchedules.filter(s => s.status === 'Frustrada').length
+    'Instalação': mySchedulesFiltered.filter(s => s.serviceType === 'Instalação').length,
+    'Manutenção': mySchedulesFiltered.filter(s => s.serviceType === 'Manutenção').length,
+    'Retirada': mySchedulesFiltered.filter(s => s.serviceType === 'Retirada').length,
+    'Vistoria': mySchedulesFiltered.filter(s => s.serviceType === 'Vistoria').length,
+    'Frustrada': mySchedulesFiltered.filter(s => s.status === 'Frustrada').length
   };
 
   const getActiveList = () => {
     if (activeTab === 'agendados') return agendados;
     if (activeTab === 'andamento') return emAndamento;
+    if (activeTab === 'cancelados') return cancelados;
     return concluidos;
   };
 
   const activeList = getActiveList();
 
-  if (loading && mySchedules.length === 0) {
+  if (loading && mySchedulesFiltered.length === 0) {
     return (
       <div className="flex items-center justify-center h-full p-20">
         <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -124,6 +177,38 @@ export const TechnicianDashboard = () => {
 
       {/* Search and Tabs */}
       <div className="space-y-4">
+        {/* Time Filters */}
+        <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex bg-zinc-100 dark:bg-zinc-900 rounded-2xl p-1 flex-1">
+                <button
+                    onClick={() => setTimeFilter('diario')}
+                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${timeFilter === 'diario' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800'}`}
+                >
+                    Diário (Hoje)
+                </button>
+                <button
+                    onClick={() => setTimeFilter('semanal')}
+                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${timeFilter === 'semanal' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800'}`}
+                >
+                    Semanal
+                </button>
+                <button
+                    onClick={() => setTimeFilter('mensal')}
+                    className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${timeFilter === 'mensal' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800'}`}
+                >
+                    Mensal
+                </button>
+            </div>
+            {timeFilter === 'mensal' && (
+                <input 
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="px-4 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold text-sm outline-none w-full sm:w-auto"
+                />
+            )}
+        </div>
+
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
           <input
@@ -135,7 +220,7 @@ export const TechnicianDashboard = () => {
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-2 w-full pb-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 w-full pb-2">
         <button
           onClick={() => setActiveTab('agendados')}
           className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-4 py-3 rounded-xl sm:rounded-2xl text-[9px] sm:text-xs font-black uppercase tracking-widest text-center transition-all ${
@@ -162,7 +247,7 @@ export const TechnicianDashboard = () => {
         >
           <div className="flex items-center gap-1 sm:gap-2">
             <Activity size={14} className="hidden sm:block" />
-            <span className="truncate">Em Andamento</span>
+            <span className="truncate">Andamento</span>
           </div>
           <span className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded-full text-[9px]">
             {emAndamento.length}
@@ -182,6 +267,22 @@ export const TechnicianDashboard = () => {
           </div>
           <span className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded-full text-[9px]">
             {concluidos.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab('cancelados')}
+          className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-4 py-3 rounded-xl sm:rounded-2xl text-[9px] sm:text-xs font-black uppercase tracking-widest text-center transition-all ${
+            activeTab === 'cancelados'
+              ? 'bg-red-500 text-white shadow-lg shadow-red-500/20'
+              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+          }`}
+        >
+          <div className="flex items-center gap-1 sm:gap-2">
+            <XCircle size={14} className="hidden sm:block" />
+            <span className="truncate">Cancelados</span>
+          </div>
+          <span className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded-full text-[9px]">
+            {cancelados.length}
           </span>
         </button>
       </div>
@@ -286,9 +387,27 @@ export const TechnicianDashboard = () => {
           companies={companies}
           currentUser={user}
           onClose={() => setSelectedSchedule(null)}
-          onUpdate={(updated) => {
-            // A atualização real é feita no TrackingModal, mas podemos atualizar o estado local se necessário
-            setSelectedSchedule(updated);
+          onUpdate={async (updated) => {
+            try {
+              const previousSchedule = schedules.find(s => s.id === updated.id);
+              const statusChanged = previousSchedule && previousSchedule.status !== updated.status;
+              
+              await storage.saveSchedule(updated);
+              storage.logAction(user, 'UPDATE', 'Schedule', `Técnico atualizou agendamento: ${updated.vehiclePlate}`, updated.id);
+              setSelectedSchedule(updated);
+
+              if (statusChanged && updated.clientPhone) {
+                  const msg = whatsappService.getScheduleStatusMessage(
+                      updated.clientName?.split(' ')[0] || updated.requesterName.split(' ')[0], 
+                      updated.vehiclePlate, 
+                      updated.status,
+                      updated.confirmedDate ? `${updated.confirmedDate.split('-').reverse().join('/')} às ${updated.confirmedTime}` : undefined
+                  );
+                  whatsappService.sendMessage(updated.clientPhone, msg);
+              }
+            } catch (e) {
+              addNotification('error', 'Erro', 'Falha ao salvar agendamento.');
+            }
           }}
         />
       )}

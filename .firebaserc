@@ -1,7 +1,0 @@
-{
-  "projects": {
-    "default": "ktagfinder-prod",
-    "sandbox": "saastagmanager",
-    "production": "ktagfinder-prod"
-  }
-}

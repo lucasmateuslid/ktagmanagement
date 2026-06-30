@@ -22,23 +22,6 @@ export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
 };
 
 /**
- * Verifica se a tag mudou de posição além de um limiar (≈5m por padrão).
- * Usado para registrar histórico apenas quando há movimento real, evitando
- * milhares de pontos idênticos de veículos parados.
- * - Sem posição nova: nunca registra.
- * - Sem posição anterior: registra o primeiro ponto.
- */
-export const hasMoved = (
-  prev?: { lat: number; lon: number } | null,
-  next?: { lat: number; lon: number } | null,
-  thresholdDeg = 0.00005
-): boolean => {
-  if (!next) return false;
-  if (!prev) return true;
-  return Math.abs(prev.lat - next.lat) > thresholdDeg || Math.abs(prev.lon - next.lon) > thresholdDeg;
-};
-
-/**
  * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
  */
 export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1, onProgress?: (index: number, total: number, currentTag: Tag) => void): Promise<KTagLocationResult[]> => {
