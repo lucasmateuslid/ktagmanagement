@@ -4,11 +4,12 @@
 
   <!--
     K-Tag Manager — Configuração do Traccar
-    Fase 3: preencher após completar o build do tracker-server.jar
 
-    Variáveis substituídas pelo Docker:
+    Variáveis substituídas pelo Docker (ver infra/traccar/entrypoint.sh):
       ${POSTGRES_PASSWORD}   → senha do banco
       ${INTERNAL_SECRET}     → secret para autenticação dos webhooks internos
+      ${BACKEND_URL}         → URL do K-Tag Backend que recebe os webhooks
+      ${TRACCAR_ADMIN_TOKEN} → Token da conta de serviço (admin virtual)
   -->
 
   <!-- ─── Banco de dados PostgreSQL ─── -->
@@ -25,15 +26,22 @@
   <!-- Permite cadastro do primeiro admin via API -->
   <entry key='server.registration'>true</entry>
 
+  <!-- Conta de serviço (Administrador Virtual) -->
+  <entry key='web.serviceAccountToken'>${TRACCAR_ADMIN_TOKEN}</entry>
+
   <!-- ─── Encaminhar posições para o K-Tag Backend ─── -->
-  <!-- Ativo quando BACKEND_URL estiver definido (docker compose --profile full) -->
-  <!-- Em dev local (backend no host), deixar comentado e usar TRACCAR_POLL_INTERVAL=5000 -->
-  <!-- <entry key='forward.url'>${BACKEND_URL}/api/internal/traccar/position</entry> -->
-  <!-- <entry key='forward.json'>true</entry> -->
-  <!-- <entry key='forward.headers'>X-Internal-Secret: ${INTERNAL_SECRET}</entry> -->
+  <!-- Fase 4: webhook ativo. BACKEND_URL aponta para a URL pública direta do
+       Cloud Run em produção (não atrás do Cloudflare) ou http://backend:4000
+       via rede Docker em dev (docker compose, perfil "full").
+       O backend resolve o tenant pelo deviceId via ktag.tracker_devices —
+       não confia em nada enviado aqui. -->
+  <entry key='forward.url'>${BACKEND_URL}/api/internal/traccar/position</entry>
+  <entry key='forward.json'>true</entry>
+  <entry key='forward.headers'>X-Internal-Secret: ${INTERNAL_SECRET}</entry>
 
   <!-- ─── Encaminhar eventos para o K-Tag Backend ─── -->
-  <!-- <entry key='event.forward.url'>${BACKEND_URL}/api/internal/traccar/event</entry> -->
+  <entry key='event.forward.url'>${BACKEND_URL}/api/internal/traccar/event</entry>
+  <entry key='event.forward.headers'>X-Internal-Secret: ${INTERNAL_SECRET}</entry>
 
   <!-- ─────────────────────────────────────────────────────────────────────
        PROTOCOLOS GPS — habilitar somente os que você usa.
