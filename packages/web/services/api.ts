@@ -3,19 +3,20 @@ import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 import { storage } from './storage';
 import { xadtagService } from './xadtag';
 
-// K-Tag API v1.2 (2025-11-06)
-// status field now represents battery level
-// This logic is shared between map and inventory views
+// K-Tag API (api.gps308.com/feibao) — campo `status` = nível de bateria.
+// Doc do fornecedor v0.4: 0=极低 (muito baixo) … 3=高 (alto). ESCALA INVERTIDA
+// em relação à versão antiga (que assumia 0=Normal/cheio). Compartilhado entre
+// o mapa e o inventário.
 export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
   switch (status) {
     case 0:
-      return { level: 100, label: 'Normal', color: '#10b981' }; // Green
+      return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // 极低 — vermelho
     case 1:
-      return { level: 60, label: 'Médio', color: '#eab308' }; // Yellow
+      return { level: 30, label: 'Baixo', color: '#f97316' }; // 低 — laranja
     case 2:
-      return { level: 30, label: 'Baixo', color: '#f97316' }; // Orange
+      return { level: 60, label: 'Médio', color: '#eab308' }; // 中 — amarelo
     case 3:
-      return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // Red
+      return { level: 100, label: 'Alto', color: '#10b981' }; // 高 — verde
     default:
       return { level: 0, label: 'Desconhecido', color: '#71717a' }; // Gray
   }
@@ -39,57 +40,109 @@ export const hasMoved = (
 };
 
 /**
- * Busca localizações em lote com controle de concorrência e resiliência a rate limits (429).
+ * Busca localizações em lote. K-TAG usa o endpoint em LOTE do feibao (doc 3.3):
+ * uma requisição para até `chunkSize` chaves, com os resultados pareados de volta
+ * pela `key` (== hashedAdvKey), como exige a doc. XADTAG continua individual (API
+ * distinta). Resiliente a 429 com backoff exponencial.
+ *
+ * Contrato de progresso preservado: onProgress(index, total, currentTag).
  */
-export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 1, onProgress?: (index: number, total: number, currentTag: Tag) => void): Promise<KTagLocationResult[]> => {
-  const allResults: KTagLocationResult[] = [];
-  
-  let processedCount = 0;
-  for (let i = 0; i < tags.length; i += chunkSize) {
-    const chunk = tags.slice(i, i + chunkSize);
-    
-    const chunkResults = [];
-    for (const tag of chunk) {
-      if (onProgress) onProgress(processedCount + 1, tags.length, tag);
-      
-      // Tenta buscar a localização com até 5 retentativas em caso de 429
-      let attempts = 0;
-      const maxAttempts = 5;
-      let result = null;
-      
-      while (attempts <= maxAttempts) {
-        try {
-          const res = await fetchTagLocation(tag);
-          result = res.length > 0 ? { ...res[0], tagId: tag.id } : null;
-          break; // Sucesso, sai do loop de tentativas
-        } catch (e: any) {
-          if (e.message.includes('429') && attempts < maxAttempts) {
-            attempts++;
-            // Espera exponencial: 3s, 6s, 9s...
-            await new Promise(resolve => setTimeout(resolve, attempts * 3000));
-            continue;
-          }
-          console.error(`Erro ao rastrear tag ${tag.accessoryId}:`, e.message);
-          break; // Outro erro ou limite de tentativas atingido
-        }
-      }
-      chunkResults.push(result);
-      processedCount++;
-      
-      // Delay entre requisições individuais para evitar sobrecarga (1s)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProgress?: (index: number, total: number, currentTag: Tag) => void): Promise<KTagLocationResult[]> => {
+  const total = tags.length;
+  const results: KTagLocationResult[] = [];
+  let processed = 0;
 
-    const validResults = chunkResults.filter((r): r is any => r !== null);
-    allResults.push(...validResults);
+  const ktagTags = tags.filter(t => t.type !== 'XADTAG' && t.accessoryId && t.hashedAdvKey && t.privateKey);
+  const xadtagTags = tags.filter(t => t.type === 'XADTAG');
 
-    // Delay maior entre os chunks
-    if (i + chunkSize < tags.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+  // ---- XADTAG: individual (mantém retentativa via fetchTagLocation) ----
+  for (const tag of xadtagTags) {
+    if (onProgress) onProgress(processed + 1, total, tag);
+    try {
+      const res = await fetchTagLocation(tag);
+      if (res.length > 0) results.push({ ...res[0], tagId: tag.id });
+    } catch (e: any) {
+      console.error(`Erro ao rastrear XADTAG ${tag.traqcareId}:`, e.message);
     }
+    processed++;
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  return allResults;
+  // ---- K-TAG: LOTE (feibao doc 3.3) ----
+  const settings = await storage.getSettings();
+  const proxyUrl = settings.customProxyUrl || '/api/proxy';
+
+  for (let i = 0; i < ktagTags.length; i += chunkSize) {
+    const chunk = ktagTags.slice(i, i + chunkSize);
+    if (onProgress) onProgress(Math.min(processed + chunk.length, total), total, chunk[0]);
+
+    // hashedAdvKey (decifrado no storage.getTags) → tag, para parear os resultados.
+    const byKey = new Map<string, Tag>();
+    for (const t of chunk) byKey.set(t.hashedAdvKey as string, t);
+
+    const payload = {
+      hashed_keys: chunk.map(t => t.hashedAdvKey),
+      priv_keys: chunk.map(t => t.privateKey),
+    };
+    const proxyBody = JSON.stringify({ injectAuth: 'ktag', method: 'POST', body: payload });
+
+    let attempts = 0;
+    const maxAttempts = 5;
+    while (attempts <= maxAttempts) {
+      try {
+        let response = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: proxyBody,
+        });
+        // Fallback para o proxy padrão se um proxy customizado falhar (5xx).
+        if (!response.ok && settings.customProxyUrl && response.status >= 500) {
+          response = await fetch('/api/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: proxyBody,
+          });
+        }
+        if (response.status === 429) {
+          if (attempts < maxAttempts) { attempts++; await new Promise(r => setTimeout(r, attempts * 3000)); continue; }
+          throw new Error('429: rate limit no lote K-Tag.');
+        }
+        if (!response.ok) throw new Error(`Erro ${response.status} no lote K-Tag.`);
+
+        const data = JSON.parse(await response.text());
+        if (data && Array.isArray(data.results)) {
+          for (const p of data.results) {
+            const tag = p && p.key ? byKey.get(p.key) : undefined;
+            if (!tag) continue; // sem posição para esta chave, ou chave desconhecida
+            results.push({
+              lat: p.lat,
+              lon: p.lon,
+              conf: p.conf,
+              status: p.status,
+              battery: ktagBatteryStatus(p.status),
+              timestamp: p.timestamp,
+              isodatetime: p.isodatetime,
+              tagId: tag.id,
+            });
+          }
+        }
+        break; // sucesso
+      } catch (e: any) {
+        if (String(e.message).includes('429') && attempts < maxAttempts) {
+          attempts++;
+          await new Promise(r => setTimeout(r, attempts * 3000));
+          continue;
+        }
+        console.error(`Erro no lote K-Tag (${chunk.length} tags):`, e.message);
+        break;
+      }
+    }
+
+    processed += chunk.length;
+    if (i + chunkSize < ktagTags.length) await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  return results;
 };
 
 export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {

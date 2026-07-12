@@ -13,6 +13,13 @@ const axios = require("axios");
 const dns = require("node:dns").promises;
 const net = require("node:net");
 const asaas = require("./asaas");
+// K-TAG (api.gps308.com): helpers puros (bateria/lote) + cripto server-side
+// (espelho de packages/web/services/encryption.ts) para ler/gravar as chaves das
+// tags no MESMO formato cifrado que a UI usa.
+const { mapKtagBatchResults } = require("./ktagLocation");
+const ktagCrypto = require("./ktagCrypto");
+// User-Agent usado nas chamadas ao feibao / keysByLogin.
+const KTAG_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 // ---------- SSRF GUARD (mirror do server.ts) ----------
 const PROXY_ALLOWED_HOSTS = new Set(
@@ -702,16 +709,8 @@ exports.onFeedbackCreate = onDocumentCreated(
 
 // --- HELPERS PARA RASTREIO AGENDADO ---
 
-const ktagBatteryStatus = (status) => {
-  // API K-TAG: 0=Normal, 3=Muito baixo
-  switch (status) {
-    case 0: return { level: 100, label: 'Normal', color: '#10b981' };
-    case 1: return { level: 60, label: 'Médio', color: '#eab308' };
-    case 2: return { level: 30, label: 'Baixo', color: '#f97316' };
-    case 3: return { level: 10, label: 'Muito baixo', color: '#ef4444' };
-    default: return { level: 0, label: 'Desconhecido', color: '#71717a' };
-  }
-};
+// ktagBatteryStatus agora vem de ./ktagLocation.js (escala corrigida conforme a
+// doc do fornecedor: 0=极低/muito baixo … 3=高/alto).
 
 const xadtagBatteryToInfo = (battery) => {
   // API XADTAG (Traqcare): 0=Normal, 3=Muito baixo (mesma semântica do K-TAG)
@@ -724,49 +723,41 @@ const xadtagBatteryToInfo = (battery) => {
   }
 };
 
-async function fetchKtagLocation(tag) {
+/**
+ * Busca posições em LOTE no feibao (doc 3.3). Recebe tags com as chaves JÁ
+ * decifradas ({ id, accessoryId, hashedAdvKey, privateKey }). Envia
+ * hashed_keys[]/priv_keys[] paralelos e mapeia os resultados de volta pela `key`
+ * (== hashedAdvKey), como exige a doc. Retorna [{ tag, location }] só das
+ * posições válidas. NUNCA loga corpo/chaves — apenas status/mensagem no erro.
+ */
+async function fetchKtagLocationsBatch(tagsWithKeys) {
   const url = process.env.KTAG_API_URL;
-  if (!url) { console.warn('[K-Tag] KTAG_API_URL ausente — pulando.'); return null; }
+  if (!url || tagsWithKeys.length === 0) return [];
 
   const payload = {
-    accessoryId: tag.accessoryId,
-    hashed_keys: [tag.hashedAdvKey],
-    priv_keys: [tag.privateKey]
+    hashed_keys: tagsWithKeys.map(t => t.hashedAdvKey),
+    priv_keys: tagsWithKeys.map(t => t.privateKey)
   };
-
   const authHeader = `Basic ${Buffer.from(`${KTAG_API_USER.value()}:${KTAG_API_PASS.value()}`).toString('base64')}`;
 
   try {
     const response = await axios({
       url,
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
+      headers: {
+        'Content-Type': 'application/json',
         'Authorization': authHeader,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': KTAG_UA
       },
       data: payload,
-      timeout: 20000
+      timeout: 30000
     });
-
-    if (response.data && Array.isArray(response.data.results) && response.data.results.length > 0) {
-      const p = response.data.results[0];
-      return {
-        id: Math.random().toString(36).substring(2, 15),
-        tagId: tag.id,
-        lat: p.lat,
-        lon: p.lon,
-        conf: p.conf,
-        status: p.status,
-        battery: ktagBatteryStatus(p.status),
-        timestamp: p.timestamp,
-        isodatetime: p.isodatetime
-      };
-    }
+    const results = Array.isArray(response.data && response.data.results) ? response.data.results : [];
+    return mapKtagBatchResults(results, tagsWithKeys);
   } catch (e) {
-    console.error(`K-Tag API Error for ${tag.accessoryId}:`, e.message);
+    console.error(`[K-Tag] lote (${tagsWithKeys.length} tags) falhou:`, (e.response && e.response.status) || e.message);
+    return [];
   }
-  return null;
 }
 
 async function fetchXadtagLocation(tag, settings) {
@@ -927,57 +918,165 @@ async function updateTagsForTenant(db, tenantId) {
   console.log(`[${tenantId}] Atualizando ${allTags.length} tags (stale-first)`);
 
   let updatedCount = 0;
+
+  // Persiste uma posição: enriquece com endereço, atualiza lastPosition e grava
+  // histórico. NÃO persiste o campo `key` (hashedAdvKey) — evita vazar chave em
+  // texto plano no Firestore (legível pelos usuários do tenant).
+  const persist = async (tag, locationResult) => {
+    if (!locationResult) return false;
+    const vehicle = vehicleByTagId[tag.id];
+    if (!vehicle) return false;
+    // Enriquece com endereço (Photon/OSM — grátis, sem API key).
+    const address = await reverseGeocodePhoton(locationResult.lat, locationResult.lon);
+    const enriched = address ? { ...locationResult, address } : locationResult;
+    // lastPosition sempre atualizado (mantém timestamp/bateria/endereço frescos).
+    await vehicle.ref.update({ lastPosition: enriched });
+    // Histórico: grava a cada ciclo (série temporal de 7 dias). ID derivado do
+    // timestamp evita duplicatas exatas se a mesma resposta chegar 2x.
+    const histId = `${tag.id}_${enriched.timestamp || Date.now()}`;
+    await vehicle.ref.collection('history').doc(histId).set({
+      ...enriched,
+      tagId: tag.id,
+      vehicleId: vehicle.id,
+      tenantId,
+      savedAt: Date.now()
+    });
+    return true;
+  };
+
+  // ---- XADTAG: individual (API não suporta lote) ----
   for (const tag of allTags) {
+    if (tag.type !== 'XADTAG') continue;
     try {
-      let locationResult = null;
-      if (tag.type === 'XADTAG') {
-        if (!settings.traqcareToken) continue;
-        locationResult = await fetchXadtagLocation(tag, settings);
-      } else {
-        if (!process.env.KTAG_API_URL) continue;
-        locationResult = await fetchKtagLocation(tag);
-      }
+      if (!settings.traqcareToken) continue;
+      const loc = await fetchXadtagLocation(tag, settings);
+      if (await persist(tag, loc)) updatedCount++;
+      await new Promise(resolve => setTimeout(resolve, 2000)); // throttle XADTAG
+    } catch (error) {
+      console.error(`[${tenantId}] XADTAG ${tag.traqcareId} falhou:`, error.message);
+    }
+  }
 
-      if (locationResult) {
-        // Enriquece com endereço (Photon/OSM — grátis, sem API key).
-        const address = await reverseGeocodePhoton(locationResult.lat, locationResult.lon);
-        const enrichedResult = address ? { ...locationResult, address } : locationResult;
+  // ---- K-TAG: LOTE (feibao doc 3.3) ----
+  if (process.env.KTAG_API_URL) {
+    // Decifra as chaves (espelho da UI); tags sem chave são ignoradas.
+    const withKeys = [];
+    for (const tag of allTags) {
+      if (tag.type === 'XADTAG' || !tag.accessoryId) continue;
+      const hashedAdvKey = await ktagCrypto.decrypt(tenantId, tag.hashedAdvKey);
+      const privateKey = await ktagCrypto.decrypt(tenantId, tag.privateKey);
+      if (hashedAdvKey && privateKey) withKeys.push({ ...tag, hashedAdvKey, privateKey });
+    }
 
-        // Usa vehicleByTagId para evitar query extra por tag (já carregamos tudo acima).
-        const vehicle = vehicleByTagId[tag.id];
-        if (vehicle) {
-          const prevPosition = vehicle.lastPosition;
-
-          // lastPosition é sempre atualizado (mantém timestamp/bateria/endereço frescos).
-          await vehicle.ref.update({ lastPosition: enrichedResult });
-
-          // Histórico: sempre grava a cada ciclo para garantir série temporal completa de 7 dias.
-          // O ID é derivado do timestamp da localização para evitar duplicatas exatas caso a
-          // mesma resposta chegue duas vezes (idempotente via .set() com merge: false).
-          const histId = `${tag.id}_${enrichedResult.timestamp || Date.now()}`;
-          await vehicle.ref.collection('history')
-            .doc(histId)
-            .set({
-              ...enrichedResult,
-              tagId: tag.id,
-              vehicleId: vehicle.id,
-              tenantId,
-              savedAt: Date.now()
-            });
-
-          updatedCount++;
+    const CHUNK = 50; // ≤50 chaves por request (protege contra payload gigante)
+    for (let i = 0; i < withKeys.length; i += CHUNK) {
+      const chunk = withKeys.slice(i, i + CHUNK);
+      const mapped = await fetchKtagLocationsBatch(chunk);
+      for (const { tag, location } of mapped) {
+        try {
+          const { key, ...rest } = location; // descarta `key` antes de persistir
+          const locationResult = { id: Math.random().toString(36).substring(2, 15), tagId: tag.id, ...rest };
+          if (await persist(tag, locationResult)) updatedCount++;
+          await new Promise(resolve => setTimeout(resolve, 800)); // gentileza c/ geocoding
+        } catch (error) {
+          console.error(`[${tenantId}] K-TAG persist ${tag.accessoryId} falhou:`, error.message);
         }
       }
-
-      // Throttle 2s entre requests externos (rate-limit das APIs K-TAG/XADTAG).
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    } catch (error) {
-      console.error(`[${tenantId}] tag ${tag.accessoryId || tag.traqcareId} falhou:`, error.message);
     }
   }
 
   return updatedCount;
 }
+
+/**
+ * SYNC DE CHAVES (doc 3.1 keysByLogin). Um admin do tenant dispara; o servidor
+ * consulta a plataforma do fornecedor com as credenciais ÚNICAS da plataforma
+ * (KTAG_API_USER/PASS) e atualiza as chaves (privateKey/hashedAdvKey) das tags
+ * cujo `accessoryId == sn`, quando mudaram. Útil quando o fornecedor rotaciona
+ * as chaves — causa comum de "parou de conectar".
+ *
+ * SEGURANÇA: as chaves NUNCA voltam ao cliente (só um resumo com contagens) e são
+ * regravadas CIFRADAS (mesmo formato da UI). Dispositivos de outros tenants na
+ * lista da plataforma são descartados — casamos só por SN das tags DESTE tenant.
+ */
+exports.syncKtagKeys = onCall({ secrets: [KTAG_API_USER, KTAG_API_PASS] }, async (request) => {
+  const { tenantId } = await requireTenantAdmin(request);
+
+  const url = process.env.KTAG_KEYS_API_URL || 'https://api.gps308.com/tag/system/tag/device/keysByLogin';
+  const username = KTAG_API_USER.value();
+  const password = KTAG_API_PASS.value();
+  if (!username || !password) {
+    throw new HttpsError('failed-precondition', 'Credenciais K-TAG não configuradas no servidor.');
+  }
+
+  let list;
+  try {
+    const response = await axios({
+      url,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': KTAG_UA },
+      data: { username, password },
+      timeout: 20000,
+      validateStatus: () => true
+    });
+    // Doc: code 200 = sucesso; 500 = usuário/senha errados. Não repassa detalhes.
+    if (response.status !== 200 || !response.data || response.data.code !== 200) {
+      const code = (response.data && response.data.code) || response.status;
+      throw new HttpsError('internal', `keysByLogin falhou (code ${code}).`);
+    }
+    list = (response.data.data && response.data.data.list) || [];
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('internal', `Falha ao consultar keysByLogin: ${e.message}`);
+  }
+
+  const bySn = new Map();
+  for (const d of list) {
+    if (d && d.sn) bySn.set(String(d.sn), d);
+  }
+
+  const db = admin.firestore();
+  const tagsSnap = await db.collection('tenants').doc(tenantId).collection('tags').get();
+
+  let atualizadas = 0;
+  let inalteradas = 0;
+  const snsNaoEncontrados = [];
+  let batch = db.batch();
+  let pending = 0;
+
+  for (const doc of tagsSnap.docs) {
+    const tag = doc.data();
+    if (!tag.accessoryId) continue;
+    const remote = bySn.get(String(tag.accessoryId));
+    if (!remote) { snsNaoEncontrados.push(tag.accessoryId); continue; }
+
+    const curHashed = await ktagCrypto.decrypt(tenantId, tag.hashedAdvKey);
+    const curPriv = await ktagCrypto.decrypt(tenantId, tag.privateKey);
+    if (curHashed === remote.hashedAdvKey && curPriv === remote.privateKey) {
+      inalteradas++;
+      continue;
+    }
+
+    batch.update(doc.ref, {
+      hashedAdvKey: await ktagCrypto.encrypt(tenantId, remote.hashedAdvKey),
+      privateKey: await ktagCrypto.encrypt(tenantId, remote.privateKey)
+    });
+    atualizadas++;
+    pending++;
+    if (pending >= 400) { await batch.commit(); batch = db.batch(); pending = 0; }
+  }
+  if (pending > 0) await batch.commit();
+
+  await logAudit(tenantId, 'UPDATE', 'Tag', `Sync de chaves K-TAG: ${atualizadas} atualizadas, ${inalteradas} inalteradas`, null, request.auth.uid);
+
+  return {
+    total: tagsSnap.size,
+    atualizadas,
+    inalteradas,
+    naoEncontradas: snsNaoEncontrados.length,
+    snsNaoEncontrados: snsNaoEncontrados.slice(0, 50) // limita o payload de volta
+  };
+});
 
 /**
  * CLEANUP DIÁRIO: Remove pontos de histórico com mais de 7 dias de todos os tenants ativos.
