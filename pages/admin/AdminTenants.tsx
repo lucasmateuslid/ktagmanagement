@@ -25,6 +25,7 @@ import { useTenantsStats } from '../../hooks/useTenantsStats';
 import { adminApi } from '../../services/adminApi';
 import { CYCLES, METHODS } from '../../lib/billing';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatCpfCnpj, isValidCpfCnpj } from '../../utils/brDocument';
 
 const PLAN_OPTIONS: SelectOption<'basic' | 'pro' | 'enterprise'>[] = [
   { value: 'basic', label: 'Basic', description: 'Recursos essenciais', icon: <Zap size={14} /> },
@@ -969,6 +970,7 @@ const CreateTenantModal = ({
     setError('');
     setSubmitting(true);
     try {
+      if (billingEnabled && !isValidCpfCnpj(billingForm.payerCpfCnpj)) throw new Error('CPF/CNPJ do pagador inválido.');
       const data = await adminApi.createTenant({
         slug: form.slug.trim().toLowerCase(),
         name: form.name.trim(),
@@ -1065,9 +1067,9 @@ const CreateTenantModal = ({
               <FieldInput
                 label="CPF/CNPJ do pagador"
                 value={billingForm.payerCpfCnpj}
-                onChange={(v: string) => setBillingForm({ ...billingForm, payerCpfCnpj: v })}
+                onChange={(v: string) => setBillingForm({ ...billingForm, payerCpfCnpj: formatCpfCnpj(v) })}
                 required={billingEnabled}
-                placeholder="Somente números"
+                placeholder="000.000.000-00"
               />
             </div>
           )}

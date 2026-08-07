@@ -1507,6 +1507,36 @@ function generateRandomPassword() {
   return result;
 }
 
+function isRepeatedDocument(digits) {
+  return /^(\d)\1+$/.test(digits);
+}
+function isValidCpf(value) {
+  const cpf = String(value || '').replace(/\D/g, '');
+  if (cpf.length !== 11 || isRepeatedDocument(cpf)) return false;
+  for (let size = 9; size <= 10; size++) {
+    let sum = 0;
+    for (let i = 0; i < size; i++) sum += Number(cpf[i]) * (size + 1 - i);
+    if ((sum * 10) % 11 % 10 !== Number(cpf[size])) return false;
+  }
+  return true;
+}
+function isValidCnpj(value) {
+  const cnpj = String(value || '').replace(/\D/g, '');
+  if (cnpj.length !== 14 || isRepeatedDocument(cnpj)) return false;
+  const calc = (length) => {
+    const weights = length === 12
+      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const remainder = weights.reduce((sum, weight, i) => sum + Number(cnpj[i]) * weight, 0) % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  return calc(12) === Number(cnpj[12]) && calc(13) === Number(cnpj[13]);
+}
+function isValidCpfCnpj(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 11 ? isValidCpf(digits) : digits.length === 14 ? isValidCnpj(digits) : false;
+}
+
 /**
  * Admin do tenant cria um novo usuário (Auth + doc) com senha temporária.
  * Retorna { uid, email, password } — frontend exibe e envia ao colaborador.
@@ -1519,6 +1549,9 @@ exports.createTenantUser = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'email e name são obrigatórios.');
   }
   const cleanEmail = String(email).toLowerCase().trim();
+  if (cpf && !isValidCpf(cpf)) {
+    throw new HttpsError('invalid-argument', 'CPF inválido.');
+  }
   const password = generateRandomPassword();
 
   let userRecord;
@@ -1594,6 +1627,115 @@ exports.resetTenantUserPassword = onCall(async (request) => {
   await logAudit(tenantId, 'UPDATE', 'User', `Admin resetou senha de ${targetSnap.data().email}`, userId, request.auth.uid);
 
   return { userId, email: targetSnap.data().email, password };
+});
+
+/**
+ * Provisiona o acesso ao portal para um cliente identificado por CPF.
+ *
+ * O fluxo legado criava apenas /tenants/{tid}/users/client_{cpf} e gravava a
+ * senha no Firestore. Isso nunca criava uma conta no Firebase Auth. Esta
+ * callable cria (ou reaproveita) a conta global, grava o usuário sob o UID real
+ * e migra o documento legado de forma idempotente.
+ */
+exports.provisionClientAccess = onCall(async (request) => {
+  const { tenantId, callerUid } = await requireTenantAdmin(request);
+  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
+  const name = String(request.data?.name || '').trim();
+  const clientId = String(request.data?.clientId || '').trim();
+
+  if (!isValidCpf(cpf)) {
+    throw new HttpsError('invalid-argument', 'CPF inválido.');
+  }
+  if (!name) throw new HttpsError('invalid-argument', 'name é obrigatório.');
+
+  const email = `${cpf}@client.ktag`;
+  const initialPassword = cpf.slice(0, 6);
+  let userRecord;
+  let created = false;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') {
+      throw new HttpsError('internal', `Falha ao consultar conta do cliente: ${e.message}`);
+    }
+    try {
+      userRecord = await admin.auth().createUser({
+        email,
+        password: initialPassword,
+        displayName: name,
+      });
+      created = true;
+    } catch (ce) {
+      throw new HttpsError('internal', `Falha ao criar conta do cliente: ${ce.message}`);
+    }
+  }
+
+  const uid = userRecord.uid;
+  const users = admin.firestore().collection('tenants').doc(tenantId).collection('users');
+  const legacyRef = users.doc(`client_${cpf}`);
+  const targetRef = users.doc(uid);
+  const [legacySnap, targetSnap] = await Promise.all([legacyRef.get(), targetRef.get()]);
+  const legacyData = legacySnap.exists ? legacySnap.data() : {};
+  const targetData = targetSnap.exists ? targetSnap.data() : {};
+  const userDoc = {
+    ...legacyData,
+    ...targetData,
+    id: uid,
+    email,
+    name: targetData.name || legacyData.name || name,
+    cpf: targetData.cpf || legacyData.cpf || cpf,
+    role: 'client',
+    status: 'approved',
+    tenantId,
+    clientId: clientId || targetData.clientId || legacyData.clientId || null,
+    createdAt: targetData.createdAt || legacyData.createdAt || Date.now(),
+    updatedAt: Date.now(),
+    // Remove qualquer senha deixada pelo modelo legado. Senhas pertencem
+    // exclusivamente ao Firebase Authentication.
+    password: admin.firestore.FieldValue.delete(),
+  };
+
+  await targetRef.set(userDoc, { merge: true });
+  await upsertMembership(uid, tenantId, userDoc);
+  await rebuildIdentityAndClaims(uid);
+  if (legacySnap.exists && legacyRef.id !== uid) await legacyRef.delete();
+
+  await logAudit(tenantId, created ? 'CREATE' : 'UPDATE', 'Client',
+    `Acesso do cliente provisionado: ${email}`, uid, callerUid);
+  return { uid, email, created, initialPassword: created ? initialPassword : null };
+});
+
+/** Redefine no Firebase Auth a senha de um cliente pertencente ao tenant. */
+exports.resetClientPassword = onCall(async (request) => {
+  const { tenantId, callerUid } = await requireTenantAdmin(request);
+  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
+  const mode = request.data?.mode === 'default' ? 'default' : 'cpf';
+  if (!isValidCpf(cpf)) {
+    throw new HttpsError('invalid-argument', 'CPF inválido.');
+  }
+
+  const email = `${cpf}@client.ktag`;
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'Cliente ainda não possui conta de acesso.');
+    }
+    throw new HttpsError('internal', `Falha ao consultar conta do cliente: ${e.message}`);
+  }
+
+  const memberSnap = await admin.firestore().collection('tenants').doc(tenantId)
+    .collection('users').doc(userRecord.uid).get();
+  if (!memberSnap.exists || memberSnap.data()?.role !== 'client') {
+    throw new HttpsError('permission-denied', 'Cliente não pertence a este tenant.');
+  }
+
+  const password = mode === 'default' ? '123456' : cpf.slice(0, 6);
+  await admin.auth().updateUser(userRecord.uid, { password });
+  await logAudit(tenantId, 'UPDATE', 'Client', `Senha do cliente redefinida: ${email}`,
+    userRecord.uid, callerUid);
+  return { uid: userRecord.uid, email, password };
 });
 
 /**
@@ -2144,6 +2286,9 @@ async function createSubscriptionForTenant(slug, data, callerUid) {
   const payer = data.payer || {};
   if (!payer.name || !payer.email || !payer.cpfCnpj) {
     throw new HttpsError('invalid-argument', 'payer.name, payer.email e payer.cpfCnpj são obrigatórios.');
+  }
+  if (!isValidCpfCnpj(payer.cpfCnpj)) {
+    throw new HttpsError('invalid-argument', 'CPF/CNPJ do pagador inválido.');
   }
 
   const cycle = data.cycle || 'MONTHLY';

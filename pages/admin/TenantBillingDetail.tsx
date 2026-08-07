@@ -19,6 +19,7 @@ import { adminApi, type TenantUserRow, type TenantMembershipRow } from '../../se
 import { cn } from '../../lib/utils';
 import { CYCLES, METHODS, monthlyEquivFactor, cyclesPerYear } from '../../lib/billing';
 import { AnimatePresence, motion } from 'framer-motion';
+import { formatCpfCnpj, isValidCpfCnpj } from '../../utils/brDocument';
 
 const fmtBRL = (cents?: number) =>
   ((cents ?? 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -159,6 +160,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
     if (!functions) return;
     setError(''); setInfo(''); setSubmitting(true);
     try {
+      if (!hasSubscription && !isValidCpfCnpj(form.payerCpfCnpj)) throw new Error('CPF/CNPJ do pagador inválido.');
       const fnName = hasSubscription ? 'updateTenantSubscription' : 'createTenantSubscription';
       const payload: any = {
         slug: tenant.slug,
@@ -383,7 +385,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
                   <input type="email" value={form.payerEmail} onChange={e => setForm({ ...form, payerEmail: e.target.value })} className={inputCls} required />
                 </Field>
                 <Field label="CPF / CNPJ" hint="Somente números">
-                  <input value={form.payerCpfCnpj} onChange={e => setForm({ ...form, payerCpfCnpj: e.target.value.replace(/\D/g, '') })} className={inputCls} required />
+                  <input inputMode="numeric" maxLength={18} value={form.payerCpfCnpj} onChange={e => setForm({ ...form, payerCpfCnpj: formatCpfCnpj(e.target.value) })} className={inputCls} required />
                 </Field>
                 <Field label="Período de trial" hint="0 = sem trial (cobrança imediata)">
                   <div className="flex items-center gap-2">
@@ -1016,4 +1018,3 @@ const SetupFeeBadgeCard = ({
     </section>
   );
 };
-

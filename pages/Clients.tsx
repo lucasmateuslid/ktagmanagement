@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { storage } from '../services/storage';
-import { Client, Vehicle, User } from '../types';
+import { Client, Vehicle } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +17,10 @@ import { Checkbox } from '../components/ui/checkbox';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebase';
+import { useTenant } from '../contexts/TenantContext';
+import { formatCPF, isValidCPF } from '../utils/brDocument';
 
 const MotionDiv = motion.div as any;
 
@@ -39,6 +43,7 @@ export const Clients = () => {
   const { t } = useLanguage();
   const { addNotification } = useNotification();
   const { user: currentUser } = useAuth();
+  const { tenantId } = useTenant();
 
   const loadData = async () => {
     const [c, v] = await Promise.all([storage.getClients(), storage.getVehicles()]);
@@ -155,32 +160,26 @@ export const Clients = () => {
 
   const handleResetPassword = async (type: 'default' | 'cpf') => {
     if (!selectedClient.cpf) return;
-    
-    const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
-    const clientEmail = `${cleanCpf}@client.ktag`;
-    
-    // Busca a conta de usuário vinculada
-    const userAccount = await storage.findUserByEmail(clientEmail);
-    
-    if (!userAccount) {
-      addNotification('error', 'Erro', 'Este cliente ainda não possui uma conta de acesso ativa.');
-      setIsResetModalOpen(false);
-      return;
-    }
-
-    let newPassword = '';
-    if (type === 'default') {
-      newPassword = '123456';
-    } else {
-      newPassword = cleanCpf.substring(0, 6);
-    }
 
     try {
-      await storage.updateUserProfile(userAccount.id, { password: newPassword });
-      storage.logAction(currentUser, 'UPDATE', 'Client', `Resetou a senha do cliente ${selectedClient.name} (${type})`, userAccount.id);
-      addNotification('success', 'Senha Redefinida', `A nova senha é: ${newPassword}`);
-    } catch (e) {
-      addNotification('error', 'Erro', 'Não foi possível redefinir a senha no momento.');
+      if (!functions) throw new Error('Serviço de autenticação indisponível.');
+      const provision = httpsCallable<
+        { tenantId: string; cpf: string; name: string; clientId: string },
+        { uid: string }
+      >(functions, 'provisionClientAccess');
+      await provision({
+        tenantId,
+        cpf: selectedClient.cpf,
+        name: selectedClient.name || 'Cliente',
+        clientId: selectedClient.id || '',
+      });
+      const reset = httpsCallable<{ tenantId: string; cpf: string; mode: 'default' | 'cpf' }, { password: string }>(
+        functions, 'resetClientPassword'
+      );
+      const result = await reset({ tenantId, cpf: selectedClient.cpf, mode: type });
+      addNotification('success', 'Senha Redefinida', `A nova senha é: ${result.data.password}`);
+    } catch (e: any) {
+      addNotification('error', 'Erro', e?.message || 'Não foi possível redefinir a senha no momento.');
     } finally {
       setIsResetModalOpen(false);
     }
@@ -192,6 +191,10 @@ export const Clients = () => {
     // gerado via crypto.randomUUID() a cada submit, criava clientes duplicados.
     if (isSaving) return;
     if (!selectedClient.name || !selectedClient.cpf) return;
+    if (!isValidCPF(selectedClient.cpf)) {
+      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+      return;
+    }
 
     // id estável: gera UMA vez e fixa no estado, para que retry reuse o mesmo
     // doc (setDoc sobrescreve em vez de duplicar).
@@ -214,26 +217,17 @@ export const Clients = () => {
       // não duplicar o log aqui.
       await storage.saveClient(clientData);
 
-      // Se o acesso for habilitado, garante que existe um usuário no USERS_DB.
-      // findUserByEmail torna esta etapa idempotente: re-salvar não recria o user.
+      // Cria/repara a conta no Firebase Auth e mantém o documento do tenant sob
+      // o UID real. A callable também migra docs legados client_{cpf}.
       if (clientData.hasAccess) {
-          const clientEmail = `${cleanCpf}@client.ktag`;
-          const existingUser = await storage.findUserByEmail(clientEmail);
-
-          if (!existingUser) {
-              const newUser: User = {
-                  // id determinístico pelo CPF: evita usuários-cliente duplicados
-                  // mesmo sob corrida (dois submits resolvem para o mesmo doc).
-                  id: `client_${cleanCpf}`,
-                  name: clientData.name,
-                  email: clientEmail,
-                  cpf: cleanCpf,
-                  password: cleanCpf.substring(0, 6), // Senha inicial: 6 primeiros dígitos
-                  role: 'client',
-                  status: 'approved',
-                  createdAt: Date.now()
-              };
-              await storage.registerUserRequest(newUser);
+          if (!functions) throw new Error('Serviço de criação de acesso indisponível.');
+          const provision = httpsCallable<
+            { tenantId: string; cpf: string; name: string; clientId: string },
+            { uid: string; email: string; created: boolean; initialPassword: string | null }
+          >(functions, 'provisionClientAccess');
+          const result = await provision({ tenantId, cpf: cleanCpf, name: clientData.name, clientId });
+          if (result.data.created && result.data.initialPassword) {
+            addNotification('success', 'Acesso Criado', `Login: ${result.data.email} — senha inicial: ${result.data.initialPassword}`);
           }
       }
 
@@ -507,7 +501,7 @@ export const Clients = () => {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF (Somente Números)</label>
-                                    <input type="text" required value={selectedClient.cpf || ''} onChange={e => setSelectedClient({...selectedClient, cpf: e.target.value.replace(/\D/g, '')})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                    <input type="text" required inputMode="numeric" maxLength={14} value={selectedClient.cpf || ''} onChange={e => setSelectedClient({...selectedClient, cpf: formatCPF(e.target.value)})} placeholder="000.000.000-00" className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>

@@ -5,6 +5,7 @@ import { Vehicle, Client, Company, VehicleCategory, Tag, DeviceType } from '../.
 import { getPlateInputStatus, validateBrazilianPlate } from '../utils/plateValidation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatCPF } from '../../../utils/brDocument';
 
 interface VehicleModalProps {
   onClose: () => void;
@@ -402,7 +403,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
 
                         <div className="space-y-2">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CPF</label>
-                            <input type="text" required value={clientData.cpf || ''} onBlur={(e) => onCheckClient(e.target.value)} onChange={e => setClientData({...clientData, cpf: e.target.value})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-mono font-bold text-xs outline-none" placeholder="000.000.000-00" />
+                            <input type="text" required inputMode="numeric" maxLength={14} value={clientData.cpf || ''} onBlur={(e) => onCheckClient(e.target.value)} onChange={e => setClientData({...clientData, cpf: formatCPF(e.target.value)})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-mono font-bold text-xs outline-none" placeholder="000.000.000-00" />
                         </div>
 
                         <div className="space-y-2">

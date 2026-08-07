@@ -4,6 +4,7 @@ import { Vehicle, Client, User } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { validateBrazilianPlate } from '../utils/plateValidation';
+import { isValidCPF } from '../../../utils/brDocument';
 
 export const useVehicleForm = (
   vehicles: Vehicle[],
@@ -52,6 +53,10 @@ export const useVehicleForm = (
       return;
     }
     if (!formData.plate || !formData.model || !clientData.cpf) return;
+    if (!isValidCPF(clientData.cpf)) {
+      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+      return;
+    }
 
     const currentPlate = formData.plate.toUpperCase();
     const samePlates = vehicles.filter(v => v.plate === currentPlate && v.id !== formData.id);

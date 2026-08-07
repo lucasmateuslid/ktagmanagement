@@ -1,5 +1,6 @@
 
 import * as React from 'react';
+import { isValidCPF } from '../utils/brDocument';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
@@ -117,9 +118,14 @@ export const Login = () => {
     try {
       let loginIdentifier = xssProtection.sanitizeText(emailOrCpf.trim());
       const rawIdentifier = loginIdentifier;
-      
-      if (/^\d+$/.test(loginIdentifier)) {
-        loginIdentifier = `${loginIdentifier}@client.ktag`;
+
+      // Aceita CPF com ou sem máscara. E-mails permanecem inalterados.
+      if (!loginIdentifier.includes('@')) {
+        const cpfDigits = loginIdentifier.replace(/\D/g, '');
+        if (cpfDigits.length === 11) {
+          if (!isValidCPF(cpfDigits)) throw new Error('CPF inválido.');
+          loginIdentifier = `${cpfDigits}@client.ktag`;
+        }
       }
 
       const err = await login(loginIdentifier, password);
