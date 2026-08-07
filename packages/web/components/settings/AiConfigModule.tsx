@@ -34,6 +34,7 @@ export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false
     { id: 'anthropic', name: 'Anthropic (Claude)', keyConfig: 'anthropicApiKey' },
     { id: 'groq', name: 'Groq (LLaMA/Mixtral)', keyConfig: 'groqApiKey' },
     { id: 'deepseek', name: 'DeepSeek', keyConfig: 'deepseekApiKey' },
+    { id: 'nvidia', name: 'NVIDIA NIM (Nemotron, GLM, Llama, MiniMax)', keyConfig: 'nvidiaApiKey' },
   ];
 
   const body = (
@@ -54,6 +55,26 @@ export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false
               ))}
             </select>
         </div>
+
+        {settings.aiProvider === 'nvidia' && (
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Modelo NVIDIA NIM</label>
+            <input
+              list="nvidia-models"
+              value={settings.nvidiaModel || 'nvidia/nemotron-3-ultra-550b-a55b'}
+              onChange={e => setSettings({ ...settings, nvidiaModel: e.target.value })}
+              className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none font-mono text-xs"
+              placeholder="namespace/model-name"
+            />
+            <datalist id="nvidia-models">
+              <option value="nvidia/nemotron-3-ultra-550b-a55b" />
+              <option value="meta/llama-3.3-70b-instruct" />
+              <option value="z-ai/glm-5.2" />
+              <option value="minimaxai/minimax-m2.7" />
+            </datalist>
+            <p className="text-[11px] text-zinc-500">O campo aceita qualquer modelo OpenAI-compatible publicado no catálogo NVIDIA NIM.</p>
+          </div>
+        )}
 
         <div className="space-y-3 mt-6">
             <h3 className="text-xs font-black uppercase text-zinc-400 mt-6 mb-2">Chaves de API</h3>

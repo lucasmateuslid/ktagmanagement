@@ -1,23 +1,11 @@
 name: Deploy
 
 # Gatilhos:
-#   - push em master  → auto-deploy: target=all, environment=production
-#   - workflow_dispatch → escolha target/environment no UI (sandbox p/ smoke).
-#
-# Para deploy a sandbox, sempre usar dispatch — push em master sempre vai pra prod.
+#   - somente workflow_dispatch → escolha explícita do componente e ambiente.
+# Nenhum push faz deploy automático em produção.
 #
 # Secrets esperados (configurar em Settings → Secrets and variables → Actions):
-#   Sandbox (saastagmanager):
-#     SAASTAGMANAGER_PROJECT_ID
-#     SAASTAGMANAGER_WIF_PROVIDER
-#     SAASTAGMANAGER_SERVICE_ACCOUNT
-#     SAASTAGMANAGER_FIREBASE_API_KEY
-#     SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN
-#     SAASTAGMANAGER_FIREBASE_PROJECT_ID
-#     SAASTAGMANAGER_FIREBASE_STORAGE_BUCKET
-#     SAASTAGMANAGER_FIREBASE_MESSAGING_SENDER_ID
-#     SAASTAGMANAGER_FIREBASE_APP_ID
-#
+#   Sandbox (saastagmanager): prefixo SAASTAGMANAGER_*
 #   Produção (ktagfinder-prod):
 #     KTAGFINDER_PROD_PROJECT_ID
 #     KTAGFINDER_PROD_WIF_PROVIDER
@@ -29,10 +17,6 @@ name: Deploy
 #     KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID
 #     KTAGFINDER_PROD_FIREBASE_APP_ID
 on:
-  # Auto-deploy em push para master → production (target=all).
-  # Para deployar sandbox ou qualquer subset, use o workflow_dispatch abaixo.
-  push:
-    branches: [master]
   workflow_dispatch:
     inputs:
       target:
@@ -56,15 +40,11 @@ env:
   REGION: us-central1
   SERVICE: ktag-app
   REPO: ktag
-  # Defaults usados quando o gatilho é push (sem inputs). workflow_dispatch
-  # sobrescreve via inputs.target / inputs.environment.
-  TARGET: ${{ github.event.inputs.target || 'all' }}
-  ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+  TARGET: ${{ inputs.target }}
+  ENVIRONMENT: ${{ inputs.environment }}
 
-# Concorrência por (target, environment): sandbox e prod não bloqueiam um ao
-# outro; reexecuções do mesmo par são serializadas.
 concurrency:
-  group: deploy-${{ github.event.inputs.target || 'all' }}-${{ github.event.inputs.environment || 'production' }}
+  group: deploy-${{ inputs.environment }}-${{ inputs.target }}
   cancel-in-progress: false
 
 jobs:
@@ -73,10 +53,10 @@ jobs:
     name: Type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: tsc --noEmit
@@ -84,10 +64,9 @@ jobs:
       - name: ESLint (warn only)
         run: npm run lint || true
 
-  # ── Pre-flight: valida que os secrets do ambiente existem ─────────────────
+  # ── Pre-flight: valida os secrets do ambiente escolhido ──────────────────
   # NÃO emite job outputs com valores de secret: o GitHub redacta (zera) qualquer
   # job output cujo valor case com um secret, então o downstream receberia "".
-  # Cada deploy job seleciona sandbox/prod inline (ver step "Pick GCP env").
   resolve-env:
     name: Validate env secrets
     needs: lint
@@ -95,7 +74,7 @@ jobs:
     steps:
       - name: Validar secrets do ambiente
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          ENVIRONMENT: ${{ inputs.environment }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
           SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
           SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
@@ -104,35 +83,35 @@ jobs:
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
         run: |
           missing=()
-          if [ "$ENVIRONMENT" = "production" ]; then
+          if [ "$ENVIRONMENT" = production ]; then
             [ -z "$PRD_PROJECT_ID" ] && missing+=("KTAGFINDER_PROD_PROJECT_ID")
-            [ -z "$PRD_WIF" ]        && missing+=("KTAGFINDER_PROD_WIF_PROVIDER")
-            [ -z "$PRD_SA" ]         && missing+=("KTAGFINDER_PROD_SERVICE_ACCOUNT")
+            [ -z "$PRD_WIF" ] && missing+=("KTAGFINDER_PROD_WIF_PROVIDER")
+            [ -z "$PRD_SA" ] && missing+=("KTAGFINDER_PROD_SERVICE_ACCOUNT")
           else
             [ -z "$SBX_PROJECT_ID" ] && missing+=("SAASTAGMANAGER_PROJECT_ID")
-            [ -z "$SBX_WIF" ]        && missing+=("SAASTAGMANAGER_WIF_PROVIDER")
-            [ -z "$SBX_SA" ]         && missing+=("SAASTAGMANAGER_SERVICE_ACCOUNT")
+            [ -z "$SBX_WIF" ] && missing+=("SAASTAGMANAGER_WIF_PROVIDER")
+            [ -z "$SBX_SA" ] && missing+=("SAASTAGMANAGER_SERVICE_ACCOUNT")
           fi
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Secrets vazios para ENVIRONMENT=$ENVIRONMENT: ${missing[*]}"
+            echo "::error::Secrets vazios para $ENVIRONMENT: ${missing[*]}"
             echo "::error::Cadastre em Settings → Secrets and variables → Actions como Repository secrets (não Environment secrets, este workflow não usa GitHub Environments)."
             exit 1
           fi
-          echo "Secrets OK para ENVIRONMENT=$ENVIRONMENT"
+          echo "Secrets OK para $ENVIRONMENT"
 
   # ── Cloud Run: build → push → deploy ──────────────────────────────────────
   deploy-cloud-run:
     name: Cloud Run
     needs: resolve-env
-    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'cloud-run' }}
+    if: ${{ vars.KTAG_DEPLOY_CLOUD_RUN != 'false' && (inputs.target == 'all' || inputs.target == 'cloud-run') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+      - name: Selecionar projeto GCP
         id: gcp
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          ENVIRONMENT: ${{ inputs.environment }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
           SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
           SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
@@ -140,7 +119,7 @@ jobs:
           PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
         run: |
-          if [ "$ENVIRONMENT" = "production" ]; then
+          if [ "$ENVIRONMENT" = production ]; then
             PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
           else
             PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
@@ -153,20 +132,20 @@ jobs:
           echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
 
       - id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
           service_account: ${{ steps.gcp.outputs.service_account }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Configurar Docker auth p/ Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
-      - name: Pick VITE_FIREBASE_* by environment
+      - name: Selecionar Firebase web
         id: vite
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          ENVIRONMENT: ${{ inputs.environment }}
           SBX_API_KEY: ${{ secrets.SAASTAGMANAGER_FIREBASE_API_KEY }}
           SBX_AUTH_DOMAIN: ${{ secrets.SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_PROJECT_ID }}
@@ -180,23 +159,22 @@ jobs:
           PRD_SENDER: ${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
           PRD_APP_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
         run: |
-          if [ "$ENVIRONMENT" = "production" ]; then
-            echo "::add-mask::$PRD_API_KEY"
-            echo "api_key=$PRD_API_KEY" >> "$GITHUB_OUTPUT"
-            echo "auth_domain=$PRD_AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
-            echo "project_id=$PRD_PROJECT_ID" >> "$GITHUB_OUTPUT"
-            echo "bucket=$PRD_BUCKET" >> "$GITHUB_OUTPUT"
-            echo "sender=$PRD_SENDER" >> "$GITHUB_OUTPUT"
-            echo "app_id=$PRD_APP_ID" >> "$GITHUB_OUTPUT"
+          if [ "$ENVIRONMENT" = production ]; then
+            API_KEY="$PRD_API_KEY"; AUTH_DOMAIN="$PRD_AUTH_DOMAIN"
+            FIREBASE_PROJECT_ID="$PRD_PROJECT_ID"; BUCKET="$PRD_BUCKET"
+            SENDER="$PRD_SENDER"; APP_ID="$PRD_APP_ID"
           else
-            echo "::add-mask::$SBX_API_KEY"
-            echo "api_key=$SBX_API_KEY" >> "$GITHUB_OUTPUT"
-            echo "auth_domain=$SBX_AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
-            echo "project_id=$SBX_PROJECT_ID" >> "$GITHUB_OUTPUT"
-            echo "bucket=$SBX_BUCKET" >> "$GITHUB_OUTPUT"
-            echo "sender=$SBX_SENDER" >> "$GITHUB_OUTPUT"
-            echo "app_id=$SBX_APP_ID" >> "$GITHUB_OUTPUT"
+            API_KEY="$SBX_API_KEY"; AUTH_DOMAIN="$SBX_AUTH_DOMAIN"
+            FIREBASE_PROJECT_ID="$SBX_PROJECT_ID"; BUCKET="$SBX_BUCKET"
+            SENDER="$SBX_SENDER"; APP_ID="$SBX_APP_ID"
           fi
+          echo "::add-mask::$API_KEY"
+          echo "api_key=$API_KEY" >> "$GITHUB_OUTPUT"
+          echo "auth_domain=$AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "project_id=$FIREBASE_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "sender=$SENDER" >> "$GITHUB_OUTPUT"
+          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
 
       - name: Build & push image
         env:
@@ -222,6 +200,8 @@ jobs:
           echo "IMAGE=$IMAGE_SHA" >> "$GITHUB_ENV"
 
       - name: Deploy Cloud Run
+        env:
+          TRACCAR_REALTIME_ENABLED: ${{ vars.KTAG_TRACCAR_REALTIME_ENABLED || 'true' }}
         run: |
           gcloud run deploy "$SERVICE" \
             --image="$IMAGE" \
@@ -234,7 +214,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars=NODE_ENV=production \
+            --set-env-vars=NODE_ENV=production,TRACCAR_REALTIME_ENABLED="$TRACCAR_REALTIME_ENABLED" \
             --quiet
 
       - name: Imprimir URL
@@ -244,23 +224,23 @@ jobs:
   deploy-functions:
     name: Firebase Functions
     needs: resolve-env
-    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'functions' }}
+    if: ${{ inputs.target == 'all' || inputs.target == 'functions' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Instalar deps de functions/
         working-directory: functions
         run: npm ci --no-audit --no-fund
 
-      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+      - name: Selecionar projeto GCP
         id: gcp
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          ENVIRONMENT: ${{ inputs.environment }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
           SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
           SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
@@ -268,7 +248,7 @@ jobs:
           PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
         run: |
-          if [ "$ENVIRONMENT" = "production" ]; then
+          if [ "$ENVIRONMENT" = production ]; then
             PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
           else
             PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
@@ -281,16 +261,16 @@ jobs:
           echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
 
       - id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
           service_account: ${{ steps.gcp.outputs.service_account }}
           create_credentials_file: true
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Instalar Firebase CLI
-        run: npm install -g firebase-tools@13
+        run: npm install -g firebase-tools@latest
 
       - name: firebase deploy --only functions
         env:
@@ -301,15 +281,15 @@ jobs:
   deploy-firestore:
     name: Firestore rules + indexes
     needs: resolve-env
-    if: ${{ (github.event.inputs.target || 'all') == 'all' || github.event.inputs.target == 'firestore' }}
+    if: ${{ inputs.target == 'all' || inputs.target == 'firestore' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Pick GCP env (inline; cross-job outputs com secret são redactados pelo GH)
+      - name: Selecionar projeto GCP
         id: gcp
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          ENVIRONMENT: ${{ inputs.environment }}
           SBX_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_PROJECT_ID }}
           SBX_WIF: ${{ secrets.SAASTAGMANAGER_WIF_PROVIDER }}
           SBX_SA: ${{ secrets.SAASTAGMANAGER_SERVICE_ACCOUNT }}
@@ -317,7 +297,7 @@ jobs:
           PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
         run: |
-          if [ "$ENVIRONMENT" = "production" ]; then
+          if [ "$ENVIRONMENT" = production ]; then
             PROJECT_ID="$PRD_PROJECT_ID"; WIF="$PRD_WIF"; SA="$PRD_SA"
           else
             PROJECT_ID="$SBX_PROJECT_ID"; WIF="$SBX_WIF"; SA="$SBX_SA"
@@ -330,16 +310,16 @@ jobs:
           echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
 
       - id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ steps.gcp.outputs.wif_provider }}
           service_account: ${{ steps.gcp.outputs.service_account }}
           create_credentials_file: true
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Instalar Firebase CLI
-        run: npm install -g firebase-tools@13
+        run: npm install -g firebase-tools@latest
 
       - name: firebase deploy --only firestore
         env:

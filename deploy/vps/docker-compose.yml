@@ -1,0 +1,54 @@
+name: ktag-platform
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+    image: ${KTAG_IMAGE_REPOSITORY:-ktag-platform}:${KTAG_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 15s
+    env_file:
+      - ${KTAG_ENV_FILE:-.env.vps}
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
+      TRACCAR_REALTIME_ENABLED: "true"
+    volumes:
+      - ${FIREBASE_SERVICE_ACCOUNT_PATH:-./secrets/firebase-service-account.json}:/run/secrets/firebase-service-account.json:ro
+    ports:
+      - "127.0.0.1:${KTAG_BACKEND_PORT:-4000}:8080"
+    networks:
+      - traccar
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --header='X-Origin-Secret: '$$CF_ORIGIN_SECRET http://127.0.0.1:8080/api/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+networks:
+  traccar:
+    external: true
+    name: ${TRACCAR_DOCKER_NETWORK:-traccar_default}

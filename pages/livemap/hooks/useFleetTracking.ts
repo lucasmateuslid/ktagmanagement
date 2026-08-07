@@ -1,29 +1,41 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { fetchTagsLocationBatch, hasMoved } from '../../../services/api';
+import { fetchTagsLocationBatch } from '../../../services/api';
 import { Tag, Vehicle, LocationHistory } from '../../../types';
 import { storage } from '../../../services/storage';
+import { trackingApi } from '../../../services/trackingApi';
+import type { LiveMapTrackedAsset } from '@ktag/shared';
 
 export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId: string) => {
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
   const [loading, setLoading] = useState(false);
-  const timerRef = useRef<number | null>(null);
   
   // Controle de última gravação no banco para economizar writes (Throttling)
   const lastSaveRef = useRef<Record<string, number>>({});
 
   // Última posição registrada no histórico por tag (baseline de dedup por movimento)
-  const lastHistoryPosRef = useRef<Record<string, { lat: number; lon: number }>>({});
+
+  // Snapshot autorizado primeiro; em seguida, atualizações incrementais do canal
+  // interno. Credenciais/cookie do Traccar nunca chegam ao navegador.
+  useEffect(() => {
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    const mergeAsset = (asset: LiveMapTrackedAsset) => {
+      const tag = tags.find(item => item.identifierNormalized === asset.uniqueId || item.id === asset.linkedEntityId || item.id === asset.id.replace('xadtag_', ''));
+      const tagId = tag?.id || asset.id.replace('xadtag_', '');
+      const location = { id: tagId, tagId, lat: asset.latitude, lon: asset.longitude, timestamp: Date.parse(asset.fixTime || asset.serverTime || '') || Date.now(), isodatetime: asset.fixTime || asset.serverTime || new Date().toISOString(), conf: asset.valid ? 100 : 0, status: asset.status === 'online' ? 1 : 0, address: asset.address || undefined, battery: { level: 0, label: asset.status, color: asset.status === 'online' ? '#10b981' : '#71717a' } } as LocationHistory;
+      setFleetLocations(previous => { const map = new Map(previous.map(item => [item.tagId, item])); map.set(tagId, location); return [...map.values()]; });
+    };
+    void trackingApi.liveMap().then(items => { if (!disposed) items.forEach(mergeAsset); }).catch(() => undefined);
+    void trackingApi.websocket().then(ws => {
+      if (disposed) return ws.close(); socket = ws;
+      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (message.type === 'remove') setFleetLocations(previous => previous.filter(item => `xadtag_${tags.find(tag => tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida ignorada */ } };
+    }).catch(() => undefined);
+    return () => { disposed = true; socket?.close(); };
+  }, [tags]);
 
   // Registra um ponto de histórico apenas quando o veículo se moveu (dedup).
   // Baseline: o último ponto registrado nesta sessão ou, na ausência, o lastPosition persistido.
-  const recordHistoryIfMoved = (vehicle: Vehicle, loc: LocationHistory) => {
-    const baseline = lastHistoryPosRef.current[vehicle.tagId!] ?? vehicle.lastPosition;
-    if (hasMoved(baseline, loc)) {
-      storage.appendVehicleHistory(vehicle.id, loc);
-      lastHistoryPosRef.current[vehicle.tagId!] = { lat: loc.lat, lon: loc.lon };
-    }
-  };
 
   // 1. Carrega localizações iniciais persistidas no banco (Offline First)
   useEffect(() => {
@@ -60,7 +72,6 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
         // Persiste se for veículo
         const vehicle = vehicles.find(v => v.tagId === tagId);
         if (vehicle) {
-          recordHistoryIfMoved(vehicle, loc as LocationHistory);
           storage.updateVehiclePosition(vehicle.id, loc as any);
           lastSaveRef.current[tagId] = Date.now();
         }
@@ -93,8 +104,6 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
           const vehicle = vehicles.find(v => v.tagId === loc.tagId);
           if (vehicle) {
               // Histórico: guardado por movimento (dedup), independente do throttle do lastPosition.
-              recordHistoryIfMoved(vehicle, loc as LocationHistory);
-
               const lastSaveTime = lastSaveRef.current[loc.tagId!] || 0;
               if ((now - lastSaveTime) > 600000) {
                   storage.updateVehiclePosition(vehicle.id, loc as any);
@@ -117,23 +126,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
     } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchUpdate();
-    // Reduzido drasticamente a frequência de atualização automática da frota completa
-    // Agora o sistema conta com o Cloud Function atualizando em background a cada 30 min
-    timerRef.current = window.setInterval(fetchUpdate, 600000); // 10 minutos para frota toda
-    
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [tags.length]);
-
-  // Atualização imediata ao abrir/selecionar o veículo + refresh a cada 1 min enquanto selecionado
-  useEffect(() => {
-      if (selectedTagId) {
-          refreshTag(selectedTagId); // atualiza na hora ao abrir a janela do veículo
-          const interval = setInterval(() => refreshTag(selectedTagId), 60000); // 1 minuto para o selecionado
-          return () => clearInterval(interval);
-      }
-  }, [selectedTagId]);
+  // K-TAG é atualizada pela Function agendada; consultas daqui são somente manuais.
 
   const injectLocations = (locs: LocationHistory[]) => {
     setFleetLocations(prev => {

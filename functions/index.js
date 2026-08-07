@@ -841,8 +841,8 @@ async function reverseGeocodePhoton(lat, lon) {
  * (ou sem posição) são processadas primeiro — garante que veículos mais defasados
  * sejam priorizados a cada ciclo.
  *
- * Custo: cada tenant adiciona ~N tags * (1 req GPS + 1 geocoding + 1 vehicle write +
- * 1 history write apenas quando moveu). ~30 min é confortável até ~50 tenants.
+ * XADTAG/Traccar é processada exclusivamente pelo worker da VPS. Esta rotina
+ * atende somente K-TAG e mantém apenas vehicle.lastPosition (sem série histórica).
  * Acima disso, mover para fila (Cloud Tasks).
  */
 exports.scheduledTagUpdate = onSchedule({
@@ -883,15 +883,7 @@ exports.scheduledTagUpdate = onSchedule({
 async function updateTagsForTenant(db, tenantId) {
   const tenantRef = db.collection('tenants').doc(tenantId);
 
-  // 1. Settings do tenant — credenciais K-TAG/XADTAG isoladas.
-  const settingsDoc = await tenantRef.collection('settings').doc('config').get();
-  if (!settingsDoc.exists) {
-    console.log(`[${tenantId}] settings/config ausente — pulando.`);
-    return 0;
-  }
-  const settings = settingsDoc.data();
-
-  // 2. Veículos do tenant — usados para ordenação stale-first e lookup rápido.
+  // 1. Veículos do tenant — usados para ordenação stale-first e lookup rápido.
   const vehiclesSnap = await tenantRef.collection('vehicles').get();
   const vehicleByTagId = {};
   vehiclesSnap.forEach(doc => {
@@ -899,13 +891,17 @@ async function updateTagsForTenant(db, tenantId) {
     if (v.tagId) vehicleByTagId[v.tagId] = v;
   });
 
-  // 3. Tags do tenant.
+  // 2. Tags do tenant. Credenciais K-TAG são secrets globais da Function;
+  // nenhum settings de tenant é necessário para consultar posições.
   const tagsSnapshot = await tenantRef.collection('tags').get();
   if (tagsSnapshot.empty) {
     return 0;
   }
   const allTags = [];
-  tagsSnapshot.forEach(doc => allTags.push({ ...doc.data(), id: doc.id }));
+  tagsSnapshot.forEach(doc => {
+    const tag = { ...doc.data(), id: doc.id };
+    if (tag.type !== 'XADTAG' && tag.equipmentType !== 'XADTAG') allTags.push(tag);
+  });
 
   // Stale-First Queue: processa primeiro as tags com lastPosition.timestamp mais antigo
   // (ou sem posição — timestamp 0). Garante que veículos defasados têm prioridade.
@@ -919,8 +915,7 @@ async function updateTagsForTenant(db, tenantId) {
 
   let updatedCount = 0;
 
-  // Persiste uma posição: enriquece com endereço, atualiza lastPosition e grava
-  // histórico. NÃO persiste o campo `key` (hashedAdvKey) — evita vazar chave em
+  // Persiste somente a última posição. NÃO persiste o campo `key` (hashedAdvKey) — evita vazar chave em
   // texto plano no Firestore (legível pelos usuários do tenant).
   const persist = async (tag, locationResult) => {
     if (!locationResult) return false;
@@ -929,40 +924,20 @@ async function updateTagsForTenant(db, tenantId) {
     // Enriquece com endereço (Photon/OSM — grátis, sem API key).
     const address = await reverseGeocodePhoton(locationResult.lat, locationResult.lon);
     const enriched = address ? { ...locationResult, address } : locationResult;
-    // lastPosition sempre atualizado (mantém timestamp/bateria/endereço frescos).
-    await vehicle.ref.update({ lastPosition: enriched });
-    // Histórico: grava a cada ciclo (série temporal de 7 dias). ID derivado do
-    // timestamp evita duplicatas exatas se a mesma resposta chegar 2x.
-    const histId = `${tag.id}_${enriched.timestamp || Date.now()}`;
-    await vehicle.ref.collection('history').doc(histId).set({
-      ...enriched,
-      tagId: tag.id,
-      vehicleId: vehicle.id,
-      tenantId,
-      savedAt: Date.now()
-    });
+    const nextTimestamp = Number(enriched.timestamp || 0);
+    const currentTimestamp = Number(vehicle.lastPosition?.timestamp || 0);
+    if (nextTimestamp && currentTimestamp && nextTimestamp < currentTimestamp) return false;
+    await vehicle.ref.update({ lastPosition: enriched, lastPositionUpdatedAt: Date.now() });
+    vehicle.lastPosition = enriched;
     return true;
   };
-
-  // ---- XADTAG: individual (API não suporta lote) ----
-  for (const tag of allTags) {
-    if (tag.type !== 'XADTAG') continue;
-    try {
-      if (!settings.traqcareToken) continue;
-      const loc = await fetchXadtagLocation(tag, settings);
-      if (await persist(tag, loc)) updatedCount++;
-      await new Promise(resolve => setTimeout(resolve, 2000)); // throttle XADTAG
-    } catch (error) {
-      console.error(`[${tenantId}] XADTAG ${tag.traqcareId} falhou:`, error.message);
-    }
-  }
 
   // ---- K-TAG: LOTE (feibao doc 3.3) ----
   if (process.env.KTAG_API_URL) {
     // Decifra as chaves (espelho da UI); tags sem chave são ignoradas.
     const withKeys = [];
     for (const tag of allTags) {
-      if (tag.type === 'XADTAG' || !tag.accessoryId) continue;
+      if (!tag.accessoryId) continue;
       const hashedAdvKey = await ktagCrypto.decrypt(tenantId, tag.hashedAdvKey);
       const privateKey = await ktagCrypto.decrypt(tenantId, tag.privateKey);
       if (hashedAdvKey && privateKey) withKeys.push({ ...tag, hashedAdvKey, privateKey });

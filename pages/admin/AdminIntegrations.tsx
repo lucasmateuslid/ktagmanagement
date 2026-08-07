@@ -6,8 +6,9 @@ import { Cloud, Banknote, MessageCircle, Webhook, Copy, Check, Loader2, AlertTri
 import { Tabs } from '../../components/ui/tabs';
 import { AdminPlatformIntegrations } from './AdminPlatformIntegrations';
 import { AdminAsaasConfig } from './AdminAsaasConfig';
+import { AdminTraccarIntegration } from './AdminTraccarIntegration';
 
-type TabKey = 'apis' | 'financeiras' | 'chatbot' | 'webhooks';
+type TabKey = 'apis' | 'traccar' | 'financeiras' | 'chatbot' | 'webhooks';
 
 export const AdminIntegrations = () => {
   const [tab, setTab] = useState<TabKey>('apis');
@@ -24,6 +25,7 @@ export const AdminIntegrations = () => {
         onChange={setTab}
         tabs={[
           { key: 'apis', label: 'APIs', icon: <Cloud size={15} />, content: <AdminPlatformIntegrations /> },
+          { key: 'traccar', label: 'Traccar', icon: <Cloud size={15} />, content: <AdminTraccarIntegration /> },
           { key: 'financeiras', label: 'Integrações financeiras', icon: <Banknote size={15} />, content: <AdminAsaasConfig /> },
           { key: 'chatbot', label: 'Chatbot', icon: <MessageCircle size={15} />, content: <ChatbotPlaceholder /> },
           { key: 'webhooks', label: 'Webhooks', icon: <Webhook size={15} />, content: <WebhooksPanel /> },

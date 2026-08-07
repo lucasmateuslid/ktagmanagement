@@ -203,7 +203,12 @@ service cloud.firestore {
     // ---------- COLEÇÕES DE DOMÍNIO (read/write p/ membros aprovados) ----------
 
     match /tenants/{tenantId}/tags/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read: if isMemberOf(tenantId);
+      // Metadados do provider externo são escritos apenas pelo backend (Admin SDK).
+      allow create: if isMemberOf(tenantId) && request.resource.data.type != 'XADTAG';
+      allow update, delete: if isMemberOf(tenantId)
+                            && resource.data.type != 'XADTAG'
+                            && request.resource.data.type != 'XADTAG';
     }
     match /tenants/{tenantId}/trackers/{docId} {
       allow read, write: if isMemberOf(tenantId);

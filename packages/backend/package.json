@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "docker:build": "docker build -t ktag-backend:local .",
     "docker:run": "docker run --rm -p 4000:4000 -e PORT=4000 ktag-backend:local"
   },
@@ -17,6 +18,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.1.0",
     "dotenv": "^17.4.2",
+    "firebase-admin": "^13.10.0",
     "tsx": "^4.22.0",
     "ws": "^8.21.0"
   },
@@ -25,7 +27,6 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
-    "firebase-admin": "^13.10.0",
     "typescript": "^5.2.2"
   },
   "overrides": {

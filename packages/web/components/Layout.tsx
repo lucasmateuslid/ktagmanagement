@@ -684,7 +684,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
               {children || <Outlet />}
           </div>
           
-          {user?.role !== 'client' && <AiAssistant />}
+          {user?.role === 'admin' && <AiAssistant />}
           {isChangelogOpen && <ChangelogModal onClose={() => setIsChangelogOpen(false)} />}
 
           <AnimatePresence>

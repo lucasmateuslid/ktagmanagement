@@ -12,9 +12,13 @@ import path from "path";
 import dns from "node:dns/promises";
 import net from "node:net";
 import { createServer } from "node:http";
-import { trackingRouter, internalTraccarRouter } from "./routes/tracking.js";
-import { attachWebSocketServer, startPositionPoller } from "./services/positionBroadcast.js";
-import { initTraccarSession } from "./services/traccarClient.js";
+import { internalTraccarRouter } from "./routes/tracking.js";
+import { attachWebSocketServer } from "./services/positionBroadcast.js";
+import { xadTagsRouter, liveMapRouter } from "./routes/xadtags.js";
+import { adminTraccarRouter } from "./routes/adminTraccar.js";
+import { traccarRealtimeService } from "./services/traccarRealtimeService.js";
+import { getTraccarConfig, validateTraccarConfig } from "./config/traccar.js";
+import { setAddressFallback } from "./services/addressResolver.js";
 // vite é devDependency e não é instalada no estágio runtime do Docker.
 // Importação dinâmica abaixo, somente quando NODE_ENV !== 'production'.
 
@@ -405,6 +409,10 @@ function resolveTenant(req: express.Request, res: express.Response, next: expres
 
 async function startServer() {
   const app = express();
+  setAddressFallback(async (lat, lng) => {
+    try { const result = await performReverseGeocoding(lat, lng, DEFAULT_GEOCODER_PREFS); return typeof result?.address === 'string' ? result.address : null; }
+    catch { return null; }
+  });
   // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 4000.
   const PORT = Number(process.env.PORT) || 4000;
 
@@ -496,11 +504,13 @@ async function startServer() {
   app.use(resolveTenant);
 
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", tenantId: req.tenantId });
+    res.json({ status: "ok", tenantId: req.tenantId, realtime: process.env.TRACCAR_REALTIME_ENABLED === 'false' ? 'disabled' : traccarRealtimeService.status });
   });
 
   // ── Traccar integration ──────────────────────────────────────────────────
-  app.use('/api/tracking', trackingRouter);
+  app.use('/api/xadtags', xadTagsRouter);
+  app.use('/api/livemap', liveMapRouter);
+  app.use('/api/admin/integrations/traccar', adminTraccarRouter);
   app.use('/api/internal/traccar', internalTraccarRouter);
 
   app.post("/api/geocode", async (req, res) => {
@@ -1014,18 +1024,25 @@ async function startServer() {
   // WebSocket: ws://localhost:PORT/ws/tracking?tenant=xxx
   attachWebSocketServer(httpServer);
 
-  // Polling opcional: se TRACCAR_POLL_INTERVAL estiver definido (em ms),
-  // faz polling de /positions e faz broadcast via WebSocket (modo dev sem webhook).
-  const pollInterval = Number(process.env.TRACCAR_POLL_INTERVAL ?? 0);
-  if (pollInterval > 0) startPositionPoller(pollInterval);
-
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`WebSocket: ws://localhost:${PORT}/ws/tracking`);
   });
 
-  // Inicializa sessão Traccar em background (não bloqueia o startup)
-  initTraccarSession().catch(() => {});
+  const traccarConfigErrors = validateTraccarConfig(getTraccarConfig());
+  if (traccarConfigErrors.length) console.warn(JSON.stringify({ event: 'traccar.config.invalid', errors: traccarConfigErrors }));
+  else if (process.env.TRACCAR_REALTIME_ENABLED !== 'false') {
+    traccarRealtimeService.start().catch(error => console.error(JSON.stringify({ event: 'traccar.websocket.disconnected', error: error.message })));
+  }
+
+  const shutdown = (signal: string) => {
+    console.info(JSON.stringify({ event: 'server.shutdown', signal }));
+    traccarRealtimeService.stop();
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();

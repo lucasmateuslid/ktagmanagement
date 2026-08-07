@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { traccarGet, traccarPost, traccarDelete } from '../services/traccarClient.js';
 import { broadcastPosition, broadcastEvent } from '../services/positionBroadcast.js';
 import type { TraccarDevice, TraccarPosition } from '@ktag/shared';
+import { xadTagRepository } from '../repositories/xadtagRepository.js';
 
 // ── REST: /api/tracking/* ─────────────────────────────────────────────────────
 export const trackingRouter = Router();
@@ -120,18 +121,19 @@ internalTraccarRouter.use((req, res, next) => {
 });
 
 // POST /api/internal/traccar/position
-internalTraccarRouter.post('/position', (req, res) => {
+internalTraccarRouter.post('/position', async (req, res) => {
   const position = req.body as TraccarPosition;
   if (!position?.deviceId) return res.status(400).json({ error: 'payload inválido' });
-  // Futuramente: resolver tenantId pelo traccarDeviceId em ktag.tracker_devices
-  const tenantId = (req.headers['x-tenant-id'] as string | undefined) ?? 'dev-tenant';
-  broadcastPosition(tenantId, position);
+  const mapping = await xadTagRepository.findMappingByDeviceId(position.deviceId);
+  if (!mapping) return res.status(204).send();
+  broadcastPosition(mapping.tenantId, position);
   res.status(204).send();
 });
 
 // POST /api/internal/traccar/event
-internalTraccarRouter.post('/event', (req, res) => {
-  const tenantId = (req.headers['x-tenant-id'] as string | undefined) ?? 'dev-tenant';
-  broadcastEvent(tenantId, req.body);
+internalTraccarRouter.post('/event', async (req, res) => {
+  const mapping = await xadTagRepository.findMappingByDeviceId(Number(req.body?.deviceId));
+  if (!mapping) return res.status(204).send();
+  broadcastEvent(mapping.tenantId, req.body);
   res.status(204).send();
 });

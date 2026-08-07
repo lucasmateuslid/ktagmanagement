@@ -77,12 +77,13 @@ export const useAiLogic = ({
             else if (provider === 'anthropic') keyToUse = settings.anthropicApiKey?.trim() || '';
             else if (provider === 'groq') keyToUse = settings.groqApiKey?.trim() || '';
             else if (provider === 'deepseek') keyToUse = settings.deepseekApiKey?.trim() || '';
+            else if (provider === 'nvidia') keyToUse = settings.nvidiaApiKey?.trim() || '';
 
             if (!keyToUse) {
                 if (provider === 'gemini') {
-                    throw new Error("Nenhuma Chave de API Google configurada ou a padrão estourou a cota. Acesse as Configurações de API e insira sua API Key do Gemini.");
+                    throw new Error("O motor de inteligência artificial está temporariamente indisponível. Contate o administrador da plataforma.");
                 } else {
-                    throw new Error(`Nenhuma Chave de API configurada para o provedor ${String(provider).toUpperCase()}. Acesse as Configurações de API e insira a chave correta.`);
+                    throw new Error("O motor de inteligência artificial está temporariamente indisponível. Verifique a integração administrativa.");
                 }
             }
 
@@ -94,6 +95,20 @@ export const useAiLogic = ({
                 return;
             } else if (provider === 'deepseek') {
                 await handleOpenAICompatible(keyToUse, userMessage, messages, setMessages, setStatus, 'https://api.deepseek.com/chat/completions', 'deepseek-chat', openAiTools, executeTool, settings.customProxyUrl);
+                return;
+            } else if (provider === 'nvidia') {
+                await handleOpenAICompatible(
+                    keyToUse,
+                    userMessage,
+                    messages,
+                    setMessages,
+                    setStatus,
+                    'https://integrate.api.nvidia.com/v1/chat/completions',
+                    settings.nvidiaModel?.trim() || 'nvidia/nemotron-3-ultra-550b-a55b',
+                    openAiTools,
+                    executeTool,
+                    settings.customProxyUrl,
+                );
                 return;
             } else if (provider === 'anthropic') {
                 await handleAnthropicRequest(keyToUse, userMessage, messages, setMessages, setStatus, anthropicTools, executeTool, settings.customProxyUrl);
@@ -361,7 +376,7 @@ export const useAiLogic = ({
         let errorMessage = err instanceof Error ? err.message : 'Timeout ou Limite de API Alcançado.';
 
         if (errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('429')) {
-           errorMessage = "Limite de cota ou faturamento da API excedido. Se você está usando a chave padrão, acesse Configurações > Provedores de Inteligência Artificial e adicione a sua própria chave. Se já adicionou, verifique o saldo do seu provedor (Google AI Studio ou OpenAI).";
+           errorMessage = "O provedor de inteligência artificial atingiu o limite temporário. Tente novamente mais tarde ou revise a integração administrativa.";
         } else if (errorMessage.startsWith('{')) {
             try {
                 const parsed = JSON.parse(errorMessage);
@@ -375,7 +390,7 @@ export const useAiLogic = ({
             id: Date.now().toString() + '_err',
             role: 'model',
             rawText: 'Falha.',
-            content: React.createElement("div", { className: "text-red-500 font-mono text-[10px]" }, `Falha Cognitiva: ${errorMessage}`)
+            content: React.createElement("div", { className: "text-red-500 font-mono text-[10px]" }, `Assistente indisponível: ${errorMessage}`)
         }]);
     };
 

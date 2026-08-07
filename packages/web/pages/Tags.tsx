@@ -21,6 +21,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import * as XLSX from 'xlsx';
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
+import { trackingApi } from '../services/trackingApi';
 
 const MotionDiv = motion.div as any;
 
@@ -578,7 +579,13 @@ export const Tags = () => {
         if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI / MAC Address é obrigatório para XADTAG");
 
         setFormData(prev => ({ ...prev, id: tagId }));
-        await storage.saveTag(tag);
+        if (tag.type === 'XADTAG') {
+            const registered = await trackingApi.registerXadTag(tag.imei || '', tag.name);
+            tag.id = registered.id; tag.accessoryId = registered.identifierNormalized; tag.imei = registered.imeiOriginal;
+            tag.identifierNormalized = registered.identifierNormalized; tag.traccarDeviceId = registered.traccarDeviceId;
+            tag.traccarDeviceName = registered.traccarDeviceName; tag.traccarPositionId = registered.traccarPositionId;
+            tag.traccarStatus = registered.traccarStatus; tag.integrationStatus = registered.integrationStatus;
+        } else await storage.saveTag(tag);
 
         addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
         setIsModalOpen(false);
@@ -683,7 +690,10 @@ export const Tags = () => {
     const total = validRows.length;
 
     try {
-      for (let i = 0; i < total; i++) {
+      if (importConfig.type === 'XADTAG') {
+          const rows = validRows.map(row => ({ imei: row._serial, description: row['Identificacao'] || row.nome || row.name || '' }));
+          const summary = await trackingApi.importCommit(rows); successCount = summary.created; setImportProgress(100);
+      } else for (let i = 0; i < total; i++) {
           const row = validRows[i];
           const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
           const serial = row._serial;
@@ -695,12 +705,10 @@ export const Tags = () => {
               const newTag: Tag = {
                 id: crypto.randomUUID(),
                 name: name,
-                type: importConfig.type,
+                type: 'K_TAG',
                 accessoryId: serial,
-                imei: importConfig.type === 'XADTAG' ? serial : undefined,
-                hashedAdvKey: importConfig.type === 'K_TAG' ? pubKey : undefined,
-                privateKey: importConfig.type === 'K_TAG' ? privKey : undefined,
-                powerType: importConfig.type === 'XADTAG' ? importConfig.powerType : undefined,
+                hashedAdvKey: pubKey,
+                privateKey: privKey,
                 batteryWarrantyYears: importConfig.warranty,
                 createdAt: Date.now()
               };

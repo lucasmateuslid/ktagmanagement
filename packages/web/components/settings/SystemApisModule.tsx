@@ -760,7 +760,7 @@ export const SystemApisModule = () => {
             <div key={group} className="mb-6 last:mb-0">
               <h4 className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400 dark:text-zinc-500 px-3 mb-3">{group}</h4>
               <div className="space-y-1">
-                {items.filter(s => s.id !== 'ktag' || isAdmin).map(s => {
+                {items.filter(s => !['ktag', 'ai'].includes(s.id) || isAdmin).map(s => {
                   const Icon = s.icon;
                   const st = getSectionStatus(s.id, settings);
                   const isActive = s.id === activeSection;

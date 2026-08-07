@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Tag, Vehicle, LocationHistory } from '../types';
-import { fetchTagsLocationBatch, hasMoved } from '../services/api';
+import { fetchTagsLocationBatch } from '../services/api';
 import { storage } from '../services/storage';
 
 interface UpdateTagsModalProps {
@@ -51,10 +51,6 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
                 try {
                     // Atualiza veiculo se existir (caminho tenant-aware via storage)
                     if (v) {
-                        // Histórico só quando a posição muda (dedup vs. lastPosition persistido)
-                        if (hasMoved(v.lastPosition, loc as LocationHistory)) {
-                            await storage.appendVehicleHistory(v.id, loc as LocationHistory);
-                        }
                         await storage.updateVehiclePosition(v.id, loc as LocationHistory);
                     }
 

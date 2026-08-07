@@ -250,6 +250,12 @@ export interface Tag {
   privateKey?: string;
   imei?: string;
   traqcareId?: string;
+  identifierNormalized?: string;
+  traccarDeviceId?: number;
+  traccarDeviceName?: string;
+  traccarPositionId?: number | null;
+  traccarStatus?: 'online' | 'delayed' | 'offline' | 'unknown';
+  integrationStatus?: 'linked' | 'pending' | 'unavailable';
   powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;

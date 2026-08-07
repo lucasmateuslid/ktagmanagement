@@ -250,6 +250,12 @@ export interface Tag {
   privateKey?: string;
   imei?: string;
   traqcareId?: string;
+  identifierNormalized?: string;
+  traccarDeviceId?: number;
+  traccarDeviceName?: string;
+  traccarPositionId?: number | null;
+  traccarStatus?: 'online' | 'delayed' | 'offline' | 'unknown';
+  integrationStatus?: 'linked' | 'pending' | 'unavailable';
   powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;
@@ -527,12 +533,14 @@ export interface AppSettings {
   hinovaPass: string;
   plateApiUrl?: string;
   plateApiToken?: string;
-  aiProvider?: 'gemini' | 'openai' | 'anthropic' | 'groq' | 'deepseek';
+  aiProvider?: 'gemini' | 'openai' | 'anthropic' | 'groq' | 'deepseek' | 'nvidia';
   geminiApiKey?: string;
   openAiApiKey?: string;
   anthropicApiKey?: string;
   groqApiKey?: string;
   deepseekApiKey?: string;
+  nvidiaApiKey?: string;
+  nvidiaModel?: string;
   minStockLevel?: number;
   criticalStockLevel?: number;
   budgetMarginThreshold?: number; 

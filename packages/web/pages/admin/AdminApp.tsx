@@ -17,6 +17,7 @@ import { AdminPlatformIntegrations } from './AdminPlatformIntegrations';
 import { AdminAccount } from './AdminAccount';
 import { AdminPlansConfig } from './AdminPlansConfig';
 import { AdminFinanceiro } from './AdminFinanceiro';
+import { AdminTraccarIntegration } from './AdminTraccarIntegration';
 
 const AdminGate = () => {
   const { admin, loading } = useSystemAdmin();
@@ -43,6 +44,7 @@ const AdminGate = () => {
         <Route path="/admin/audit" element={<AdminAudit />} />
         <Route path="/admin/asaas-config" element={<AdminAsaasConfig />} />
         <Route path="/admin/platform-integrations" element={<AdminPlatformIntegrations />} />
+        <Route path="/admin/integrations" element={<AdminTraccarIntegration />} />
         <Route path="/admin/account" element={<AdminAccount />} />
         <Route path="/admin/plans" element={<AdminPlansConfig />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
