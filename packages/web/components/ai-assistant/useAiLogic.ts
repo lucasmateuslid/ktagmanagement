@@ -59,6 +59,39 @@ const toolStatus = (name: string): string => {
     return 'Consultando dados...';
 };
 
+const buildRecoveredAnswer = (name: string, textual: string): string | null => {
+    try {
+        const data = JSON.parse(textual);
+        if (data.erro) return null;
+
+        if (name === 'get_vehicle_location') {
+            if (!data.encontrado) return `O veículo **${data.placaConsultada || 'informado'}** não foi encontrado no cadastro local.\n\n**Próxima ação:** confirme a placa ou solicite uma busca no cadastro externo.`;
+            const gps = data.temTagGps ? 'possui GPS vinculado' : 'está sem GPS vinculado';
+            const update = data.minutosSemAtualizacao == null ? 'sem horário de posição disponível' : `última atualização há **${data.minutosSemAtualizacao} min**`;
+            return `O veículo **${data.placa}** (${data.modelo}) está com status **${data.status}**, ${gps} e ${update}.\n\n**Próxima ação:** ${data.status !== 'active' || !data.temTagGps ? 'priorize uma vistoria e regularize o rastreamento antes de liberar o veículo.' : 'acompanhe a posição no mapa e mantenha o monitoramento ativo.'}`;
+        }
+
+        if (name === 'get_fleet_stats') {
+            return `**Diagnóstico**\n\nA frota possui **${data.frotaTotal} veículos**, com **${data.veiculosComTag} rastreados**. O estoque registra **${data.totalTags} Tags**, sendo **${data.tagsOciosas} ociosas** (${data.percentualOcioso}%) e **${data.tagsManutencao} em manutenção**.\n\n**Próxima ação:** ${data.percentualOcioso > 30 ? 'priorize instalações para transformar o estoque parado em cobertura ativa e receita.' : 'mantenha o estoque sob controle e priorize os veículos ainda sem rastreamento.'}`;
+        }
+
+        if (name === 'search_external_data') {
+            if (!data.encontrado) return `Nenhum registro foi localizado para **${data.consulta || 'a consulta informada'}**.\n\n**Próxima ação:** confirme placa ou chassi antes de uma nova busca.`;
+            return `O cadastro foi localizado: **${data.veiculo?.placa}**, ${data.veiculo?.modelo}, vinculado a **${data.cliente}**. Chassi: **${data.veiculo?.chassi}**.\n\n**Próxima ação:** confira se esse ativo já existe na frota local e, se necessário, programe sua instalação.`;
+        }
+
+        if (name === 'analyze_operations') {
+            const m = data.metricas || {};
+            const critical = m.ratioOsPorTecnico > 3 || m.osEmSlaCritico > 0;
+            return `**Diagnóstico**\n\n${critical ? 'Há risco operacional que exige priorização.' : 'A operação não apresenta ruptura crítica pelos indicadores disponíveis.'} Existem **${m.totalOsPendentes || 0} OS pendentes** para **${m.tecnicosAtivos || 0} técnicos ativos**, razão de **${m.ratioOsPorTecnico || 0} OS por técnico**.\n\n**Evidências**\n\n- **${m.osEmSlaCritico || 0} OS** estão em faixa crítica e **${m.osSemTecnico || 0}** ainda não possuem técnico.\n- A maior espera é de **${m.maiorEsperaHoras || 0} horas**.\n- A cobertura GPS é de **${m.coberturaGpsPercentual || 0}%** e o estoque ocioso está em **${m.percentualEstoqueOcioso || 0}%**.\n\n**Próximas ações**\n\n1. Atribua primeiro as OS sem técnico e com maior tempo de espera.\n2. Redistribua a fila se houver mais de três OS por técnico ativo.\n3. Priorize instalações quando o estoque ocioso superar 30%.`;
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
+};
+
 export const useAiLogic = ({
     messages,
     setMessages,
@@ -71,9 +104,11 @@ export const useAiLogic = ({
     setLoading: (l: boolean) => void;
 }) => {
     const { toolsInfo, openAiTools, anthropicTools, executeTool } = useAiTools();
+    const lastToolResult = useRef<{ name: string; textual: string } | null>(null);
 
     const processMessage = async (userMessage: string) => {
         try {
+            lastToolResult.current = null;
             setStatus('Pensando...');
             const maxOutputTokens = responseTokenBudget(userMessage);
             const settings = await storage.getSettings();
@@ -148,7 +183,7 @@ export const useAiLogic = ({
               }
             });
 
-            // Loop de tool chaining: continua enquanto o modelo pedir ferramentas (máx 5).
+            // Encadeia apenas o necessário para evitar chamadas redundantes.
             let iterations = 0;
             while (resp.functionCalls && resp.functionCalls.length > 0 && iterations < 3) {
                 iterations++;
@@ -162,6 +197,7 @@ export const useAiLogic = ({
                     if (!call.name) continue;
                     setStatus(toolStatus(call.name));
                     const { visual, textual } = await executeTool(call.name, call.args);
+                    lastToolResult.current = { name: call.name, textual };
 
                     setMessages(prev => [...prev, {
                         id: `${Date.now()}_tool_${iterations}_${responseParts.length}`,
@@ -201,8 +237,19 @@ export const useAiLogic = ({
 
         } catch (err) {
             console.error('AI Processing Error:', err);
-            setStatus('Não foi possível concluir');
-            handleErrorMessage(err, setMessages);
+            const recovered = lastToolResult.current && buildRecoveredAnswer(lastToolResult.current.name, lastToolResult.current.textual);
+            if (recovered) {
+                setMessages(prev => [...prev, {
+                    id: Date.now().toString() + '_recovered',
+                    role: 'model',
+                    rawText: recovered,
+                    content: recovered
+                }]);
+                setStatus('Pronta para ajudar');
+            } else {
+                setStatus('Não foi possível concluir');
+                handleErrorMessage(err, setMessages);
+            }
         } finally {
             setLoading(false);
         }
@@ -270,6 +317,7 @@ export const useAiLogic = ({
                 try { args = JSON.parse(toolCall.function.arguments || '{}'); } catch (e) { /* args inválidos → objeto vazio */ }
 
                 const { visual, textual } = await executeTool(name, args);
+                lastToolResult.current = { name, textual };
 
                 appendMsg((prev: any) => [...prev, {
                     id: `${Date.now()}_tool_${iterations}_${toolCall.id}`,
@@ -360,6 +408,7 @@ export const useAiLogic = ({
             for (const tu of toolUses) {
                 setStat(toolStatus(tu.name));
                 const { visual, textual } = await executeTool(tu.name, tu.input || {});
+                lastToolResult.current = { name: tu.name, textual };
 
                 appendMsg((prev: any) => [...prev, {
                     id: `${Date.now()}_tool_${iterations}_${tu.id}`,
