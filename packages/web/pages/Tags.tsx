@@ -397,11 +397,10 @@ export const Tags = () => {
       return;
     }
 
-    // Se não tem traqcareId, usa o fluxo de descoberta automática
-    // O MAC está salvo no campo tag.imei neste caso
+    // Se não tem traqcareId, usa o MAC persistido para descoberta no TraqCare.
     addNotification('info', 'Buscando dispositivo...', 'Cruzando MAC com a API Traqcare.');
     
-    const result = await xadtagService.activateAndDiscover(tag.imei || '');
+    const result = await xadtagService.activateAndDiscover(tag.macAddress || '');
     
     if (result.traqcareId) {
       // Salva o ID descoberto independente de sucesso na ativação
@@ -454,23 +453,23 @@ export const Tags = () => {
           let resultData: any;
           
           if (command === 'ping') {
-              const diagnosis = await xadtagService.diagnose(targetTag);
+              const diagnosis = await trackingApi.checkXadTag(targetTag.id);
               resultData = {
-                  summary: diagnosis.summary,
-                  rawResponse: diagnosis.raw
+                  status: diagnosis.status,
+                  lastUpdate: diagnosis.lastUpdate,
+                  hasPosition: diagnosis.hasPosition
               };
           } 
           else if (command === 'location') {
-              const locations = await xadtagService.fetchLocation(targetTag);
-              if (locations.length > 0) {
-                  const loc = locations[0];
-                  const address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+              const current = await trackingApi.checkXadTag(targetTag.id);
+              if (current.position) {
+                  const loc = current.position;
+                  const address = loc.address || await geocodingService.reverseGeocode(loc.latitude, loc.longitude);
                   resultData = {
-                      coords: `${loc.lat}, ${loc.lon}`,
+                      coords: `${loc.latitude}, ${loc.longitude}`,
                       address: address,
-                      battery: `${loc.battery.level}% (${loc.battery.label})`,
-                      lastUpdate: loc.isodatetime,
-                      active: loc.status === 1
+                      lastUpdate: loc.fixTime || loc.serverTime,
+                      active: current.status === 'online'
                   };
               } else {
                   resultData = { message: "Dispositivo não retornou localização recente." };
@@ -479,16 +478,16 @@ export const Tags = () => {
           else if (command === 'history') {
               const end = Date.now();
               const start = end - (24 * 60 * 60 * 1000);
-              const history = await xadtagService.fetchHistory(targetTag, start, end);
+              const history = await trackingApi.xadTagHistory(targetTag.id, new Date(start).toISOString(), new Date(end).toISOString());
               
               if (history.length > 0) {
-                  const first = history[0];
-                  const last = history[history.length - 1];
-                  const address = await geocodingService.reverseGeocode(first.lat, first.lon);
+                  const oldest = history[0];
+                  const latest = history[history.length - 1];
+                  const address = latest.address || await geocodingService.reverseGeocode(latest.latitude, latest.longitude);
                   resultData = {
                       pointsFound: history.length,
-                      latestPoint: { time: first.isodatetime, coords: `${first.lat}, ${first.lon}`, address },
-                      oldestPoint: { time: last.isodatetime, coords: `${last.lat}, ${last.lon}` }
+                      latestPoint: { time: latest.fixTime || latest.serverTime, coords: `${latest.latitude}, ${latest.longitude}`, address },
+                      oldestPoint: { time: oldest.fixTime || oldest.serverTime, coords: `${oldest.latitude}, ${oldest.longitude}` }
                   };
               } else {
                   resultData = { message: "Nenhum histórico encontrado nas últimas 24h." };

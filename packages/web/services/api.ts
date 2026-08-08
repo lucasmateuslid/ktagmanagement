@@ -2,6 +2,7 @@
 import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 import { storage } from './storage';
 import { xadtagService } from './xadtag';
+import { trackingApi } from './trackingApi';
 
 // K-Tag API (api.gps308.com/feibao) — campo `status` = nível de bateria.
 // Doc do fornecedor v0.4: 0=极低 (muito baixo) … 3=高 (alto). ESCALA INVERTIDA
@@ -55,12 +56,21 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProg
   const ktagTags = tags.filter(t => t.type !== 'XADTAG' && t.accessoryId && t.hashedAdvKey && t.privateKey);
   const xadtagTags = tags.filter(t => t.type === 'XADTAG');
 
-  // ---- XADTAG: individual (mantém retentativa via fetchTagLocation) ----
+  // ---- XADTAG: consulta centralizada no Traccar ----
   for (const tag of xadtagTags) {
     if (onProgress) onProgress(processed + 1, total, tag);
     try {
-      const res = await fetchTagLocation(tag);
-      if (res.length > 0) results.push({ ...res[0], tagId: tag.id });
+      const result = await trackingApi.checkXadTag(tag.id);
+      if (result.position) results.push({
+        lat: result.position.latitude,
+        lon: result.position.longitude,
+        conf: result.position.valid ? 100 : 0,
+        status: result.status === 'online' ? 1 : 0,
+        battery: { level: 0, label: result.status, color: result.status === 'online' ? '#10b981' : '#71717a' },
+        timestamp: Date.parse(result.position.fixTime || result.position.serverTime || '') || Date.now(),
+        isodatetime: result.position.fixTime || result.position.serverTime || new Date().toISOString(),
+        tagId: tag.id,
+      });
     } catch (e: any) {
       console.error(`Erro ao rastrear XADTAG ${tag.traqcareId}:`, e.message);
     }

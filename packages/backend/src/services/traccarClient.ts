@@ -58,6 +58,7 @@ export class TraccarClient {
   deleteDevice(id: number) { return this.request<void>(`/devices/${id}`, { method: 'DELETE', operation: 'deleteDevice' }); }
   async getPositionById(id: number) { const values = await this.request<TraccarPosition[]>(`/positions?id=${id}`, { operation: 'getPositionById' }); return values[0] ?? null; }
   getLatestPositions() { return this.request<TraccarPosition[]>('/positions', { operation: 'getLatestPositions' }); }
+  getRoute(deviceId: number, from: string, to: string) { return this.request<TraccarPosition[]>(`/reports/route?deviceId=${deviceId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { operation: 'getRoute' }); }
   async reverseGeocode(latitude: number, longitude: number) {
     const value = await this.request<string>(`/server/geocode?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`, { operation: 'reverseGeocode' });
     return typeof value === 'string' && value.trim() ? value.trim() : null;

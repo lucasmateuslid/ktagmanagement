@@ -35,7 +35,9 @@ export class XadTagService {
       if (!known.imei) updates.imei = imeiOriginal;
       if (!known.macAddress && normalizedMacAddress) updates.macAddress = normalizedMacAddress;
       if (Object.keys(updates).length > 0) await xadTagRepository.update(tenantId, known.id, updates);
-      return { item: { ...known, ...updates }, created: false, externalCreated: false };
+      const updatedKnown = { ...known, ...updates };
+      await this.check(updatedKnown).catch(() => undefined);
+      return { item: await xadTagRepository.get(tenantId, known.id) || updatedKnown, created: false, externalCreated: false };
     }
     let externalCreated = false;
     if (!device) {
@@ -58,13 +60,15 @@ export class XadTagService {
       device = await traccarClient.getDevice(device.id);
     }
     const now = Date.now();
+    const initialRawPosition = device.positionId ? await traccarClient.getPositionById(device.positionId).catch(() => null) : null;
+    const initialPosition = initialRawPosition ? await this.resolvePosition(initialRawPosition) : null;
     const result = await xadTagRepository.reserveAndCreate({
       tenantId, name: description?.trim() || `XADTAG ${imeiOriginal}`, type: 'XADTAG', accessoryId: identifierNormalized,
       equipmentType: 'XADTAG', model: 'XADTAG', imei: imeiOriginal, imeiOriginal, macAddress: normalizedMacAddress, identifierNormalized,
       protocol: 'gt06', traccarPort: getTraccarConfig().gt06Port, usesSimCard: false, trackingProvider: 'traccar',
       traccarDeviceId: device.id, traccarDeviceName: device.name, traccarPositionId: device.positionId ?? null,
       traccarStatus: communicationStatus(device), integrationStatus: 'linked', description,
-      lastIntegrationCheckAt: now, createdAt: now, updatedAt: now,
+      lastIntegrationCheckAt: now, ...(initialPosition ? { lastPosition: initialPosition } : {}), createdAt: now, updatedAt: now,
     });
     console.info(JSON.stringify({ event: externalCreated ? 'traccar.device.created' : 'traccar.device.reused', tenantId, equipmentId: result.item.id, uniqueId: identifierNormalized, traccarDeviceId: device.id }));
     return { ...result, externalCreated };
@@ -77,6 +81,10 @@ export class XadTagService {
     await xadTagRepository.update(item.tenantId, item.id, { traccarStatus: communicationStatus(device), traccarPositionId: device.positionId ?? null, integrationStatus: 'linked', lastIntegrationCheckAt: Date.now(), ...(position ? { lastPosition: position } : {}) });
     return { found: true, status: communicationStatus(device), lastUpdate: device.lastUpdate ?? null, hasPosition: Boolean(position), position };
   }
+  async history(item: XadTag, from: string, to: string) {
+    const positions = await traccarClient.getRoute(item.traccarDeviceId, from, to);
+    return Promise.all(positions.map(position => this.resolvePosition(position)));
+  }
   async resolvePosition(raw: TraccarPosition) {
     const cached = positionCache.get(raw.deviceId);
     if (cached && cached.value.id === raw.id && cached.expiresAt > Date.now()) return cached.value;
@@ -86,7 +94,7 @@ export class XadTagService {
     return value;
   }
   toLiveMap(item: XadTag): LiveMapTrackedAsset | null {
-    if (!item.linkedEntityId || !item.lastPosition) return null;
+    if (!item.lastPosition) return null;
     return { ...item.lastPosition, id: `xadtag_${item.identifierNormalized}`, source: 'traccar', equipmentType: 'XADTAG', tenantId: item.tenantId,
       imei: item.imeiOriginal, uniqueId: item.identifierNormalized, traccarDeviceId: item.traccarDeviceId,
       linkedEntityId: item.linkedEntityId, linkedEntityName: item.linkedEntityName, status: item.traccarStatus, lastUpdate: item.lastPosition.serverTime };
