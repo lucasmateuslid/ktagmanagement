@@ -1772,7 +1772,7 @@ async function requireSuperAdmin(request) {
   return { uid };
 }
 
-const RESERVED_TENANT_SLUGS = ['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'app', 'system', 'root', 'localhost'];
+const RESERVED_TENANT_SLUGS = ['admin', 'api', 'api-vps', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'app', 'system', 'root', 'localhost', 'lock'];
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
 
 function validateSlug(slug) {

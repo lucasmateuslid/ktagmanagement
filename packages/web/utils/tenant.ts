@@ -17,6 +17,7 @@
 export const RESERVED_TENANT_SLUGS = [
   'admin',
   'api',
+  'api-vps',
   'www',
   'mail',
   'ftp',

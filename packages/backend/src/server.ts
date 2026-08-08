@@ -357,7 +357,7 @@ async function performReverseGeocoding(lat: number, lng: number, geocoderPrefere
 // fazer o lookup adicional sob demanda (cache server-side recomendado).
 // ---------------------------------------------------------------
 
-const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'lock']);
+const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'api-vps', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'app', 'system', 'root', 'localhost', 'lock']);
 const API_GATEWAY_SUBDOMAINS = new Set(['api', 'api-vps']);
 const APEX_TENANT = '__apex__';
 
