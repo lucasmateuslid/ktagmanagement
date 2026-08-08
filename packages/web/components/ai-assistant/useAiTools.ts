@@ -8,7 +8,7 @@ export const useAiTools = () => {
       return [
             {
                 name: 'get_vehicle_location',
-                description: 'Localiza UM veículo específico pela placa e retorna status sistêmico, vínculo com Tag GPS e link do grid de mapa ao vivo. QUANDO USAR: sempre que o usuário citar uma placa (ex.: "cadê o ABC1D23?", "status do carro XYZ", "esse veículo está online?"). CORRELAÇÃO ESPERADA APÓS O RESULTADO: se temTagGps=false ou status diferente de "active", recomendar vistoria presencial e/ou abertura de OS urgente; se houver link de mapa, oferecer rastreio ao vivo.',
+                description: 'Localiza um veículo pela placa e retorna status, GPS, última posição e link do mapa. Use quando o usuário citar uma placa.',
                 parameters: {
                     type: 'OBJECT',
                     properties: { plate: { type: 'STRING', description: 'Placa do veículo' } },
@@ -17,12 +17,12 @@ export const useAiTools = () => {
             },
             {
                 name: 'get_fleet_stats',
-                description: 'Panorama de HARDWARE e estoque: total da frota, veículos com Tag vinculada, Tags compradas, ociosas (em prateleira) e em manutenção. QUANDO USAR: perguntas sobre estoque, hardware parado, rastreadores livres ou cobertura da frota (ex.: "quantas tags sobrando?", "qual nossa cobertura?", "tem hardware parado?"). CORRELAÇÃO: percentualOcioso alto = capital imobilizado — recomendar acelerar instalações; tags em manutenção = avaliar reparo/descarte.',
+                description: 'Resume frota, cobertura GPS e estoque de Tags. Use para perguntas sobre hardware, cobertura ou estoque ocioso.',
                 parameters: { type: 'OBJECT', properties: {} }
             },
             {
                 name: 'search_external_data',
-                description: 'Consulta a base do integrador parceiro (Hinova/SGA) por placa ou chassi — ativos que podem NÃO existir na base local. QUANDO USAR: quando o usuário pedir um veículo/cliente que não apareceu localmente, ou citar um chassi (ex.: "procura no Hinova", "esse chassi existe no SGA?", "de quem é esse carro?"). CORRELAÇÃO: se o ativo existe no parceiro mas não na base local, sugerir plano de captação/instalação para a equipe comercial/técnica.',
+                description: 'Consulta o cadastro externo por placa ou chassi. Use quando o ativo não estiver na base local ou o usuário citar o cadastro externo.',
                 parameters: {
                     type: 'OBJECT',
                     properties: { query: { type: 'STRING', description: 'Placa ou Chassi' } },
@@ -31,7 +31,7 @@ export const useAiTools = () => {
             },
             {
                 name: 'analyze_operations',
-                description: 'Diagnóstico operacional cruzado: frota + estoque + Ordens de Serviço pendentes + técnicos, com NOMES de técnicos, detalhe de cada OS (tipo, dispositivo, data, solicitante) e métricas derivadas (ratio OS:técnico, % de estoque ocioso). QUANDO USAR: qualquer pedido de panorama/saúde da operação, gargalos, capacidade, risco de SLA ou resumo executivo (ex.: "como estamos hoje?", "temos gente suficiente?", "risco de atraso?", "me dá um diagnóstico"). CORRELAÇÃO: ratio OS:técnico > 3 indica ruptura iminente de SLA; estoque ocioso > 30% indica capital parado.',
+                description: 'Cruza OS pendentes, técnicos, frota e estoque com indicadores de SLA e capacidade. Use para diagnósticos, riscos e panoramas operacionais.',
                 parameters: { type: 'OBJECT', properties: {} }
             }
       ];
@@ -198,7 +198,7 @@ export const useAiTools = () => {
         const availableTags = tags.filter(t => t.status === 'disponível').length;
         const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
         const inUseTags = tags.filter(t => t.status === 'em_uso').length;
-        const CAP = 30; // limita arrays para não estourar contexto; totais ficam nas métricas.
+        const CAP = 12; // detalhes prioritários; totais completos permanecem nas métricas.
         const now = Date.now();
         const technicianById = new Map(techs.map(t => [t.id, t.name]));
         const pendingWithoutTechnician = pendingSchedules.filter(s => !s.technicianId).length;
@@ -231,7 +231,9 @@ export const useAiTools = () => {
                 especialidades: t.services || [],
                 tipoAtendimento: t.serviceLocationType || null,
             })),
-            ordensServicoPendentes: pendingSchedules.slice(0, CAP).map(s => ({
+            ordensServicoPendentes: [...pendingSchedules]
+              .sort((a, b) => (a.analysisStartedAt || a.createdAt) - (b.analysisStartedAt || b.createdAt))
+              .slice(0, CAP).map(s => ({
                 placa: s.vehiclePlate,
                 modelo: s.vehicleModel,
                 tipoServico: s.serviceType,

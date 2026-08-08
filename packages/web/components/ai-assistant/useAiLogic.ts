@@ -12,7 +12,8 @@ Você nunca apenas lista dados. Ao receber resultados das suas bases (dados estr
 TOM E ESTRUTURA
 - Executivo, direto, focado em SLA, redução de ociosidade e lucro. Sem floreio.
 - Comece pela conclusão mais importante. Nunca comece com "Claro", "Vou analisar" ou uma explicação do processo.
-- Para perguntas simples, responda em 2 a 5 frases. Para diagnósticos, use: **Diagnóstico**, **Evidências** e **Próxima ação**.
+- Para perguntas simples, responda em 4 a 8 frases, com contexto suficiente para sustentar a conclusão.
+- Para diagnósticos, use **Diagnóstico**, **Evidências**, **Impacto** e **Próximas ações**, explicando de 3 a 5 ações em ordem de prioridade.
 - Use bullets apenas quando houver múltiplos fatos. Destaque KPIs e ações em **negrito**.
 - IMERSÃO: você É o cérebro da plataforma. Nunca mencione ferramenta, JSON, função, back-end, API, provedor, modelo, token, integração interna ou etapas de processamento.
 - Cite dados específicos recebidos: nomes, placas, quantidades, tipos de OS e datas. Nunca generalize quando há detalhe disponível.
@@ -24,35 +25,30 @@ THRESHOLDS DE ALERTA (dispare quando os números cruzarem estes limites)
 - ratioOsPorTecnico > 3  → ALERTA de ruptura iminente de SLA: a fila de OS excede a capacidade dos técnicos ativos. Recomende redistribuição / reforço de equipe / priorização.
 - percentualEstoqueOcioso > 30  → ALERTA de capital parado: hardware em prateleira sem gerar receita. Recomende acelerar instalações.
 - Veículo com status diferente de "active" OU temTagGps=false → recomende vistoria presencial e/ou abertura de OS urgente (ponto cego de telemetria).
-- Ao fim de relatórios densos, faça UMA pergunta acionável (ex.: "Quer que eu priorize as OS por proximidade dos técnicos disponíveis?").
+- Ao fim de relatórios densos, faça UMA pergunta acionável (ex.: "Quer que eu priorize as OS por proximidade dos técnicos disponíveis?").`;
 
-EXEMPLOS DE EXCELÊNCIA (padrão de resposta — ilustrativos, não são dados reais)
-
-[Exemplo 1 — diagnóstico operacional]
-Dados internos: {"metricas":{"tecnicosAtivos":2,"totalOsPendentes":9,"ratioOsPorTecnico":4.5,"percentualEstoqueOcioso":42},"tecnicos":[{"nome":"Carlos","ativo":true,"especialidades":["Rastreador","Tag"]},{"nome":"Marina","ativo":true,"especialidades":["Tag"]}],"ordensServicoPendentes":[{"placa":"ABC1D23","tipoServico":"Instalação","dispositivo":"Rastreador","dataPreferida":"2026-05-28","solicitante":"Filial Sul"}],"estoque":{"totalTags":50,"ociosas":21}}
-Resposta ideal:
-🔴 **Ruptura de SLA iminente.** São **9 OS pendentes** para apenas **2 técnicos ativos** (Carlos e Marina) — ratio de **4,5:1**, bem acima do limite saudável de 3:1.
-- Gargalo de especialidade: só o **Carlos** cobre Rastreador; a OS da **ABC1D23** (Instalação de Rastreador, Filial Sul, para 28/05) depende exclusivamente dele.
-- **42% do estoque ocioso** (21 de 50 tags) = capital parado sem gerar mensalidade.
-Ações imediatas: (1) realocar OS de Tag para a Marina e blindar a agenda do Carlos para Rastreadores; (2) avaliar reforço/técnico volante; (3) puxar campanha de instalação para drenar as 21 tags ociosas.
-Quer que eu ordene as 9 OS por proximidade geográfica dos técnicos disponíveis?
-
-[Exemplo 2 — veículo específico]
-Dados internos: {"encontrado":true,"placa":"XYZ9K88","modelo":"Fiat Toro","status":"maintenance","temTagGps":false}
-Resposta ideal:
-A **XYZ9K88** (Fiat Toro) está em **manutenção** e **sem Tag GPS vinculada** — hoje é um ponto cego na frota, sem telemetria.
-Recomendo **vistoria presencial urgente** e abertura de OS de instalação/reativação antes de liberar o veículo para operação. Quer que eu gere a solicitação de OS para o técnico mais próximo?`;
-
-// Mantém o histórico relevante para o modelo: todas as mensagens não-tool +
-// APENAS as últimas 4 mensagens de tool (resultados recentes preservam contexto
-// entre perguntas sem inflar o payload). Depois corta para as últimas 12.
+// Preserva contexto recente sem reenviar indefinidamente respostas e bases extensas.
+// Um único resultado recente de consulta é suficiente para perguntas de continuação.
 const trimHistory = (msgs: ChatMessage[]): ChatMessage[] => {
-    const recentToolIds = new Set(
-        msgs.filter(m => m.role === 'tool').slice(-4).map(m => m.id)
-    );
-    return msgs
-        .filter(m => m.role !== 'tool' || recentToolIds.has(m.id))
-        .slice(-12);
+    const toolMessages = msgs.filter(m => m.role === 'tool');
+    const lastToolId = toolMessages[toolMessages.length - 1]?.id;
+    const candidates = msgs
+        .filter(m => m.role !== 'tool' || m.id === lastToolId)
+        .slice(-8);
+    let remainingChars = 7_000;
+
+    return candidates.reverse().reduce<ChatMessage[]>((history, message) => {
+        if (remainingChars <= 0) return history;
+        const rawText = message.rawText.slice(-remainingChars);
+        remainingChars -= rawText.length;
+        history.unshift({ ...message, rawText });
+        return history;
+    }, []);
+};
+
+const responseTokenBudget = (message: string): number => {
+    const detailedIntent = /diagn[oó]stico|an[aá]lis[ei]|relat[oó]rio|panorama|gargalo|estrat[eé]g|detalh|risco|sla|compare|resumo executivo/i.test(message);
+    return detailedIntent ? 1_400 : 700;
 };
 
 const toolStatus = (name: string): string => {
@@ -79,6 +75,7 @@ export const useAiLogic = ({
     const processMessage = async (userMessage: string) => {
         try {
             setStatus('Pensando...');
+            const maxOutputTokens = responseTokenBudget(userMessage);
             const settings = await storage.getSettings();
 
             // Basic Provider selection handling
@@ -146,13 +143,14 @@ export const useAiLogic = ({
               config: {
                   tools: toolsInfo as any,
                   systemInstruction: SYSTEM_INSTRUCTION,
-                  temperature: 0.5
+                  temperature: 0.4,
+                  maxOutputTokens
               }
             });
 
             // Loop de tool chaining: continua enquanto o modelo pedir ferramentas (máx 5).
             let iterations = 0;
-            while (resp.functionCalls && resp.functionCalls.length > 0 && iterations < 5) {
+            while (resp.functionCalls && resp.functionCalls.length > 0 && iterations < 3) {
                 iterations++;
                 const calls = resp.functionCalls;
 
@@ -186,7 +184,8 @@ export const useAiLogic = ({
                     config: {
                         tools: toolsInfo as any,
                         systemInstruction: SYSTEM_INSTRUCTION,
-                        temperature: 0.6
+                        temperature: 0.45,
+                        maxOutputTokens
                     }
                 });
             }
@@ -211,6 +210,7 @@ export const useAiLogic = ({
 
     const handleOpenAICompatible = async (apiKey: string, userMessage: string, msgHistory: ChatMessage[], appendMsg: any, setStat: any, endpoint: string, model: string, tools: any, executeTool: any, proxyUrl?: string) => {
         setStat('Pensando...');
+        const maxTokens = responseTokenBudget(userMessage);
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
 
         const apiMessages: any[] = trimHistory(msgHistory).map(m => ({
@@ -255,11 +255,11 @@ export const useAiLogic = ({
             return res.json();
         };
 
-        let data = await callApi({ model, messages: apiMessages, temperature: 0.5, tools, tool_choice: "auto" });
+        let data = await callApi({ model, messages: apiMessages, temperature: 0.4, max_tokens: maxTokens, tools, tool_choice: "auto" });
         let responseMessage = data.choices[0]?.message;
         let iterations = 0;
 
-        while (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0 && iterations < 5) {
+        while (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0 && iterations < 3) {
             iterations++;
             apiMessages.push(responseMessage);
 
@@ -284,7 +284,7 @@ export const useAiLogic = ({
 
             setStat('Analisando as informações...');
             // tools mantido nas chamadas seguintes para permitir chaining.
-            data = await callApi({ model, messages: apiMessages, temperature: 0.6, tools, tool_choice: "auto" });
+            data = await callApi({ model, messages: apiMessages, temperature: 0.45, max_tokens: maxTokens, tools, tool_choice: "auto" });
             responseMessage = data.choices[0]?.message;
         }
 
@@ -300,6 +300,7 @@ export const useAiLogic = ({
 
     const handleAnthropicRequest = async (apiKey: string, userMessage: string, msgHistory: ChatMessage[], appendMsg: any, setStat: any, tools: any, executeTool: any, proxyUrl?: string) => {
         setStat('Pensando...');
+        const maxTokens = responseTokenBudget(userMessage);
         const headers = {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
@@ -346,12 +347,11 @@ export const useAiLogic = ({
             return res.json();
         };
 
-        // max_tokens 4096: respostas ricas (KPIs + recomendações) não cabiam em 1024.
-        let data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: 4096, temperature: 0.5, tools });
+        let data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: maxTokens, temperature: 0.4, tools });
         let iterations = 0;
         let toolUse = data.content?.find((c: any) => c.type === 'tool_use');
 
-        while (toolUse && iterations < 5) {
+        while (toolUse && iterations < 3) {
             iterations++;
             apiMessages.push({ role: "assistant", content: data.content });
 
@@ -374,7 +374,7 @@ export const useAiLogic = ({
             apiMessages.push({ role: "user", content: toolResults });
 
             setStat('Analisando as informações...');
-            data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: 4096, temperature: 0.6, tools });
+            data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: maxTokens, temperature: 0.45, tools });
             toolUse = data.content?.find((c: any) => c.type === 'tool_use');
         }
 
