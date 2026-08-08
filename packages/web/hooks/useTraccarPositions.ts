@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { TraccarPosition } from '@ktag/shared';
+import { auth } from '../services/firebase';
+import { trackingWebSocketUrl } from '../services/trackingEndpoint';
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -15,20 +17,17 @@ export function useTraccarPositions(tenantId: string) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
 
-  const buildUrl = () => {
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    // Em dev o Vite proxy encaminha /ws/* para ws://localhost:4000
-    // Em prod usa o mesmo host da página (wss://api.ktagfinder.app/ws/tracking)
-    const host = window.location.host;
-    return `${proto}://${host}/ws/tracking?tenant=${encodeURIComponent(tenantId)}`;
-  };
-
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (unmountedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setStatus('connecting');
-    const ws = new WebSocket(buildUrl());
+    const token = await auth?.currentUser?.getIdToken();
+    if (!token || unmountedRef.current) {
+      setStatus('disconnected');
+      return;
+    }
+    const ws = new WebSocket(trackingWebSocketUrl(tenantId), [`firebase.${token}`]);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -57,7 +56,7 @@ export function useTraccarPositions(tenantId: string) {
       setStatus('disconnected');
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** retryRef.current, RECONNECT_MAX_MS);
       retryRef.current += 1;
-      timerRef.current = setTimeout(connect, delay);
+      timerRef.current = setTimeout(() => { void connect(); }, delay);
     };
 
     ws.onerror = () => ws.close();
@@ -65,7 +64,7 @@ export function useTraccarPositions(tenantId: string) {
 
   useEffect(() => {
     unmountedRef.current = false;
-    connect();
+    void connect();
     return () => {
       unmountedRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);

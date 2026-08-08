@@ -13,6 +13,11 @@ implanta automaticamente na VPS, Cloud Run, Functions ou Firestore.
 - service account Firebase dedicada, com o menor conjunto de permissões necessário;
 - DNS do domínio da aplicação apontando para a VPS.
 
+O frontend permanece no Cloud Run. Somente o domínio público de tracking
+`api-vps.ktagfinder.app` aponta para esta VPS. O build de produção recebe
+`VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app`, portanto REST de
+tracking e WebSocket saem do frontend Cloud Run e chegam ao Nginx da VPS.
+
 Recomenda-se manter o proxy laranja do Cloudflare e ativar Authenticated Origin Pulls ou restringir no firewall/Nginx as conexões HTTPS às faixas do Cloudflare. O backend fica publicado apenas em `127.0.0.1`.
 
 ## Primeira instalação
@@ -51,7 +56,8 @@ chmod 600 .env.vps
 7. Faça `docker login ghcr.io` usando um token GitHub com somente
    `read:packages`. Não grave esse token no `.env.vps`.
 8. Gere o arquivo Nginx a partir de `nginx-ktag.conf.template`, usando o domínio
-   da aplicação, certificado TLS e o mesmo `CF_ORIGIN_SECRET` do `.env.vps`.
+   `api-vps.ktagfinder.app`, certificado TLS e o mesmo `CF_ORIGIN_SECRET` do
+   `.env.vps`.
 9. Teste com `nginx -t` e recarregue o Nginx.
 
 Antes do primeiro deploy, valide a comunicação entre containers:
