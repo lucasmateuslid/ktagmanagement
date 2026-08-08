@@ -249,6 +249,7 @@ export interface Tag {
   hashedAdvKey?: string;
   privateKey?: string;
   imei?: string;
+  macAddress?: string;
   traqcareId?: string;
   identifierNormalized?: string;
   traccarDeviceId?: number;

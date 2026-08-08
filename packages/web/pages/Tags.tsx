@@ -569,6 +569,7 @@ export const Tags = () => {
             hashedAdvKey: formData.hashedAdvKey,
             privateKey: formData.privateKey,
             imei: formData.imei,
+            macAddress: formData.macAddress,
             traqcareId: formData.traqcareId,
             powerType: formData.powerType,
             batteryWarrantyYears: formData.batteryWarrantyYears
@@ -576,12 +577,13 @@ export const Tags = () => {
 
         if (!tag.name) throw new Error("Nome é obrigatório");
         if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
-        if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI / MAC Address é obrigatório para XADTAG");
+        if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI é obrigatório para XADTAG");
 
         setFormData(prev => ({ ...prev, id: tagId }));
         if (tag.type === 'XADTAG') {
-            const registered = await trackingApi.registerXadTag(tag.imei || '', tag.name);
+            const registered = await trackingApi.registerXadTag(tag.imei || '', tag.macAddress, tag.name);
             tag.id = registered.id; tag.accessoryId = registered.identifierNormalized; tag.imei = registered.imeiOriginal;
+            tag.macAddress = registered.macAddress || tag.macAddress;
             tag.identifierNormalized = registered.identifierNormalized; tag.traccarDeviceId = registered.traccarDeviceId;
             tag.traccarDeviceName = registered.traccarDeviceName; tag.traccarPositionId = registered.traccarPositionId;
             tag.traccarStatus = registered.traccarStatus; tag.integrationStatus = registered.integrationStatus;
@@ -1006,7 +1008,7 @@ export const Tags = () => {
                             </td>
                             <td className="p-4">
                               <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}
+                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}${tag.macAddress ? ` • MAC: ${tag.macAddress}` : ''}` : `SN: ${tag.accessoryId}`}
                               </div>
                             </td>
                             <td className="p-4">
@@ -1128,7 +1130,7 @@ export const Tags = () => {
                                             <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
                                             <span className="text-zinc-300 dark:text-zinc-700 text-[10px]">•</span>
                                             <div className="font-mono text-[10px] text-zinc-500 font-medium">
-                                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}` : `SN: ${tag.accessoryId}`}
+                                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}${tag.macAddress ? ` • MAC: ${tag.macAddress}` : ''}` : `SN: ${tag.accessoryId}`}
                                             </div>
                                         </div>
                                     </div>
@@ -1306,8 +1308,12 @@ export const Tags = () => {
                     ) : (
                         <>
                             <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI / MAC Address <span className="text-red-500">*</span></label>
-                                <input type="text" required value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: D04232E7E3FA ou numérico" />
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI do equipamento <span className="text-red-500">*</span></label>
+                                <input type="text" required inputMode="numeric" value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: 860000000000001" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">MAC Address</label>
+                                <input type="text" value={formData.macAddress || ''} onChange={e => setFormData({...formData, macAddress: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: D0:42:32:E7:E3:FA" />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>

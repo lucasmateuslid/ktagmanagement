@@ -45,7 +45,9 @@ export interface XadTag {
   tenantId: string;
   equipmentType: 'XADTAG';
   model: 'XADTAG';
+  imei: string;
   imeiOriginal: string;
+  macAddress?: string | null;
   identifierNormalized: string;
   protocol: 'gt06';
   traccarPort: number;

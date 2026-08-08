@@ -12,6 +12,13 @@ export function originalXadTagIdentifier(input: string): string {
   return digits;
 }
 
+export function normalizeXadTagMacAddress(input?: string): string | null {
+  const normalized = String(input ?? '').replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+  if (!normalized) return null;
+  if (normalized.length !== 12) throw new Error('O MAC Address deve possuir 12 caracteres hexadecimais.');
+  return normalized.match(/.{2}/g)?.join(':') || normalized;
+}
+
 export function buildTraccarDeviceName(tenantSlug: string, imeiOriginal: string): string {
   const slug = String(tenantSlug ?? '').trim().toLowerCase();
   if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) throw new Error('Slug do tenant inválido.');

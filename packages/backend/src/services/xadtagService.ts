@@ -1,6 +1,6 @@
 import type { LiveMapTrackedAsset, TraccarDevice, TraccarPosition, TrackedPosition, XadTag } from '@ktag/shared';
 import { getTraccarConfig } from '../config/traccar.js';
-import { buildTraccarDeviceName, normalizeXadTagIdentifier, originalXadTagIdentifier } from '../domain/xadtag.js';
+import { buildTraccarDeviceName, normalizeXadTagIdentifier, normalizeXadTagMacAddress, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
 import { addressResolver } from './addressResolver.js';
 import { traccarClient, TraccarHttpError } from './traccarClient.js';
@@ -21,19 +21,28 @@ export function communicationStatus(device: TraccarDevice): XadTag['traccarStatu
 }
 
 export class XadTagService {
-  async register(tenantId: string, tenantSlug: string, imei: string, description?: string) {
+  async register(tenantId: string, tenantSlug: string, imei: string, macAddress?: string, description?: string) {
     const imeiOriginal = originalXadTagIdentifier(imei);
     const identifierNormalized = normalizeXadTagIdentifier(imei);
+    const normalizedMacAddress = normalizeXadTagMacAddress(macAddress);
+    // O Traccar usa o IMEI real como uniqueId. Consulte antes de tentar criar.
+    let device = await traccarClient.findDeviceByUniqueId(imeiOriginal);
+    if (!device && identifierNormalized !== imeiOriginal) device = await traccarClient.findDeviceByUniqueId(identifierNormalized);
     await xadTagRepository.assertAvailable(tenantId, identifierNormalized);
     const known = await xadTagRepository.findByIdentifier(tenantId, identifierNormalized);
-    if (known) return { item: known, created: false, externalCreated: false };
-    let device = await traccarClient.findDeviceByUniqueId(identifierNormalized);
+    if (known) {
+      const updates: Partial<XadTag> = {};
+      if (!known.imei) updates.imei = imeiOriginal;
+      if (!known.macAddress && normalizedMacAddress) updates.macAddress = normalizedMacAddress;
+      if (Object.keys(updates).length > 0) await xadTagRepository.update(tenantId, known.id, updates);
+      return { item: { ...known, ...updates }, created: false, externalCreated: false };
+    }
     let externalCreated = false;
     if (!device) {
       try {
         device = await traccarClient.createDevice({
-          name: buildTraccarDeviceName(tenantSlug, imeiOriginal), uniqueId: identifierNormalized, disabled: false,
-          model: 'XADTAG', category: 'XADTAG', attributes: { equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false },
+          name: buildTraccarDeviceName(tenantSlug, imeiOriginal), uniqueId: imeiOriginal, disabled: false,
+          model: 'XADTAG', category: 'XADTAG', attributes: { equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false, imei: imeiOriginal, ...(normalizedMacAddress ? { macAddress: normalizedMacAddress } : {}) },
         });
         externalCreated = true;
       } catch (error) {
@@ -43,10 +52,15 @@ export class XadTagService {
     }
     const externalTenant = typeof device.attributes?.tenantSlug === 'string' ? device.attributes.tenantSlug : null;
     if (externalTenant && externalTenant !== tenantSlug) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
+    const desiredAttributes = { ...(device.attributes || {}), equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false, imei: imeiOriginal, ...(normalizedMacAddress ? { macAddress: normalizedMacAddress } : {}) };
+    if (!externalCreated && (device.attributes?.imei !== imeiOriginal || (normalizedMacAddress && device.attributes?.macAddress !== normalizedMacAddress))) {
+      await traccarClient.updateDevice(device.id, { ...device, attributes: desiredAttributes });
+      device = await traccarClient.getDevice(device.id);
+    }
     const now = Date.now();
     const result = await xadTagRepository.reserveAndCreate({
       tenantId, name: description?.trim() || `XADTAG ${imeiOriginal}`, type: 'XADTAG', accessoryId: identifierNormalized,
-      equipmentType: 'XADTAG', model: 'XADTAG', imeiOriginal, identifierNormalized,
+      equipmentType: 'XADTAG', model: 'XADTAG', imei: imeiOriginal, imeiOriginal, macAddress: normalizedMacAddress, identifierNormalized,
       protocol: 'gt06', traccarPort: getTraccarConfig().gt06Port, usesSimCard: false, trackingProvider: 'traccar',
       traccarDeviceId: device.id, traccarDeviceName: device.name, traccarPositionId: device.positionId ?? null,
       traccarStatus: communicationStatus(device), integrationStatus: 'linked', description,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildTraccarDeviceName, normalizeXadTagIdentifier, originalXadTagIdentifier } from './xadtag.js';
+import { buildTraccarDeviceName, normalizeXadTagIdentifier, normalizeXadTagMacAddress, originalXadTagIdentifier } from './xadtag.js';
 
 test('normaliza IMEI para exatamente 15 dígitos sem conversão numérica', () => {
   assert.equal(normalizeXadTagIdentifier('7260412520'), '000007260412520');
@@ -16,4 +16,10 @@ test('rejeita identificador vazio ou maior que 15 dígitos', () => {
 test('nome do device deriva do slug e IMEI original', () => {
   assert.equal(buildTraccarDeviceName('previna', '7260412520'), 'previna+7260412520');
   assert.throws(() => buildTraccarDeviceName('../tenant', '1'), /Slug/);
+});
+test('normaliza MAC Address sem misturá-lo ao IMEI', () => {
+  assert.equal(normalizeXadTagMacAddress('d0-42-32-e7-e3-fa'), 'D0:42:32:E7:E3:FA');
+  assert.equal(normalizeXadTagMacAddress('D04232E7E3FA'), 'D0:42:32:E7:E3:FA');
+  assert.equal(normalizeXadTagMacAddress(''), null);
+  assert.throws(() => normalizeXadTagMacAddress('D04232'), /12 caracteres/);
 });
