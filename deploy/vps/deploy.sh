@@ -9,6 +9,8 @@ test -f .env.vps || { echo "Crie deploy/vps/.env.vps a partir do exemplo." >&2; 
 test -f secrets/firebase-service-account.json || { echo "Service account Firebase ausente em deploy/vps/secrets/." >&2; exit 1; }
 
 chmod 600 .env.vps secrets/firebase-service-account.json
+# A imagem roda como USER node (UID/GID 1000); o bind mount preserva ownership.
+chown 1000:1000 secrets/firebase-service-account.json
 CURRENT_IMAGE="$(docker inspect --format '{{.Config.Image}}' ktag-platform-backend-1 2>/dev/null || true)"
 if [ -n "$CURRENT_IMAGE" ]; then printf '%s\n' "$CURRENT_IMAGE" > .previous-image; fi
 export KTAG_IMAGE_TAG="${KTAG_IMAGE_TAG_OVERRIDE:-$(date -u +%Y%m%d%H%M%S)}"

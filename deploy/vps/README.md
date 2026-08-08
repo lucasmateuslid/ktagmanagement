@@ -46,7 +46,8 @@ chmod 600 .env.vps
 5. Gere dois valores aleatórios diferentes para `CF_ORIGIN_SECRET` e
    `INTERNAL_SECRET`, por exemplo com `openssl rand -hex 32`.
 6. Salve a service account Firebase dedicada diretamente em
-   `deploy/vps/secrets/firebase-service-account.json` e aplique `chmod 600`.
+   `deploy/vps/secrets/firebase-service-account.json`, aplique `chmod 600` e
+   `chown 1000:1000` para o processo `node` do container conseguir lê-la.
 7. Faça `docker login ghcr.io` usando um token GitHub com somente
    `read:packages`. Não grave esse token no `.env.vps`.
 8. Gere o arquivo Nginx a partir de `nginx-ktag.conf.template`, usando o domínio
