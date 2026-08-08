@@ -16,6 +16,9 @@ name: Deploy
 #     KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET
 #     KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID
 #     KTAGFINDER_PROD_FIREBASE_APP_ID
+#   VPS (somente produção):
+#     VPS_HOST, VPS_USER, VPS_SSH_PORT, VPS_APP_PATH
+#     VPS_SSH_PRIVATE_KEY, VPS_SSH_KNOWN_HOSTS
 on:
   workflow_dispatch:
     inputs:
@@ -24,7 +27,7 @@ on:
         type: choice
         required: true
         default: all
-        options: [all, cloud-run, functions, firestore]
+        options: [all, cloud-run, vps, functions, firestore]
       environment:
         description: Ambiente alvo
         type: choice
@@ -35,6 +38,7 @@ on:
 permissions:
   contents: read
   id-token: write   # obrigatório para Workload Identity Federation
+  packages: write   # publica a imagem usada pela VPS no GHCR
 
 env:
   REGION: us-central1
@@ -44,7 +48,7 @@ env:
   ENVIRONMENT: ${{ inputs.environment }}
 
 concurrency:
-  group: deploy-${{ inputs.environment }}-${{ inputs.target }}
+  group: deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -63,6 +67,8 @@ jobs:
         run: npm run typecheck
       - name: ESLint (warn only)
         run: npm run lint || true
+      - name: Testes do backend
+        run: npm test --workspace=@ktag/backend
 
   # ── Pre-flight: valida os secrets do ambiente escolhido ──────────────────
   # NÃO emite job outputs com valores de secret: o GitHub redacta (zera) qualquer
@@ -81,16 +87,69 @@ jobs:
           PRD_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_PROJECT_ID }}
           PRD_WIF: ${{ secrets.KTAGFINDER_PROD_WIF_PROVIDER }}
           PRD_SA: ${{ secrets.KTAGFINDER_PROD_SERVICE_ACCOUNT }}
+          SBX_FIREBASE_API_KEY: ${{ secrets.SAASTAGMANAGER_FIREBASE_API_KEY }}
+          SBX_FIREBASE_AUTH_DOMAIN: ${{ secrets.SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN }}
+          SBX_FIREBASE_PROJECT_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_PROJECT_ID }}
+          SBX_FIREBASE_STORAGE_BUCKET: ${{ secrets.SAASTAGMANAGER_FIREBASE_STORAGE_BUCKET }}
+          SBX_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_MESSAGING_SENDER_ID }}
+          SBX_FIREBASE_APP_ID: ${{ secrets.SAASTAGMANAGER_FIREBASE_APP_ID }}
+          PRD_FIREBASE_API_KEY: ${{ secrets.KTAGFINDER_PROD_FIREBASE_API_KEY }}
+          PRD_FIREBASE_AUTH_DOMAIN: ${{ secrets.KTAGFINDER_PROD_FIREBASE_AUTH_DOMAIN }}
+          PRD_FIREBASE_PROJECT_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_PROJECT_ID }}
+          PRD_FIREBASE_STORAGE_BUCKET: ${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
+          PRD_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
+          PRD_FIREBASE_APP_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          CLOUD_RUN_REALTIME: ${{ vars.KTAG_TRACCAR_REALTIME_ENABLED }}
         run: |
           missing=()
+          if [ "$TARGET" = vps ] && [ "$ENVIRONMENT" != production ]; then
+            echo "::error::O deploy da VPS existe somente no ambiente production."
+            exit 1
+          fi
+          if [ "$TARGET" = all ] && [ "$ENVIRONMENT" = production ] && [ "$CLOUD_RUN_REALTIME" != false ]; then
+            echo "::error::Defina a variável KTAG_TRACCAR_REALTIME_ENABLED=false para impedir dois workers realtime ativos."
+            exit 1
+          fi
           if [ "$ENVIRONMENT" = production ]; then
-            [ -z "$PRD_PROJECT_ID" ] && missing+=("KTAGFINDER_PROD_PROJECT_ID")
-            [ -z "$PRD_WIF" ] && missing+=("KTAGFINDER_PROD_WIF_PROVIDER")
-            [ -z "$PRD_SA" ] && missing+=("KTAGFINDER_PROD_SERVICE_ACCOUNT")
+            if [ "$TARGET" != vps ]; then
+              [ -z "$PRD_PROJECT_ID" ] && missing+=("KTAGFINDER_PROD_PROJECT_ID")
+              [ -z "$PRD_WIF" ] && missing+=("KTAGFINDER_PROD_WIF_PROVIDER")
+              [ -z "$PRD_SA" ] && missing+=("KTAGFINDER_PROD_SERVICE_ACCOUNT")
+            fi
+            if [ "$TARGET" = all ] || [ "$TARGET" = cloud-run ] || [ "$TARGET" = vps ]; then
+              [ -z "$PRD_FIREBASE_API_KEY" ] && missing+=("KTAGFINDER_PROD_FIREBASE_API_KEY")
+              [ -z "$PRD_FIREBASE_AUTH_DOMAIN" ] && missing+=("KTAGFINDER_PROD_FIREBASE_AUTH_DOMAIN")
+              [ -z "$PRD_FIREBASE_PROJECT_ID" ] && missing+=("KTAGFINDER_PROD_FIREBASE_PROJECT_ID")
+              [ -z "$PRD_FIREBASE_STORAGE_BUCKET" ] && missing+=("KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET")
+              [ -z "$PRD_FIREBASE_MESSAGING_SENDER_ID" ] && missing+=("KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID")
+              [ -z "$PRD_FIREBASE_APP_ID" ] && missing+=("KTAGFINDER_PROD_FIREBASE_APP_ID")
+            fi
+            if [ "$TARGET" = all ] || [ "$TARGET" = vps ]; then
+              [ -z "$VPS_HOST" ] && missing+=("VPS_HOST")
+              [ -z "$VPS_USER" ] && missing+=("VPS_USER")
+              [ -z "$VPS_SSH_PORT" ] && missing+=("VPS_SSH_PORT")
+              [ -z "$VPS_APP_PATH" ] && missing+=("VPS_APP_PATH")
+              [ -z "$VPS_SSH_PRIVATE_KEY" ] && missing+=("VPS_SSH_PRIVATE_KEY")
+              [ -z "$VPS_SSH_KNOWN_HOSTS" ] && missing+=("VPS_SSH_KNOWN_HOSTS")
+            fi
           else
             [ -z "$SBX_PROJECT_ID" ] && missing+=("SAASTAGMANAGER_PROJECT_ID")
             [ -z "$SBX_WIF" ] && missing+=("SAASTAGMANAGER_WIF_PROVIDER")
             [ -z "$SBX_SA" ] && missing+=("SAASTAGMANAGER_SERVICE_ACCOUNT")
+            if [ "$TARGET" = all ] || [ "$TARGET" = cloud-run ]; then
+              [ -z "$SBX_FIREBASE_API_KEY" ] && missing+=("SAASTAGMANAGER_FIREBASE_API_KEY")
+              [ -z "$SBX_FIREBASE_AUTH_DOMAIN" ] && missing+=("SAASTAGMANAGER_FIREBASE_AUTH_DOMAIN")
+              [ -z "$SBX_FIREBASE_PROJECT_ID" ] && missing+=("SAASTAGMANAGER_FIREBASE_PROJECT_ID")
+              [ -z "$SBX_FIREBASE_STORAGE_BUCKET" ] && missing+=("SAASTAGMANAGER_FIREBASE_STORAGE_BUCKET")
+              [ -z "$SBX_FIREBASE_MESSAGING_SENDER_ID" ] && missing+=("SAASTAGMANAGER_FIREBASE_MESSAGING_SENDER_ID")
+              [ -z "$SBX_FIREBASE_APP_ID" ] && missing+=("SAASTAGMANAGER_FIREBASE_APP_ID")
+            fi
           fi
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::Secrets vazios para $ENVIRONMENT: ${missing[*]}"
@@ -98,6 +157,63 @@ jobs:
             exit 1
           fi
           echo "Secrets OK para $ENVIRONMENT"
+
+  # ── VPS: build → GHCR → deploy por SSH (somente produção) ────────────────
+  deploy-vps:
+    name: VPS
+    needs: resolve-env
+    if: ${{ inputs.environment == 'production' && (inputs.target == 'all' || inputs.target == 'vps') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Definir imagem GHCR
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ktag-platform" >> "$GITHUB_OUTPUT"
+
+      - name: Build e publicação da imagem VPS
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          build-args: |
+            VITE_FIREBASE_API_KEY=${{ secrets.KTAGFINDER_PROD_FIREBASE_API_KEY }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.KTAGFINDER_PROD_FIREBASE_AUTH_DOMAIN }}
+            VITE_FIREBASE_PROJECT_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_PROJECT_ID }}
+            VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
+            VITE_FIREBASE_APP_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
+
+      - name: Configurar SSH estrito
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Implantar imagem imutável na VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          ssh -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
+            "cd '$VPS_APP_PATH' && ./deploy/vps/deploy-image.sh '$IMAGE' '${{ github.sha }}'"
 
   # ── Cloud Run: build → push → deploy ──────────────────────────────────────
   deploy-cloud-run:

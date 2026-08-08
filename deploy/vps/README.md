@@ -62,7 +62,14 @@ docker run --rm --network traccar_default curlimages/curl:8.12.1 \
 
 Troque os nomes da rede/serviço caso o resultado de `docker ps` seja diferente.
 
-O fluxo recomendado é executar manualmente `Build VPS image` no GitHub Actions com `deploy=true`. O CI roda typecheck/testes, publica `ghcr.io/<owner>/ktag-platform:<commit>` e a VPS apenas baixa a imagem imutável.
+O fluxo recomendado é executar manualmente `Deploy` no GitHub Actions com
+`target=all` e `environment=production`. O mesmo CI valida o projeto, implanta
+Cloud Run, Functions e Firestore, publica `ghcr.io/<owner>/ktag-platform:<commit>`
+e faz a VPS baixar a imagem imutável.
+
+Antes de usar `all` em produção, crie a variável de repositório
+`KTAG_TRACCAR_REALTIME_ENABLED=false`. Assim o Cloud Run continua servindo a
+aplicação sem competir com o worker realtime ativo na VPS.
 
 Secrets necessários no GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_PORT`,
 `VPS_SSH_PRIVATE_KEY`, `VPS_SSH_KNOWN_HOSTS`, `VPS_APP_PATH` e os
@@ -76,9 +83,10 @@ fingerprint da VPS antes:
 ssh-keyscan -p 22 SEU_HOST_VPS
 ```
 
-No GitHub, abra **Actions → Build VPS image → Run workflow**, marque `deploy=true`
-somente após a instalação inicial. O workflow `Deploy` continua disponível para
-rollback/manual de Cloud Run, Functions e Firestore, mas nunca roda por push.
+No GitHub, abra **Actions → Deploy → Run workflow**, selecione `target=all` e
+`environment=production` somente após a instalação inicial. Também é possível
+selecionar `target=vps` para implantar apenas a VPS. O workflow nunca roda por
+push.
 
 ## Migração sem indisponibilidade
 
