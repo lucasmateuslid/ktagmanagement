@@ -33,6 +33,11 @@ export const useAiTools = () => {
                 name: 'analyze_operations',
                 description: 'Cruza OS pendentes, técnicos, frota e estoque com indicadores de SLA e capacidade. Use para diagnósticos, riscos e panoramas operacionais.',
                 parameters: { type: 'OBJECT', properties: {} }
+            },
+            {
+                name: 'audit_fleet_identifiers',
+                description: 'Audita IMEIs e identificadores duplicados, Tags ligadas a vários veículos e vínculos para Tags inexistentes. Use para duplicidade, estoque negativo, divergência cadastral ou integridade da frota.',
+                parameters: { type: 'OBJECT', properties: {} }
             }
       ];
   }, []);
@@ -131,18 +136,28 @@ export const useAiTools = () => {
 
       if (name === 'get_fleet_stats') {
         const [tags, vehs] = await Promise.all([storage.getTags(), storage.getVehicles()]);
-        const linkedCount = vehs.filter(v => v.tagId).length;
+        const registeredIds = new Set(tags.map(t => t.id));
+        const assignments = vehs.filter(v => v.tagId);
+        const assignedIds = new Set(assignments.map(v => v.tagId as string));
+        const validAssignedIds = new Set([...assignedIds].filter(id => registeredIds.has(id)));
+        const orphanCount = assignments.filter(v => !registeredIds.has(v.tagId as string)).length;
+        const duplicateCount = assignments.length - assignedIds.size;
         const totalTags = tags.length;
-        const availableTags = tags.filter(t => t.status === 'disponível').length;
+        const availableTags = tags.filter(t => !assignedIds.has(t.id)).length;
         const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
 
         return {
             textual: JSON.stringify({
                 frotaTotal: vehs.length,
-                veiculosComTag: linkedCount,
+                veiculosComTagInformada: assignments.length,
+                veiculosComTagValida: assignments.filter(v => registeredIds.has(v.tagId as string)).length,
+                tagsUnicasEmUso: validAssignedIds.size,
                 totalTags,
                 tagsOciosas: availableTags,
                 tagsManutencao: maintenanceTags,
+                vinculosOrfaos: orphanCount,
+                vinculosDuplicados: duplicateCount,
+                estoqueNegativo: false,
                 percentualOcioso: totalTags ? Math.round((availableTags / totalTags) * 100) : 0,
             }),
             visual: React.createElement("div", { className: "grid grid-cols-2 gap-2 w-full mb-1" },
@@ -155,6 +170,55 @@ export const useAiTools = () => {
                     React.createElement("p", { className: "text-xl font-black text-primary-500" }, availableTags)
                 )
             )
+        };
+      }
+
+      if (name === 'audit_fleet_identifiers') {
+        const [tags, vehicles] = await Promise.all([storage.getTags(), storage.getVehicles()]);
+        const normalize = (value?: string) => (value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        const groupDuplicates = (entries: Array<{ value: string; label: string }>) => {
+          const groups = new Map<string, string[]>();
+          entries.forEach(({ value, label }) => {
+            if (!value) return;
+            groups.set(value, [...(groups.get(value) || []), label]);
+          });
+          return [...groups.entries()]
+            .filter(([, labels]) => labels.length > 1)
+            .map(([value, labels]) => ({ value, registros: labels }));
+        };
+
+        const registeredIds = new Set(tags.map(t => normalize(t.id)));
+        const vehicleAssignments = new Map<string, string[]>();
+        vehicles.forEach(vehicle => {
+          const tagId = normalize(vehicle.tagId);
+          if (!tagId) return;
+          vehicleAssignments.set(tagId, [...(vehicleAssignments.get(tagId) || []), vehicle.plate]);
+        });
+
+        const tagsEmMaisDeUmVeiculo = [...vehicleAssignments.entries()]
+          .filter(([, plates]) => plates.length > 1)
+          .map(([tagId, placas]) => ({ tagId, placas }));
+        const vinculosOrfaos = vehicles
+          .filter(vehicle => vehicle.tagId && !registeredIds.has(normalize(vehicle.tagId)))
+          .map(vehicle => ({ placa: vehicle.plate, tagId: vehicle.tagId }));
+        const imeisDuplicados = groupDuplicates(tags.map(tag => ({ value: normalize(tag.imei), label: tag.id })))
+          .map(item => ({ imei: item.value, tags: item.registros }));
+        const acessoriosDuplicados = groupDuplicates(tags.map(tag => ({ value: normalize(tag.accessoryId), label: tag.id })))
+          .map(item => ({ accessoryId: item.value, tags: item.registros }));
+        const identificadoresDuplicados = groupDuplicates(tags.map(tag => ({ value: normalize(tag.identifierNormalized), label: tag.id })))
+          .map(item => ({ identificador: item.value, tags: item.registros }));
+        const totalInconsistencias = tagsEmMaisDeUmVeiculo.length + vinculosOrfaos.length + imeisDuplicados.length + acessoriosDuplicados.length + identificadoresDuplicados.length;
+
+        return {
+          textual: JSON.stringify({
+            resumo: { veiculos: vehicles.length, tags: tags.length, totalInconsistencias },
+            tagsEmMaisDeUmVeiculo,
+            vinculosOrfaos,
+            imeisDuplicados,
+            acessoriosDuplicados,
+            identificadoresDuplicados,
+          }),
+          visual: React.createElement(React.Fragment, null),
         };
       }
 
@@ -195,9 +259,14 @@ export const useAiTools = () => {
         const pendingSchedules = scheds.filter(s => s.status === 'Solicitada' || s.status === 'Em análise' || s.status === 'Reagendada');
         const activeTechs = techs.filter(t => t.active);
         const offlineVehicles = vehs.filter(v => v.status === 'maintenance' || v.status === 'stolen');
-        const availableTags = tags.filter(t => t.status === 'disponível').length;
+        const registeredTagIds = new Set(tags.map(t => t.id));
+        const tagAssignments = vehs.filter(v => v.tagId).map(v => v.tagId as string);
+        const uniqueAssignedTagIds = new Set(tagAssignments);
+        const availableTags = tags.filter(t => !uniqueAssignedTagIds.has(t.id)).length;
+        const orphanAssignments = tagAssignments.filter(id => !registeredTagIds.has(id)).length;
+        const duplicateAssignments = tagAssignments.length - uniqueAssignedTagIds.size;
         const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
-        const inUseTags = tags.filter(t => t.status === 'em_uso').length;
+        const inUseTags = [...uniqueAssignedTagIds].filter(id => registeredTagIds.has(id)).length;
         const CAP = 12; // detalhes prioritários; totais completos permanecem nas métricas.
         const now = Date.now();
         const technicianById = new Map(techs.map(t => [t.id, t.name]));
@@ -224,6 +293,8 @@ export const useAiTools = () => {
                 ratioOsPorTecnico: activeTechs.length ? Number((pendingSchedules.length / activeTechs.length).toFixed(2)) : pendingSchedules.length,
                 percentualEstoqueOcioso: tags.length ? Math.round((availableTags / tags.length) * 100) : 0,
                 coberturaGpsPercentual: vehs.length ? Math.round((vehs.filter(v => v.tagId).length / vehs.length) * 100) : 0,
+                vinculosOrfaos: orphanAssignments,
+                vinculosDuplicados: duplicateAssignments,
             },
             tecnicos: techs.map(t => ({
                 nome: t.name,

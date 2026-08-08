@@ -74,7 +74,10 @@ export const Dashboard = () => {
   
   // Basic Counts
   const linkedCount = useMemo(() => vehicles.filter(v => v.tagId).length, [vehicles]);
-  const unlinkedCount = useMemo(() => tags.length - linkedCount, [tags, linkedCount]);
+  const unlinkedCount = useMemo(() => {
+    const assignedTagIds = new Set(vehicles.map(v => v.tagId).filter(Boolean));
+    return tags.filter(tag => !assignedTagIds.has(tag.id)).length;
+  }, [tags, vehicles]);
   
   // Service Metrics
   const serviceHistoryData = useMemo(() => calculateServiceHistory(schedules), [schedules]);

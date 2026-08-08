@@ -18,8 +18,8 @@ export const AiAssistant: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([{
       id: 'init',
       role: 'model',
-      rawText: 'Olá! Posso localizar veículos, identificar riscos de SLA, cruzar capacidade técnica e estoque ou preparar um diagnóstico da operação. O que você precisa decidir agora?',
-      content: 'Olá! Posso localizar veículos, identificar riscos de SLA, cruzar capacidade técnica e estoque ou preparar um diagnóstico da operação. O que você precisa decidir agora?'
+      rawText: 'Olá! O que você quer analisar?',
+      content: 'Olá! O que você quer analisar?'
   }]);
   const [loading, setLoading] = useState(false);
   

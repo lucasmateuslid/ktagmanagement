@@ -12,13 +12,16 @@ Você nunca apenas lista dados. Ao receber resultados das suas bases (dados estr
 TOM E ESTRUTURA
 - Executivo, direto, focado em SLA, redução de ociosidade e lucro. Sem floreio.
 - Comece pela conclusão mais importante. Nunca comece com "Claro", "Vou analisar" ou uma explicação do processo.
-- Para perguntas simples, responda em 4 a 8 frases, com contexto suficiente para sustentar a conclusão.
+- Para perguntas simples, responda diretamente em 2 a 4 frases. Não transforme toda resposta em relatório.
 - Para diagnósticos, use **Diagnóstico**, **Evidências**, **Impacto** e **Próximas ações**, explicando de 3 a 5 ações em ordem de prioridade.
 - Use bullets apenas quando houver múltiplos fatos. Destaque KPIs e ações em **negrito**.
 - IMERSÃO: você É o cérebro da plataforma. Nunca mencione ferramenta, JSON, função, back-end, API, provedor, modelo, token, integração interna ou etapas de processamento.
 - Cite dados específicos recebidos: nomes, placas, quantidades, tipos de OS e datas. Nunca generalize quando há detalhe disponível.
 - Diferencie fato confirmado de inferência. Se faltar dado, diga exatamente o que não foi encontrado; não preencha lacunas com suposições.
 - Nunca afirme que abriu OS, alterou cadastro, notificou alguém ou executou qualquer ação que não tenha sido realmente confirmada pelos dados.
+- Só afirme que não há duplicidades, inconsistências ou saldo negativo quando o resultado trouxer essa validação explicitamente.
+- Nunca deduza estoque disponível subtraindo veículos de equipamentos cadastrados. Vínculos órfãos e duplicados são inconsistências, não estoque negativo.
+- Não entregue listas genéricas como "continue monitorando". Explique a causa comprovada e indique a correção específica; se a causa não estiver nos dados, diga qual validação falta.
 - Não repita a pergunta do usuário nem entregue introduções genéricas. Toda resposta deve terminar com uma recomendação concreta ou, quando útil, uma única pergunta objetiva.
 
 THRESHOLDS DE ALERTA (dispare quando os números cruzarem estes limites)
@@ -26,6 +29,11 @@ THRESHOLDS DE ALERTA (dispare quando os números cruzarem estes limites)
 - percentualEstoqueOcioso > 30  → ALERTA de capital parado: hardware em prateleira sem gerar receita. Recomende acelerar instalações.
 - Veículo com status diferente de "active" OU temTagGps=false → recomende vistoria presencial e/ou abertura de OS urgente (ponto cego de telemetria).
 - Ao fim de relatórios densos, faça UMA pergunta acionável (ex.: "Quer que eu priorize as OS por proximidade dos técnicos disponíveis?").`;
+
+const ROUTING_INSTRUCTION = `ROTEAMENTO OBRIGATÓRIO
+- Perguntas sobre duplicidade de IMEI/Tag, estoque negativo ou divergência cadastral: execute audit_fleet_identifiers antes de responder.
+- Perguntas sobre saldo, cobertura ou hardware disponível: execute get_fleet_stats.
+- Nunca responda que uma auditoria está limpa usando apenas totais de frota ou estoque.`;
 
 // Preserva contexto recente sem reenviar indefinidamente respostas e bases extensas.
 // Um único resultado recente de consulta é suficiente para perguntas de continuação.
@@ -56,6 +64,7 @@ const toolStatus = (name: string): string => {
     if (name === 'get_fleet_stats') return 'Conferindo frota e estoque...';
     if (name === 'search_external_data') return 'Consultando registros...';
     if (name === 'analyze_operations') return 'Cruzando indicadores da operação...';
+    if (name === 'audit_fleet_identifiers') return 'Validando vínculos e duplicidades...';
     return 'Consultando dados...';
 };
 
@@ -72,7 +81,21 @@ const buildRecoveredAnswer = (name: string, textual: string): string | null => {
         }
 
         if (name === 'get_fleet_stats') {
-            return `**Diagnóstico**\n\nA frota possui **${data.frotaTotal} veículos**, com **${data.veiculosComTag} rastreados**. O estoque registra **${data.totalTags} Tags**, sendo **${data.tagsOciosas} ociosas** (${data.percentualOcioso}%) e **${data.tagsManutencao} em manutenção**.\n\n**Próxima ação:** ${data.percentualOcioso > 30 ? 'priorize instalações para transformar o estoque parado em cobertura ativa e receita.' : 'mantenha o estoque sob controle e priorize os veículos ainda sem rastreamento.'}`;
+            const issue = data.vinculosOrfaos > 0 || data.vinculosDuplicados > 0;
+            return `Há **${data.tagsOciosas} Tags realmente livres** entre ${data.totalTags} cadastradas. ${issue ? `O cadastro possui **${data.vinculosOrfaos} vínculos órfãos** e **${data.vinculosDuplicados} vínculos duplicados**; essa inconsistência explicava o saldo incorreto.` : `Os vínculos conferem e não existe estoque negativo: ${data.veiculosComTagValida} veículos usam Tags cadastradas.`}\n\n**Próxima ação:** ${issue ? 'abra a auditoria de identificadores para localizar as placas envolvidas e corrigir os vínculos.' : 'use a quantidade de Tags livres como saldo disponível.'}`;
+        }
+
+        if (name === 'audit_fleet_identifiers') {
+            const totalIssues = data.resumo?.totalInconsistencias || 0;
+            if (totalIssues === 0) return `A auditoria conferiu **${data.resumo?.veiculos || 0} veículos** e **${data.resumo?.tags || 0} Tags**. Não foram encontrados IMEIs repetidos, identificadores duplicados, Tags ligadas a mais de um veículo ou vínculos órfãos.`;
+            const examples = [
+                ...(data.tagsEmMaisDeUmVeiculo || []).map((x: any) => `Tag **${x.tagId}** ligada às placas ${x.placas.join(', ')}`),
+                ...(data.imeisDuplicados || []).map((x: any) => `IMEI **${x.imei}** repetido nas Tags ${x.tags.join(', ')}`),
+                ...(data.vinculosOrfaos || []).map((x: any) => `placa **${x.placa}** aponta para a Tag inexistente ${x.tagId}`),
+                ...(data.acessoriosDuplicados || []).map((x: any) => `acessório **${x.accessoryId}** repetido nas Tags ${x.tags.join(', ')}`),
+                ...(data.identificadoresDuplicados || []).map((x: any) => `identificador **${x.identificador}** repetido nas Tags ${x.tags.join(', ')}`),
+            ].slice(0, 5);
+            return `Foram encontradas **${totalIssues} inconsistências**.\n\n${examples.map((item: string) => `- ${item}`).join('\n')}\n\n**Próxima ação:** corrija primeiro os vínculos órfãos e as Tags associadas a múltiplas placas; depois unifique os cadastros com IMEI repetido.`;
         }
 
         if (name === 'search_external_data') {
@@ -177,7 +200,7 @@ export const useAiLogic = ({
               contents: formattedHistory,
               config: {
                   tools: toolsInfo as any,
-                  systemInstruction: SYSTEM_INSTRUCTION,
+                  systemInstruction: `${SYSTEM_INSTRUCTION}\n\n${ROUTING_INSTRUCTION}`,
                   temperature: 0.4,
                   maxOutputTokens
               }
@@ -219,7 +242,7 @@ export const useAiLogic = ({
                     contents: formattedHistory,
                     config: {
                         tools: toolsInfo as any,
-                        systemInstruction: SYSTEM_INSTRUCTION,
+                        systemInstruction: `${SYSTEM_INSTRUCTION}\n\n${ROUTING_INSTRUCTION}`,
                         temperature: 0.45,
                         maxOutputTokens
                     }
@@ -265,7 +288,7 @@ export const useAiLogic = ({
             role: m.role === 'model' ? 'assistant' : 'user',
             content: m.rawText
         }));
-        apiMessages.unshift({ role: 'system', content: SYSTEM_INSTRUCTION });
+        apiMessages.unshift({ role: 'system', content: `${SYSTEM_INSTRUCTION}\n\n${ROUTING_INSTRUCTION}` });
         apiMessages.push({ role: 'user', content: userMessage });
 
         // Faz a chamada (proxy para groq/deepseek/proxy explícito, direto caso contrário).
@@ -395,7 +418,7 @@ export const useAiLogic = ({
             return res.json();
         };
 
-        let data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: maxTokens, temperature: 0.4, tools });
+        let data = await callApi({ model: 'claude-3-haiku-20240307', system: `${SYSTEM_INSTRUCTION}\n\n${ROUTING_INSTRUCTION}`, messages: apiMessages, max_tokens: maxTokens, temperature: 0.4, tools });
         let iterations = 0;
         let toolUse = data.content?.find((c: any) => c.type === 'tool_use');
 
@@ -423,7 +446,7 @@ export const useAiLogic = ({
             apiMessages.push({ role: "user", content: toolResults });
 
             setStat('Analisando as informações...');
-            data = await callApi({ model: 'claude-3-haiku-20240307', system: SYSTEM_INSTRUCTION, messages: apiMessages, max_tokens: maxTokens, temperature: 0.45, tools });
+            data = await callApi({ model: 'claude-3-haiku-20240307', system: `${SYSTEM_INSTRUCTION}\n\n${ROUTING_INSTRUCTION}`, messages: apiMessages, max_tokens: maxTokens, temperature: 0.45, tools });
             toolUse = data.content?.find((c: any) => c.type === 'tool_use');
         }
 
