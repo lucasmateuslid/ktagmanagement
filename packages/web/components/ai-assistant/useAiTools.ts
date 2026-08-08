@@ -94,6 +94,10 @@ export const useAiTools = () => {
         };
 
         const resultLink = v.tagId ? `${window.location.origin}/#/map?tagId=${v.tagId}&autoStart=true` : null;
+        const lastPositionAt = v.lastPosition?.timestamp || null;
+        const minutesSinceLastPosition = lastPositionAt
+            ? Math.max(0, Math.round((Date.now() - lastPositionAt) / 60_000))
+            : null;
 
         return {
             textual: JSON.stringify({
@@ -104,6 +108,9 @@ export const useAiTools = () => {
                 temTagGps: !!v.tagId,
                 tagId: v.tagId || null,
                 linkMapa: resultLink,
+                ultimaPosicaoEm: lastPositionAt ? new Date(lastPositionAt).toISOString() : null,
+                minutosSemAtualizacao: minutesSinceLastPosition,
+                coordenadas: v.lastPosition ? { lat: v.lastPosition.lat, lon: v.lastPosition.lon } : null,
             }),
             visual: React.createElement("div", { className: "bg-zinc-800/80 p-3 rounded-xl border border-zinc-700 w-full mb-1" },
                 React.createElement("div", { className: "flex items-center gap-2 mb-2 text-primary-500" },
@@ -192,6 +199,17 @@ export const useAiTools = () => {
         const maintenanceTags = tags.filter(t => t.status === 'manutencao').length;
         const inUseTags = tags.filter(t => t.status === 'em_uso').length;
         const CAP = 30; // limita arrays para não estourar contexto; totais ficam nas métricas.
+        const now = Date.now();
+        const technicianById = new Map(techs.map(t => [t.id, t.name]));
+        const pendingWithoutTechnician = pendingSchedules.filter(s => !s.technicianId).length;
+        const criticalSchedules = pendingSchedules.filter(s => {
+            const reference = s.status === 'Em análise' && s.analysisStartedAt ? s.analysisStartedAt : s.createdAt;
+            return now - reference >= 60 * 60 * 1000;
+        });
+        const oldestPendingHours = pendingSchedules.reduce((max, s) => {
+            const reference = s.status === 'Em análise' && s.analysisStartedAt ? s.analysisStartedAt : s.createdAt;
+            return Math.max(max, Math.round((now - reference) / 3_600_000));
+        }, 0);
 
         // textual: SOMENTE dados estruturados (arrays de objetos + fatos derivados).
         // Nada de instruções — a análise/thresholds vivem no SYSTEM_INSTRUCTION.
@@ -200,8 +218,12 @@ export const useAiTools = () => {
                 tecnicosAtivos: activeTechs.length,
                 tecnicosInativos: techs.length - activeTechs.length,
                 totalOsPendentes: pendingSchedules.length,
+                osSemTecnico: pendingWithoutTechnician,
+                osEmSlaCritico: criticalSchedules.length,
+                maiorEsperaHoras: oldestPendingHours,
                 ratioOsPorTecnico: activeTechs.length ? Number((pendingSchedules.length / activeTechs.length).toFixed(2)) : pendingSchedules.length,
                 percentualEstoqueOcioso: tags.length ? Math.round((availableTags / tags.length) * 100) : 0,
+                coberturaGpsPercentual: vehs.length ? Math.round((vehs.filter(v => v.tagId).length / vehs.length) * 100) : 0,
             },
             tecnicos: techs.map(t => ({
                 nome: t.name,
@@ -219,7 +241,10 @@ export const useAiTools = () => {
                 horaPreferida: s.preferredTime,
                 solicitante: s.requesterName,
                 tecnicoId: s.technicianId || null,
+                tecnicoNome: s.technicianId ? technicianById.get(s.technicianId) || null : null,
                 criadoEm: s.createdAt,
+                esperaHoras: Math.max(0, Math.round((now - (s.analysisStartedAt || s.createdAt)) / 3_600_000)),
+                slaCritico: now - (s.analysisStartedAt || s.createdAt) >= 60 * 60 * 1000,
             })),
             frotaOffline: offlineVehicles.slice(0, CAP).map(v => ({
                 placa: v.plate,

@@ -5,6 +5,8 @@ export interface ChatMessage {
     role: 'user' | 'model' | 'tool';
     content: React.ReactNode;
     rawText: string;
+    /** Mantém contexto para a IA sem exibir detalhes técnicos ao usuário. */
+    hidden?: boolean;
 }
 
 export interface AiAssistantState {

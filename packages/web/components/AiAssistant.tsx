@@ -14,12 +14,12 @@ export const AiAssistant: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   
-  const [status, setStatus] = useState<string>('Terminal Conectado');
+  const [status, setStatus] = useState<string>('Pronta para ajudar');
   const [messages, setMessages] = useState<ChatMessage[]>([{
       id: 'init',
       role: 'model',
-      rawText: 'Olá! Sou a **Monitora 360 AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?',
-      content: 'Olá! Sou a **Monitora 360 AI**, sua assistente analítica de operações. Posso localizar veículos, checar a saúde da frota, alertar sobre atrasos e analisar gargalos técnicos do seu negócio. Como posso ajudar agora?'
+      rawText: 'Olá! Posso localizar veículos, identificar riscos de SLA, cruzar capacidade técnica e estoque ou preparar um diagnóstico da operação. O que você precisa decidir agora?',
+      content: 'Olá! Posso localizar veículos, identificar riscos de SLA, cruzar capacidade técnica e estoque ou preparar um diagnóstico da operação. O que você precisa decidir agora?'
   }]);
   const [loading, setLoading] = useState(false);
   
@@ -110,7 +110,7 @@ export const AiAssistant: React.FC = () => {
     
     setInput('');
     setLoading(true);
-    setStatus('Inspecionando Lógica Cognitiva...');
+    setStatus('Pensando...');
     
     await processMessage(userMessage);
   };
@@ -142,15 +142,22 @@ export const AiAssistant: React.FC = () => {
 
             {/* Chat Messages */}
             <div className="p-4 bg-gradient-to-b from-[#09090b] to-[#040405] min-h-[300px] max-h-[400px] overflow-y-auto flex flex-col gap-4">
-                {messages.map((msg) => (
+                {messages.filter(msg => !msg.hidden).map((msg) => (
                     <AiMessageItem key={msg.id} msg={msg} />
                 ))}
                 
                 {loading && (
                     <div className="flex items-start">
-                        <div className="bg-zinc-800 border border-zinc-700 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
-                             <Loader2 size={12} className="animate-spin text-emerald-500"/>
-                             <span className="text-[9px] text-zinc-400 font-mono tracking-widest uppercase">{status}</span>
+                        <div className="bg-zinc-800 border border-zinc-700 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2.5">
+                             <Loader2 size={13} className="animate-spin text-emerald-500"/>
+                             <AnimatePresence mode="wait">
+                               <MotionDiv key={status} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }} className="text-[11px] text-zinc-300 font-medium">
+                                 {status}
+                               </MotionDiv>
+                             </AnimatePresence>
+                             <span className="flex gap-0.5" aria-hidden>
+                               {[0, 1, 2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-emerald-500/70 animate-pulse" style={{ animationDelay: `${i * 180}ms` }} />)}
+                             </span>
                         </div>
                     </div>
                 )}
@@ -162,9 +169,9 @@ export const AiAssistant: React.FC = () => {
                {/* Quick Chips */}
                <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                   {[
-                    { label: 'O que você faz?', cmd: 'O que o sistema lhe permite analisar internamente da nossa gestão?', icon: Bot },
-                    { label: 'Visão de Negócio', cmd: 'Quero um parecer gerencial da minha operação atual puxando os analíticos.', icon: BarChart3 },
-                    { label: 'Estoque Restante', cmd: 'Quantos hardware temos em estoque físico versus aplicados ativos?', icon: Activity }
+                    { label: 'Risco de SLA', cmd: 'Quais são os riscos de SLA agora, quais OS exigem prioridade e qual ação você recomenda primeiro?', icon: Bot },
+                    { label: 'Diagnóstico', cmd: 'Faça um diagnóstico objetivo da operação atual, destacando gargalos, evidências e as três próximas ações.', icon: BarChart3 },
+                    { label: 'Frota e estoque', cmd: 'Compare cobertura GPS, hardware em uso e estoque ocioso. Aponte o principal desperdício e uma ação concreta.', icon: Activity }
                   ].map((btn, i) => (
                     <button key={i} onClick={() => handleConsoleSubmit(btn.cmd)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wide transition-all shrink-0 border border-zinc-700/50 shadow-sm">
                         {React.createElement(btn.icon, { size: 10 })} {btn.label}
@@ -177,7 +184,7 @@ export const AiAssistant: React.FC = () => {
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Questione o seu assistente de gestão..."
+                    placeholder="Pergunte sobre a sua operação..."
                     className="w-full pl-4 pr-12 py-3.5 bg-[#09090b] border border-zinc-800 rounded-xl outline-none focus:border-emerald-500/50 focus:bg-zinc-900/50 text-zinc-100 text-[13px] placeholder:text-zinc-600 transition-all font-medium shadow-inner"
                   />
                   <button
