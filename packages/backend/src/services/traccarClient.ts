@@ -37,7 +37,16 @@ export class TraccarClient {
       console.info(JSON.stringify({ event: 'traccar.rest.success', operation, statusCode: response.status, latencyMs: Date.now() - started }));
       if (!text) return undefined as T;
       const contentType = response.headers.get('content-type') || '';
-      return (contentType.includes('json') ? JSON.parse(text) : text) as T;
+      if (contentType.includes('json')) {
+        try { return JSON.parse(text) as T; }
+        catch {
+          // Algumas instalações do Traccar respondem geocode como texto puro,
+          // mesmo declarando application/json.
+          if (operation === 'reverseGeocode') return text as T;
+          throw new Error(`Resposta JSON inválida recebida do Traccar em ${operation}.`);
+        }
+      }
+      return text as T;
     } catch (error) {
       const message = error instanceof Error && error.name === 'AbortError' ? 'Tempo limite excedido ao consultar o Traccar.' : (error as Error).message;
       console.error(JSON.stringify({ event: 'traccar.rest.failure', operation, latencyMs: Date.now() - started, error: message }));

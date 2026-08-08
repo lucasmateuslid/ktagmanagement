@@ -6,7 +6,16 @@ import { addressResolver } from './addressResolver.js';
 import { traccarClient, TraccarHttpError } from './traccarClient.js';
 
 const positionCache = new Map<number, { expiresAt: number; value: TrackedPosition }>();
-export const toTrackedPosition = (position: TraccarPosition, address?: string | null): TrackedPosition => ({
+const stripUndefined = <T>(value: T): T => {
+  if (Array.isArray(value)) return value.map(stripUndefined) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .map(([key, child]) => [key, stripUndefined(child)])) as T;
+  }
+  return value;
+};
+export const toTrackedPosition = (position: TraccarPosition, address?: string | null): TrackedPosition => stripUndefined({
   id: position.id, deviceId: position.deviceId, latitude: position.latitude, longitude: position.longitude,
   altitude: position.altitude, speed: position.speed, course: position.course,
   accuracy: typeof position.attributes?.accuracy === 'number' ? position.attributes.accuracy : undefined,

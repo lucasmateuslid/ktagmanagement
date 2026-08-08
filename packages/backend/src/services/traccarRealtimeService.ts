@@ -73,7 +73,15 @@ export class TraccarRealtimeService {
         ? await xadTagService.resolvePosition(raw)
         : toTrackedPosition(raw, item.lastPosition?.address || null);
       item.lastPosition = tracked;
-      if (shouldPersist) { await xadTagRepository.persistPosition(item, tracked); this.lastPersistAt.set(raw.deviceId, now); }
+      if (shouldPersist) {
+        try {
+          await xadTagRepository.persistPosition(item, tracked);
+          this.lastPersistAt.set(raw.deviceId, now);
+        } catch (error) {
+          // Uma posição inválida não pode encerrar o worker nem derrubar a API.
+          console.error(JSON.stringify({ event: 'traccar.position.persist_failed', deviceId: raw.deviceId, error: (error as Error).message }));
+        }
+      }
       const asset = xadTagService.toLiveMap(item); if (asset) broadcastPosition(mapping.tenantId, asset);
     }
   }
