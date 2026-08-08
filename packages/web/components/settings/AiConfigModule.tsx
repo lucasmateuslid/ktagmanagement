@@ -3,25 +3,50 @@ import { Bot, Save, AlertTriangle, CheckCircle2, Eye, EyeOff } from 'lucide-reac
 import { storage } from '../../services/storage';
 import { AppSettings } from '../../types';
 
-interface AiConfigModuleProps { embedded?: boolean }
-export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false }) => {
+interface AiConfigModuleProps { embedded?: boolean; scope?: 'tenant' | 'platform' }
+export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false, scope = 'tenant' }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    storage.getSettings().then(s => setSettings(s));
-  }, []);
+    const load = scope === 'platform'
+      ? storage.getPlatformIntegrations().then(s => setSettings(s as AppSettings))
+      : storage.getSettings().then(s => setSettings(s));
+    load.catch((err: any) => setError(err?.message || 'Falha ao carregar configurações de IA.'));
+  }, [scope]);
 
   if (!settings) return null;
 
   const handleSave = async () => {
     setIsSaving(true);
-    await storage.saveSettings(settings);
-    setIsSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setError('');
+    try {
+      if (scope === 'platform') {
+        const current = await storage.getPlatformIntegrations();
+        await storage.savePlatformIntegrations({
+          ...current,
+          aiProvider: settings.aiProvider,
+          geminiApiKey: settings.geminiApiKey,
+          openAiApiKey: settings.openAiApiKey,
+          anthropicApiKey: settings.anthropicApiKey,
+          groqApiKey: settings.groqApiKey,
+          deepseekApiKey: settings.deepseekApiKey,
+          nvidiaApiKey: settings.nvidiaApiKey,
+          nvidiaModel: settings.nvidiaModel,
+        });
+      } else {
+        await storage.saveSettings(settings);
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao salvar configurações de IA.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleShowKey = (provider: string) => {
@@ -39,6 +64,11 @@ export const AiConfigModule: React.FC<AiConfigModuleProps> = ({ embedded = false
 
   const body = (
     <div className="space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
         <p className="text-xs text-zinc-500 leading-relaxed font-medium">
           A assistente K-Tag AI Admin precisa de uma chave de API para funcionar. Se a chave padrão do sistema estiver falhando por excesso de uso, você pode configurar provedores alternativos abaixo e selecionar qual deseja usar.
         </p>

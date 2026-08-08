@@ -99,7 +99,7 @@ export const AdminTraccarIntegration = () => {
 
     <section className="rounded-3xl border border-white/5 bg-white/[0.025] p-6 space-y-5">
       <div className="flex items-center gap-3"><div className="rounded-2xl bg-purple-500/10 p-3 text-purple-400"><Activity size={20} /></div><div><h2 className="font-display font-black uppercase tracking-wider">Motor de inteligência artificial</h2><p className="text-xs text-zinc-500">Selecione NVIDIA NIM e escolha um modelo do catálogo ou informe outro identificador compatível.</p></div></div>
-      <AiConfigModule embedded />
+      <AiConfigModule embedded scope="platform" />
       <div className="flex items-start gap-2 rounded-xl border border-sky-500/10 bg-sky-500/5 p-3 text-[11px] text-sky-200/70"><Cloud size={14} className="mt-0.5 shrink-0" /> NVIDIA NIM usa a API OpenAI-compatible. O modelo pode ser trocado sem alterar o assistente ou suas ferramentas.</div>
     </section>
   </div>;

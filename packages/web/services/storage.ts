@@ -20,11 +20,18 @@ import { encryption } from './encryption';
 import { securityService } from './security';
 
 // Integrações configuradas no nível da plataforma pelo super admin
-// (/ktag_settings_v3/platform_integrations). Hoje só carrega o proxy/relay
-// compartilhado — endpoints e tokens (K-TAG URL, Traqcare etc.) continuam
-// sob controle de cada tenant.
+// (/ktag_settings_v3/platform_integrations). Proxy e provedor de IA são
+// compartilhados; endpoints e tokens operacionais continuam por tenant.
 export interface PlatformIntegrations {
   proxyUrl?: string;       // Cloud Function que faz bypass de CORS
+  aiProvider?: AppSettings['aiProvider'];
+  geminiApiKey?: string;
+  openAiApiKey?: string;
+  anthropicApiKey?: string;
+  groqApiKey?: string;
+  deepseekApiKey?: string;
+  nvidiaApiKey?: string;
+  nvidiaModel?: string;
   updatedAt?: number;
 }
 
@@ -617,6 +624,14 @@ export const storage = {
     return {
       ...tenantSettings,
       customProxyUrl: platform.proxyUrl || tenantSettings.customProxyUrl || '',
+      aiProvider: platform.aiProvider || tenantSettings.aiProvider,
+      geminiApiKey: platform.geminiApiKey || tenantSettings.geminiApiKey,
+      openAiApiKey: platform.openAiApiKey || tenantSettings.openAiApiKey,
+      anthropicApiKey: platform.anthropicApiKey || tenantSettings.anthropicApiKey,
+      groqApiKey: platform.groqApiKey || tenantSettings.groqApiKey,
+      deepseekApiKey: platform.deepseekApiKey || tenantSettings.deepseekApiKey,
+      nvidiaApiKey: platform.nvidiaApiKey || tenantSettings.nvidiaApiKey,
+      nvidiaModel: platform.nvidiaModel || tenantSettings.nvidiaModel,
     };
   },
 
