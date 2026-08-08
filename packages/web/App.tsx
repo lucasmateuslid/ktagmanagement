@@ -44,6 +44,7 @@ const ShipmentPrint = lazy(() => import('./pages/Shipments/ShipmentPrint').then(
 
 // Traccar GPS
 const TrackersPage = lazy(() => import('./pages/trackers/TrackersPage').then(m => ({ default: m.TrackersPage })));
+const AssetManagement = lazy(() => import('./pages/AssetManagement').then(m => ({ default: m.AssetManagement })));
 
 import { hasPermission } from './utils/permissions';
 
@@ -153,6 +154,7 @@ const TenantRoutes = () => (
       <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
       <Route path="/billing" element={<RoleProtectedRoute permission="ROUTE_BILLING"><Billing /></RoleProtectedRoute>} />
       <Route path="/trackers" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><TrackersPage /></RoleProtectedRoute>} />
+      <Route path="/assets" element={<RoleProtectedRoute permission="ROUTE_ASSETS"><AssetManagement /></RoleProtectedRoute>} />
     </Route>
   </Routes>
 );

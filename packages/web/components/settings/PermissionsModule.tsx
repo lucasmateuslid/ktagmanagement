@@ -38,6 +38,7 @@ const PERMISSION_GROUPS: Array<{
       { id: PERMISSIONS.SHIPMENTS,  label: 'Envios e Remessas' },
       { id: PERMISSIONS.CLIENTS,    label: 'Clientes' },
       { id: PERMISSIONS.TAGS,       label: 'Estoque de Tags' },
+      { id: PERMISSIONS.ASSETS,     label: 'Ativos, Rastreadores e Chips' },
     ],
   },
   {

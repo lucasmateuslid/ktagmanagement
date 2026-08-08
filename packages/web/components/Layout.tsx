@@ -16,7 +16,7 @@ import {
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home, Package, Receipt, Building2
+  Home, Package, Receipt, Building2, Boxes
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -324,7 +324,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront, perm: 'ROUTE_VEHICLES' },
           { label: 'ENVIOS', path: '/envios', icon: Package, perm: 'ROUTE_SHIPMENTS' },
           { label: 'CLIENTES', path: '/clients', icon: Users, perm: 'ROUTE_CLIENTS' },
-          { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags, perm: 'ROUTE_TAGS' }
+          { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags, perm: 'ROUTE_TAGS' },
+          { label: 'ATIVOS E CHIPS', path: '/assets', icon: Boxes, perm: 'ROUTE_ASSETS' }
         ]
       },
       {

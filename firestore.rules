@@ -213,6 +213,19 @@ service cloud.firestore {
     match /tenants/{tenantId}/trackers/{docId} {
       allow read, write: if isMemberOf(tenantId);
     }
+    match /tenants/{tenantId}/sim_cards/{docId} {
+      allow read, write: if isMemberOf(tenantId);
+    }
+    match /tenants/{tenantId}/equipment_suppliers/{docId} {
+      allow read, write: if isMemberOf(tenantId);
+    }
+    match /tenants/{tenantId}/equipment_purchases/{docId} {
+      allow read, write: if isMemberOf(tenantId);
+    }
+    match /tenants/{tenantId}/inventory_movements/{docId} {
+      allow read, create: if isMemberOf(tenantId);
+      allow update, delete: if false;
+    }
     match /tenants/{tenantId}/vehicles/{vehicleId} {
       allow read, write: if isMemberOf(tenantId);
       match /history/{histId} {
