@@ -358,6 +358,7 @@ async function performReverseGeocoding(lat: number, lng: number, geocoderPrefere
 // ---------------------------------------------------------------
 
 const RESERVED_SUBDOMAINS = new Set(['admin', 'api', 'www', 'mail', 'ftp', 'static', 'cdn', 'auth', 'lock']);
+const API_GATEWAY_SUBDOMAINS = new Set(['api', 'api-vps']);
 const APEX_TENANT = '__apex__';
 
 function extractTenantFromHostname(hostname: string): string {
@@ -389,6 +390,8 @@ function resolveTenant(req: express.Request, res: express.Response, next: expres
   let tenantId = hostTenant;
   if (tenantId === 'localhost') {
     tenantId = headerTenant || queryTenant || (process.env.DEFAULT_DEV_TENANT || 'dev-tenant');
+  } else if (API_GATEWAY_SUBDOMAINS.has(tenantId)) {
+    tenantId = headerTenant || queryTenant || APEX_TENANT;
   }
 
   req.tenantId = tenantId;
