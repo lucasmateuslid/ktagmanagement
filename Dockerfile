@@ -20,6 +20,7 @@ RUN npm ci --no-audit --no-fund
 
 # Copia código-fonte de todos os packages
 COPY packages/ ./packages/
+COPY constants/ ./constants/
 
 # Firebase build-time args (injetados pelo CI via --build-arg)
 ARG VITE_FIREBASE_API_KEY
