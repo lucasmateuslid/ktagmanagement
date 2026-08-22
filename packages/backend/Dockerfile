@@ -3,7 +3,7 @@
 #
 # Cloud Run injeta PORT (padrão 8080). O server lê via process.env.PORT.
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production

@@ -7,7 +7,7 @@
 # Cloud Run injeta PORT (padrão 8080). O server lê via process.env.PORT.
 
 # ---------- STAGE 1: build ----------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copia manifests do workspace root e de cada package
@@ -41,7 +41,7 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
 RUN npm run build --workspace=@ktag/web
 
 # ---------- STAGE 2: runtime ----------
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
