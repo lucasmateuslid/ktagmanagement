@@ -96,7 +96,7 @@ const FinanceiroDashboard = () => {
           label="Empresas totais"
           icon={<Building2 size={16} className="text-blue-400" />}
           value={loading ? null : String(stats.totalTenants)}
-          subtitle="Tenants ativos no sistema"
+          subtitle="Empresas ativas no sistema"
         />
         <DashboardTile
           label="Taxa de inadimplência"

@@ -39,7 +39,7 @@ export const AdminAudit = () => {
     <div className="space-y-6">
       <header>
         <h1 className="font-display text-2xl font-black uppercase tracking-widest">Auditoria do Sistema</h1>
-        <p className="text-zinc-500 text-sm mt-1">Eventos cross-tenant registrados em <code className="text-amber-500">/system_audit_logs</code>.</p>
+        <p className="text-zinc-500 text-sm mt-1">Eventos entre empresas registrados no log central da plataforma.</p>
       </header>
 
       <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl overflow-hidden">
@@ -51,7 +51,7 @@ export const AdminAudit = () => {
           <div className="p-10 text-center text-zinc-500">
             <FileText className="mx-auto mb-3 opacity-50" />
             <p className="text-sm font-bold uppercase tracking-widest">Sem eventos registrados</p>
-            <p className="text-xs mt-2">Operações de super admin (criação/desativação de tenants etc.) aparecerão aqui.</p>
+            <p className="text-xs mt-2">Operações administrativas, como criação e desativação de empresas, aparecerão aqui.</p>
           </div>
         ) : (
           <table className="w-full text-sm">

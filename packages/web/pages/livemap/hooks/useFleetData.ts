@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { storage } from '../../../services/storage';
 import { Tag, Vehicle, VehicleCategory, Client, User } from '../../../types';
+import { authenticatedFetch } from '../../../services/authenticatedFetch';
 
 export const useFleetData = (user: User | null) => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -13,6 +14,16 @@ export const useFleetData = (user: User | null) => {
     let unsubscribe = () => {};
 
     const loadInitialData = async () => {
+        if (user?.role === 'client') {
+          const response = await authenticatedFetch('/api/client/fleet');
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Falha ao carregar frota.');
+          setTags(payload.data.tags || []);
+          setVehicles(payload.data.vehicles || []);
+          setCategories(payload.data.categories || []);
+          setClients([]);
+          return;
+        }
         const [allTags, allCategories, allClients] = await Promise.all([
           storage.getTags(),
           storage.getCategories(),

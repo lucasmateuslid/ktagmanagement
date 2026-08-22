@@ -1,5 +1,6 @@
 {
   "name": "functions",
+  "version": "5.1.0",
   "description": "K-Tag API Proxy Function",
   "scripts": {
     "serve": "firebase emulators:start --only functions",

@@ -5,6 +5,7 @@
  */
 import { httpsCallable, type HttpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
+import { authenticatedFetch } from './authenticatedFetch';
 import type {
   Tenant,
   TenantUsage,
@@ -93,8 +94,14 @@ export const adminApi = {
   getTenantUsage: (slug: string) =>
     call<{ slug: string }, { slug: string; usage: TenantUsage }>('getTenantUsage')({ slug }).then(r => r.data),
 
-  updateTenantLimits: (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number; features?: string[] | null }) =>
-    call<{ slug: string } & typeof limits, { slug: string; changed: boolean; changes?: string[] }>('updateTenantLimits')({ slug, ...limits }).then(r => r.data),
+  updateTenantLimits: async (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number; features?: string[] | null }) => {
+    const response = await authenticatedFetch(`/api/admin/tenants/${encodeURIComponent(slug)}/limits`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(limits),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Falha HTTP ${response.status}.`);
+    return data as { slug: string; changed: boolean; changes?: string[] };
+  },
 
   deleteTenant: (slug: string, mode: TenantDeletionMode, confirmName: string) =>
     call<{ slug: string; mode: TenantDeletionMode; confirmName: string }, { slug: string; mode: TenantDeletionMode; ok: boolean; usersDisabled?: number }>('deleteTenant')({ slug, mode, confirmName }).then(r => r.data),

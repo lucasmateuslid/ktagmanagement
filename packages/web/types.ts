@@ -252,11 +252,23 @@ export interface Tag {
   macAddress?: string;
   traqcareId?: string;
   identifierNormalized?: string;
-  traccarDeviceId?: number;
+  identifierKind?: 'imei' | 'numeric_serial' | 'mac';
+  identifierProfile?: 'xadtag_legacy_numeric_10_to_15';
+  identifierOriginal?: string;
+  traccarUniqueId?: string;
+  traccarDeviceId?: number | null;
   traccarDeviceName?: string;
   traccarPositionId?: number | null;
   traccarStatus?: 'online' | 'delayed' | 'offline' | 'unknown';
-  integrationStatus?: 'linked' | 'pending' | 'unavailable';
+  integrationStatus?: 'pending' | 'registered' | 'error';
+  integrationErrorCode?: string | null;
+  communicationValidatedAt?: number | null;
+  linkedEntityType?: 'vehicle' | null;
+  linkedEntityId?: string | null;
+  linkedEntityName?: string | null;
+  linkedAt?: number | null;
+  linkedBy?: string | null;
+  activeTrackingAssignmentId?: string | null;
   powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;
@@ -278,6 +290,14 @@ export interface Tracker {
   vehicleId?: string;
   clientId?: string;
   simCardId?: string;
+  invertedLockOutput?: boolean;
+  password?: string;
+  minBatteryVoltage?: number;
+  maxBatteryVoltage?: number;
+  purchaseDate?: string;
+  stockId?: string;
+  batch?: string;
+  notes?: string;
   unitCost?: number;
   warrantyMonths?: number;
   purchasedAt?: number;
@@ -459,6 +479,12 @@ export interface LocationHistory {
   battery?: KTagBatteryInfo; // Interpreted battery status
   timestamp: number;
   isodatetime: string;
+  vehicleId?: string;
+  provider?: 'traccar' | 'ktag';
+  address?: string;
+  speed?: number;
+  course?: number;
+  altitude?: number;
 }
 
 export interface Vehicle {
@@ -489,6 +515,9 @@ export interface Vehicle {
   plateHash?: string;
   // New Field for Offline Persistence
   lastPosition?: LocationHistory; 
+  activeTrackingAssignmentId?: string | null;
+  ktagHistoryCapturedThrough?: number;
+  ktagHistoryLastPosition?: Pick<LocationHistory, 'lat' | 'lon' | 'timestamp'>;
 }
 
 // Result format for location fetching APIs

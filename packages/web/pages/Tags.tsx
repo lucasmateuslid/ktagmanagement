@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { storage } from '../services/storage';
 import { Tag, Vehicle, TagType } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -24,6 +24,25 @@ import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
 
 const MotionDiv = motion.div as any;
+
+/** SN exibido/persistido localmente; remove padding apenas de registros legados. */
+const displayTagSerial = (tag: Partial<Tag>): string => {
+  if (tag.type !== 'XADTAG') return tag.accessoryId || tag.imei || '';
+  if (tag.identifierOriginal) return tag.identifierOriginal;
+  const legacy = tag.accessoryId || tag.identifierNormalized || tag.traccarUniqueId || '';
+  return /^0{5}\d{10}$/.test(legacy) ? legacy.slice(5) : legacy;
+};
+
+const xadTagEditData = (tag: Tag): Partial<Tag> => tag.type === 'XADTAG'
+  ? { ...tag, identifierOriginal: displayTagSerial(tag).slice(-10) }
+  : tag;
+
+const canonicalXadTagInput = (input: unknown): string | null => {
+  const value = String(input || '');
+  if (/^\d{10}$/.test(value)) return value;
+  if (/^0{5}\d{10}$/.test(value)) return value.slice(5);
+  return null;
+};
 
 const SkeletonStats = () => (
   <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between animate-pulse">
@@ -105,6 +124,7 @@ interface ConsoleLog {
 
 export const Tags = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -207,6 +227,8 @@ export const Tags = () => {
       const matchesText = (
         tag.name.toLowerCase().includes(term) ||
         tag.accessoryId.toLowerCase().includes(term) ||
+        (tag.identifierOriginal && tag.identifierOriginal.toLowerCase().includes(term)) ||
+        (tag.traccarUniqueId && tag.traccarUniqueId.toLowerCase().includes(term)) ||
         (tag.imei && tag.imei.toLowerCase().includes(term)) ||
         (linkedVehicle && linkedVehicle.plate.toLowerCase().includes(term))
       );
@@ -254,7 +276,7 @@ export const Tags = () => {
                   current: index,
                   total,
                   percentage: Math.round((index / total) * 100),
-                  currentTag: currentTag.accessoryId || currentTag.imei || "Desconhecido"
+                  currentTag: displayTagSerial(currentTag) || "Desconhecido"
               });
           });
           
@@ -271,7 +293,7 @@ export const Tags = () => {
               }
 
               return {
-                  "Nº Equipamento (Tag)": t.accessoryId || t.imei || t.id,
+                  "Nº Equipamento (Tag)": displayTagSerial(t) || t.id,
                   "Data de Inclusão": new Date(t.createdAt).toLocaleDateString('pt-BR'),
                   "Local com Horário da Posição": loc ? `${address} - ${new Date(loc.timestamp).toLocaleString('pt-BR')}` : '-',
                   "Status Bateria": loc ? loc.battery.label : '-',
@@ -304,7 +326,7 @@ export const Tags = () => {
               return {
                   "Nome": t.name,
                   "Tipo": t.type,
-                  "Serial (Accessory ID)": t.accessoryId,
+                  "Serial (Accessory ID)": displayTagSerial(t),
                   "IMEI": t.imei || '-',
                   "Traqcare ID": t.traqcareId || '-',
                   "Status": linkedVehicle ? 'VINCULADO' : 'ESTOQUE',
@@ -576,14 +598,19 @@ export const Tags = () => {
 
         if (!tag.name) throw new Error("Nome é obrigatório");
         if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
-        if (tag.type === 'XADTAG' && !tag.imei) throw new Error("IMEI é obrigatório para XADTAG");
+        const identifierOriginal = formData.type === 'XADTAG' ? canonicalXadTagInput(formData.identifierOriginal || displayTagSerial(formData)) : '';
+        if (tag.type === 'XADTAG' && !identifierOriginal) throw new Error("Informe 10 dígitos ou 15 dígitos começando com 00000");
 
         setFormData(prev => ({ ...prev, id: tagId }));
         if (tag.type === 'XADTAG') {
-            const registered = await trackingApi.registerXadTag(tag.imei || '', tag.macAddress, tag.name);
-            tag.id = registered.id; tag.accessoryId = registered.identifierNormalized; tag.imei = registered.imeiOriginal;
+            const input = { name: tag.name, identifierOriginal: identifierOriginal!, traqcareId: formData.traqcareId, powerType: formData.powerType, batteryWarrantyYears: formData.batteryWarrantyYears };
+            const registered = formData.id
+              ? await trackingApi.updateXadTag(formData.id, input)
+              : await trackingApi.registerXadTag(input);
+            tag.id = registered.id; tag.accessoryId = registered.identifierOriginal; tag.imei = registered.imei;
             tag.macAddress = registered.macAddress || tag.macAddress;
             tag.identifierNormalized = registered.identifierNormalized; tag.traccarDeviceId = registered.traccarDeviceId;
+            tag.identifierKind = registered.identifierKind; tag.identifierOriginal = registered.identifierOriginal; tag.traccarUniqueId = registered.traccarUniqueId;
             tag.traccarDeviceName = registered.traccarDeviceName; tag.traccarPositionId = registered.traccarPositionId;
             tag.traccarStatus = registered.traccarStatus; tag.integrationStatus = registered.integrationStatus;
         } else await storage.saveTag(tag);
@@ -1007,7 +1034,7 @@ export const Tags = () => {
                             </td>
                             <td className="p-4">
                               <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}${tag.macAddress ? ` • MAC: ${tag.macAddress}` : ''}` : `SN: ${tag.accessoryId}`}
+                                {tag.type === 'XADTAG' ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
                               </div>
                             </td>
                             <td className="p-4">
@@ -1058,7 +1085,10 @@ export const Tags = () => {
                                 <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
                                     <Activity size={14}/>
                                 </button>
-                                <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                <button onClick={() => navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Histórico de localização">
+                                    <History size={14}/>
+                                </button>
+                                <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                     <Edit2 size={14}/>
                                 </button>
                                 <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
@@ -1129,7 +1159,7 @@ export const Tags = () => {
                                             <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
                                             <span className="text-zinc-300 dark:text-zinc-700 text-[10px]">•</span>
                                             <div className="font-mono text-[10px] text-zinc-500 font-medium">
-                                                {tag.type === 'XADTAG' ? `IMEI: ${tag.imei}${tag.macAddress ? ` • MAC: ${tag.macAddress}` : ''}` : `SN: ${tag.accessoryId}`}
+                                                {tag.type === 'XADTAG' ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
                                             </div>
                                         </div>
                                     </div>
@@ -1179,7 +1209,7 @@ export const Tags = () => {
                                     <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
                                         <Activity size={14}/>
                                     </button>
-                                    <button onClick={() => { setFormData(tag); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                    <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                         <Edit2 size={14}/>
                                     </button>
                                     <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
@@ -1205,7 +1235,7 @@ export const Tags = () => {
                         <div className="p-2 bg-zinc-800 rounded-lg text-emerald-500"><Terminal size={16}/></div>
                         <div>
                             <h3 className="font-bold text-zinc-300 uppercase tracking-wider">Terminal {activeTestTag?.type}</h3>
-                            <p className="text-[10px] text-zinc-500">{activeTestTag?.name} ({activeTestTag?.accessoryId})</p>
+                            <p className="text-[10px] text-zinc-500">{activeTestTag?.name} ({activeTestTag ? displayTagSerial(activeTestTag) : ''})</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
@@ -1307,12 +1337,9 @@ export const Tags = () => {
                     ) : (
                         <>
                             <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI do equipamento <span className="text-red-500">*</span></label>
-                                <input type="text" required inputMode="numeric" value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: 860000000000001" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">MAC Address</label>
-                                <input type="text" value={formData.macAddress || ''} onChange={e => setFormData({...formData, macAddress: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Ex: D0:42:32:E7:E3:FA" />
+                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Identificador original <span className="text-red-500">*</span></label>
+                                <input type="text" inputMode="numeric" pattern="(?:[0-9]{10}|0{5}[0-9]{10})" minLength={10} maxLength={15} required value={formData.identifierOriginal || ''} onChange={e => setFormData({...formData, identifierOriginal: e.target.value.replace(/\D/g, '').slice(0, 15), identifierKind: 'numeric_serial', traccarUniqueId: undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="7260412520 ou 000007260412520" />
+                                <p className="text-xs text-zinc-500">Aceita 10 dígitos ou 15 dígitos iniciados por 00000. A plataforma identifica e normaliza automaticamente.</p>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>

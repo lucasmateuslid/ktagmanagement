@@ -16,7 +16,7 @@ import {
   Bell, CheckCircle2, UserCircle, Calendar, Wrench, Plus,
   ChevronLeft, ChevronRight, X, AlertTriangle, ShieldCheck,
   Crown, Briefcase, User as UserIcon, Wallet, MessageSquare, Megaphone, MapPin,
-  Home, Package, Receipt, Building2, Boxes
+  Home, Package, Receipt, Building2, Boxes, Satellite
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -133,7 +133,7 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const { user, customRoles, logout, isAdmin, updateProfile, memberships, isGlobalAdmin } = useAuth();
-  const { tenantId } = useTenant();
+  const { tenantId, enabledModules } = useTenant();
   // Identidade unificada: oferece troca de empresa quando o usuário tem mais de
   // um vínculo (ou é super admin). Cada item navega para o subdomínio do tenant.
   const otherMemberships = memberships.filter((m) => m.tenantId !== tenantId);
@@ -322,19 +322,20 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         items: [
           { label: 'SEGURANÇA', path: '/security', icon: ShieldAlert, perm: 'ROUTE_SECURITY' },
           { label: 'VEÍCULOS', path: '/vehicles', icon: CarFront, perm: 'ROUTE_VEHICLES' },
-          { label: 'ENVIOS', path: '/envios', icon: Package, perm: 'ROUTE_SHIPMENTS' },
+          { label: 'ENVIOS', path: '/envios', icon: Package, perm: 'ROUTE_SHIPMENTS', module: 'shipments' },
           { label: 'CLIENTES', path: '/clients', icon: Users, perm: 'ROUTE_CLIENTS' },
           { label: 'ESTOQUE TAGS', path: '/tags', icon: Tags, perm: 'ROUTE_TAGS' },
-          { label: 'ATIVOS E CHIPS', path: '/assets', icon: Boxes, perm: 'ROUTE_ASSETS' }
+          { label: 'RASTREADORES', path: '/trackers', icon: Satellite, perm: 'ROUTE_ASSETS', module: 'trackers' },
+          { label: 'ATIVOS E CHIPS', path: '/assets', icon: Boxes, perm: 'ROUTE_ASSETS', module: 'trackers' }
         ]
       },
       {
         title: 'AGENDAMENTOS',
         items: [
-          { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus, perm: 'ROUTE_SCHEDULE_NEW' },
-          { label: (user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'moderator' || user?.role === 'admin_tecnico') ? 'CENTRAL DE AGENDA' : 'MINHAS SOLICITAÇÕES', path: '/schedules', icon: Calendar, perm: 'ROUTE_SCHEDULES' },
-          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar, perm: 'ROUTE_CALENDAR' },
-          { label: 'TÉCNICOS', path: '/technicians', icon: Wrench, perm: 'ROUTE_TECHNICIANS' }
+          { label: 'NOVA SOLICITAÇÃO', path: '/schedule/new', icon: Plus, perm: 'ROUTE_SCHEDULE_NEW', module: 'scheduling' },
+          { label: (user?.role === 'admin' || user?.role === 'sysadmin' || user?.role === 'moderator' || user?.role === 'admin_tecnico') ? 'CENTRAL DE AGENDA' : 'MINHAS SOLICITAÇÕES', path: '/schedules', icon: Calendar, perm: 'ROUTE_SCHEDULES', module: 'scheduling' },
+          { label: 'CALENDÁRIO', path: '/calendar', icon: Calendar, perm: 'ROUTE_CALENDAR', module: 'scheduling' },
+          { label: 'TÉCNICOS', path: '/technicians', icon: Wrench, perm: 'ROUTE_TECHNICIANS', module: 'scheduling' }
         ]
       },
       {
@@ -347,7 +348,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         title: 'GESTÃO',
         items: [
           { label: 'RELATÓRIOS', path: '/reports', icon: FileText, perm: 'ROUTE_REPORTS' },
-          { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet, perm: 'ROUTE_FINANCIAL' },
+          { label: 'GESTÃO FINANCEIRA', path: '/technicians/financials', icon: Wallet, perm: 'ROUTE_FINANCIAL', module: 'scheduling' },
           { label: 'MENSALIDADE', path: '/billing', icon: Receipt, perm: 'ROUTE_BILLING' },
           { label: 'AUDITORIA', path: '/audit', icon: ClipboardList, perm: 'ROUTE_AUDIT' }
         ]
@@ -356,7 +357,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
     const out: any[] = [];
     rawSections.forEach((section: any) => {
-        const allowedItems = section.items.filter((item: any) => hasPermission(user, customRoles || [], item.perm)).map((item: any) => ({
+        const allowedItems = section.items.filter((item: any) => (!item.module || enabledModules.includes(item.module)) && hasPermission(user, customRoles || [], item.perm)).map((item: any) => ({
             ...item,
             disabled: isLockedMode && item.path !== '/vehicles' && item.path !== '/tags' && item.path !== '/schedules'
         }));

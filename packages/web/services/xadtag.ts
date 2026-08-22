@@ -82,6 +82,12 @@ const getHeaders = async () => {
     };
 };
 
+const getConfiguredToken = async (): Promise<string | null> => {
+    const settings = await storage.getSettings();
+    const token = String(settings.traqcareToken || '').trim();
+    return token || null;
+};
+
 const buildUrl = (path: string, params?: Record<string, string>) => {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
@@ -158,6 +164,8 @@ const callApi = async (
 
 export const xadtagService = {
 
+    isConfigured: async (): Promise<boolean> => Boolean(await getConfiguredToken()),
+
     activate: async (tag: Tag): Promise<boolean> => {
         if (!tag.traqcareId) return false;
 
@@ -181,6 +189,10 @@ export const xadtagService = {
     fetchLocation: async (tag: Tag): Promise<KTagLocationResult[]> => {
         if (!tag.traqcareId) return [];
 
+        // A TraqCare e apenas um fallback. Nunca envie uma requisicao com token
+        // vazio, pois isso gera ruido (401) e pode mascarar a consulta Traccar.
+        if (!await getConfiguredToken()) return [];
+
         try {
             const response = await callApi(
                 '/tag',
@@ -200,7 +212,8 @@ export const xadtagService = {
                 status: 1,
                 battery: batteryToInfo(loc.battery),
                 timestamp: loc.timestamp ? loc.timestamp * 1000 : Date.now(),
-                isodatetime: loc.timestamp ? new Date(loc.timestamp * 1000).toISOString() : new Date().toISOString()
+                isodatetime: loc.timestamp ? new Date(loc.timestamp * 1000).toISOString() : new Date().toISOString(),
+                tagId: tag.id
             }));
 
         } catch (err) {
@@ -216,6 +229,8 @@ export const xadtagService = {
     ): Promise<KTagLocationResult[]> => {
 
         if (!tag.traqcareId) return [];
+
+        if (!await getConfiguredToken()) return [];
 
         try {
             const response = await callApi(

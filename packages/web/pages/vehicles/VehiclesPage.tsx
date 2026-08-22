@@ -25,6 +25,7 @@ import { VehicleKPIModal } from './components/VehicleKPIModal';
 import { Vehicle, LocationHistory } from '../../types';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { authenticatedFetch } from '../../services/authenticatedFetch';
 
 const MotionDiv = motion.div as any;
 
@@ -34,19 +35,20 @@ export const VehiclesPage = () => {
   const location = useLocation();
   const { user: currentUser } = useAuth();
   
-  // 1. Data Fetching
-  const { vehicles, tags, companies, categories, clients, loading, reload } = useVehiclesData(currentUser);
-  
-  // 2. Filters
+  // 1. Filters are sent to the backend; only one database page is kept in memory.
   const { 
     searchTerm, setSearchTerm, 
     statusFilter, setStatusFilter,
     companyFilter, setCompanyFilter,
     ownershipFilter, setOwnershipFilter,
     installationFilter, setInstallationFilter,
-    tagFilter, setTagFilter,
-    filteredVehicles 
-  } = useVehicleFilters(vehicles, clients);
+    tagFilter, setTagFilter
+  } = useVehicleFilters([], []);
+  const { vehicles, tags, companies, categories, clients, loading, reload, nextPage, previousPage, hasNextPage, hasPreviousPage } = useVehiclesData(currentUser, {
+    search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
+    installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
+  });
+  const filteredVehicles = vehicles;
 
   React.useEffect(() => {
      if (location.state?.searchTarget) {
@@ -106,6 +108,10 @@ export const VehiclesPage = () => {
 
   const handleDelete = async (id: string) => {
       const v = vehicles.find(v => v.id === id);
+      if (v?.tagId) {
+          const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(id)}/tag`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Veículo removido pelo operador' }) });
+          const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Não foi possível liberar a tag antes da exclusão.');
+      }
       await storage.deleteVehicle(id); 
       if (currentUser && v) {
           storage.logAction(currentUser, 'DELETE', 'Vehicle', `Removeu veículo: ${v.plate}`, id);
@@ -473,6 +479,11 @@ export const VehiclesPage = () => {
         onEdit={(v) => openEdit(v, tags)}
         onDelete={(id) => { setVehicleToDelete(id); setIsConfirmDeleteOpen(true); }}
       />
+      <div className="flex items-center justify-between gap-3 py-4">
+        <button type="button" disabled={!hasPreviousPage || loading} onClick={previousPage} className="rounded-xl border border-zinc-200 px-5 py-3 text-xs font-bold disabled:opacity-40 dark:border-zinc-800">Anterior</button>
+        <span className="text-xs text-zinc-500">Até 50 veículos por página</span>
+        <button type="button" disabled={!hasNextPage || loading} onClick={nextPage} className="rounded-xl border border-zinc-200 px-5 py-3 text-xs font-bold disabled:opacity-40 dark:border-zinc-800">Próxima</button>
+      </div>
 
       {isKPIModalOpen && (
         <VehicleKPIModal 

@@ -20,6 +20,9 @@ import { useTenants, type TenantFilter } from '../../hooks/useTenants';
 import { useTenantsStats } from '../../hooks/useTenantsStats';
 import { adminApi } from '../../services/adminApi';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MODULE_CATALOG } from '../../../../constants/moduleCatalog';
+import { BUSINESS_MODULE_IDS } from '@ktag/shared';
+
 
 const PLAN_OPTIONS: SelectOption<'basic' | 'pro' | 'enterprise'>[] = [
   { value: 'basic', label: 'Basic', description: 'Recursos essenciais', icon: <Zap size={14} /> },
@@ -48,6 +51,7 @@ export const AdminTenants = () => {
   const [createdInfo, setCreatedInfo] = useState<CreatedInfo | null>(null);
   const [editingLimits, setEditingLimits] = useState<Tenant | null>(null);
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
+  const [deletionMode, setDeletionMode] = useState<TenantDeletionMode>('soft');
   const [mobileActionsFor, setMobileActionsFor] = useState<Tenant | null>(null);
   const [busy, setBusy] = useState<{ slug: string; action: string } | null>(null);
 
@@ -63,6 +67,11 @@ export const AdminTenants = () => {
     try { await adminApi.getTenantUsage(t.slug); }
     catch (e: any) { alert(`Falha: ${e?.message || e}`); }
     finally { setBusy(null); }
+  };
+
+  const requestDelete = (tenant: Tenant) => {
+    setDeletionMode('soft');
+    setDeletingTenant(tenant);
   };
 
   return (
@@ -84,19 +93,21 @@ export const AdminTenants = () => {
         onToggleDeleted={() => setIncludeDeleted(v => !v)}
       />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
-        <TenantsList
-          tenants={tenants}
-          loading={loading}
-          busy={busy}
-          onToggleActive={toggleActive}
-          onEditLimits={setEditingLimits}
-          onDelete={setDeletingTenant}
-          onRefreshUsage={refreshUsage}
-          onOpenMobileActions={setMobileActionsFor}
-        />
+      <div className="grid min-w-0 grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
+        <div className="min-w-0">
+          <TenantsList
+            tenants={tenants}
+            loading={loading}
+            busy={busy}
+            onToggleActive={toggleActive}
+            onEditLimits={setEditingLimits}
+            onDelete={requestDelete}
+            onRefreshUsage={refreshUsage}
+            onOpenMobileActions={setMobileActionsFor}
+          />
+        </div>
 
-        <aside className="hidden xl:block space-y-4">
+        <aside className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 2xl:block 2xl:space-y-4">
           <RankingPanel
             title="Top por uso de tags"
             icon={<TagIcon size={14} />}
@@ -147,8 +158,7 @@ export const AdminTenants = () => {
         onClose={() => setDeletingTenant(null)}
         onConfirm={async () => {
           if (!deletingTenant) return;
-          const mode = (window as any).__deleteMode || 'soft';
-          await adminApi.deleteTenant(deletingTenant.slug, mode as TenantDeletionMode, deletingTenant.name);
+          await adminApi.deleteTenant(deletingTenant.slug, deletionMode, deletingTenant.name);
         }}
         title="Excluir empresa"
         warningHighlight={deletingTenant ? `Slug: ${deletingTenant.slug}` : undefined}
@@ -158,7 +168,7 @@ export const AdminTenants = () => {
             Escolha o tipo de exclusão abaixo. Em ambos os casos, todos os usuários da empresa perderão acesso imediato.
           </>
         )}
-        extra={<DeletionModeChooser />}
+        extra={<DeletionModeChooser mode={deletionMode} onChange={setDeletionMode} />}
         confirmText={deletingTenant?.name || ''}
         confirmLabel="Excluir agora"
       />
@@ -174,7 +184,7 @@ export const AdminTenants = () => {
             tenant={mobileActionsFor}
             onClose={() => setMobileActionsFor(null)}
             onEditLimits={(t) => { setMobileActionsFor(null); setEditingLimits(t); }}
-            onDelete={(t) => { setMobileActionsFor(null); setDeletingTenant(t); }}
+            onDelete={(t) => { setMobileActionsFor(null); requestDelete(t); }}
             onToggleActive={toggleActive}
             onRefreshUsage={refreshUsage}
           />
@@ -194,7 +204,7 @@ const Header = ({ total, visible, onNewTenant }: { total: number; visible: numbe
       <h1 className="font-display text-2xl font-black uppercase tracking-widest">Empresas</h1>
       <p className="text-zinc-500 text-sm mt-1">
         {visible === total
-          ? `${total} ${total === 1 ? 'tenant cadastrado' : 'tenants cadastrados'}`
+          ? `${total} ${total === 1 ? 'empresa cadastrada' : 'empresas cadastradas'}`
           : `${visible} de ${total} visíveis`}
       </p>
     </div>
@@ -392,9 +402,9 @@ const TenantsList = ({
 
   return (
     <>
-      {/* Desktop / tablet */}
-      <div className="hidden md:block bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-2xl overflow-hidden">
-        <table className="w-full text-sm">
+      {/* Desktop: só usa tabela quando a largura restante após a sidebar comporta todas as colunas. */}
+      <div className="hidden xl:block max-w-full overflow-x-auto bg-zinc-900/40 backdrop-blur-xl border border-white/5 rounded-2xl">
+        <table className="w-full min-w-[860px] text-sm">
           <thead className="bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-zinc-500 border-b border-white/5">
             <tr>
               <th className="text-left px-5 py-3.5">Empresa</th>
@@ -450,8 +460,8 @@ const TenantsList = ({
         </table>
       </div>
 
-      {/* Mobile cards */}
-      <div className="md:hidden space-y-3">
+      {/* Celular, tablet e notebooks compactos: cards mantêm todas as ações acessíveis. */}
+      <div className="xl:hidden space-y-3">
         <AnimatePresence initial={false}>
           {tenants.map(t => (
             <motion.div
@@ -528,7 +538,7 @@ const RowActions = ({
   const items: DropdownItem[] = [
     {
       key: 'open',
-      label: 'Abrir tenant em nova aba',
+      label: 'Abrir empresa em nova aba',
       icon: <ExternalLink size={14} />,
       onSelect: () => window.open(openTenantHref(tenant.slug), '_blank'),
     },
@@ -611,7 +621,7 @@ const MobileActionsSheet = ({
   );
   return (
     <div className="divide-y divide-white/5">
-      <Row icon={<ExternalLink size={16} />} label="Abrir tenant" onClick={() => window.open(openTenantHref(tenant.slug), '_blank')} />
+      <Row icon={<ExternalLink size={16} />} label="Abrir empresa" onClick={() => window.open(openTenantHref(tenant.slug), '_blank')} />
       <Row icon={<CreditCard size={16} />} label="Gerenciar mensalidade" onClick={() => window.location.hash = '#/admin/billing'} />
       <Row icon={<Settings2 size={16} />} label="Editar limites" onClick={() => onEditLimits(tenant)} />
       <Row icon={<RefreshCw size={16} />} label="Recalcular uso" onClick={() => { onRefreshUsage(tenant); onClose(); }} />
@@ -682,6 +692,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
   const [limiteTags, setLimiteTags] = useState<number>(tenant.settings?.limiteTags ?? 0);
   const [limiteVeiculos, setLimiteVeiculos] = useState<number>(tenant.settings?.limiteVeiculos ?? 0);
   const [maxUsers, setMaxUsers] = useState<number>(tenant.settings?.maxUsers ?? 0);
+  const [features, setFeatures] = useState<string[]>(tenant.settings?.features ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -689,7 +700,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
     setError('');
     setSubmitting(true);
     try {
-      await adminApi.updateTenantLimits(tenant.slug, { limiteTags, limiteVeiculos, maxUsers });
+      await adminApi.updateTenantLimits(tenant.slug, { limiteTags, limiteVeiculos, maxUsers, features });
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Falha ao salvar.');
@@ -702,55 +713,56 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
   const tagsWarning = limiteTags > 0 && tagsUsed > limiteTags;
 
   return (
-    <div className="modal-shell">
+    <div className="modal-shell" role="dialog" aria-modal="true" aria-labelledby="edit-tenant-limits-title">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-zinc-950 border border-white/10 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl shadow-black/60"
+        className="modal-card border-zinc-200 !bg-white text-zinc-900 dark:!border-white/10 dark:!bg-zinc-950 dark:text-white sm:!max-w-2xl"
       >
-        <div className="flex items-start justify-between">
+        <div className="modal-card-header flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4 dark:border-white/10 sm:px-6 sm:py-5">
           <div>
-            <h3 className="font-display font-black text-lg uppercase tracking-widest">Editar limites</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">{tenant.name} · <code className="text-amber-500">{tenant.slug}</code></p>
+            <h3 id="edit-tenant-limits-title" className="font-display font-black text-base uppercase tracking-widest sm:text-lg">Editar limites</h3>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{tenant.name} <span className="px-1 text-zinc-300 dark:text-zinc-700">·</span> <code className="text-amber-600 dark:text-amber-500">{tenant.slug}</code></p>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5">
+          <button type="button" onClick={onClose} className="shrink-0 rounded-xl border border-transparent p-2 text-zinc-500 transition-colors hover:border-zinc-200 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-white" aria-label="Fechar">
             <X size={18} />
           </button>
         </div>
 
-        {error && (
-          <div className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">{error}</div>
-        )}
+        <div className="modal-card-body space-y-6 px-5 py-5 sm:px-6">
+          {error && (
+            <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" role="alert">{error}</div>
+          )}
 
-        <LimitField
-          label="Limite de tags"
-          value={limiteTags}
-          onChange={setLimiteTags}
-          hint="0 = ilimitado"
-          warning={tagsWarning ? `Empresa já usa ${tagsUsed} tags — o limite ficará excedido` : undefined}
-          currentUsed={tagsUsed}
-        />
-        <LimitField
-          label="Limite de veículos"
-          value={limiteVeiculos}
-          onChange={setLimiteVeiculos}
-          hint="0 = ilimitado"
-          currentUsed={tenant.usage?.veiculosUtilizados}
-        />
-        <LimitField
-          label="Limite de usuários"
-          value={maxUsers}
-          onChange={setMaxUsers}
-          hint="0 = ilimitado"
-          currentUsed={tenant.usage?.usuariosAtivos}
-        />
+          <section>
+            <div className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Limites de uso</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <LimitField label="Tags" value={limiteTags} onChange={setLimiteTags} hint="0 = ilimitado" warning={tagsWarning ? `Uso atual: ${tagsUsed}` : undefined} currentUsed={tagsUsed} />
+              <LimitField label="Veículos" value={limiteVeiculos} onChange={setLimiteVeiculos} hint="0 = ilimitado" currentUsed={tenant.usage?.veiculosUtilizados} />
+              <LimitField label="Usuários" value={maxUsers} onChange={setMaxUsers} hint="0 = ilimitado" currentUsed={tenant.usage?.usuariosAtivos} />
+            </div>
+          </section>
 
-        <div className="flex gap-2 pt-2">
+          <section className="border-t border-zinc-200 pt-5 dark:border-white/10">
+            <div className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Módulos autorizados para a empresa</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {MODULE_CATALOG.filter(module => BUSINESS_MODULE_IDS.includes(module.id as (typeof BUSINESS_MODULE_IDS)[number])).map(module => (
+              <label key={module.id} className={`flex min-h-24 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-colors ${features.includes(module.id) ? 'border-amber-400 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10' : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 dark:border-white/10 dark:bg-white/[0.025] dark:hover:border-white/20'}`}>
+                <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500" checked={features.includes(module.id)} onChange={() => setFeatures(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])} />
+                <span><span className="block text-xs font-bold text-zinc-800 dark:text-zinc-200">{module.label}</span><span className="block text-[10px] text-zinc-500 dark:text-zinc-400">{module.description}</span></span>
+              </label>
+            ))}
+            </div>
+            <p className="mt-3 text-[10px] leading-relaxed text-amber-700 dark:text-amber-500/80">O administrador da empresa só poderá distribuir aos cargos os módulos marcados aqui.</p>
+          </section>
+        </div>
+
+        <div className="modal-card-footer flex gap-3 border-t border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-white/10 dark:bg-black/20 sm:justify-end sm:px-6">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white py-2.5 rounded-xl border border-white/5 hover:bg-white/[0.04] disabled:opacity-40"
+            className="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white px-5 text-xs font-bold uppercase tracking-widest text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:border-white/10 dark:bg-transparent dark:text-zinc-400 dark:hover:bg-white/[0.04] dark:hover:text-white sm:flex-none sm:min-w-32"
           >
             Cancelar
           </button>
@@ -758,7 +770,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
             type="button"
             onClick={save}
             disabled={submitting}
-            className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-black uppercase tracking-widest text-xs py-2.5 rounded-xl flex items-center justify-center gap-2"
+            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-amber-500 px-5 text-xs font-black uppercase tracking-widest text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-50 sm:flex-none sm:min-w-32"
           >
             {submitting && <Loader2 size={13} className="animate-spin" />}
             Salvar
@@ -779,22 +791,22 @@ const LimitField = ({
   warning?: string;
   currentUsed?: number;
 }) => (
-  <div>
-    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">{label}</label>
-    <div className="flex items-center gap-2">
+  <div className="min-w-0">
+    <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{label}</label>
+    <div className="flex min-w-0 items-center gap-2">
       <input
         type="number"
         min="0"
         value={value || ''}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
         placeholder="0 (ilimitado)"
-        className="flex-1 bg-white/[0.03] border border-white/5 hover:border-white/10 focus:border-amber-500/40 focus:bg-white/[0.05] rounded-xl px-3 py-2.5 text-sm font-mono outline-none transition-colors placeholder:text-zinc-600"
+        className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm font-mono text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 hover:border-zinc-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 dark:border-white/10 dark:bg-white/[0.03] dark:text-white dark:placeholder:text-zinc-600 dark:hover:border-white/20 dark:focus:border-amber-500/50 dark:focus:bg-white/[0.05]"
       />
       {currentUsed !== undefined && value > 0 && (
         <UsageBadge value={currentUsed} max={value} />
       )}
     </div>
-    {hint && <div className="text-[10px] text-zinc-600 mt-1">{hint}</div>}
+    {hint && <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-600">{hint}</div>}
     {warning && <div className="text-[10px] text-red-400 mt-1">{warning}</div>}
   </div>
 );
@@ -803,29 +815,25 @@ const LimitField = ({
 // DELETION MODE CHOOSER (passado ao ConfirmStrongModal via extra)
 // ============================================================
 
-const DeletionModeChooser = () => {
-  const [mode, setMode] = useState<TenantDeletionMode>('soft');
-
-  // Hack pragmático: o ConfirmStrongModal aceita só uma função de onConfirm
-  // que não recebe o mode. Em vez de refatorar o componente para passar dados,
-  // grava no window — o handler de onConfirm lê dali.
-  useEffect(() => {
-    (window as any).__deleteMode = mode;
-    return () => { delete (window as any).__deleteMode; };
-  }, [mode]);
-
+const DeletionModeChooser = ({
+  mode,
+  onChange,
+}: {
+  mode: TenantDeletionMode;
+  onChange: (mode: TenantDeletionMode) => void;
+}) => {
   return (
     <div className="grid grid-cols-2 gap-2">
       <ModeCard
         active={mode === 'soft'}
-        onClick={() => setMode('soft')}
+        onClick={() => onChange('soft')}
         title="Soft delete"
         tone="amber"
         bullets={['Desativa acesso', 'Dados preservados', 'Reversível']}
       />
       <ModeCard
         active={mode === 'hard'}
-        onClick={() => setMode('hard')}
+        onClick={() => onChange('hard')}
         title="Hard delete"
         tone="red"
         bullets={['Apaga tudo recursivamente', 'Cancela cobrança Asaas', 'Irreversível']}
@@ -973,7 +981,7 @@ const CredentialsModal = ({ info, onClose }: { info: CreatedInfo; onClose: () =>
       animate={{ opacity: 1, scale: 1, y: 0 }}
       className="bg-zinc-950 border border-white/10 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl shadow-black/60"
     >
-      <h3 className="font-display font-black text-lg uppercase tracking-widest">Tenant criado</h3>
+      <h3 className="font-display font-black text-lg uppercase tracking-widest">Empresa criada</h3>
       <p className="text-sm text-zinc-400">Slug: <code className="text-amber-500">{info.slug}</code></p>
       {info.ownerEmail && info.ownerPassword && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2">
@@ -1018,7 +1026,8 @@ const PlanBadge = ({ plan }: { plan?: string }) => {
 function openTenantHref(slug: string): string {
   const host = window.location.hostname;
   if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
-    return `${window.location.protocol}//${host}:${window.location.port}/?tenant=${encodeURIComponent(slug)}`;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `${window.location.protocol}//${encodeURIComponent(slug)}.localhost${port}/`;
   }
   const parts = host.split('.');
   if (parts.length >= 3) {

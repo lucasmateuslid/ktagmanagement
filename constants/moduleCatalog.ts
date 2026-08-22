@@ -1,3 +1,5 @@
+import { BUSINESS_MODULE_CATALOG } from '@ktag/shared';
+
 export interface ModuleCatalogItem {
   id: string;
   label: string;
@@ -10,6 +12,7 @@ export interface ModuleCatalogItem {
  * funcionalidades quando o módulo não está liberado) é trabalho futuro.
  */
 export const MODULE_CATALOG: ModuleCatalogItem[] = [
+  ...BUSINESS_MODULE_CATALOG,
   { id: 'ktag', label: 'K-TAG', description: 'Integração com a plataforma K-TAG (rastreamento/telemetria)' },
   { id: 'hinova', label: 'Hinova', description: 'Integração com o sistema de gestão Hinova' },
   { id: 'melhorEnvio', label: 'Melhor Envio', description: 'Cotação e etiquetas de frete via Melhor Envio' },

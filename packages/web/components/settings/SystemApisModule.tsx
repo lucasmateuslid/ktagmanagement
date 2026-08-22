@@ -216,7 +216,7 @@ export const SystemApisModule = () => {
           const response = await fetch('/api/melhorenvio/oauth/exchange', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, clientId, clientSecret, redirectUri, environment: returnedEnv })
+            body: JSON.stringify({ code, redirectUri })
           });
 
           const data = await response.json();
@@ -497,7 +497,7 @@ export const SystemApisModule = () => {
                       const res = await fetch('/api/melhorenvio/companies', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token, environment: env })
+                        body: JSON.stringify({})
                       });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Erro ao carregar');

@@ -17,12 +17,19 @@ interface HistoryOverlayProps {
     exporting: boolean;
     exportProgress: number;
     onExport: (type: 'pdf' | 'excel') => void;
+    historyDays: 1 | 7 | 30;
+    onHistoryDaysChange: (days: 1 | 7 | 30) => void;
+    hasMore: boolean;
+    onLoadMore: () => void;
+    partial: boolean;
+    warnings: string[];
 }
 
 export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({ 
     isVisible, onClose, activeVehicle, activeTag, 
     historyItems, historyLoading, resolvedAddresses, 
-    exporting, exportProgress, onExport 
+    exporting, exportProgress, onExport, historyDays, onHistoryDaysChange,
+    hasMore, onLoadMore, partial, warnings,
 }) => {
     return (
         <AnimatePresence>
@@ -60,13 +67,17 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                             <div className="flex items-center gap-3 mt-2">
                                 <span className="text-sm font-black text-primary-500 uppercase tracking-widest">{activeVehicle ? activeVehicle.plate : (activeTag?.name || 'TAG')}</span>
                                 <div className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700"/>
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Últimas 24 Horas</span>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Últimos {historyDays === 1 ? '24 horas' : `${historyDays} dias`}</span>
+                            </div>
+                            <div className="flex gap-2 mt-5">
+                                {([1, 7, 30] as const).map(days => <button key={days} onClick={() => onHistoryDaysChange(days)} disabled={historyLoading} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase ${historyDays === days ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>{days === 1 ? '24h' : `${days}d`}</button>)}
                             </div>
                         </div>
                     </div>
     
                     <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                        {historyLoading ? (
+                        {partial && <div className="rounded-xl bg-amber-500/10 text-amber-600 p-3 text-xs font-bold">Histórico parcial. {warnings.join(' ')}</div>}
+                        {historyLoading && historyItems.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center gap-5 opacity-50">
                                 <Loader2 className="animate-spin text-primary-500" size={40} />
                                 <span className="text-[11px] font-black uppercase tracking-[0.3em]">Consolidando Trajeto...</span>
@@ -77,7 +88,7 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                                 <span className="text-[11px] font-black uppercase">Nenhum ponto registrado no período</span>
                             </div>
                         ) : (
-                            historyItems.map((item, idx) => (
+                            <>{historyItems.map((item, idx) => (
                                 <div key={item.id} className="relative flex gap-8 group">
                                     {idx !== historyItems.length - 1 && <div className="absolute w-[2px] bg-zinc-300 dark:bg-zinc-700 z-0" style={{ left: '19px', top: '40px', bottom: '-24px' }} />}
                                     <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center relative z-10 border-2 transition-all ${idx === 0 ? 'bg-primary-500 border-primary-400 text-black shadow-2xl' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-300'}`}>
@@ -106,7 +117,7 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                                         </div>
                                     </div>
                                 </div>
-                            ))
+                            ))}{hasMore && <button onClick={onLoadMore} disabled={historyLoading} className="w-full py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs font-black uppercase text-zinc-500 disabled:opacity-50">{historyLoading ? 'Carregando...' : 'Carregar mais'}</button>}</>
                         )}
                     </div>
     

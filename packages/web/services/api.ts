@@ -40,6 +40,52 @@ export const hasMoved = (
   return Math.abs(prev.lat - next.lat) > thresholdDeg || Math.abs(prev.lon - next.lon) > thresholdDeg;
 };
 
+const traccarPositionToLocation = (
+  tag: Tag,
+  result: Awaited<ReturnType<typeof trackingApi.checkXadTag>>
+): KTagLocationResult[] => {
+  if (!result.position) return [];
+  return [{
+    lat: result.position.latitude,
+    lon: result.position.longitude,
+    conf: result.position.valid ? 100 : 0,
+    status: result.status === 'online' ? 1 : 0,
+    battery: {
+      level: 0,
+      label: result.status,
+      color: result.status === 'online' ? '#10b981' : '#71717a',
+    },
+    timestamp: Date.parse(result.position.fixTime || result.position.serverTime || '') || Date.now(),
+    isodatetime: result.position.fixTime || result.position.serverTime || new Date().toISOString(),
+    tagId: tag.id,
+  }];
+};
+
+/**
+ * Prioridade de localizacao da XADTAG:
+ * 1. Traccar, que e a fonte principal da plataforma;
+ * 2. TraqCare somente quando o Traccar nao possui posicao e o tenant cadastrou token.
+ */
+export const fetchXadTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
+  let traccarError: unknown = null;
+  try {
+    const locations = traccarPositionToLocation(tag, await trackingApi.checkXadTag(tag.id));
+    if (locations.length > 0) return locations;
+  } catch (error) {
+    traccarError = error;
+  }
+
+  if (await xadtagService.isConfigured()) {
+    const fallback = await xadtagService.fetchLocation(tag);
+    if (fallback.length > 0) return fallback.map(location => ({ ...location, tagId: tag.id }));
+  }
+
+  if (traccarError) {
+    console.error(`Erro ao rastrear XADTAG ${tag.id} no Traccar:`, (traccarError as Error).message);
+  }
+  return [];
+};
+
 /**
  * Busca localizações em lote. K-TAG usa o endpoint em LOTE do feibao (doc 3.3):
  * uma requisição para até `chunkSize` chaves, com os resultados pareados de volta
@@ -56,23 +102,13 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProg
   const ktagTags = tags.filter(t => t.type !== 'XADTAG' && t.accessoryId && t.hashedAdvKey && t.privateKey);
   const xadtagTags = tags.filter(t => t.type === 'XADTAG');
 
-  // ---- XADTAG: consulta centralizada no Traccar ----
+  // ---- XADTAG: Traccar primeiro; TraqCare apenas como fallback configurado ----
   for (const tag of xadtagTags) {
     if (onProgress) onProgress(processed + 1, total, tag);
     try {
-      const result = await trackingApi.checkXadTag(tag.id);
-      if (result.position) results.push({
-        lat: result.position.latitude,
-        lon: result.position.longitude,
-        conf: result.position.valid ? 100 : 0,
-        status: result.status === 'online' ? 1 : 0,
-        battery: { level: 0, label: result.status, color: result.status === 'online' ? '#10b981' : '#71717a' },
-        timestamp: Date.parse(result.position.fixTime || result.position.serverTime || '') || Date.now(),
-        isodatetime: result.position.fixTime || result.position.serverTime || new Date().toISOString(),
-        tagId: tag.id,
-      });
+      results.push(...await fetchXadTagLocation(tag));
     } catch (e: any) {
-      console.error(`Erro ao rastrear XADTAG ${tag.traqcareId}:`, e.message);
+      console.error(`Erro ao rastrear XADTAG ${tag.id}:`, e.message);
     }
     processed++;
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -158,7 +194,7 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProg
 export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
   // Dispatcher Baseado no Tipo de Dispositivo
   if (tag.type === 'XADTAG') {
-      return xadtagService.fetchLocation(tag);
+      return fetchXadTagLocation(tag);
   }
 
   // Lógica Legada K-TAG.

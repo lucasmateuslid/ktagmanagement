@@ -105,6 +105,25 @@ service cloud.firestore {
       return isTenantAdmin(tenantId) || tenantRole(tenantId) == 'moderator';
     }
 
+    function isTenantClient(tenantId) {
+      return tenantRole(tenantId) == 'client';
+    }
+
+    function memberClientId(tenantId) {
+      return approvedMemberDoc(tenantId) ? memberDoc(tenantId).clientId : null;
+    }
+
+    function isInternalMember(tenantId) {
+      return isMemberOf(tenantId) && !isTenantClient(tenantId);
+    }
+
+    // Licença operacional concedida pelo superadmin ao TENANT. Permissão de
+    // usuário/cargo nunca consegue ampliar esta lista.
+    function tenantModuleEnabled(tenantId, moduleId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId))
+        .data.settings.get('features', []).hasAny([moduleId]);
+    }
+
     // ---------- IDENTIDADE GLOBAL (derivada; só Admin SDK escreve) ----------
 
     match /identities/{uid} {
@@ -152,7 +171,9 @@ service cloud.firestore {
       allow update: if (isAuthenticated() && request.auth.uid == userId
                         && request.resource.data.role == resource.data.role
                         && request.resource.data.status == resource.data.status
-                        && request.resource.data.tenantId == resource.data.tenantId)
+                        && request.resource.data.tenantId == resource.data.tenantId
+                        && request.resource.data.get('clientId', null) == resource.data.get('clientId', null)
+                        && request.resource.data.get('customRoleId', null) == resource.data.get('customRoleId', null))
                        || isTenantAdmin(tenantId);
 
       allow delete: if isTenantAdmin(tenantId);
@@ -160,7 +181,7 @@ service cloud.firestore {
 
     // Settings (credenciais de terceiros do tenant): leitura p/ membros, write admin.
     match /tenants/{tenantId}/settings/{docId} {
-      allow read: if isMemberOf(tenantId);
+      allow read: if isTenantAdmin(tenantId);
       allow write: if isTenantAdmin(tenantId);
     }
 
@@ -181,7 +202,7 @@ service cloud.firestore {
     // Audit logs: append-only para membros, leitura só admin do tenant.
     match /tenants/{tenantId}/audit_logs/{logId} {
       allow read: if isTenantAdmin(tenantId);
-      allow create: if isMemberOf(tenantId);
+      allow create: if isInternalMember(tenantId);
       allow update, delete: if false;
     }
 
@@ -203,66 +224,96 @@ service cloud.firestore {
     // ---------- COLEÇÕES DE DOMÍNIO (read/write p/ membros aprovados) ----------
 
     match /tenants/{tenantId}/tags/{docId} {
-      allow read: if isMemberOf(tenantId);
+      allow read: if isInternalMember(tenantId);
       // Metadados do provider externo são escritos apenas pelo backend (Admin SDK).
-      allow create: if isMemberOf(tenantId) && request.resource.data.type != 'XADTAG';
-      allow update, delete: if isMemberOf(tenantId)
+      allow create: if isInternalMember(tenantId)
+                    && request.resource.data.type != 'XADTAG'
+                    && !request.resource.data.keys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
+      allow update, delete: if isInternalMember(tenantId)
                             && resource.data.type != 'XADTAG'
-                            && request.resource.data.type != 'XADTAG';
+                            && request.resource.data.type != 'XADTAG'
+                            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
     }
     match /tenants/{tenantId}/trackers/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read: if isInternalMember(tenantId);
+      // Escrita somente pela API validada (Admin SDK).
+      allow write: if false;
     }
     match /tenants/{tenantId}/sim_cards/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'trackers');
     }
     match /tenants/{tenantId}/equipment_suppliers/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'trackers');
     }
     match /tenants/{tenantId}/equipment_purchases/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'trackers');
     }
     match /tenants/{tenantId}/inventory_movements/{docId} {
-      allow read, create: if isMemberOf(tenantId);
+      allow read, create: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'trackers');
       allow update, delete: if false;
     }
     match /tenants/{tenantId}/vehicles/{vehicleId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read: if isInternalMember(tenantId)
+                    || (isTenantClient(tenantId)
+                        && resource.data.clientId == memberClientId(tenantId));
+      // O vínculo é alterado somente pela API transacional (Admin SDK).
+      allow create: if isInternalMember(tenantId) && !request.resource.data.keys().hasAny(['tagId']);
+      allow update: if isInternalMember(tenantId)
+                    && request.resource.data.get('tagId', null) == resource.data.get('tagId', null)
+                    && request.resource.data.get('activeTrackingAssignmentId', null) == resource.data.get('activeTrackingAssignmentId', null);
+      allow delete: if isInternalMember(tenantId) && resource.data.get('tagId', null) == null;
       match /history/{histId} {
-        allow read, write: if isMemberOf(tenantId);
+        allow read: if isInternalMember(tenantId);
+        allow write: if false;
       }
     }
+    match /tenants/{tenantId}/tag_history/{pointId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/tracking_assignments/{assignmentId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/tag_identifier_keys/{docId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/job_leases/{docId} {
+      allow read, write: if false;
+    }
+
+    match /xadtag_identifiers/{docId} {
+      allow read, write: if false;
+    }
     match /tenants/{tenantId}/clients/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId);
     }
     match /tenants/{tenantId}/companies/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId);
     }
     match /tenants/{tenantId}/categories/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId);
     }
     match /tenants/{tenantId}/schedules/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'scheduling');
     }
     match /tenants/{tenantId}/technicians/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'scheduling');
     }
     match /tenants/{tenantId}/technician_payments/{docId} {
-      allow read: if isTenantModerator(tenantId);
-      allow write: if isTenantAdmin(tenantId);
+      allow read: if isTenantModerator(tenantId) && tenantModuleEnabled(tenantId, 'scheduling');
+      allow write: if isTenantAdmin(tenantId) && tenantModuleEnabled(tenantId, 'scheduling');
     }
     match /tenants/{tenantId}/feedbacks/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId);
     }
     match /tenants/{tenantId}/system_updates/{docId} {
-      allow read: if isMemberOf(tenantId);
+      allow read: if isInternalMember(tenantId);
       allow write: if isTenantAdmin(tenantId);
     }
     match /tenants/{tenantId}/shipments/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'shipments');
     }
     match /tenants/{tenantId}/shipping_addresses/{docId} {
-      allow read, write: if isMemberOf(tenantId);
+      allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'shipments');
     }
 
     // ---------- SISTEMA (cross-tenant / control plane) ----------
@@ -292,11 +343,17 @@ service cloud.firestore {
     }
 
     match /ktag_settings_v3/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
     match /ktag_trackers/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    match /tracker_models/{docId} {
+      // Catálogo global é consumido pela API; manutenção somente superadmin.
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }

@@ -8,10 +8,9 @@
  *      ktagfinder.app (apex)    → tenantId = APEX_TENANT (landing/placeholder)
  *      lock.ktagfinder.app      → reservado para instância externa; DNS deveria
  *                                 desviar, mas o app trata como reservado.
- *  - Em desenvolvimento (localhost/127.0.0.1):
- *      1. ?tenant=xxx na URL tem prioridade
- *      2. import.meta.env.VITE_DEV_TENANT
- *      3. fallback 'dev-tenant'
+ *  - Em desenvolvimento:
+ *      localhost/127.0.0.1 → painel admin
+ *      {slug}.localhost    → tenant correspondente
  */
 
 export const RESERVED_TENANT_SLUGS = [
@@ -31,8 +30,6 @@ export const RESERVED_TENANT_SLUGS = [
   'lock',
 ];
 
-export const DEFAULT_DEV_TENANT = 'dev-tenant';
-
 // Sentinel para indicar que o host é o apex (sem subdomínio).
 // Usado pelo TenantContext para renderizar a landing/placeholder em vez de
 // tentar carregar um documento de tenant.
@@ -51,27 +48,21 @@ export function isReservedSlug(slug: string): boolean {
   return RESERVED_TENANT_SLUGS.includes(slug);
 }
 
-function getDevTenant(): string {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const qp = params.get('tenant');
-    if (qp) return qp.toLowerCase();
-  }
-  // Vite injeta env vars com prefixo VITE_ em import.meta.env
-  const envTenant =
-    typeof import.meta !== 'undefined' && (import.meta as any).env
-      ? (import.meta as any).env.VITE_DEV_TENANT
-      : undefined;
-  return (envTenant || DEFAULT_DEV_TENANT).toLowerCase();
-}
-
 export function getTenantFromHostname(hostname?: string): string {
   const host =
     hostname ||
     (typeof window !== 'undefined' ? window.location.hostname : '');
 
+  if (host.endsWith('.localhost')) {
+    // Navegadores modernos resolvem *.localhost para loopback. Preserve o
+    // subdomínio para que admin.localhost e empresa.localhost funcionem como
+    // em produção.
+    const localSlug = host.slice(0, -'.localhost'.length).split('.').pop()?.toLowerCase() || '';
+    if (localSlug === 'admin' || isValidTenantSlug(localSlug)) return localSlug;
+  }
+
   if (!host || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
-    return getDevTenant();
+    return 'admin';
   }
 
   const parts = host.split('.');
@@ -97,7 +88,8 @@ export function isApexHost(hostname?: string): boolean {
  * Usado pelo seletor de empresa (TenantSwitcher).
  *
  *  - Produção (subdomínio): https://{slug}.{baseDomain}/
- *  - Desenvolvimento (localhost): mantém o host atual e usa ?tenant={slug}
+ *  - Desenvolvimento: http://{slug}.localhost:{porta}/. O painel admin usa
+ *    localhost puro, mantendo sessões Firebase separadas por origem.
  *
  * Mudar de tenant = navegar para outro subdomínio. NOTA: a persistência do
  * Firebase Auth (browserLocalPersistence/localStorage) é POR ORIGEM, e cada
@@ -113,7 +105,8 @@ export function buildTenantHref(slug: string): string {
 
   if (isLocal) {
     const p = port ? `:${port}` : '';
-    return `${protocol}//${hostname}${p}/?tenant=${encodeURIComponent(slug)}`;
+    if (slug === 'admin') return `${protocol}//localhost${p}/`;
+    return `${protocol}//${encodeURIComponent(slug)}.localhost${p}/`;
   }
 
   // Domínio registrável = últimos dois rótulos (ex.: ktagfinder.app).

@@ -33,6 +33,29 @@ export type PermissionId = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 // IDs em ordem canônica — fonte para o PermissionsModule listar checkboxes.
 export const ALL_PERMISSION_IDS: PermissionId[] = Object.values(PERMISSIONS);
 
+export const BUSINESS_MODULES = [
+  {
+    id: 'scheduling',
+    label: 'Módulo de Agendamentos',
+    description: 'Solicitações, central de agenda, calendário e gestão de técnicos.',
+    permissions: [PERMISSIONS.SCHEDULE_NEW, PERMISSIONS.SCHEDULES, PERMISSIONS.CALENDAR, PERMISSIONS.TECHNICIANS, PERMISSIONS.FINANCIAL],
+  },
+  {
+    id: 'trackers',
+    label: 'Módulo de Rastreadores',
+    description: 'Cadastro de rastreadores, modelos globais, ativos e chips.',
+    permissions: [PERMISSIONS.ASSETS],
+  },
+  {
+    id: 'shipments',
+    label: 'Módulo de Envios',
+    description: 'Remessas, cotações, etiquetas, impressão e rastreamento logístico.',
+    permissions: [PERMISSIONS.SHIPMENTS],
+  },
+] as const;
+
+export const BUSINESS_MODULE_PERMISSION_IDS = new Set<string>(BUSINESS_MODULES.flatMap(module => [...module.permissions]));
+
 // Defaults por role base do sistema. Quando o usuário tem um cargo do sistema
 // (sem customRoleId), ou quando o cargo customizado não foi encontrado, caímos
 // aqui. Manter sincronizado com o seed em PermissionsModule.tsx.

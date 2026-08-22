@@ -91,11 +91,6 @@ export const MelhorEnvioFlowModal = ({
     }
   }, [isOpen, shipment]);
 
-  const getToken = async () => {
-    const env = settings?.melhorEnvioEnvironment || 'sandbox';
-    return env === 'production' ? settings?.melhorEnvioProdToken : settings?.melhorEnvioSandboxToken || null;
-  };
-
   const handleQuote = async () => {
     if (!fromPostalCode || !toPostalCode) {
       addNotification('info', 'Atenção', 'Preencha os CEPs de origem e destino');
@@ -104,12 +99,7 @@ export const MelhorEnvioFlowModal = ({
 
     setLoading(true);
     try {
-      const token = await getToken();
-      if (!token) throw new Error("API não autorizada nas Configurações");
-
       const payload = {
-        token,
-        environment: settings?.melhorEnvioEnvironment || 'sandbox',
         from: { postal_code: fromPostalCode },
         to: { postal_code: toPostalCode },
         products: [{
@@ -138,11 +128,7 @@ export const MelhorEnvioFlowModal = ({
     if (!selectedOption) return;
     setLoading(true);
     try {
-      const token = await getToken();
-      
       const payload = {
-        token,
-        environment: settings?.melhorEnvioEnvironment || 'sandbox',
         service: selectedOption.id,
         agency: selectedOption.company?.name?.toLowerCase().includes('jadlog') ? 1 : null, // Simplificado, ideal é buscar agencia
         from: {
@@ -207,9 +193,8 @@ export const MelhorEnvioFlowModal = ({
     if (!melhorEnvioOrderId) return;
     setLoading(true);
     try {
-      const token = await getToken();
       const res = await fetch('/api/melhorenvio/checkout', {
-         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, environment: settings?.melhorEnvioEnvironment || 'sandbox', orders: [melhorEnvioOrderId] })
+         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orders: [melhorEnvioOrderId] })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro no checkout. Verifique saldo na sua carteira Melhor Envio.');
@@ -231,9 +216,8 @@ export const MelhorEnvioFlowModal = ({
     if (!melhorEnvioOrderId) return;
     setLoading(true);
     try {
-      const token = await getToken();
       const res = await fetch('/api/melhorenvio/generate', {
-         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, environment: settings?.melhorEnvioEnvironment || 'sandbox', orders: [melhorEnvioOrderId] })
+         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orders: [melhorEnvioOrderId] })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao gerar etiqueta');
@@ -249,7 +233,7 @@ export const MelhorEnvioFlowModal = ({
 
       // Now request print URL
       const printRes = await fetch('/api/melhorenvio/print', {
-         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, environment: settings?.melhorEnvioEnvironment || 'sandbox', orders: [melhorEnvioOrderId], mode: 'public' })
+         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orders: [melhorEnvioOrderId], mode: 'public' })
       });
       const printData = await printRes.json();
       

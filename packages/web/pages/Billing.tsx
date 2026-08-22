@@ -73,7 +73,27 @@ export const Billing = () => {
     }
   };
 
-  useEffect(() => { loadAll(true); }, []);
+  useEffect(() => {
+    let active = true;
+    const syncOnOpen = async () => {
+      if (!functions) return;
+      setLoading(true);
+      setSyncing(true);
+      try {
+        const sync = httpsCallable(functions, 'syncMyTenantBilling');
+        await sync({ tenantId });
+      } catch (e) {
+        // A leitura ainda deve ocorrer: uma indisponibilidade momentânea do
+        // Asaas não pode deixar a tela inteira vazia.
+        console.warn('billing automatic sync failed', e);
+      } finally {
+        if (active) setSyncing(false);
+      }
+      if (active) await loadAll();
+    };
+    syncOnOpen();
+    return () => { active = false; };
+  }, [tenantId]);
 
   const handleSync = async () => {
     if (!functions || syncing) return;

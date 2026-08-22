@@ -1,13 +1,13 @@
 {
   "name": "@ktag/backend",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test src/**/*.test.ts",
     "docker:build": "docker build -t ktag-backend:local .",
     "docker:run": "docker run --rm -p 4000:4000 -e PORT=4000 ktag-backend:local"
   },
