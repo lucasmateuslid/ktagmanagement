@@ -16,11 +16,11 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { Checkbox } from '../components/ui/checkbox';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { useTenant } from '../contexts/TenantContext';
 import { formatCPF, isValidCPF } from '../utils/brDocument';
+import { exportRowsToXlsx } from '../utils/excel';
 
 const MotionDiv = motion.div as any;
 
@@ -101,7 +101,7 @@ export const Clients = () => {
       }
   };
 
-  const handleExportSelected = (format: 'pdf' | 'xlsx') => {
+  const handleExportSelected = async (format: 'pdf' | 'xlsx') => {
       if (selectedClients.size === 0) return;
       
       const dataToExport = clients.filter(c => selectedClients.has(c.id)).map(c => {
@@ -118,10 +118,7 @@ export const Clients = () => {
       });
 
       if (format === 'xlsx') {
-          const ws = XLSX.utils.json_to_sheet(dataToExport);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Clientes Selecionados");
-          XLSX.writeFile(wb, `clientes_export_${Date.now()}.xlsx`);
+          await exportRowsToXlsx(dataToExport, 'Clientes Selecionados', `clientes_export_${Date.now()}.xlsx`);
       } else {
           const doc = new jsPDF();
           doc.text("Relatório de Clientes", 14, 20);

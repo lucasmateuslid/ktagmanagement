@@ -1,6 +1,6 @@
 {
   "name": "@ktag/backend",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,13 +14,13 @@
   "dependencies": {
     "@ktag/shared": "*",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "firebase-admin": "^14.3.0",
     "helmet": "^8.1.0",
-    "dotenv": "^17.4.2",
-    "firebase-admin": "^13.10.0",
     "tsx": "^4.22.0",
-    "ws": "^8.21.0"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

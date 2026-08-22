@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.1.1 — 2026-08-22
+
+- Dependências de produção e Cloud Functions atualizadas até `npm audit` reportar zero vulnerabilidades.
+- SheetJS (`xlsx`) removido por não possuir correção de segurança; exportações e importações migradas para ExcelJS.
+- Firebase Web/Admin, React Router, jsPDF, Axios, Web Push e WebSocket atualizados para versões corrigidas.
+- Firebase Admin das Functions migrado para inicialização modular compatível com a versão 14.
+
 ## 5.1.0 — 2026-08-21
 
 - Cadastro autenticado e idempotente de XADTags no Traccar, com reuso por `uniqueId`, estado pendente e tentativa posterior.

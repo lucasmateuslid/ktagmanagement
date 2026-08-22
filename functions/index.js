@@ -8,7 +8,9 @@ const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https")
 const { onDocumentUpdated, onDocumentCreated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
-const admin = require("firebase-admin");
+const { getApps, initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
+const { FieldValue, Timestamp, getFirestore } = require("firebase-admin/firestore");
 const axios = require("axios");
 const dns = require("node:dns").promises;
 const net = require("node:net");
@@ -114,10 +116,13 @@ const corsOptions = {
 const cors = require("cors")(corsOptions);
 const webpush = require("web-push");
 
-// Inicializa o Admin SDK se ainda não estiver inicializado
-if (admin.apps.length === 0) {
-  admin.initializeApp();
-}
+// Inicializa o Admin SDK modular. O adaptador local preserva as chamadas
+// admin.firestore()/admin.auth() enquanto o restante das Functions é migrado.
+if (getApps().length === 0) initializeApp();
+const firestore = () => getFirestore();
+firestore.FieldValue = FieldValue;
+firestore.Timestamp = Timestamp;
+const admin = { firestore, auth: getAuth };
 // Aceitar `undefined` em writes do Firestore como "campo ausente" em vez de erro.
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 

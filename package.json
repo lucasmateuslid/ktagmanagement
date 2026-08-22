@@ -1,7 +1,7 @@
 {
   "name": "ktag-manager",
   "private": true,
-  "version": "5.1.0",
+  "version": "5.1.1",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -25,6 +25,7 @@
   },
   "overrides": {
     "undici": "^6.25.0",
+    "uuid": "^11.1.1",
     "http-proxy-agent": "^7.0.2",
     "@tootallnate/once": "^3.0.1"
   }

@@ -1,6 +1,7 @@
 
 import { LocationHistory, Vehicle, Tag } from '../../../types';
 import { geocodingService } from '../../../services/geocoding';
+import { exportRowsToXlsx } from '../../../utils/excel';
 
 // Helper para resolver endereços em lote para exportação
 export const processExportData = async (
@@ -64,9 +65,5 @@ export const generatePDF = async (label: string, data: any[]) => {
 };
 
 export const generateExcel = async (label: string, data: any[]) => {
-    const XLSX = await import('xlsx');
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Trajeto");
-    XLSX.writeFile(wb, `Trajeto_${label}.xlsx`);
+    await exportRowsToXlsx(data, 'Trajeto', `Trajeto_${label}.xlsx`);
 };

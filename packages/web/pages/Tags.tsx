@@ -19,9 +19,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
-import * as XLSX from 'xlsx';
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
+import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
 
 const MotionDiv = motion.div as any;
 
@@ -302,10 +302,7 @@ export const Tags = () => {
               };
           }));
 
-          const ws = XLSX.utils.json_to_sheet(reportData);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Conexões");
-          XLSX.writeFile(wb, `relatorio_conexoes_tags_${Date.now()}.xlsx`);
+          await exportRowsToXlsx(reportData, 'Conexões', `relatorio_conexoes_tags_${Date.now()}.xlsx`);
 
           addNotification('success', 'Relatório Concluído', 'O download foi iniciado com sucesso!');
       } catch (e) {
@@ -316,7 +313,7 @@ export const Tags = () => {
       }
   };
 
-  const handleExportSelected = (format: 'xlsx' | 'csv') => {
+  const handleExportSelected = async (format: 'xlsx' | 'csv') => {
       if (selectedTags.size === 0) return;
 
       const dataToExport = tags
@@ -351,10 +348,7 @@ export const Tags = () => {
           link.click();
           document.body.removeChild(link);
       } else {
-          const ws = XLSX.utils.json_to_sheet(dataToExport);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Equipamentos Selecionados");
-          XLSX.writeFile(wb, `tags_export_${Date.now()}.xlsx`);
+          await exportRowsToXlsx(dataToExport, 'Equipamentos Selecionados', `tags_export_${Date.now()}.xlsx`);
       }
       
       addNotification('success', 'Exportação Concluída', `${selectedTags.size} itens exportados.`);
@@ -653,7 +647,7 @@ export const Tags = () => {
     }
   };
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     const headers = [
       {
         "Identificacao": "Tag Exemplo 01",
@@ -662,24 +656,15 @@ export const Tags = () => {
         "Chave Privada (Obrigatório K-Tag)": "priv_key..."
       }
     ];
-    const ws = XLSX.utils.json_to_sheet(headers);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template Importacao");
-    XLSX.writeFile(wb, "template_equipamentos_ktag.xlsx");
+    await exportRowsToXlsx(headers, 'Template Importacao', 'template_equipamentos_ktag.xlsx');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
+    try {
+        const data = await readTabularFile(file);
 
         if (data.length === 0) {
           addNotification('error', 'Arquivo Vazio', 'A planilha não contém dados.');
@@ -704,8 +689,6 @@ export const Tags = () => {
       } catch (error) {
         addNotification('error', 'Erro de Leitura', 'Falha ao processar o arquivo.');
       }
-    };
-    reader.readAsBinaryString(file);
   };
 
   const processImport = async () => {
@@ -842,7 +825,7 @@ export const Tags = () => {
         )}
       </div>
 
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx" className="hidden" />
 
       {/* FILTER BAR */}
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col xl:flex-row gap-3 items-center transition-all">

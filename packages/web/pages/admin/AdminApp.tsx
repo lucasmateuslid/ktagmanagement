@@ -56,7 +56,7 @@ const AdminGate = () => {
 export const AdminApp = () => (
   <AdminThemeProvider>
     <SystemAdminProvider>
-      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <HashRouter>
         <AdminGate />
       </HashRouter>
     </SystemAdminProvider>

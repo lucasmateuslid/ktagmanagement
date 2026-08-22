@@ -6,6 +6,7 @@ import { Vehicle, Company, Tag, VehicleCategory, Client } from '../../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { mapVehiclesToExportData } from '../utils/vehicleExportUtils';
+import { exportSheetsToXlsx } from '../../../utils/excel';
 
 interface VehicleKPIModalProps {
   onClose: () => void;
@@ -111,8 +112,6 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
   };
 
   const handleExportExcel = async () => {
-    const { default: XLSX } = await import('xlsx');
-    
     // 1. Resumo Geral
     const summaryData = [
       ['RELATÓRIO DE KPI - FROTA KTAG'],
@@ -143,17 +142,10 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
     // 2. Lista Detalhada de Veículos (para filtros avançados no Excel)
     const detailedData = mapVehiclesToExportData(vehicles, tags, companies, categories, clients);
 
-    const wb = XLSX.utils.book_new();
-    
-    // Aba de Resumo
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo KPI");
-    
-    // Aba de Detalhes
-    const wsDetails = XLSX.utils.json_to_sheet(detailedData);
-    XLSX.utils.book_append_sheet(wb, wsDetails, "Lista de Veículos");
-
-    XLSX.writeFile(wb, `Relatorio_KPI_Detalhado_${new Date().getTime()}.xlsx`);
+    await exportSheetsToXlsx([
+      { name: 'Resumo KPI', matrix: summaryData },
+      { name: 'Lista de Veículos', rows: detailedData }
+    ], `Relatorio_KPI_Detalhado_${new Date().getTime()}.xlsx`);
   };
 
   return (
