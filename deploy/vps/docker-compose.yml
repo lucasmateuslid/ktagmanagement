@@ -49,6 +49,36 @@ services:
         max-size: 20m
         max-file: "5"
 
+  # Processamento operacional contínuo: coleta K-TAG, retenção do histórico e
+  # retomada de exclusões pendentes. Compartilha a imagem, mas não publica porta.
+  worker:
+    image: ${KTAG_IMAGE_REPOSITORY:-ktag-platform}:${KTAG_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    command: ["node_modules/.bin/tsx", "packages/backend/src/worker.ts"]
+    env_file:
+      - ${KTAG_ENV_FILE:-.env.vps}
+    environment:
+      NODE_ENV: production
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
+    volumes:
+      - ${FIREBASE_SERVICE_ACCOUNT_PATH:-./secrets/firebase-service-account.json}:/run/secrets/firebase-service-account.json:ro
+    networks:
+      - traccar
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
 networks:
   traccar:
     external: true

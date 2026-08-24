@@ -14,6 +14,7 @@ import dns from "node:dns/promises";
 import { setDefaultResultOrder } from "node:dns";
 import net from "node:net";
 import { createServer } from "node:http";
+import { FieldValue } from "firebase-admin/firestore";
 import { internalTraccarRouter } from "./routes/tracking.js";
 import { attachWebSocketServer } from "./services/positionBroadcast.js";
 import { xadTagsRouter, liveMapRouter } from "./routes/xadtags.js";
@@ -21,6 +22,7 @@ import { adminTraccarRouter } from "./routes/adminTraccar.js";
 import { clientRouter } from "./routes/client.js";
 import { trackersRouter } from "./routes/trackers.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
+import { tagsRouter } from "./routes/tags.js";
 import { traccarRealtimeService } from "./services/traccarRealtimeService.js";
 import { getTraccarConfig, validateTraccarConfig } from "./config/traccar.js";
 import { setAddressFallback } from "./services/addressResolver.js";
@@ -520,6 +522,16 @@ async function startServer() {
 
   app.use(resolveTenant);
 
+  app.post('/api/audit', requireAuth, async (req, res) => {
+    try {
+      const tenantId = String(req.tenantId || ''); if (!tenantId || tenantId === 'admin' || tenantId === '__apex__') return res.status(400).json({ ok: false, error: 'Empresa inválida.' });
+      const action = String(req.body?.action || ''); const entity = String(req.body?.entity || '').slice(0, 80); const details = String(req.body?.details || '').slice(0, 4000);
+      if (!['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'EXPORT', 'VIEW'].includes(action) || !entity) return res.status(400).json({ ok: false, error: 'Evento de auditoria inválido.' });
+      await adminDb.collection(`tenants/${tenantId}/audit_logs`).add({ userId: req.authUser!.uid, userName: String(req.body?.userName || '').slice(0, 200), userEmail: String(req.body?.userEmail || '').slice(0, 320), action, entity, entityId: req.body?.entityId ? String(req.body.entityId).slice(0, 160) : null, details, timestamp: FieldValue.serverTimestamp() });
+      res.status(201).json({ ok: true });
+    } catch (error) { console.error('audit write failed', error); res.status(500).json({ ok: false, error: 'Falha ao registrar auditoria.' }); }
+  });
+
   // APIs privadas: autenticação é validada no servidor em todas as chamadas.
   // CORS e o segredo da origem são defesa em profundidade, não autorização.
   app.use(['/api/geocode', '/api/reverse-geocode'], requireAuth);
@@ -564,16 +576,15 @@ async function startServer() {
     try {
       const slug = String(req.params.slug || '').trim();
       if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)) return res.status(400).json({ error: 'Empresa inválida.' });
-      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-      if (!projectId) return res.status(503).json({ error: 'Projeto Firebase local não configurado.' });
       const authorization = req.headers.authorization || '';
-      const settingsFields: Record<string, unknown> = {};
+      const settingsFields: Record<string, unknown> = {}; const adminUpdates: Record<string, unknown> = {};
       const updateMasks: string[] = [];
       for (const field of ['limiteTags', 'limiteVeiculos', 'maxUsers']) {
         if (req.body?.[field] === undefined) continue;
         const value = Number(req.body[field]);
         if (!Number.isFinite(value) || value < 0) return res.status(400).json({ error: `${field} inválido.` });
         settingsFields[field] = { integerValue: String(Math.trunc(value)) };
+        adminUpdates[`settings.${field}`] = Math.trunc(value);
         updateMasks.push(`settings.${field}`);
       }
       if (req.body?.features !== undefined) {
@@ -582,9 +593,20 @@ async function startServer() {
         const features: string[] = [...new Set<string>((req.body.features as unknown[]).map(value => String(value)))];
         if (features.some(id => !allowed.has(id))) return res.status(400).json({ error: 'A lista contém um módulo desconhecido.' });
         settingsFields.features = { arrayValue: { values: features.map(stringValue => ({ stringValue })) } };
+        adminUpdates['settings.features'] = features;
         updateMasks.push('settings.features');
       }
-      updateMasks.push('updatedAt');
+      updateMasks.push('updatedAt'); adminUpdates.updatedAt = Date.now();
+      // Na VPS/Cloud Run a credencial Admin já carrega o projectId. Este é o
+      // caminho principal e evita exigir VITE_FIREBASE_PROJECT_ID no runtime.
+      try {
+        await adminDb.doc(`tenants/${slug}`).update(adminUpdates);
+        return res.json({ slug, changed: true });
+      } catch (adminError) {
+        console.warn('admin sdk tenant limits update unavailable; trying user-token REST fallback', (adminError as Error).message);
+      }
+      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+      if (!projectId) return res.status(503).json({ error: 'A VPS não possui credencial Firebase Admin nem FIREBASE_PROJECT_ID para o fallback local.' });
       const params = new URLSearchParams();
       updateMasks.forEach(field => params.append('updateMask.fieldPaths', field));
       const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/tenants/${encodeURIComponent(slug)}?${params}`;
@@ -617,6 +639,7 @@ async function startServer() {
   app.use('/api/client', clientRouter);
   app.use('/api/trackers', requireAuth, requireTenantModule('trackers'), trackersRouter);
   app.use('/api/vehicles', vehiclesRouter);
+  app.use('/api/tags', tagsRouter);
   app.use('/api/livemap/vehicles', vehiclesRouter);
 
   app.post("/api/geocode", async (req, res) => {

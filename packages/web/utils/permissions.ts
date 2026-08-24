@@ -9,9 +9,11 @@ export const PERMISSIONS = {
   MAP: 'ROUTE_MAP',
   SECURITY: 'ROUTE_SECURITY',
   VEHICLES: 'ROUTE_VEHICLES',
+  VEHICLES_MANAGE: 'ACTION_VEHICLES_MANAGE',
   SHIPMENTS: 'ROUTE_SHIPMENTS',
   CLIENTS: 'ROUTE_CLIENTS',
   TAGS: 'ROUTE_TAGS',
+  TAGS_MANAGE: 'ACTION_TAGS_MANAGE',
   ASSETS: 'ROUTE_ASSETS',
   SCHEDULE_NEW: 'ROUTE_SCHEDULE_NEW',
   SCHEDULES: 'ROUTE_SCHEDULES',
@@ -61,7 +63,7 @@ export const BUSINESS_MODULE_PERMISSION_IDS = new Set<string>(BUSINESS_MODULES.f
 // aqui. Manter sincronizado com o seed em PermissionsModule.tsx.
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionId[]> = {
   sysadmin: [...ALL_PERMISSION_IDS],
-  admin: ALL_PERMISSION_IDS.filter(id => id !== PERMISSIONS.SETTINGS_MODULE_ROLES === false ? true : true),
+  admin: [...ALL_PERMISSION_IDS],
   admin_tecnico: [
     PERMISSIONS.DASHBOARD,
     PERMISSIONS.SCHEDULES,
@@ -75,9 +77,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionId[]> = {
     PERMISSIONS.MAP,
     PERMISSIONS.SECURITY,
     PERMISSIONS.VEHICLES,
+    PERMISSIONS.VEHICLES_MANAGE,
     PERMISSIONS.SHIPMENTS,
     PERMISSIONS.CLIENTS,
     PERMISSIONS.TAGS,
+    PERMISSIONS.TAGS_MANAGE,
     PERMISSIONS.ASSETS,
     PERMISSIONS.SCHEDULE_NEW,
     PERMISSIONS.SCHEDULES,
@@ -142,6 +146,12 @@ export const hasPermission = (
     if (role) return role.permissions.includes(permission);
     // customRoleId aponta pra cargo que não existe mais — cai pra default.
   }
+
+  // Permissões de ação foram adicionadas depois dos cargos de sistema já
+  // persistidos em alguns tenants. Enquanto o seed é atualizado, o default do
+  // cargo base é autoritativo para evitar regressão de admin/moderador.
+  if ((permission === PERMISSIONS.TAGS_MANAGE || permission === PERMISSIONS.VEHICLES_MANAGE)
+      && (DEFAULT_ROLE_PERMISSIONS[user.role || ''] || []).includes(permission as PermissionId)) return true;
 
   if (user.role) {
     const role = customRoles.find(r => r.id === user.role);

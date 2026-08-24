@@ -26,6 +26,7 @@ import { Vehicle, LocationHistory } from '../../types';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { authenticatedFetch } from '../../services/authenticatedFetch';
+import { hasPermission, PERMISSIONS } from '../../utils/permissions';
 
 const MotionDiv = motion.div as any;
 
@@ -33,7 +34,8 @@ export const VehiclesPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, customRoles } = useAuth();
+  const canManageVehicles = hasPermission(currentUser, customRoles, PERMISSIONS.VEHICLES_MANAGE);
   
   // 1. Filters are sent to the backend; only one database page is kept in memory.
   const { 
@@ -44,7 +46,7 @@ export const VehiclesPage = () => {
     installationFilter, setInstallationFilter,
     tagFilter, setTagFilter
   } = useVehicleFilters([], []);
-  const { vehicles, tags, companies, categories, clients, loading, reload, nextPage, previousPage, hasNextPage, hasPreviousPage } = useVehiclesData(currentUser, {
+  const { vehicles, tags, companies, categories, clients, loading, error: loadError, reload, loadMore, hasMore } = useVehiclesData(currentUser, {
     search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
     installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
   });
@@ -108,15 +110,9 @@ export const VehiclesPage = () => {
 
   const handleDelete = async (id: string) => {
       const v = vehicles.find(v => v.id === id);
-      if (v?.tagId) {
-          const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(id)}/tag`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Veículo removido pelo operador' }) });
-          const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Não foi possível liberar a tag antes da exclusão.');
-      }
-      await storage.deleteVehicle(id); 
-      if (currentUser && v) {
-          storage.logAction(currentUser, 'DELETE', 'Vehicle', `Removeu veículo: ${v.plate}`, id);
-      }
-      reload(); 
+      const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Não foi possível excluir o veículo.');
+      console.info('Veículo excluído', { id, plate: v?.plate }); await reload();
   };
 
   // --- CLIENT MOBILE VIEW COMPONENTS ---
@@ -425,7 +421,7 @@ export const VehiclesPage = () => {
           <p className="text-zinc-500 text-xs mt-1 font-medium">{isClientView ? 'Gestão dos seus veículos e equipamentos.' : 'Gestão operacional da frota.'}</p>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {!isClientView && (
+          {canManageVehicles && (
             <>
               <button
                 onClick={() => setIsKPIModalOpen(true)}
@@ -465,7 +461,7 @@ export const VehiclesPage = () => {
         handleExportPDF={handleExportPDF}
         handleExportExcel={handleExportExcel}
         handleExportCSV={handleExportCSV}
-        searchPlaceholder={isClientView ? "Buscar na minha frota..." : "Buscar placa, modelo ou cliente..."}
+        searchPlaceholder={isClientView ? "Buscar placa, modelo ou IMEI..." : "Buscar placa, modelo, cliente ou IMEI..."}
       />
 
       <VehicleTable 
@@ -473,17 +469,16 @@ export const VehiclesPage = () => {
         tags={tags}
         categories={categories}
         clients={clients}
-        isReadOnly={isClientView}
+        isReadOnly={!canManageVehicles}
         selectedVehicles={selectedVehicles}
         toggleSelect={toggleSelect}
         onEdit={(v) => openEdit(v, tags)}
         onDelete={(id) => { setVehicleToDelete(id); setIsConfirmDeleteOpen(true); }}
       />
-      <div className="flex items-center justify-between gap-3 py-4">
-        <button type="button" disabled={!hasPreviousPage || loading} onClick={previousPage} className="rounded-xl border border-zinc-200 px-5 py-3 text-xs font-bold disabled:opacity-40 dark:border-zinc-800">Anterior</button>
-        <span className="text-xs text-zinc-500">Até 50 veículos por página</span>
-        <button type="button" disabled={!hasNextPage || loading} onClick={nextPage} className="rounded-xl border border-zinc-200 px-5 py-3 text-xs font-bold disabled:opacity-40 dark:border-zinc-800">Próxima</button>
-      </div>
+      {loadError && <div role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm font-semibold text-danger">{loadError} <button type="button" onClick={() => void reload()} className="ml-2 underline">Tentar novamente</button></div>}
+      {hasMore && <div className="flex justify-center py-4">
+        <button type="button" disabled={loading} onClick={loadMore} className="min-w-48 rounded-xl border border-zinc-200 px-6 py-3 text-xs font-black uppercase tracking-wider disabled:opacity-40 dark:border-zinc-800">{loading ? 'Carregando...' : 'Carregar mais'}</button>
+      </div>}
 
       {isKPIModalOpen && (
         <VehicleKPIModal 

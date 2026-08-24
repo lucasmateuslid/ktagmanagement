@@ -3,7 +3,6 @@ import { getTraccarConfig } from '../config/traccar.js';
 import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { communicationStatus } from '../domain/communicationStatus.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
-import { addressResolver } from './addressResolver.js';
 import { traccarClient, TraccarHttpError } from './traccarClient.js';
 
 const positionCache = new Map<number, { expiresAt: number; value: TrackedPosition }>();
@@ -151,8 +150,10 @@ export class XadTagService {
   async resolvePosition(raw: TraccarPosition) {
     const cached = positionCache.get(raw.deviceId);
     if (cached && cached.value.id === raw.id && cached.expiresAt > Date.now()) return cached.value;
-    const address = await addressResolver.resolve(raw);
-    const value = { ...toTrackedPosition(raw, address.address), addressResolutionStatus: address.status, addressResolutionAttempts: address.attempts };
+    // Não dispara geocodificação ao consultar posição/histórico. Endereços já
+    // fornecidos pelo Traccar são preservados; os ausentes são resolvidos pela
+    // UI somente após ação explícita do usuário.
+    const value = { ...toTrackedPosition(raw, raw.address ?? null), addressResolutionStatus: raw.address ? 'resolved' as const : 'pending' as const, addressResolutionAttempts: 0 };
     positionCache.set(raw.deviceId, { value, expiresAt: Date.now() + getTraccarConfig().positionCacheTtlMs });
     return value;
   }

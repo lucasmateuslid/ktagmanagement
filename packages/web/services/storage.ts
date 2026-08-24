@@ -18,6 +18,7 @@ import { tenantCollection, tenantDoc, systemDoc } from '../lib/firestore';
 import { activeTenant } from './activeTenant';
 import { encryption } from './encryption';
 import { securityService } from './security';
+import { authenticatedFetch } from './authenticatedFetch';
 
 // Integrações configuradas no nível da plataforma pelo super admin
 // (/ktag_settings_v3/platform_integrations). Proxy e provedor de IA são
@@ -714,7 +715,14 @@ export const storage = {
       details: await encryption.encrypt(details),
       timestamp: Date.now()
     };
-    if (db) await addDoc(tenantCollection(COLLECTIONS.AUDIT_LOGS), cleanData(logEntry as any));
+    try {
+      const response = await authenticatedFetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntry) });
+      if (!response.ok) console.warn('Backend recusou registro de auditoria:', response.status);
+    } catch (error) {
+      // Auditoria não deve transformar uma operação já concluída em falso erro
+      // para o usuário; o backend registra as mutações críticas diretamente.
+      console.warn('Registro de auditoria indisponível:', error);
+    }
   },
 
   getAuditLogs: async (count = 100): Promise<AuditLog[]> => {

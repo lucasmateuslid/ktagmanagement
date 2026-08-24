@@ -96,6 +96,8 @@ services:
       CF_ORIGIN_SECRET: ${CF_ORIGIN_SECRET:-}
       PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-}
       MELHOR_ENVIO_WEBHOOK_SECRET: ${MELHOR_ENVIO_WEBHOOK_SECRET:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,3 +109,27 @@ services:
       - internal
     profiles:
       - full   # só sobe com: docker compose --profile full up
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["node_modules/.bin/tsx", "packages/backend/src/worker.ts"]
+    environment:
+      NODE_ENV: production
+      KTAG_API_URL: ${KTAG_API_URL:-}
+      KTAG_API_USER: ${KTAG_API_USER:-}
+      KTAG_API_PASS: ${KTAG_API_PASS:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      traccar:
+        condition: service_healthy
+    networks:
+      - internal
+    profiles:
+      - full

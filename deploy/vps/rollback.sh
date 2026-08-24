@@ -7,6 +7,7 @@ test -f .previous-image || { echo "Nenhuma imagem anterior registrada." >&2; exi
 PREVIOUS_IMAGE="$(tr -d '\r\n' < .previous-image)"
 test -n "$PREVIOUS_IMAGE" || { echo "Registro de imagem anterior vazio." >&2; exit 1; }
 docker image inspect "$PREVIOUS_IMAGE" >/dev/null
+export KTAG_IMAGE_REPOSITORY="${PREVIOUS_IMAGE%:*}"
 export KTAG_IMAGE_TAG="${PREVIOUS_IMAGE##*:}"
-docker compose --env-file .env.vps up -d --no-build backend
+docker compose --env-file .env.vps up -d --no-build backend worker
 echo "Rollback iniciado para $PREVIOUS_IMAGE"

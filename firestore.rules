@@ -117,6 +117,14 @@ service cloud.firestore {
       return isMemberOf(tenantId) && !isTenantClient(tenantId);
     }
 
+    function hasTenantPermission(tenantId, permission) {
+      return isTenantAdmin(tenantId)
+        || tenantRole(tenantId) == 'moderator'
+        || (approvedMemberDoc(tenantId)
+            && memberDoc(tenantId).get('customRoleId', '') != ''
+            && get(/databases/$(database)/documents/tenants/$(tenantId)/custom_roles/$(memberDoc(tenantId).customRoleId)).data.permissions.hasAny([permission]));
+    }
+
     // Licença operacional concedida pelo superadmin ao TENANT. Permissão de
     // usuário/cargo nunca consegue ampliar esta lista.
     function tenantModuleEnabled(tenantId, moduleId) {
@@ -226,10 +234,10 @@ service cloud.firestore {
     match /tenants/{tenantId}/tags/{docId} {
       allow read: if isInternalMember(tenantId);
       // Metadados do provider externo são escritos apenas pelo backend (Admin SDK).
-      allow create: if isInternalMember(tenantId)
+      allow create: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
                     && request.resource.data.type != 'XADTAG'
                     && !request.resource.data.keys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
-      allow update, delete: if isInternalMember(tenantId)
+      allow update, delete: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
                             && resource.data.type != 'XADTAG'
                             && request.resource.data.type != 'XADTAG'
                             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
@@ -257,11 +265,11 @@ service cloud.firestore {
                     || (isTenantClient(tenantId)
                         && resource.data.clientId == memberClientId(tenantId));
       // O vínculo é alterado somente pela API transacional (Admin SDK).
-      allow create: if isInternalMember(tenantId) && !request.resource.data.keys().hasAny(['tagId']);
-      allow update: if isInternalMember(tenantId)
+      allow create: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE') && !request.resource.data.keys().hasAny(['tagId']);
+      allow update: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE')
                     && request.resource.data.get('tagId', null) == resource.data.get('tagId', null)
                     && request.resource.data.get('activeTrackingAssignmentId', null) == resource.data.get('activeTrackingAssignmentId', null);
-      allow delete: if isInternalMember(tenantId) && resource.data.get('tagId', null) == null;
+      allow delete: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE') && resource.data.get('tagId', null) == null;
       match /history/{histId} {
         allow read: if isInternalMember(tenantId);
         allow write: if false;

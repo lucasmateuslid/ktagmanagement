@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { broadcastTenant } from '../services/positionBroadcast.js';
@@ -33,9 +33,8 @@ const editableOriginal = (value: { identifierOriginal?: string; traccarUniqueId?
 
 xadTagsRouter.use((req, res, next) => {
   const mutatesInventory = req.method !== 'GET' && !req.path.endsWith('/check');
-  if (mutatesInventory && !['admin', 'moderator'].includes(req.authUser?.role || '')) {
-    return res.status(403).json({ ok: false, error: 'Permissão insuficiente.' });
-  }
+  if (mutatesInventory) return requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderator'])(req, res, next);
+  if (req.method === 'GET' && req.path === '/') return requirePermission('ROUTE_TAGS', ['admin', 'moderator'])(req, res, next);
   next();
 });
 

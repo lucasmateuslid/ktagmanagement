@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { storage } from '../../../services/storage';
 import { Vehicle, Tag, Company, VehicleCategory, Client, User } from '../../../types';
 import { authenticatedFetch } from '../../../services/authenticatedFetch';
@@ -6,20 +6,24 @@ import { authenticatedFetch } from '../../../services/authenticatedFetch';
 interface VehicleQuery { search?: string; status?: string; companyId?: string; ownershipStatus?: string; installationType?: string; tag?: string }
 export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery) => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [tags, setTags] = useState<Tag[]>([]); const [companies, setCompanies] = useState<Company[]>([]); const [categories, setCategories] = useState<VehicleCategory[]>([]); const [clients, setClients] = useState<Client[]>([]); const [loading, setLoading] = useState(true);
-  const [nextCursor, setNextCursor] = useState<string | null>(null); const [previousCursor, setPreviousCursor] = useState<string | null>(null); const [cursor, setCursor] = useState<string | null>(null); const [direction, setDirection] = useState<'next'|'previous'>('next');
-  const filterKey = JSON.stringify(filters);
+  const [error, setError] = useState(''); const requestRef = useRef<AbortController | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null); const [cursor, setCursor] = useState<string | null>(null);
+  const rawFilterKey = JSON.stringify(filters); const [filterKey, setFilterKey] = useState(rawFilterKey);
+  useEffect(() => { const timer = window.setTimeout(() => setFilterKey(rawFilterKey), 350); return () => window.clearTimeout(timer); }, [rawFilterKey]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mudar filtros invalida os cursores assinados do backend
-    setCursor(null); setDirection('next');
+    setCursor(null); setVehicles([]);
   }, [filterKey]);
   const loadData = useCallback(async () => {
-    if (!currentUser) return; setLoading(true);
+    if (!currentUser) return; requestRef.current?.abort(); const controller = new AbortController(); requestRef.current = controller; setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ limit: '50', ...(cursor ? { cursor, direction } : {}) });
+      const params = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) });
       const activeFilters = JSON.parse(filterKey) as VehicleQuery;
       Object.entries(activeFilters).forEach(([key, value]) => { if (value && value !== 'all') params.set(key, value); });
-      const response = await authenticatedFetch(`/api/vehicles?${params}`); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao carregar frota.');
-      setVehicles(payload.data.items || []); setNextCursor(payload.data.nextCursor); setPreviousCursor(payload.data.previousCursor);
+      const response = await authenticatedFetch(`/api/vehicles?${params}`, { signal: controller.signal }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao carregar frota.');
+      if (controller.signal.aborted) return;
+      const incoming: Vehicle[] = payload.data.items || [];
+      setVehicles(previous => cursor ? [...new Map([...previous, ...incoming].map(item => [item.id, item])).values()] : incoming); setNextCursor(payload.data.nextCursor);
       const clientFleet = currentUser.role === 'client' ? await authenticatedFetch('/api/client/fleet').then(async result => {
         const body = await result.json(); if (!result.ok) throw new Error(body.error || 'Falha ao carregar dados auxiliares da frota.'); return body.data;
       }) : null;
@@ -27,13 +31,13 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
         ? [Promise.resolve(clientFleet?.tags || []), Promise.resolve(clientFleet?.categories || []), Promise.resolve([]), Promise.resolve([])]
         : [storage.getTags(), storage.getCategories(), storage.getCompanies(), storage.getClients()]);
       setTags(allTags); setCategories(allCategories); setCompanies(allCompanies); setClients(allClients);
-    } finally { setLoading(false); }
-  }, [currentUser, cursor, direction, filterKey]);
+    } catch (failure) { if ((failure as Error).name !== 'AbortError') setError((failure as Error).message || 'Falha ao carregar frota.'); }
+    finally { if (requestRef.current === controller) setLoading(false); }
+  }, [currentUser, cursor, filterKey]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carregamento remoto é o efeito sincronizado por este hook
     void loadData();
   }, [loadData]);
-  const nextPage = () => { if (nextCursor) { setDirection('next'); setCursor(nextCursor); } };
-  const previousPage = () => { if (previousCursor) { setDirection('previous'); setCursor(previousCursor); } };
-  return { vehicles, tags, companies, categories, clients, loading, reload: loadData, nextPage, previousPage, hasNextPage: Boolean(nextCursor), hasPreviousPage: Boolean(previousCursor) };
+  const loadMore = () => { if (nextCursor && !loading) setCursor(nextCursor); };
+  return { vehicles, tags, companies, categories, clients, loading, error, reload: loadData, loadMore, hasMore: Boolean(nextCursor) };
 };

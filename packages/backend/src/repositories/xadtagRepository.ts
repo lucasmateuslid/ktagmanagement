@@ -71,6 +71,16 @@ export class XadTagRepository {
     });
   }
   async update(tenantId: string, id: string, data: Partial<XadTag>) { await adminDb.doc(`${collectionPath(tenantId)}/${id}`).update({ ...data, updatedAt: Date.now() }); }
+  async remove(item: XadTag) {
+    const tagRef = adminDb.doc(`${collectionPath(item.tenantId)}/${item.id}`);
+    await adminDb.runTransaction(async transaction => {
+      const current = await transaction.get(tagRef);
+      if (!current.exists) return;
+      transaction.delete(tagRef);
+      if (item.traccarUniqueId) transaction.delete(uniqueRef(item.traccarUniqueId));
+      if (item.identifierKind && item.identifierNormalized) transaction.delete(localIdentifierRef(item.tenantId, item.identifierKind, item.identifierNormalized));
+    });
+  }
   async replaceIdentity(item: XadTag, data: Partial<XadTag> & Pick<XadTag, 'identifierKind' | 'identifierNormalized' | 'traccarUniqueId'>) {
     const tagRef = adminDb.doc(`${collectionPath(item.tenantId)}/${item.id}`);
     const nextGlobalRef = uniqueRef(data.traccarUniqueId);

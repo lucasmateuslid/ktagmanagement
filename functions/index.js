@@ -857,6 +857,10 @@ exports.scheduledTagUpdate = onSchedule({
   memory: "256MiB",
   secrets: [KTAG_API_USER, KTAG_API_PASS]
 }, async (event) => {
+  if ((process.env.KTAG_HISTORY_EXECUTOR || 'functions') === 'vps') {
+    console.log('[Scheduled Update] ignorado: KTAG_HISTORY_EXECUTOR=vps');
+    return;
+  }
   const db = admin.firestore();
 
   let totalUpdated = 0;
@@ -944,8 +948,8 @@ async function updateTagsForTenant(db, tenantId) {
     const positionId = crypto.createHash('sha256').update(`${tag.id}|${nextTimestamp}|${locationResult.lat}|${locationResult.lon}`).digest('hex');
     if (shadowMode) { console.log(JSON.stringify({ event: 'ktag.history.shadow', tenantId, vehicleId: vehicle.id, tagId: tag.id, positionId, shouldRecord, heartbeat })); return true; }
     // Endereço é enriquecimento opcional: uma falha nunca impede o registro GPS.
-    const address = shouldRecord ? await reverseGeocodePhoton(locationResult.lat, locationResult.lon) : null;
-    const enriched = { ...(address ? { ...locationResult, address } : locationResult), vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id, tagId: tag.id, provider: 'ktag', heartbeat };
+    // Endereço só é resolvido quando solicitado pelo usuário na plataforma.
+    const enriched = { ...locationResult, vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id, tagId: tag.id, provider: 'ktag', heartbeat };
     const historyRef = tenantRef.collection('tag_history').doc(positionId);
     const now = Date.now();
     await db.runTransaction(async tx => {

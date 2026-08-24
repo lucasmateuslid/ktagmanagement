@@ -23,13 +23,15 @@ interface HistoryOverlayProps {
     onLoadMore: () => void;
     partial: boolean;
     warnings: string[];
+    onResolveAddress: (item: LocationHistory) => void;
+    onViewPoint: (item: LocationHistory) => void;
 }
 
 export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({ 
     isVisible, onClose, activeVehicle, activeTag, 
     historyItems, historyLoading, resolvedAddresses, 
     exporting, exportProgress, onExport, historyDays, onHistoryDaysChange,
-    hasMore, onLoadMore, partial, warnings,
+    hasMore, onLoadMore, partial, warnings, onResolveAddress, onViewPoint,
 }) => {
     return (
         <AnimatePresence>
@@ -108,12 +110,13 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                                                 </div>
                                             )}
                                         </div>
-                                        <p className={`text-[14px] font-bold leading-tight transition-colors ${resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-700 italic font-medium'}`}>
-                                            {resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] || (idx < 3 ? 'Resolvendo...' : `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`)}
+                                        <p className={`text-[14px] font-bold leading-tight transition-colors ${item.address || resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] ? 'text-zinc-500 dark:text-zinc-400' : 'text-zinc-400 dark:text-zinc-600 font-medium'}`}>
+                                            {item.address || resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] || `Referência: ${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}`}
                                         </p>
                                         <div className="mt-3 flex items-center gap-4">
                                             <div className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-widest"><Signal size={12}/> Sinal 100%</div>
-                                            <button onClick={() => window.open(`https://www.google.com/maps?q=${item.lat},${item.lon}`)} className="text-[9px] font-black text-primary-500 uppercase tracking-widest flex items-center gap-1.5 hover:underline"><MapPinned size={12}/> Ver no Mapa</button>
+                                            {!item.address && !resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`] && <button onClick={() => onResolveAddress(item)} className="text-[9px] font-black text-cyan-600 uppercase tracking-widest hover:underline">Buscar endereço</button>}
+                                            <button onClick={() => onViewPoint(item)} className="text-[9px] font-black text-primary-500 uppercase tracking-widest flex items-center gap-1.5 hover:underline"><MapPinned size={12}/> Ver no Mapa</button>
                                         </div>
                                     </div>
                                 </div>

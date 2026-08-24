@@ -18,17 +18,22 @@ if [ -n "$CURRENT_IMAGE" ]; then printf '%s\n' "$CURRENT_IMAGE" > .previous-imag
 cd "$DEPLOY_DIR"
 export KTAG_IMAGE_REPOSITORY="$IMAGE_REPOSITORY" KTAG_IMAGE_TAG="$IMAGE_TAG"
 docker compose --env-file .env.vps config --quiet
-docker compose --env-file .env.vps pull backend
-docker compose --env-file .env.vps up -d --no-build --remove-orphans backend
+docker compose --env-file .env.vps pull backend worker
+docker compose --env-file .env.vps up -d --no-build --remove-orphans backend worker
 
 for attempt in $(seq 1 30); do
   status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ktag-platform-backend-1 2>/dev/null || true)"
   if [ "$status" = healthy ]; then
+    worker_status="$(docker inspect --format '{{.State.Status}}' ktag-platform-worker-1 2>/dev/null || true)"
+    if [ "$worker_status" != running ]; then
+      sleep 2
+      continue
+    fi
     echo "Deploy concluído: ${IMAGE_REPOSITORY}:${IMAGE_TAG} saudável."
     exit 0
   fi
   sleep 2
 done
-docker compose --env-file .env.vps logs --tail=100 backend
+docker compose --env-file .env.vps logs --tail=100 backend worker
 echo "Nova versão não ficou saudável; execute ./rollback.sh." >&2
 exit 1

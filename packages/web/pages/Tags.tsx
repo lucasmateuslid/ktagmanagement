@@ -22,6 +22,8 @@ import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
 import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
+import { authenticatedFetch } from '../services/authenticatedFetch';
+import { hasPermission, PERMISSIONS } from '../utils/permissions';
 
 const MotionDiv = motion.div as any;
 
@@ -162,7 +164,8 @@ export const Tags = () => {
   const massActionMenuRef = useRef<HTMLDivElement>(null);
   const { t } = useLanguage();
   const { addNotification } = useNotification();
-  const { user } = useAuth();
+  const { user, customRoles } = useAuth();
+  const canManageTags = hasPermission(user, customRoles, PERMISSIONS.TAGS_MANAGE);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -180,11 +183,11 @@ export const Tags = () => {
 
   useEffect(() => {
     loadData();
-    if (searchParams.get('action') === 'new') {
+    if (searchParams.get('action') === 'new' && canManageTags) {
         setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' });
         setIsModalOpen(true);
     }
-  }, [searchParams]);
+  }, [searchParams, canManageTags]);
 
   useEffect(() => {
     if (isConsoleOpen && logsEndRef.current) {
@@ -607,7 +610,12 @@ export const Tags = () => {
             tag.identifierKind = registered.identifierKind; tag.identifierOriginal = registered.identifierOriginal; tag.traccarUniqueId = registered.traccarUniqueId;
             tag.traccarDeviceName = registered.traccarDeviceName; tag.traccarPositionId = registered.traccarPositionId;
             tag.traccarStatus = registered.traccarStatus; tag.integrationStatus = registered.integrationStatus;
-        } else await storage.saveTag(tag);
+        } else {
+            const response = await authenticatedFetch(formData.id ? `/api/tags/${encodeURIComponent(formData.id)}` : '/api/tags', {
+              method: formData.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tag),
+            });
+            const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao salvar equipamento.');
+        }
 
         addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
         setIsModalOpen(false);
@@ -621,9 +629,11 @@ export const Tags = () => {
 
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
       if(e) e.stopPropagation();
-      await storage.deleteTag(id);
-      addNotification('success', 'Sucesso', 'Equipamento removido.');
-      loadData();
+      try {
+        const response = await authenticatedFetch(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao excluir equipamento.');
+        addNotification('success', 'Sucesso', 'Equipamento removido.'); await loadData();
+      } catch (error) { addNotification('error', 'Erro', (error as Error).message); throw error; }
   };
 
   const handleMassDelete = async () => {
@@ -631,13 +641,11 @@ export const Tags = () => {
     if (count === 0) return;
 
     try {
-        const promises = Array.from(selectedTags).map((id: string) => storage.deleteTag(id));
+        const promises = Array.from(selectedTags).map(async (id: string) => {
+          const response = await authenticatedFetch(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const payload = await response.json(); if (!response.ok) throw new Error(payload.error || `Falha ao excluir ${id}.`);
+        });
         await Promise.all(promises);
-        
-        const vehicleUpdates = vehicles
-            .filter(v => v.tagId && selectedTags.has(v.tagId))
-            .map(v => storage.saveVehicle({ ...v, tagId: undefined }));
-        await Promise.all(vehicleUpdates);
 
         addNotification('success', 'Exclusão em Massa', `${count} equipamentos foram removidos do estoque.`);
         setSelectedTags(new Set());
@@ -724,7 +732,13 @@ export const Tags = () => {
                 createdAt: Date.now()
               };
 
-              await storage.saveTag(newTag);
+              const response = await authenticatedFetch('/api/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTag),
+              });
+              const payload = await response.json();
+              if (!response.ok) throw new Error(payload.error || `Falha ao importar ${serial}.`);
               successCount++;
           }
 
@@ -752,18 +766,18 @@ export const Tags = () => {
         </div>
         
         <div className="flex items-center gap-3">
-            <div className="flex bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-1 shadow-sm">
+            {canManageTags && <div className="flex bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-1 shadow-sm">
                 <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
                     <FileSpreadsheet size={18} />
                 </button>
                 <button onClick={() => { setImportStep('upload'); setImportConfig({ type: 'K_TAG', warranty: 1, powerType: 'battery' }); setIsImportModalOpen(true); }} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
                   <Upload size={16} /> Importar Lista
                 </button>
-            </div>
+            </div>}
             
-            <button onClick={() => { setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' }); setIsModalOpen(true); }} className="bg-primary-500 hover:bg-primary-400 text-black px-8 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-widest transition-all shadow-2xl shadow-primary-500/20 active:scale-95">
+            {canManageTags && <button onClick={() => { setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' }); setIsModalOpen(true); }} className="bg-primary-500 hover:bg-primary-400 text-black px-8 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-widest transition-all shadow-2xl shadow-primary-500/20 active:scale-95">
               <Plus size={18} strokeWidth={3} /> NOVO EQUIPAMENTO
-            </button>
+            </button>}
         </div>
       </div>
 
@@ -878,7 +892,7 @@ export const Tags = () => {
                             {isGeneratingReport ? <Loader2 size={14} className="animate-spin" /> : <Signal size={14} />} {isGeneratingReport ? 'Buscando...' : 'Relatório Conexão'}
                         </button>
 
-                        <div className="relative shrink-0" ref={massActionMenuRef}>
+                        {canManageTags && <div className="relative shrink-0" ref={massActionMenuRef}>
                             <button onClick={() => setIsMassActionMenuOpen(!isMassActionMenuOpen)} className={`px-4 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all active:scale-95 border ${isMassActionMenuOpen ? 'bg-indigo-500/20 text-indigo-700 border-indigo-500/30' : 'bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 border-indigo-500/20'}`}>
                                 <Settings size={14} /> Ações
                             </button>
@@ -892,16 +906,6 @@ export const Tags = () => {
                                         transition={{ duration: 0.15 }}
                                         className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-50 flex flex-col p-2 origin-top-right"
                                     >
-                                        <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-400">Alterar Tipo</div>
-                                        <button onClick={() => { handleMassChangeType('K_TAG'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-600 rounded-xl transition-colors flex items-center gap-3 group">
-                                            <Wifi size={16} className="text-zinc-400 group-hover:text-primary-500 transition-colors"/> Para K-Tag
-                                        </button>
-                                        <button onClick={() => { handleMassChangeType('XADTAG'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:text-cyan-600 rounded-xl transition-colors flex items-center gap-3 group">
-                                            <Cpu size={16} className="text-zinc-400 group-hover:text-cyan-500 transition-colors"/> Para XADTAG
-                                        </button>
-                                        
-                                        <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-2 mx-2" />
-                                        
                                         <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-400">Comandos</div>
                                         <button onClick={() => { handleMassCommand('ping'); setIsMassActionMenuOpen(false); }} className="w-full px-3 py-2.5 text-left text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 rounded-xl transition-colors flex items-center gap-3 group">
                                             <Activity size={16} className="text-zinc-400 group-hover:text-emerald-500 transition-colors"/> Testar Conexão (Ping)
@@ -912,11 +916,11 @@ export const Tags = () => {
                                     </MotionDiv>
                                 )}
                             </AnimatePresence>
-                        </div>
+                        </div>}
 
-                        <button onClick={() => setIsConfirmMassDeleteOpen(true)} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95 shrink-0">
+                        {canManageTags && <button onClick={() => setIsConfirmMassDeleteOpen(true)} className="px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95 shrink-0">
                             <Trash2 size={14} />
-                        </button>
+                        </button>}
                         <div className="hidden md:block w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
                     </MotionDiv>
                 )}
@@ -1056,7 +1060,7 @@ export const Tags = () => {
                                         </span>
                                     </div>
                                 )}
-                                {tag.type === 'XADTAG' && (
+                                {canManageTags && tag.type === 'XADTAG' && (
                                     <button 
                                         onClick={() => handleActivate(tag)} 
                                         className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
@@ -1071,12 +1075,12 @@ export const Tags = () => {
                                 <button onClick={() => navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Histórico de localização">
                                     <History size={14}/>
                                 </button>
-                                <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                {canManageTags && <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                     <Edit2 size={14}/>
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
+                                </button>}
+                                {canManageTags && <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
                                     <Trash2 size={14}/>
-                                </button>
+                                </button>}
                               </div>
                             </td>
                           </tr>
@@ -1180,7 +1184,7 @@ export const Tags = () => {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                    {tag.type === 'XADTAG' && (
+                                    {canManageTags && tag.type === 'XADTAG' && (
                                         <button 
                                             onClick={() => handleActivate(tag)} 
                                             className={`p-2 rounded-lg transition-all border shadow-sm ${tag.isActivated ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-cyan-500'}`}
@@ -1192,12 +1196,12 @@ export const Tags = () => {
                                     <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
                                         <Activity size={14}/>
                                     </button>
-                                    <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                    {canManageTags && <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                         <Edit2 size={14}/>
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
+                                    </button>}
+                                    {canManageTags && <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
                                         <Trash2 size={14}/>
-                                    </button>
+                                    </button>}
                                 </div>
                             </div>
                         </div>

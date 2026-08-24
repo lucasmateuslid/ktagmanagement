@@ -1,7 +1,8 @@
 import { storage } from './storage';
+import { activeTenant } from './activeTenant';
 
-const CACHE_KEY = 'ktag_geocode_cache';
-const CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const cacheStorageKey = () => `ktag_${activeTenant.isReady() ? activeTenant.id : 'pretenant'}_geocode_cache`;
+const CACHE_EXPIRATION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 
 interface CacheEntry {
@@ -17,7 +18,7 @@ const initCache = () => {
   if (geocodeCache) return;
   geocodeCache = new Map();
   try {
-    const stored = localStorage.getItem(CACHE_KEY);
+    const stored = localStorage.getItem(cacheStorageKey());
     if (stored) {
       const parsed = JSON.parse(stored) as Record<string, CacheEntry>;
       const now = Date.now();
@@ -61,7 +62,7 @@ const saveCache = () => {
   if (!geocodeCache) return;
   try {
     const obj = Object.fromEntries(geocodeCache.entries());
-    localStorage.setItem(CACHE_KEY, JSON.stringify(obj));
+    localStorage.setItem(cacheStorageKey(), JSON.stringify(obj));
   } catch (e) {
     console.warn("Failed to save geocode cache", e);
   }

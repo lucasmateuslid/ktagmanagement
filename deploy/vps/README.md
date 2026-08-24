@@ -69,6 +69,11 @@ docker run --rm --network traccar_default curlimages/curl:8.12.1 \
 
 Troque os nomes da rede/serviço caso o resultado de `docker ps` seja diferente.
 
+Preencha também `KTAG_API_URL`, `KTAG_API_USER` e `KTAG_API_PASS` no
+`.env.vps`; o serviço `worker` usa essas credenciais para coletar posições sem
+expor segredos ao frontend. Defina `KTAG_HISTORY_EXECUTOR=vps` nas Cloud
+Functions antes de iniciar o worker, para impedir a coleta duplicada.
+
 O fluxo recomendado é executar manualmente `Deploy` no GitHub Actions com
 `target=all` e `environment=production`. O mesmo CI valida o projeto, implanta
 Cloud Run, Functions e Firestore, publica `ghcr.io/<owner>/ktag-platform:<commit>`
@@ -118,11 +123,11 @@ Nunca deixe os dois workers realtime ativos ao mesmo tempo: isso duplica process
 
 ## Operação
 
-- Logs: `docker compose --env-file .env.vps logs -f backend`.
+- Logs: `docker compose --env-file .env.vps logs -f backend worker`.
 - Estado: `docker compose --env-file .env.vps ps`.
 - Health: `curl -H "X-Origin-Secret: $CF_ORIGIN_SECRET" http://127.0.0.1:4000/api/health`.
 - O mapa recebe todas as mensagens; o Firestore recebe checkpoints conforme `TRACCAR_POSITION_PERSIST_INTERVAL_MS`.
-- A Function `scheduledTagUpdate` permanece responsável somente por K-TAG e atualiza apenas `vehicle.lastPosition`.
+- O worker da VPS é responsável por K-TAG e retenção de histórico; a Function `scheduledTagUpdate` deve permanecer desativada com `KTAG_HISTORY_EXECUTOR=vps`.
 
 ## Permissões da service account
 

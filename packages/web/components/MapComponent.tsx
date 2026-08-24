@@ -1,14 +1,12 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, LayersControl, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
-import { useTheme } from '../contexts/ThemeContext';
 import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging } from 'lucide-react';
 
-const { BaseLayer } = LayersControl;
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 
 // Componente auxiliar para renderizar o ícone correto
@@ -147,6 +145,16 @@ const FitFleetBounds = ({ locations }: { locations: LocationHistory[] }) => {
   return null;
 };
 
+const ResponsiveMapSize = () => {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer(); const observer = new ResizeObserver(() => map.invalidateSize({ animate: false }));
+    observer.observe(container); window.setTimeout(() => map.invalidateSize({ animate: false }), 0);
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+};
+
 interface MapProps {
   locations: LocationHistory[];
   isFleetMode?: boolean; 
@@ -157,6 +165,7 @@ interface MapProps {
   showPlates?: boolean; // Nova prop
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
+  focusLocation?: LocationHistory | null;
 }
 
 export const MapComponent: React.FC<MapProps> = ({ 
@@ -168,9 +177,11 @@ export const MapComponent: React.FC<MapProps> = ({
   highlightedTagId, 
   showPlates = false, // Default false
   onMarkerClick,
-  mapProvider = 'osm'
+  mapProvider = 'osm', focusLocation = null,
 }) => {
-  const { theme } = useTheme();
+  const [layer, setLayer] = useState<'streets' | 'satellite' | 'hybrid'>(mapProvider === 'google' ? 'streets' : 'streets');
+  const [tileErrors, setTileErrors] = useState(0);
+  const tileUrl = layer === 'satellite' ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' : layer === 'hybrid' ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   
   const displayLocations = highlightedTagId 
     ? locations.filter(l => l.tagId === highlightedTagId) 
@@ -271,24 +282,13 @@ export const MapComponent: React.FC<MapProps> = ({
           zoomControl={false}
           className="h-full w-full"
         >
-          <LayersControl position="topright">
-            <BaseLayer checked={mapProvider === 'osm'} name="OpenStreetMap">
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" className="map-light-tiles" />
-            </BaseLayer>
-            <BaseLayer checked={mapProvider === 'google'} name="Google Maps">
-              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" className="map-light-tiles" />
-            </BaseLayer>
-            <BaseLayer name="Google Satélite">
-              <TileLayer url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" />
-            </BaseLayer>
-            <BaseLayer name="Google Híbrido">
-              <TileLayer url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" />
-            </BaseLayer>
-          </LayersControl>
+          <TileLayer key={layer} url={tileUrl} attribution={layer === 'streets' ? '&copy; OpenStreetMap contributors' : '&copy; Google'} className={layer === 'streets' ? 'map-light-tiles' : undefined} eventHandlers={{ tileerror: () => setTileErrors(value => { const next = value + 1; if (next >= 3) setLayer('streets'); return next; }) }} />
+          <ResponsiveMapSize />
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
           {isFleetMode && !highlightedLoc && <FitFleetBounds locations={locations} />}
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
+          {focusLocation && <RecenterMap lat={focusLocation.lat} lon={focusLocation.lon} zoom={18} />}
 
           {isFleetMode ? (
               highlightedTagId ? (
@@ -348,6 +348,10 @@ export const MapComponent: React.FC<MapProps> = ({
               </>
           )}
         </MapContainer>
+        <div className="absolute bottom-4 left-1/2 z-[800] flex -translate-x-1/2 gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur md:bottom-auto md:left-auto md:right-4 md:top-4 md:translate-x-0 dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
+          {([['streets', 'Ruas'], ['satellite', 'Satélite'], ['hybrid', 'Híbrido']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => { setTileErrors(0); setLayer(id); }} className={`min-h-10 rounded-xl px-3 text-[10px] font-black uppercase tracking-wide ${layer === id ? 'bg-brand-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
+        </div>
+        {tileErrors >= 3 && layer === 'streets' && <div className="absolute bottom-20 left-1/2 z-[800] -translate-x-1/2 rounded-xl bg-danger-soft px-4 py-2 text-xs font-bold text-danger md:bottom-4">Falha de rede no mapa. Tentando novamente em Ruas.</div>}
     </div>
   );
 };

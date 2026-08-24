@@ -43,6 +43,7 @@ export const LiveMap = () => {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [mapProvider, setMapProvider] = useState<'osm' | 'google'>('osm');
+  const [focusedHistoryPoint, setFocusedHistoryPoint] = useState<any>(null);
   const autoHistoryOpenedRef = useRef('');
 
   useEffect(() => {
@@ -66,8 +67,13 @@ export const LiveMap = () => {
       fetchHistory, closeHistory, setShowHistoryList, historyDays, changeHistoryDays,
       nextCursor, loadMoreHistory, historyPartial, historyWarnings,
   } = useTagHistory(selectedTagId, tags, vehicles, fleetLocations, (items) => {
-      items.forEach(resolveAddress);
+      items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`, item.address); });
   });
+
+  const handleSelection = React.useCallback((tagId: string) => {
+    setSelectedTagId(tagId); setIsSheetExpanded(true); setShowHistoryList(false);
+    setTagSearchTerm(''); setIsSearchFocused(false);
+  }, [setShowHistoryList]);
 
   useEffect(() => {
       const urlTagId = searchParams.get('tagId');
@@ -98,18 +104,6 @@ export const LiveMap = () => {
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
 
-  useEffect(() => {
-      if (lastLoc) resolveAddress(lastLoc);
-  }, [lastLoc]);
-
-  const handleSelection = (tagId: string) => {
-    setSelectedTagId(tagId);
-    setIsSheetExpanded(true); 
-    setShowHistoryList(false);
-    setTagSearchTerm('');
-    setIsSearchFocused(false);
-  };
-
   const handleExport = async (type: 'pdf' | 'excel') => {
     setExporting(true);
     try {
@@ -117,7 +111,7 @@ export const LiveMap = () => {
         const data = await processExportData(historyItems, resolvedAddresses, setExportProgress);
         
         data.forEach((d: any, idx: number) => {
-             if (historyItems[idx]) addResolvedAddress(historyItems[idx].id, d.endereco);
+             if (historyItems[idx]) addResolvedAddress(`${historyItems[idx].lat.toFixed(4)},${historyItems[idx].lon.toFixed(4)}`, d.endereco);
         });
 
         if (type === 'pdf') await generatePDF(label, data);
@@ -171,6 +165,7 @@ export const LiveMap = () => {
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
             mapProvider={mapProvider}
+            focusLocation={focusedHistoryPoint}
         />
       </div>
 
@@ -207,6 +202,8 @@ export const LiveMap = () => {
         onLoadMore={loadMoreHistory}
         partial={historyPartial}
         warnings={historyWarnings}
+        onResolveAddress={resolveAddress}
+        onViewPoint={setFocusedHistoryPoint}
       />
 
       <UpdateTagsModal

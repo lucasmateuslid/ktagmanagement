@@ -15,13 +15,14 @@ export const processExportData = async (
 
     for (let i = 0; i < total; i++) {
         const item = historyItems[i];
-        let address = currentAddresses[item.id];
+        const key = `${item.lat.toFixed(4)},${item.lon.toFixed(4)}`;
+        let address = item.address || currentAddresses[key];
 
         if (!address) {
             try {
                 await new Promise(r => setTimeout(r, 100)); 
                 address = await geocodingService.reverseGeocode(item.lat, item.lon);
-                currentAddresses[item.id] = address;
+                currentAddresses[key] = address;
             } catch (e) {
                 address = "Endereço indisponível";
             }

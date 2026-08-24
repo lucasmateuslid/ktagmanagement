@@ -11,7 +11,7 @@ const toLocation = (point: TrackingHistoryPoint): LocationHistory => ({
   battery: typeof point.battery === 'object' ? point.battery as any : undefined,
 });
 
-export const useTagHistory = (selectedTagId: string, tags: Tag[], vehicles: Vehicle[], currentFleetLocations: LocationHistory[], onResolveAddresses: (items: LocationHistory[]) => void) => {
+export const useTagHistory = (selectedTagId: string, tags: Tag[], vehicles: Vehicle[], currentFleetLocations: LocationHistory[], _onResolveAddresses: (items: LocationHistory[]) => void) => {
   const [historyItems, setHistoryItems] = useState<LocationHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showHistoryList, setShowHistoryList] = useState(false);
@@ -34,12 +34,11 @@ export const useTagHistory = (selectedTagId: string, tags: Tag[], vehicles: Vehi
       const response: TrackingHistoryPage = vehicle
         ? await trackingApi.vehicleHistory(vehicle.id, new Date(start).toISOString(), new Date(end).toISOString(), cursor, controller.signal)
         : await trackingApi.tagHistory(selectedTagId, new Date(start).toISOString(), new Date(end).toISOString(), cursor, controller.signal);
-      let results = response.points.map(toLocation);
+      const results = response.points.map(toLocation);
       if (!append) {
         const last = currentFleetLocations.find(item => item.tagId === selectedTagId);
         if (last && !results.some(item => item.id === last.id || (item.timestamp === last.timestamp && item.lat === last.lat && item.lon === last.lon))) results.unshift(last);
       }
-      onResolveAddresses(results);
       if (requestRef.current.id === requestId) {
         setHistoryItems(previous => {
           const values = append ? [...previous, ...results] : results;
@@ -50,7 +49,7 @@ export const useTagHistory = (selectedTagId: string, tags: Tag[], vehicles: Vehi
     } catch (error) {
       if ((error as Error).name !== 'AbortError') addNotification('error', 'Erro', (error as Error).message || 'Falha ao recuperar trajetória.');
     } finally { if (requestRef.current.id === requestId) setHistoryLoading(false); }
-  }, [selectedTagId, tags, vehicles, currentFleetLocations, onResolveAddresses, addNotification]);
+  }, [selectedTagId, tags, vehicles, currentFleetLocations, addNotification]);
 
   const fetchHistory = useCallback(() => load(historyDays), [load, historyDays]);
   const changeHistoryDays = useCallback((days: 1 | 7 | 30) => { setHistoryDays(days); void load(days); }, [load]);

@@ -132,9 +132,10 @@ export const useVehicleForm = (
       if (shouldWriteClient) setClientData(prev => ({ ...prev, id: finalClientId }));
       setFormData(prev => ({ ...prev, id: vehicleId }));
 
-      // storage.saveVehicle/saveClient já registram auditoria (CREATE/UPDATE) —
-      // não duplicar o log aqui.
-      await storage.saveVehicle(vehicleToSave);
+      const response = await authenticatedFetch(formData.id ? `/api/vehicles/${encodeURIComponent(vehicleId)}` : '/api/vehicles', {
+        method: formData.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vehicleToSave),
+      });
+      const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar o veículo.');
       if (requestedTagId && requestedTagId !== previousTagId) {
         const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(vehicleId)}/tag`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagId: requestedTagId }) });
         const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Veículo salvo, mas não foi possível vincular a tag.');

@@ -38,9 +38,11 @@ const PERMISSION_GROUPS: Array<{
     title: 'Operações',
     items: [
       { id: PERMISSIONS.VEHICLES,   label: 'Veículos' },
+      { id: PERMISSIONS.VEHICLES_MANAGE, label: 'Gerenciar veículos', hint: 'Adicionar, editar, vincular e excluir' },
       { id: PERMISSIONS.SHIPMENTS,  label: 'Envios e Remessas' },
       { id: PERMISSIONS.CLIENTS,    label: 'Clientes' },
       { id: PERMISSIONS.TAGS,       label: 'Estoque de Tags' },
+      { id: PERMISSIONS.TAGS_MANAGE, label: 'Gerenciar estoque', hint: 'Adicionar, editar, importar e excluir tags' },
       { id: PERMISSIONS.ASSETS,     label: 'Ativos, Rastreadores e Chips' },
     ],
   },
@@ -110,9 +112,16 @@ export const PermissionsModule = () => {
 
     // Garante que cada cargo do sistema existe; cria os ausentes.
     for (const seed of SYSTEM_ROLES_SEED) {
-      if (!finalRoles.find(r => r.id === seed.id)) {
+      const existingIndex = finalRoles.findIndex(r => r.id === seed.id);
+      if (existingIndex === -1) {
         finalRoles.push(seed);
         await storage.saveCustomRole(seed);
+      } else {
+        const missingActionPermissions = seed.permissions.filter(permission => permission.startsWith('ACTION_') && !finalRoles[existingIndex].permissions.includes(permission));
+        if (missingActionPermissions.length > 0) {
+          finalRoles[existingIndex] = { ...finalRoles[existingIndex], permissions: [...finalRoles[existingIndex].permissions, ...missingActionPermissions] };
+          await storage.saveCustomRole(finalRoles[existingIndex]);
+        }
       }
     }
 
@@ -180,12 +189,13 @@ export const PermissionsModule = () => {
     else currentPerms.add(permId);
 
     const updatedRole = { ...roleInfo, permissions: Array.from(currentPerms) };
-    await storage.saveCustomRole(updatedRole);
-    await storage.logAction(null, 'UPDATE', 'Role', `Permissão ${currentPerms.has(permId) ? 'concedida' : 'revogada'} (${permId}) no cargo "${roleInfo.name}"`, roleInfo.id);
-
-    const newRoles = [...roles];
-    newRoles[roleIndex] = updatedRole;
-    setRoles(newRoles);
+    try {
+      await storage.saveCustomRole(updatedRole);
+      const newRoles = [...roles]; newRoles[roleIndex] = updatedRole; setRoles(newRoles);
+      addNotification('success', 'Permissão atualizada', 'A alteração já está válida para as próximas requisições do cargo.');
+    } catch (error) {
+      addNotification('error', 'Falha ao atualizar permissão', (error as Error).message || 'O banco recusou a alteração.');
+    }
   };
 
   const handleSelectAll = async (enable: boolean) => {
