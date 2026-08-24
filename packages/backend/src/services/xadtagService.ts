@@ -1,6 +1,6 @@
 import { normalizeEquipmentIdentifier, type EquipmentIdentifierKind, type EquipmentIdentifierProfile, type LiveMapTrackedAsset, type TraccarDevice, type TraccarPosition, type TrackedPosition, type XadTag } from '@ktag/shared';
 import { getTraccarConfig } from '../config/traccar.js';
-import { buildTraccarDeviceName, originalXadTagIdentifier } from '../domain/xadtag.js';
+import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { communicationStatus } from '../domain/communicationStatus.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
 import { addressResolver } from './addressResolver.js';
@@ -94,7 +94,7 @@ export class XadTagService {
   }
 
   async reconcile(item: XadTag, input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number }) {
-    const normalized = normalizeEquipmentIdentifier('numeric_serial', originalXadTagIdentifier(input.identifierOriginal), 'xadtag_legacy_numeric_10_to_15');
+    const normalized = normalizeXadTagIdentity(input.identifierOriginal);
     const desiredUniqueId = normalized.normalized;
     const tenantSlug = item.tenantId;
     let device = Number.isInteger(item.traccarDeviceId) ? await traccarClient.getDevice(item.traccarDeviceId as number).catch(() => null) : null;

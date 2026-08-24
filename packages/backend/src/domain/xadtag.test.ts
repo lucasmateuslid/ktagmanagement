@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeEquipmentIdentifier, normalizeImei, normalizeMac, normalizeNumericSerial } from '@ktag/shared';
-import { buildTraccarDeviceName, normalizeXadTagIdentifier, normalizeXadTagMacAddress, originalXadTagIdentifier } from './xadtag.js';
+import { buildTraccarDeviceName, normalizeXadTagIdentifier, normalizeXadTagIdentity, normalizeXadTagMacAddress, originalXadTagIdentifier } from './xadtag.js';
 
 test('valida IMEI padrão sem alterar o original', () => {
   const value = '490154203237518';
@@ -30,7 +30,14 @@ test('normaliza serial apenas com política explícita', () => {
   assert.equal(originalXadTagIdentifier('000007260412520'), '7260412520');
   assert.throws(() => normalizeXadTagIdentifier('726-041-2520'), /somente dígitos/);
   assert.throws(() => normalizeXadTagIdentifier('12345678901'), /10 dígitos/);
-  assert.throws(() => normalizeXadTagIdentifier('123457260412520'), /cinco zeros/);
+  assert.throws(() => normalizeXadTagIdentifier('123457260412520'), /Luhn/);
+});
+test('detecta IMEI de 15 dígitos sem truncar ou preencher', () => {
+  const value = '869731052727815';
+  assert.deepEqual(normalizeXadTagIdentity(value), { kind: 'imei', original: value, normalized: value });
+  assert.equal(normalizeXadTagIdentifier(value), value);
+  assert.equal(originalXadTagIdentifier(value), value);
+  assert.equal(buildTraccarDeviceName('teste', value), `teste+${value}`);
 });
 test('preserva identificador original e nome patrimonial', () => {
   const result = normalizeEquipmentIdentifier('numeric_serial', '0072604125', 'xadtag_legacy_numeric_10_to_15');

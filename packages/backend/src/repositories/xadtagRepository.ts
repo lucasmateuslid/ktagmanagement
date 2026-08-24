@@ -73,10 +73,15 @@ export class XadTagRepository {
   async update(tenantId: string, id: string, data: Partial<XadTag>) { await adminDb.doc(`${collectionPath(tenantId)}/${id}`).update({ ...data, updatedAt: Date.now() }); }
   async replaceIdentity(item: XadTag, data: Partial<XadTag> & Pick<XadTag, 'identifierKind' | 'identifierNormalized' | 'traccarUniqueId'>) {
     const tagRef = adminDb.doc(`${collectionPath(item.tenantId)}/${item.id}`);
-    const oldGlobalRef = uniqueRef(item.traccarUniqueId);
     const nextGlobalRef = uniqueRef(data.traccarUniqueId);
-    const oldLocalRef = localIdentifierRef(item.tenantId, item.identifierKind, item.identifierNormalized);
     const nextLocalRef = localIdentifierRef(item.tenantId, data.identifierKind, data.identifierNormalized);
+    // Registros anteriores à migração podem não ter as chaves de identidade.
+    // Nesse caso, não tente gerar hashes com undefined; a nova identidade passa
+    // a ser a referência autoritativa e a migração posterior limpa órfãos.
+    const oldGlobalRef = item.traccarUniqueId ? uniqueRef(item.traccarUniqueId) : nextGlobalRef;
+    const oldLocalRef = item.identifierKind && item.identifierNormalized
+      ? localIdentifierRef(item.tenantId, item.identifierKind, item.identifierNormalized)
+      : nextLocalRef;
     await adminDb.runTransaction(async transaction => {
       const [tag, nextGlobal, nextLocal, oldGlobal, oldLocal] = await Promise.all([
         transaction.get(tagRef), transaction.get(nextGlobalRef), transaction.get(nextLocalRef),

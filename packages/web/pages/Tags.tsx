@@ -34,13 +34,13 @@ const displayTagSerial = (tag: Partial<Tag>): string => {
 };
 
 const xadTagEditData = (tag: Tag): Partial<Tag> => tag.type === 'XADTAG'
-  ? { ...tag, identifierOriginal: displayTagSerial(tag).slice(-10) }
+  ? { ...tag, identifierOriginal: displayTagSerial(tag) }
   : tag;
 
 const canonicalXadTagInput = (input: unknown): string | null => {
   const value = String(input || '');
   if (/^\d{10}$/.test(value)) return value;
-  if (/^0{5}\d{10}$/.test(value)) return value.slice(5);
+  if (/^\d{15}$/.test(value)) return value;
   return null;
 };
 
@@ -593,7 +593,7 @@ export const Tags = () => {
         if (!tag.name) throw new Error("Nome é obrigatório");
         if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
         const identifierOriginal = formData.type === 'XADTAG' ? canonicalXadTagInput(formData.identifierOriginal || displayTagSerial(formData)) : '';
-        if (tag.type === 'XADTAG' && !identifierOriginal) throw new Error("Informe 10 dígitos ou 15 dígitos começando com 00000");
+        if (tag.type === 'XADTAG' && !identifierOriginal) throw new Error("Informe um serial de 10 dígitos ou um IMEI de 15 dígitos");
 
         setFormData(prev => ({ ...prev, id: tagId }));
         if (tag.type === 'XADTAG') {
@@ -1321,8 +1321,8 @@ export const Tags = () => {
                         <>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Identificador original <span className="text-red-500">*</span></label>
-                                <input type="text" inputMode="numeric" pattern="(?:[0-9]{10}|0{5}[0-9]{10})" minLength={10} maxLength={15} required value={formData.identifierOriginal || ''} onChange={e => setFormData({...formData, identifierOriginal: e.target.value.replace(/\D/g, '').slice(0, 15), identifierKind: 'numeric_serial', traccarUniqueId: undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="7260412520 ou 000007260412520" />
-                                <p className="text-xs text-zinc-500">Aceita 10 dígitos ou 15 dígitos iniciados por 00000. A plataforma identifica e normaliza automaticamente.</p>
+                                <input type="text" inputMode="numeric" pattern="(?:[0-9]{10}|[0-9]{15})" minLength={10} maxLength={15} required value={formData.identifierOriginal || ''} onChange={e => setFormData({...formData, identifierOriginal: e.target.value.replace(/\D/g, '').slice(0, 15), traccarUniqueId: undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="7260412520 ou 869731052727815" />
+                                <p className="text-xs text-zinc-500">10 dígitos: serial preenchido automaticamente com 00000. 15 dígitos: IMEI preservado integralmente.</p>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>

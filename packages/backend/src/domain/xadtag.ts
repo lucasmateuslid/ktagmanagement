@@ -1,17 +1,26 @@
-import { normalizeEquipmentIdentifier, normalizeMac } from '@ktag/shared';
+import { normalizeEquipmentIdentifier, normalizeMac, type NormalizedEquipmentIdentifier } from '@ktag/shared';
 
-export function normalizeXadTagIdentifier(input: string): string {
-  return normalizeEquipmentIdentifier('numeric_serial', originalXadTagIdentifier(input), 'xadtag_legacy_numeric_10_to_15').normalized;
-}
-
-export function originalXadTagIdentifier(input: string): string {
+export function normalizeXadTagIdentity(input: string): NormalizedEquipmentIdentifier {
   const value = String(input ?? '');
   if (!value) throw new Error('Informe o identificador da XADTAG.');
   if (!/^\d+$/.test(value)) throw new Error('O identificador deve conter somente dígitos.');
-  if (/^\d{10}$/.test(value)) return value;
-  if (/^0{5}\d{10}$/.test(value)) return value.slice(5);
-  if (value.length === 15) throw new Error('O identificador de 15 dígitos deve começar com cinco zeros.');
-  throw new Error('O identificador deve conter 10 dígitos ou 15 dígitos iniciados por 00000.');
+  if (/^\d{10}$/.test(value)) {
+    return normalizeEquipmentIdentifier('numeric_serial', value, 'xadtag_legacy_numeric_10_to_15');
+  }
+  // Aceita o formato serial já normalizado para facilitar migrações/importações.
+  if (/^0{5}\d{10}$/.test(value)) {
+    return normalizeEquipmentIdentifier('numeric_serial', value.slice(5), 'xadtag_legacy_numeric_10_to_15');
+  }
+  if (/^\d{15}$/.test(value)) return normalizeEquipmentIdentifier('imei', value);
+  throw new Error('O identificador deve conter um serial de 10 dígitos ou um IMEI de 15 dígitos.');
+}
+
+export function normalizeXadTagIdentifier(input: string): string {
+  return normalizeXadTagIdentity(input).normalized;
+}
+
+export function originalXadTagIdentifier(input: string): string {
+  return normalizeXadTagIdentity(input).original;
 }
 
 export function normalizeXadTagMacAddress(input?: string): string | null {
@@ -19,8 +28,8 @@ export function normalizeXadTagMacAddress(input?: string): string | null {
   return normalizeMac(input);
 }
 
-export function buildTraccarDeviceName(tenantSlug: string, imeiOriginal: string): string {
+export function buildTraccarDeviceName(tenantSlug: string, identifier: string): string {
   const slug = String(tenantSlug ?? '').trim().toLowerCase();
   if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) throw new Error('Slug do tenant inválido.');
-  return `${slug}+${originalXadTagIdentifier(imeiOriginal)}`;
+  return `${slug}+${normalizeXadTagIdentity(identifier).original}`;
 }
