@@ -400,6 +400,17 @@ jobs:
       - name: Instalar Firebase CLI
         run: npm install -g firebase-tools@latest
 
+      - name: Selecionar executor do histórico K-TAG
+        working-directory: functions
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ "$ENVIRONMENT" = production ]; then
+            printf 'KTAG_HISTORY_EXECUTOR=vps\n' > ".env.$PROJECT_ID"
+          else
+            printf 'KTAG_HISTORY_EXECUTOR=functions\n' > ".env.$PROJECT_ID"
+          fi
+
       - name: firebase deploy --only functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
