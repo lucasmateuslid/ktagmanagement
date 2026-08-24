@@ -213,8 +213,13 @@ jobs:
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
           IMAGE: ${{ steps.image.outputs.name }}
         run: |
+          scp -P "${VPS_PORT:-22}" \
+            deploy/vps/docker-compose.yml \
+            deploy/vps/deploy-image.sh \
+            deploy/vps/rollback.sh \
+            "$VPS_USER@$VPS_HOST:$VPS_APP_PATH/deploy/vps/"
           ssh -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
-            "cd '$VPS_APP_PATH' && ./deploy/vps/deploy-image.sh '$IMAGE' '${{ github.sha }}'"
+            "cd '$VPS_APP_PATH' && chmod 750 deploy/vps/deploy-image.sh deploy/vps/rollback.sh && ./deploy/vps/deploy-image.sh '$IMAGE' '${{ github.sha }}'"
 
   # ── Cloud Run: build → push → deploy ──────────────────────────────────────
   deploy-cloud-run:
