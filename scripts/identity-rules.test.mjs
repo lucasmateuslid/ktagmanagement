@@ -65,6 +65,7 @@ async function main() {
   await seed('tenants/empresaA/vehicles/vehicleA', { id: 'vehicleA', clientId: 'clientA', plate: 'AAA0A00' });
   await seed('tenants/empresaA/vehicles/vehicleB', { id: 'vehicleB', clientId: 'clientB', plate: 'BBB0B00' });
   await seed('tenants/empresaA/trackers/860000000000001', { id: '860000000000001', imei: '860000000000001' });
+  await seed('tenants/empresaA/stolen_records/caseA', { vehicleId: 'vehicleA', trackingToken: 'SECRET_TOKEN' });
   await seed('tracker_models/suntech-st340u', { manufacturer: 'Suntech', name: 'ST340U', active: true });
   await seed('tenants/empresaB', { id: 'empresaB', name: 'Empresa B', active: true });
   await seed('tenants/empresaB/tags/t2', { id: 't2' });
@@ -157,6 +158,16 @@ async function main() {
     assertSucceeds(getDoc(doc(clientDb, 'tracker_models/suntech-st340u'))));
   await check('cliente NÃO altera o próprio clientId',
     assertFails(updateDoc(doc(clientDb, 'tenants/empresaA/users/uidClientA'), { clientId: 'clientB' })));
+
+  console.log('\n=== INTEGRIDADE E ACESSO PÚBLICO ===');
+  await check('anônimo NÃO lê ocorrência por ID mesmo quando ela contém token',
+    assertFails(getDoc(doc(anon(), 'tenants/empresaA/stolen_records/caseA'))));
+  await check('membro aprovado lê ocorrência do próprio tenant',
+    assertSucceeds(getDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/stolen_records/caseA'))));
+  await check('membro NÃO forja evento de auditoria pelo SDK',
+    assertFails(setDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/audit_logs/forged'), {
+      userId: 'outra-pessoa', action: 'DELETE', timestamp: 0,
+    })));
 
   console.log(`\n=== RESULTADO: ${passed} ok, ${failed} falhas ===\n`);
   await testEnv.cleanup();

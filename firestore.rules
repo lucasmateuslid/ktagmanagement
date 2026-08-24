@@ -199,11 +199,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Audit logs: append-only para membros, leitura só admin do tenant.
+    // Audit logs: somente o backend (Admin SDK) registra eventos. Aceitar
+    // entradas do browser permitiria forjar ator, horário e ação auditada.
     match /tenants/{tenantId}/audit_logs/{logId} {
       allow read: if isTenantAdmin(tenantId);
-      allow create: if isInternalMember(tenantId);
-      allow update, delete: if false;
+      allow write: if false;
     }
 
     // Custom roles: leitura p/ membros (usado em hasPermission), write admin.
@@ -212,11 +212,11 @@ service cloud.firestore {
       allow write: if isTenantAdmin(tenantId);
     }
 
-    // Stolen records: get por trackingToken secreto (terceiros), list/write só membros.
+    // Registros de roubo contêm dados pessoais e operacionais. O acesso público
+    // deve passar por endpoint server-side que valide token, expiração e escopo;
+    // a presença de um token no documento não autentica um get por ID.
     match /tenants/{tenantId}/stolen_records/{recordId} {
-      allow get: if isMemberOf(tenantId)
-                    || (resource != null && resource.data.trackingToken != null);
-      allow list: if isMemberOf(tenantId);
+      allow read: if isMemberOf(tenantId);
       allow create: if isMemberOf(tenantId);
       allow update, delete: if isTenantAdmin(tenantId);
     }
