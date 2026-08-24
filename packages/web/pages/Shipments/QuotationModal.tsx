@@ -61,19 +61,7 @@ export const QuotationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
 
     setLoading(true);
     try {
-      const env = settings?.melhorEnvioEnvironment || 'sandbox';
-      const token = env === 'production' ? settings?.melhorEnvioProdToken : settings?.melhorEnvioSandboxToken;
-      const refreshToken = env === 'production' ? settings?.melhorEnvioProdRefreshToken : settings?.melhorEnvioSandboxRefreshToken;
-      
-      if (!token) {
-        addNotification('error', 'Token não configurado', 'O token da API do Melhor Envio não está configurado para o ambiente ativo.');
-        setLoading(false);
-        return;
-      }
-
       const payload = {
-        token,
-        environment: env,
         from: { postal_code: formData.fromPostalCode.replace(/\D/g, '') },
         to: { postal_code: formData.toPostalCode.replace(/\D/g, '') },
         products: [
@@ -94,47 +82,6 @@ export const QuotationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      if (res.status === 401 && refreshToken) {
-        console.log("Token expired, attempting to refresh...");
-        const clientId = env === 'production' ? settings?.melhorEnvioProdClientId : settings?.melhorEnvioSandboxClientId;
-        const clientSecret = env === 'production' ? settings?.melhorEnvioProdClientSecret : settings?.melhorEnvioSandboxClientSecret;
-
-        const refreshRes = await fetch('/api/melhorenvio/oauth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            refreshToken,
-            clientId,
-            clientSecret,
-            environment: env
-          })
-        });
-
-        if (refreshRes.ok) {
-          const refreshData = await refreshRes.json();
-          // Save new settings
-          const newSettings: any = { ...settings };
-          if (env === 'production') {
-            newSettings.melhorEnvioProdToken = refreshData.access_token;
-            newSettings.melhorEnvioProdRefreshToken = refreshData.refresh_token;
-            newSettings.melhorEnvioProdExpiresAt = Date.now() + (refreshData.expires_in * 1000);
-          } else {
-            newSettings.melhorEnvioSandboxToken = refreshData.access_token;
-            newSettings.melhorEnvioSandboxRefreshToken = refreshData.refresh_token;
-            newSettings.melhorEnvioSandboxExpiresAt = Date.now() + (refreshData.expires_in * 1000);
-          }
-          await storage.saveSettings(newSettings);
-          
-          // Retry calculate with new token
-          payload.token = refreshData.access_token;
-          res = await fetch('/api/melhorenvio/calculate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-      }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao calcular frete');

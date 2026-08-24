@@ -115,7 +115,8 @@ internalTraccarRouter.use((req, res, next) => {
     return res.status(403).json({ error: 'forbidden' });
   }
   if (!secret) {
-    console.warn('[INTERNAL] INTERNAL_SECRET não configurado — endpoint sem autenticação');
+    console.error('[INTERNAL] INTERNAL_SECRET não configurado — endpoint bloqueado');
+    return res.status(503).json({ error: 'integration not configured' });
   }
   next();
 });

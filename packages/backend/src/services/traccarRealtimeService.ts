@@ -5,6 +5,7 @@ import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { broadcastPosition } from './positionBroadcast.js';
 import { traccarClient } from './traccarClient.js';
 import { toTrackedPosition, xadTagService } from './xadtagService.js';
+import { adminDb } from './firebaseAdmin.js';
 
 export class TraccarRealtimeService {
   private socket: WebSocket | null = null;
@@ -64,7 +65,9 @@ export class TraccarRealtimeService {
       if (!item) { item = await xadTagRepository.get(mapping.tenantId, mapping.equipmentId) || undefined; if (!item) continue; this.equipment.set(raw.deviceId, item); }
       const device = this.devices.get(raw.deviceId);
       const previousStatus = item.traccarStatus;
-      if (device) item.traccarStatus = device.status === 'online' ? 'online' : 'offline';
+      // XADTAGs abrem uma conexão curta, enviam o lote e desconectam. A chegada
+      // de uma posição válida é a evidência de atividade, independentemente do socket.
+      item.traccarStatus = 'online';
       const now = Date.now();
       const shouldPersist = !this.lastPersistAt.has(raw.deviceId)
         || now - this.lastPersistAt.get(raw.deviceId)! >= getTraccarConfig().positionPersistIntervalMs
@@ -76,6 +79,12 @@ export class TraccarRealtimeService {
       if (shouldPersist) {
         try {
           await xadTagRepository.persistPosition(item, tracked);
+          const vehicles = await adminDb.collection(`tenants/${mapping.tenantId}/vehicles`).where('tagId', '==', item.id).limit(2).get();
+          if (vehicles.size === 1) {
+            const vehicleRef = vehicles.docs[0].ref;
+            const point = { id: String(raw.id), vehicleId: vehicles.docs[0].id, tagId: item.id, provider: 'traccar', timestamp: time, lat: raw.latitude, lon: raw.longitude, address: tracked.address || null, speed: raw.speed, course: raw.course, altitude: raw.altitude };
+            await adminDb.runTransaction(async transaction => { const current = await transaction.get(vehicleRef); if (time > Number(current.get('lastPosition.timestamp') || 0)) transaction.update(vehicleRef, { lastPosition: point, lastPositionUpdatedAt: now }); });
+          }
           this.lastPersistAt.set(raw.deviceId, now);
         } catch (error) {
           // Uma posição inválida não pode encerrar o worker nem derrubar a API.

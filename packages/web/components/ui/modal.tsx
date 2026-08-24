@@ -85,9 +85,11 @@ export function Modal({
               }}
             >
               <MotionDiv
-                initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                // Não animar transform aqui: Framer sobrescreve o translate
+                // CSS (-50%, -50%) responsável por centralizar no desktop.
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                 className={cn(
                   /* Mobile (default): bottom sheet — sobe do fundo, encosta nas bordas */
@@ -95,7 +97,7 @@ export function Modal({
                   'inset-x-0 bottom-0 w-full max-w-full',
                   'rounded-t-card rounded-b-none',
                   /* sm+ : modal centralizado tradicional */
-                  'sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:inset-x-auto',
+                  'sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto',
                   'sm:-translate-x-1/2 sm:-translate-y-1/2',
                   'sm:w-[calc(100vw-2rem)] sm:rounded-card',
                   SIZE[size],

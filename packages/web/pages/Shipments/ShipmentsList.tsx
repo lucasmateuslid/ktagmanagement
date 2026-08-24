@@ -46,18 +46,12 @@ export const ShipmentsList = () => {
 
       try {
         setSyncingTracking(true);
-        const settings = await storage.getSettings();
-        const env = settings?.melhorEnvioEnvironment || 'sandbox';
-        const token = env === 'production' ? settings?.melhorEnvioProdToken : settings?.melhorEnvioSandboxToken;
-
-        if (token) {
+        {
           const res = await fetch('/api/melhorenvio/sync-tracking', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              shipments,
-              token,
-              environment: env
+              shipments
             })
           });
 

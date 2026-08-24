@@ -44,6 +44,7 @@ const ShipmentPrint = lazy(() => import('./pages/Shipments/ShipmentPrint').then(
 
 // Traccar GPS
 const TrackersPage = lazy(() => import('./pages/trackers/TrackersPage').then(m => ({ default: m.TrackersPage })));
+const AssetManagement = lazy(() => import('./pages/AssetManagement').then(m => ({ default: m.AssetManagement })));
 
 import { hasPermission } from './utils/permissions';
 
@@ -85,15 +86,21 @@ const ProtectedLayout = () => {
 const RoleProtectedRoute = ({ 
   roles, 
   permission, 
+  module,
   children 
 }: { 
   roles?: string[], 
   permission?: string, 
+  module?: string,
   children?: React.ReactNode 
 }) => {
   const { user, customRoles, isAuthenticated, loading } = useAuth();
+  const { enabledModules, modulesLoading } = useTenant();
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (module && (modulesLoading || !enabledModules.includes(module))) {
+    return modulesLoading ? null : <Navigate to="/" replace />;
+  }
   
   if (permission && !hasPermission(user, customRoles, permission)) {
      return <Navigate to="/" replace />;
@@ -131,18 +138,18 @@ const TenantRoutes = () => (
       <Route path="/settings" element={<Settings />} />
 
       {/* Agendamentos */}
-      <Route path="/schedule/new" element={<RoleProtectedRoute permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
-      <Route path="/schedules" element={<RoleProtectedRoute permission="ROUTE_SCHEDULES"><Schedules /></RoleProtectedRoute>} />
-      <Route path="/calendar" element={<RoleProtectedRoute permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
-      <Route path="/technicians" element={<RoleProtectedRoute permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
-      <Route path="/technicians/financials" element={<RoleProtectedRoute permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
+      <Route path="/schedule/new" element={<RoleProtectedRoute module="scheduling" permission="ROUTE_SCHEDULE_NEW"><ScheduleRequest /></RoleProtectedRoute>} />
+      <Route path="/schedules" element={<RoleProtectedRoute module="scheduling" permission="ROUTE_SCHEDULES"><Schedules /></RoleProtectedRoute>} />
+      <Route path="/calendar" element={<RoleProtectedRoute module="scheduling" permission="ROUTE_CALENDAR"><Calendar /></RoleProtectedRoute>} />
+      <Route path="/technicians" element={<RoleProtectedRoute module="scheduling" permission="ROUTE_TECHNICIANS"><Technicians /></RoleProtectedRoute>} />
+      <Route path="/technicians/financials" element={<RoleProtectedRoute module="scheduling" permission="ROUTE_FINANCIAL"><TechnicianFinancials /></RoleProtectedRoute>} />
 
       {/* Envios */}
-      <Route path="/envios" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentsList /></RoleProtectedRoute>} />
-      <Route path="/envios/:id/editar" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
-      <Route path="/envios/nova" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
-      <Route path="/envios/:id" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentDetails /></RoleProtectedRoute>} />
-      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute permission="ROUTE_SHIPMENTS"><ShipmentPrint /></RoleProtectedRoute>} />
+      <Route path="/envios" element={<RoleProtectedRoute module="shipments" permission="ROUTE_SHIPMENTS"><ShipmentsList /></RoleProtectedRoute>} />
+      <Route path="/envios/:id/editar" element={<RoleProtectedRoute module="shipments" permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+      <Route path="/envios/nova" element={<RoleProtectedRoute module="shipments" permission="ROUTE_SHIPMENTS"><ShipmentForm /></RoleProtectedRoute>} />
+      <Route path="/envios/:id" element={<RoleProtectedRoute module="shipments" permission="ROUTE_SHIPMENTS"><ShipmentDetails /></RoleProtectedRoute>} />
+      <Route path="/envios/:id/imprimir" element={<RoleProtectedRoute module="shipments" permission="ROUTE_SHIPMENTS"><ShipmentPrint /></RoleProtectedRoute>} />
 
       {/* Feedback */}
       <Route path="/feedback" element={<RoleProtectedRoute permission="ROUTE_FEEDBACK"><FeedbackPage /></RoleProtectedRoute>} />
@@ -152,7 +159,8 @@ const TenantRoutes = () => (
       <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
       <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
       <Route path="/billing" element={<RoleProtectedRoute permission="ROUTE_BILLING"><Billing /></RoleProtectedRoute>} />
-      <Route path="/trackers" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><TrackersPage /></RoleProtectedRoute>} />
+      <Route path="/trackers" element={<RoleProtectedRoute module="trackers" permission="ROUTE_ASSETS"><TrackersPage /></RoleProtectedRoute>} />
+      <Route path="/assets" element={<RoleProtectedRoute module="trackers" permission="ROUTE_ASSETS"><AssetManagement /></RoleProtectedRoute>} />
     </Route>
   </Routes>
 );
@@ -161,7 +169,7 @@ const TenantApp = () => (
   <AuthProvider>
     <ThemeProvider>
       <WhitelabelStyles />
-      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <HashRouter>
         <Suspense fallback={<div className="h-screen w-screen bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>}>
           <TenantRoutes />
         </Suspense>

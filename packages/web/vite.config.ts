@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, '../..');
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, repoRoot, '');
+  const backendUrl = env.VITE_DEV_BACKEND_URL || 'http://localhost:4001';
 
   return {
     plugins: [react()],
@@ -20,11 +21,11 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:4000',
+          target: backendUrl,
           changeOrigin: true,
         },
         '/ws': {
-          target: 'ws://localhost:4000',
+          target: backendUrl.replace(/^http/, 'ws'),
           ws: true,
         },
       },

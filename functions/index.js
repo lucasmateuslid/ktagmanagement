@@ -8,10 +8,13 @@ const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https")
 const { onDocumentUpdated, onDocumentCreated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
-const admin = require("firebase-admin");
+const { getApps, initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
+const { FieldValue, Timestamp, getFirestore } = require("firebase-admin/firestore");
 const axios = require("axios");
 const dns = require("node:dns").promises;
 const net = require("node:net");
+const crypto = require("node:crypto");
 const asaas = require("./asaas");
 // K-TAG (api.gps308.com): helpers puros (bateria/lote) + cripto server-side
 // (espelho de packages/web/services/encryption.ts) para ler/gravar as chaves das
@@ -113,10 +116,13 @@ const corsOptions = {
 const cors = require("cors")(corsOptions);
 const webpush = require("web-push");
 
-// Inicializa o Admin SDK se ainda não estiver inicializado
-if (admin.apps.length === 0) {
-  admin.initializeApp();
-}
+// Inicializa o Admin SDK modular. O adaptador local preserva as chamadas
+// admin.firestore()/admin.auth() enquanto o restante das Functions é migrado.
+if (getApps().length === 0) initializeApp();
+const firestore = () => getFirestore();
+firestore.FieldValue = FieldValue;
+firestore.Timestamp = Timestamp;
+const admin = { firestore, auth: getAuth };
 // Aceitar `undefined` em writes do Firestore como "campo ausente" em vez de erro.
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 
@@ -882,6 +888,14 @@ exports.scheduledTagUpdate = onSchedule({
 
 async function updateTagsForTenant(db, tenantId) {
   const tenantRef = db.collection('tenants').doc(tenantId);
+  const leaseRef = tenantRef.collection('job_leases').doc('ktag_history');
+  const leaseAcquired = await db.runTransaction(async tx => {
+    const current = await tx.get(leaseRef); const now = Date.now();
+    if (current.exists && Number(current.get('expiresAt') || 0) > now) return false;
+    tx.set(leaseRef, { owner: crypto.randomUUID(), acquiredAt: now, expiresAt: now + 25 * 60 * 1000 });
+    return true;
+  });
+  if (!leaseAcquired) { console.log(`[${tenantId}] lease K-TAG já está ocupado`); return 0; }
 
   // 1. Veículos do tenant — usados para ordenação stale-first e lookup rápido.
   const vehiclesSnap = await tenantRef.collection('vehicles').get();
@@ -899,8 +913,8 @@ async function updateTagsForTenant(db, tenantId) {
   }
   const allTags = [];
   tagsSnapshot.forEach(doc => {
-    const tag = { ...doc.data(), id: doc.id };
-    if (tag.type !== 'XADTAG' && tag.equipmentType !== 'XADTAG') allTags.push(tag);
+    const tag = { ...doc.data(), id: doc.id, ref: doc.ref };
+    if (tag.type !== 'XADTAG' && tag.equipmentType !== 'XADTAG' && vehicleByTagId[tag.id]) allTags.push(tag);
   });
 
   // Stale-First Queue: processa primeiro as tags com lastPosition.timestamp mais antigo
@@ -915,21 +929,37 @@ async function updateTagsForTenant(db, tenantId) {
 
   let updatedCount = 0;
 
-  // Persiste somente a última posição. NÃO persiste o campo `key` (hashedAdvKey) — evita vazar chave em
-  // texto plano no Firestore (legível pelos usuários do tenant).
+  const shadowMode = (process.env.KTAG_HISTORY_MODE || 'shadow') === 'shadow';
   const persist = async (tag, locationResult) => {
     if (!locationResult) return false;
     const vehicle = vehicleByTagId[tag.id];
     if (!vehicle) return false;
-    // Enriquece com endereço (Photon/OSM — grátis, sem API key).
-    const address = await reverseGeocodePhoton(locationResult.lat, locationResult.lon);
-    const enriched = address ? { ...locationResult, address } : locationResult;
-    const nextTimestamp = Number(enriched.timestamp || 0);
+    const nextTimestamp = Number(locationResult.timestamp || 0);
     const currentTimestamp = Number(vehicle.lastPosition?.timestamp || 0);
-    if (nextTimestamp && currentTimestamp && nextTimestamp < currentTimestamp) return false;
-    await vehicle.ref.update({ lastPosition: enriched, lastPositionUpdatedAt: Date.now() });
+    const capturedThrough = Number(vehicle.ktagHistoryCapturedThrough || 0);
+    if (!nextTimestamp || (currentTimestamp && nextTimestamp < currentTimestamp)) return false;
+    const moved = hasMoved(vehicle.ktagHistoryLastPosition, locationResult);
+    const heartbeat = !moved && (!capturedThrough || nextTimestamp - capturedThrough >= 6 * 60 * 60 * 1000);
+    const shouldRecord = moved || heartbeat;
+    const positionId = crypto.createHash('sha256').update(`${tag.id}|${nextTimestamp}|${locationResult.lat}|${locationResult.lon}`).digest('hex');
+    if (shadowMode) { console.log(JSON.stringify({ event: 'ktag.history.shadow', tenantId, vehicleId: vehicle.id, tagId: tag.id, positionId, shouldRecord, heartbeat })); return true; }
+    // Endereço é enriquecimento opcional: uma falha nunca impede o registro GPS.
+    const address = shouldRecord ? await reverseGeocodePhoton(locationResult.lat, locationResult.lon) : null;
+    const enriched = { ...(address ? { ...locationResult, address } : locationResult), vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id, tagId: tag.id, provider: 'ktag', heartbeat };
+    const historyRef = tenantRef.collection('tag_history').doc(positionId);
+    const now = Date.now();
+    await db.runTransaction(async tx => {
+      const reads = [tx.get(vehicle.ref), tx.get(tag.ref)];
+      if (shouldRecord) reads.push(tx.get(historyRef));
+      const [currentVehicle, currentTag, existingPoint] = await Promise.all(reads);
+      if (shouldRecord && existingPoint && !existingPoint.exists) tx.create(historyRef, { ...enriched, id: positionId, savedAt: now, expiresAt: admin.firestore.Timestamp.fromMillis(now + 30 * 24 * 60 * 60 * 1000) });
+      if (nextTimestamp >= Number(currentVehicle.get('lastPosition.timestamp') || 0)) tx.update(vehicle.ref, { lastPosition: { ...enriched, id: positionId }, batteryStatus: enriched.battery || null, ...(shouldRecord ? { ktagHistoryCapturedThrough: nextTimestamp, ktagHistoryLastPosition: { lat: enriched.lat, lon: enriched.lon, timestamp: nextTimestamp } } : {}), lastPositionUpdatedAt: now });
+      const tagPrevious = Number(currentTag.get('lastPosition.timestamp') || 0);
+      if (nextTimestamp >= tagPrevious) tx.update(tag.ref, { lastPosition: { ...enriched, id: positionId }, lastBattery: enriched.battery?.level ?? null, updatedAt: now });
+    });
     vehicle.lastPosition = enriched;
-    return true;
+    if (shouldRecord) { vehicle.ktagHistoryCapturedThrough = nextTimestamp; vehicle.ktagHistoryLastPosition = enriched; }
+    return shouldRecord;
   };
 
   // ---- K-TAG: LOTE (feibao doc 3.3) ----
@@ -946,11 +976,17 @@ async function updateTagsForTenant(db, tenantId) {
     const CHUNK = 50; // ≤50 chaves por request (protege contra payload gigante)
     for (let i = 0; i < withKeys.length; i += CHUNK) {
       const chunk = withKeys.slice(i, i + CHUNK);
-      const mapped = await fetchKtagLocationsBatch(chunk);
+      let mapped;
+      try {
+        mapped = await fetchKtagLocationsBatch(chunk);
+      } catch (error) {
+        console.error(JSON.stringify({ event: 'ktag.history.batch_failed', tenantId, offset: i, size: chunk.length, error: error.message }));
+        continue;
+      }
       for (const { tag, location } of mapped) {
         try {
           const { key, ...rest } = location; // descarta `key` antes de persistir
-          const locationResult = { id: Math.random().toString(36).substring(2, 15), tagId: tag.id, ...rest };
+          const locationResult = { tagId: tag.id, ...rest };
           if (await persist(tag, locationResult)) updatedCount++;
           await new Promise(resolve => setTimeout(resolve, 800)); // gentileza c/ geocoding
         } catch (error) {
@@ -1054,7 +1090,7 @@ exports.syncKtagKeys = onCall({ secrets: [KTAG_API_USER, KTAG_API_PASS] }, async
 });
 
 /**
- * CLEANUP DIÁRIO: Remove pontos de histórico com mais de 7 dias de todos os tenants ativos.
+ * CLEANUP DIÁRIO: fallback do TTL, remove pontos de histórico com mais de 30 dias.
  * Firestore batch delete em chunks de 500 (limite da API).
  */
 exports.cleanupOldHistory = onSchedule({
@@ -1063,13 +1099,21 @@ exports.cleanupOldHistory = onSchedule({
   memory: "256MiB",
 }, async (event) => {
   const db = admin.firestore();
-  const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000); // 7 dias atrás
+  const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
   let totalDeleted = 0;
   let totalTenants = 0;
 
   try {
     const tenantsSnap = await db.collection('tenants').where('active', '==', true).get();
     for (const tenantDoc of tenantsSnap.docs) {
+      const canonicalOldSnap = await tenantDoc.ref.collection('tag_history').where('savedAt', '<', cutoff).get();
+      const canonicalBatches = [];
+      let canonicalBatch = db.batch(); let canonicalCount = 0;
+      canonicalOldSnap.forEach(doc => { canonicalBatch.delete(doc.ref); canonicalCount++; if (canonicalCount === 500) { canonicalBatches.push(canonicalBatch); canonicalBatch = db.batch(); canonicalCount = 0; } });
+      if (canonicalCount > 0) canonicalBatches.push(canonicalBatch);
+      await Promise.all(canonicalBatches.map(batch => batch.commit()));
+      totalDeleted += canonicalOldSnap.size;
+      // Compatibilidade temporária com o formato legado por veículo.
       const vehiclesSnap = await tenantDoc.ref.collection('vehicles').get();
       for (const vehicleDoc of vehiclesSnap.docs) {
         const oldSnap = await vehicleDoc.ref.collection('history')
@@ -1160,6 +1204,7 @@ async function upsertMembership(uid, tenantId, data) {
     role: data.role || 'user',
     status: data.status || 'pending',
     customRoleId: data.customRoleId || null,
+    clientId: data.role === 'client' ? (data.clientId || null) : null,
     email,
     updatedAt: Date.now(),
   }, { merge: true });

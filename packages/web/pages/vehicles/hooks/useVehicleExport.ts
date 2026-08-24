@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Vehicle, Tag, Company, VehicleCategory, Client } from '../../../types';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { mapVehiclesToExportData } from '../utils/vehicleExportUtils';
+import { exportRowsToXlsx } from '../../../utils/excel';
 
 interface UseVehicleExportProps {
   vehicles: Vehicle[];
@@ -64,12 +65,8 @@ export const useVehicleExport = ({
   };
 
   const handleExportExcel = async () => {
-    const { default: XLSX } = await import('xlsx');
     const data = getExportData();
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Veículos");
-    XLSX.writeFile(wb, `veiculos_ktag_${Date.now()}.xlsx`);
+    await exportRowsToXlsx(data, 'Veículos', `veiculos_ktag_${Date.now()}.xlsx`);
     addNotification('success', 'Exportação Excel', 'Planilha gerada com sucesso.');
     clearSelection();
   };

@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { getDoc } from 'firebase/firestore';
+import { getDoc, onSnapshot } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import type { Tenant } from '../types';
-import { db } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { activeTenant } from '../services/activeTenant';
 import { encryption } from '../services/encryption';
-import { tenantPublicMetaDoc } from '../lib/firestore';
+import { activeTenantRootDoc, tenantPublicMetaDoc } from '../lib/firestore';
 import { getTenantFromHostname, isReservedSlug, APEX_TENANT } from '../utils/tenant';
 import { ApexPlaceholder } from '../components/ApexPlaceholder';
 
@@ -15,6 +16,8 @@ interface TenantContextValue {
   loading: boolean;
   error: string | null;
   isAdminPanel: boolean;
+  enabledModules: string[];
+  modulesLoading: boolean;
 }
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -27,6 +30,8 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enabledModules, setEnabledModules] = useState<string[]>([]);
+  const [modulesLoading, setModulesLoading] = useState(true);
 
   const isAdminPanel = tenantId === ADMIN_TENANT_SLUG;
   const isApex = tenantId === APEX_TENANT;
@@ -101,6 +106,29 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
     boot();
   }, [tenantId, isAdminPanel, isApex, isLock]);
 
+  useEffect(() => {
+    if (!auth || !db || isAdminPanel || isApex || isLock) {
+      setModulesLoading(false);
+      return;
+    }
+    let unsubscribeRoot: (() => void) | undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeRoot?.();
+      if (!user) {
+        setEnabledModules([]);
+        setModulesLoading(false);
+        return;
+      }
+      setModulesLoading(true);
+      unsubscribeRoot = onSnapshot(activeTenantRootDoc(), root => {
+        const features = root.get('settings.features');
+        setEnabledModules(Array.isArray(features) ? features.map(String) : []);
+        setModulesLoading(false);
+      }, () => { setEnabledModules([]); setModulesLoading(false); });
+    });
+    return () => { unsubscribeAuth(); unsubscribeRoot?.(); };
+  }, [tenantId, isAdminPanel, isApex, isLock]);
+
   if (isApex) {
     return <ApexPlaceholder />;
   }
@@ -132,7 +160,7 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
   }
 
   return (
-    <TenantContext.Provider value={{ tenantId, tenant, loading, error, isAdminPanel }}>
+    <TenantContext.Provider value={{ tenantId, tenant, loading, error, isAdminPanel, enabledModules, modulesLoading }}>
       {children}
     </TenantContext.Provider>
   );

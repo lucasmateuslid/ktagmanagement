@@ -252,11 +252,23 @@ export interface Tag {
   macAddress?: string;
   traqcareId?: string;
   identifierNormalized?: string;
-  traccarDeviceId?: number;
+  identifierKind?: 'imei' | 'numeric_serial' | 'mac';
+  identifierProfile?: 'xadtag_legacy_numeric_10_to_15';
+  identifierOriginal?: string;
+  traccarUniqueId?: string;
+  traccarDeviceId?: number | null;
   traccarDeviceName?: string;
   traccarPositionId?: number | null;
   traccarStatus?: 'online' | 'delayed' | 'offline' | 'unknown';
-  integrationStatus?: 'linked' | 'pending' | 'unavailable';
+  integrationStatus?: 'pending' | 'registered' | 'error';
+  integrationErrorCode?: string | null;
+  communicationValidatedAt?: number | null;
+  linkedEntityType?: 'vehicle' | null;
+  linkedEntityId?: string | null;
+  linkedEntityName?: string | null;
+  linkedAt?: number | null;
+  linkedBy?: string | null;
+  activeTrackingAssignmentId?: string | null;
   powerType?: 'battery' | '12v';
   isActivated?: boolean;
   lastBattery?: number;
@@ -272,6 +284,95 @@ export interface Tracker {
   model: string;
   status: 'disponível' | 'enviado' | 'em_uso' | 'manutencao';
   shipmentId?: string;
+  serialNumber?: string;
+  supplierId?: string;
+  purchaseId?: string;
+  vehicleId?: string;
+  clientId?: string;
+  simCardId?: string;
+  invertedLockOutput?: boolean;
+  password?: string;
+  minBatteryVoltage?: number;
+  maxBatteryVoltage?: number;
+  purchaseDate?: string;
+  stockId?: string;
+  batch?: string;
+  notes?: string;
+  unitCost?: number;
+  warrantyMonths?: number;
+  purchasedAt?: number;
+  warrantyEndsAt?: number;
+  stockEnteredAt?: number;
+  returnedToStockAt?: number;
+  installedAt?: number;
+  lastCommunicationAt?: number;
+  updatedAt?: number;
+  createdAt: number;
+}
+
+export type InventoryAssetType = 'tracker' | 'tag' | 'sim_card';
+export type InventoryLifecycleStatus =
+  | 'in_stock' | 'reserved' | 'installed' | 'maintenance' | 'returned' | 'retired';
+
+export interface EquipmentSupplier {
+  id: string;
+  name: string;
+  document?: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SimCard {
+  id: string;
+  iccid: string;
+  phoneNumber?: string;
+  provider: 'smartsim' | 'allcom' | 'algar' | 'arqia' | 'arya' | 'smartgps' | 'other';
+  supplierId?: string;
+  planName?: string;
+  monthlyCost: number;
+  status: InventoryLifecycleStatus;
+  trackerId?: string;
+  vehicleId?: string;
+  clientId?: string;
+  activatedAt?: number;
+  lastCommunicationAt?: number;
+  stockEnteredAt: number;
+  returnedToStockAt?: number;
+  cancelledAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface InventoryMovement {
+  id: string;
+  assetType: InventoryAssetType;
+  assetId: string;
+  action: 'purchase' | 'entry' | 'reserve' | 'install' | 'remove' | 'return' | 'maintenance' | 'retire' | 'adjustment';
+  fromStatus?: InventoryLifecycleStatus;
+  toStatus: InventoryLifecycleStatus;
+  clientId?: string;
+  vehicleId?: string;
+  serviceOrderId?: string;
+  reason?: string;
+  performedBy: string;
+  createdAt: number;
+}
+
+export interface EquipmentPurchase {
+  id: string;
+  supplierId: string;
+  assetType: InventoryAssetType;
+  invoiceNumber?: string;
+  quantity: number;
+  unitCost: number;
+  purchasedAt: number;
+  warrantyMonths?: number;
+  notes?: string;
   createdAt: number;
 }
 
@@ -351,6 +452,12 @@ export interface Client {
   hasAccess?: boolean;
   createdAt: number;
   cpfHash?: string;
+  documentType?: 'cpf' | 'cnpj';
+  companyName?: string;
+  notes?: string;
+  tags?: string[];
+  preferredContact?: 'phone' | 'email' | 'whatsapp';
+  updatedAt?: number;
 }
 
 // K-Tag API v1.2 - Battery Info Structure
@@ -372,6 +479,12 @@ export interface LocationHistory {
   battery?: KTagBatteryInfo; // Interpreted battery status
   timestamp: number;
   isodatetime: string;
+  vehicleId?: string;
+  provider?: 'traccar' | 'ktag';
+  address?: string;
+  speed?: number;
+  course?: number;
+  altitude?: number;
 }
 
 export interface Vehicle {
@@ -382,6 +495,8 @@ export interface Vehicle {
   year?: string;
   color?: string;
   tagId?: string;
+  trackerId?: string;
+  simCardId?: string;
   companyId?: string;
   clientId?: string;
   status?: 'active' | 'stolen' | 'maintenance';
@@ -400,6 +515,9 @@ export interface Vehicle {
   plateHash?: string;
   // New Field for Offline Persistence
   lastPosition?: LocationHistory; 
+  activeTrackingAssignmentId?: string | null;
+  ktagHistoryCapturedThrough?: number;
+  ktagHistoryLastPosition?: Pick<LocationHistory, 'lat' | 'lon' | 'timestamp'>;
 }
 
 // Result format for location fetching APIs
@@ -652,8 +770,10 @@ export interface Schedule {
   requesterId: string;
   requesterName: string;
   clientName?: string; 
+  clientId?: string;
   clientPhone?: string;
   vehiclePlate: string;
+  vehicleId?: string;
   vehicleModel: string;
   fipeValue: string; 
   deviceType: DeviceType;
@@ -667,6 +787,9 @@ export interface Schedule {
   paymentOnSite?: boolean; 
   installedImei?: string; 
   installedTagImei?: string;
+  assignedTrackerId?: string;
+  assignedTagId?: string;
+  assignedSimCardId?: string;
   isRemoteLocation?: boolean; 
   financialObs?: string;
   osNumber?: string;

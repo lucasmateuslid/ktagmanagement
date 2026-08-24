@@ -73,7 +73,7 @@ export const AdminPlatformIntegrations = () => {
       <div className="flex items-start gap-2 text-xs text-amber-300/80 bg-amber-500/[0.05] border border-amber-500/15 rounded-2xl px-4 py-3">
         <Info size={14} className="shrink-0 mt-0.5 text-amber-400" />
         <p className="leading-relaxed">
-          O valor configurado aqui sobrescreve o que cada tenant tiver salvo. Tenants verão este campo como
+          O valor configurado aqui sobrescreve o que cada empresa tiver salvo. As empresas verão este campo como
           <strong className="text-amber-300"> somente leitura</strong> na tela de Sistema &amp; APIs.
         </p>
       </div>
@@ -91,7 +91,7 @@ export const AdminPlatformIntegrations = () => {
               <h2 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Proxy & Relay (CORS bypass)</h2>
             </div>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              URL da Cloud Function que faz o roteamento entre os tenants e as APIs externas
+              URL da Cloud Function que faz o roteamento entre as empresas e as APIs externas
               (K-TAG, XADTAG). Sem isso o navegador bloqueia as requisições por CORS.
             </p>
             <input
@@ -110,7 +110,7 @@ export const AdminPlatformIntegrations = () => {
               <h2 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Credenciais K-TAG (conta da plataforma)</h2>
             </div>
             <p className="text-xs text-zinc-500 leading-relaxed">
-              As credenciais da API K-TAG são compartilhadas por todos os tenants e ficam como
+              As credenciais da API K-TAG são compartilhadas por todas as empresas e ficam como
               <strong className="text-zinc-300"> segredos do servidor</strong> — o relay injeta o
               Basic Auth a cada chamada e o navegador <strong className="text-zinc-300">nunca</strong> recebe
               usuário/senha. Configure-as via Secret Manager das Cloud Functions:

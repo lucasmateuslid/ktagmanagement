@@ -7,12 +7,12 @@
 // tenantId em cada método (evita reescrever 30+ páginas), mas falha alto se
 // for chamado antes da inicialização.
 
-import { Tag, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, Feedback, SystemUpdate, Shipment, ShippingAddress } from '../types';
+import { Tag, Tracker, SimCard, EquipmentSupplier, EquipmentPurchase, InventoryMovement, Vehicle, User, LocationHistory, AppSettings, Company, VehicleCategory, StolenRecord, Client, AuditLog, AppNotification, Schedule, Technician, Feedback, SystemUpdate, Shipment, ShippingAddress } from '../types';
 import { db, auth } from './firebase';
 import {
   getDocs, addDoc, updateDoc, deleteDoc,
   query, where, setDoc, getDoc, orderBy, limit, getDocsFromCache, onSnapshot,
-  CollectionReference, Query
+  CollectionReference, Query, writeBatch
 } from 'firebase/firestore';
 import { tenantCollection, tenantDoc, systemDoc } from '../lib/firestore';
 import { activeTenant } from './activeTenant';
@@ -43,6 +43,10 @@ const COLLECTIONS = {
   USERS: 'users',
   TAGS: 'tags',
   TRACKERS: 'trackers',
+  SIM_CARDS: 'sim_cards',
+  EQUIPMENT_SUPPLIERS: 'equipment_suppliers',
+  EQUIPMENT_PURCHASES: 'equipment_purchases',
+  INVENTORY_MOVEMENTS: 'inventory_movements',
   VEHICLES: 'vehicles',
   CLIENTS: 'clients',
   SETTINGS: 'settings',
@@ -973,6 +977,53 @@ export const storage = {
       await deleteDoc(tenantDoc(COLLECTIONS.CUSTOM_ROLES, id));
       await storage.logAction(null, 'DELETE', 'CustomRole', `Cargo deletado: ${id}`, id);
     }
+  },
+
+  // --- ATIVOS E CONECTIVIDADE ---
+  getTrackers: async (): Promise<Tracker[]> => fetchResilient(tenantCollection(COLLECTIONS.TRACKERS)) as Promise<Tracker[]>,
+  subscribeTrackers: (callback: (items: Tracker[]) => void) => {
+    if (!db) return () => {};
+    return onSnapshot(tenantCollection(COLLECTIONS.TRACKERS), (snap) => callback(snap.docs.map((item) => ({ ...item.data(), id: item.id } as Tracker))));
+  },
+  getSimCards: async (): Promise<SimCard[]> => fetchResilient(tenantCollection(COLLECTIONS.SIM_CARDS)) as Promise<SimCard[]>,
+  getEquipmentSuppliers: async (): Promise<EquipmentSupplier[]> => fetchResilient(tenantCollection(COLLECTIONS.EQUIPMENT_SUPPLIERS)) as Promise<EquipmentSupplier[]>,
+  getEquipmentPurchases: async (): Promise<EquipmentPurchase[]> => fetchResilient(tenantCollection(COLLECTIONS.EQUIPMENT_PURCHASES)) as Promise<EquipmentPurchase[]>,
+  getInventoryMovements: async (): Promise<InventoryMovement[]> => fetchResilient(tenantCollection(COLLECTIONS.INVENTORY_MOVEMENTS)) as Promise<InventoryMovement[]>,
+
+  saveTracker: async (item: Tracker) => {
+    if (!db) return;
+    await setDoc(tenantDoc(COLLECTIONS.TRACKERS, item.id), cleanData(item));
+    await storage.logAction(null, 'UPDATE', 'Tracker', `Rastreador salvo: ${item.imei}`, item.id);
+  },
+  saveSimCard: async (item: SimCard) => {
+    if (!db) return;
+    await setDoc(tenantDoc(COLLECTIONS.SIM_CARDS, item.id), cleanData(item));
+    await storage.logAction(null, 'UPDATE', 'SimCard', `Linha salva: ${item.iccid}`, item.id);
+  },
+  saveEquipmentSupplier: async (item: EquipmentSupplier) => {
+    if (!db) return;
+    await setDoc(tenantDoc(COLLECTIONS.EQUIPMENT_SUPPLIERS, item.id), cleanData(item));
+  },
+  saveEquipmentPurchase: async (item: EquipmentPurchase) => {
+    if (!db) return;
+    await setDoc(tenantDoc(COLLECTIONS.EQUIPMENT_PURCHASES, item.id), cleanData(item));
+  },
+  saveInventoryMovement: async (item: InventoryMovement) => {
+    if (!db) return;
+    await setDoc(tenantDoc(COLLECTIONS.INVENTORY_MOVEMENTS, item.id), cleanData(item));
+  },
+
+  saveAssetBatch: async (collectionName: 'trackers' | 'sim_cards', items: Array<Tracker | SimCard>) => {
+    if (!db || items.length === 0) return;
+    // Firestore aceita até 500 operações; 450 deixa margem para evolução do lote.
+    for (let offset = 0; offset < items.length; offset += 450) {
+      const batch = writeBatch(db);
+      items.slice(offset, offset + 450).forEach((item) => {
+        batch.set(tenantDoc(collectionName, item.id), cleanData(item));
+      });
+      await batch.commit();
+    }
+    await storage.logAction(null, 'CREATE', 'InventoryBatch', `${items.length} itens importados em ${collectionName}`);
   },
 
   // --- LOCAL-ONLY ---

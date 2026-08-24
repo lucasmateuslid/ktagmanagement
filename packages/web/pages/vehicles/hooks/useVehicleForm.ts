@@ -1,10 +1,11 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Vehicle, Client, User } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { validateBrazilianPlate } from '../utils/plateValidation';
 import { isValidCPF } from '../../../utils/brDocument';
+import { authenticatedFetch } from '../../../services/authenticatedFetch';
 
 export const useVehicleForm = (
   vehicles: Vehicle[],
@@ -110,6 +111,8 @@ export const useVehicleForm = (
         await storage.saveClient(clientToSave);
       }
 
+      const previousTagId = vehicles.find(vehicle => vehicle.id === vehicleId)?.tagId;
+      const requestedTagId = formData.tagId;
       const vehicleToSave: Vehicle = {
           ...formData as Vehicle,
           id: vehicleId,
@@ -119,7 +122,8 @@ export const useVehicleForm = (
           updatedBy: currentUser?.name || 'SISTEMA',
           createdBy: formData.createdBy || currentUser?.id,
           createdByName: formData.createdByName || currentUser?.name,
-          ownershipStatus: formData.ownershipStatus || 'leased'
+          ownershipStatus: formData.ownershipStatus || 'leased',
+          tagId: previousTagId,
       };
       // Fixa os ids no estado antes do write: se o write falhar e o usuário
       // tentar de novo, reaproveita o mesmo id (não duplica). Só fixa o id do
@@ -131,6 +135,13 @@ export const useVehicleForm = (
       // storage.saveVehicle/saveClient já registram auditoria (CREATE/UPDATE) —
       // não duplicar o log aqui.
       await storage.saveVehicle(vehicleToSave);
+      if (requestedTagId && requestedTagId !== previousTagId) {
+        const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(vehicleId)}/tag`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagId: requestedTagId }) });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Veículo salvo, mas não foi possível vincular a tag.');
+      } else if (!requestedTagId && previousTagId) {
+        const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(vehicleId)}/tag`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Desvínculo solicitado na edição do veículo' }) });
+        const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Veículo salvo, mas não foi possível desvincular a tag.');
+      }
 
       addNotification('success', 'Sucesso', 'Veículo gravado no sistema.');
       setIsModalOpen(false);

@@ -3,6 +3,7 @@ import { config as dotenvConfig } from 'dotenv';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
+dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env.local'), override: false });
 
 import express from "express";
 import cors from "cors";
@@ -10,17 +11,29 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import dns from "node:dns/promises";
+import { setDefaultResultOrder } from "node:dns";
 import net from "node:net";
 import { createServer } from "node:http";
 import { internalTraccarRouter } from "./routes/tracking.js";
 import { attachWebSocketServer } from "./services/positionBroadcast.js";
 import { xadTagsRouter, liveMapRouter } from "./routes/xadtags.js";
 import { adminTraccarRouter } from "./routes/adminTraccar.js";
+import { clientRouter } from "./routes/client.js";
+import { trackersRouter } from "./routes/trackers.js";
+import { vehiclesRouter } from "./routes/vehicles.js";
 import { traccarRealtimeService } from "./services/traccarRealtimeService.js";
 import { getTraccarConfig, validateTraccarConfig } from "./config/traccar.js";
 import { setAddressFallback } from "./services/addressResolver.js";
+import { getEnabledTenantModules, requireAuth, requireGlobalAdmin, requireInternalUser, requirePermission, requireRoles, requireTenantModule } from "./middleware/auth.js";
+import { adminDb } from "./services/firebaseAdmin.js";
+import { BUSINESS_MODULE_IDS } from '@ktag/shared';
 // vite é devDependency e não é instalada no estágio runtime do Docker.
 // Importação dinâmica abaixo, somente quando NODE_ENV !== 'production'.
+
+// Alguns ambientes locais anunciam IPv6 sem possuir rota IPv6 funcional.
+// Google APIs resolvem em dual-stack e o fetch do Node pode expirar antes do
+// fallback. IPv4-first preserva IPv6 como alternativa e evita o ETIMEDOUT.
+setDefaultResultOrder('ipv4first');
 
 class GeocodingError extends Error {
   constructor(message: string) {
@@ -466,12 +479,13 @@ async function startServer() {
   // Default: aceita apenas ktagfinder.app e seus subdomínios em produção.
   // Localhost liberado em dev. Override via CORS_ALLOW_ALL=true (NÃO RECOMENDADO).
   const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+  const LOCAL_ORIGIN_PATTERN = /^http:\/\/(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)?localhost(?::\d+)?$|^http:\/\/127\.0\.0\.1(?::\d+)?$/;
   app.use(cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true); // server-to-server / curl
       if (process.env.CORS_ALLOW_ALL === 'true') return cb(null, true);
       if (ALLOWED_ORIGIN_PATTERN.test(origin)) return cb(null, true);
-      if (!isProd && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+      if (!isProd && LOCAL_ORIGIN_PATTERN.test(origin)) {
         return cb(null, true);
       }
       return cb(new Error(`Origin não permitida: ${origin}`));
@@ -506,15 +520,104 @@ async function startServer() {
 
   app.use(resolveTenant);
 
+  // APIs privadas: autenticação é validada no servidor em todas as chamadas.
+  // CORS e o segredo da origem são defesa em profundidade, não autorização.
+  app.use(['/api/geocode', '/api/reverse-geocode'], requireAuth);
+  app.use(['/api/proxy', '/api/track'], requireAuth, requireInternalUser);
+  app.use('/api/melhorenvio', (req, res, next) => req.path === '/webhook' ? next() : requireAuth(req, res, next));
+  app.use('/api/melhorenvio', (req, res, next) => req.path === '/webhook' ? next() : requireInternalUser(req, res, next));
+  app.use('/api/melhorenvio', (req, res, next) => req.path === '/webhook' ? next() : requireTenantModule('shipments')(req, res, next));
+  app.use('/api/melhorenvio', (req, res, next) => req.path === '/webhook' ? next() : requirePermission('ROUTE_SHIPMENTS', ['admin', 'admin_tecnico', 'moderator', 'user', 'technician'])(req, res, next));
+  app.use(['/api/melhorenvio/oauth/exchange', '/api/melhorenvio/oauth/refresh'], requireRoles('admin'));
+  app.use('/api/melhorenvio', async (req, res, next) => {
+    if (req.path === '/webhook') return next();
+    try {
+      const tenantId = req.tenantId || '';
+      const snap = await adminDb.doc(`tenants/${tenantId}/settings/config`).get();
+      if (!snap.exists) return res.status(503).json({ error: 'Melhor Envio não configurado.' });
+      const settings = snap.data() || {};
+      const environment = settings.melhorEnvioEnvironment === 'production' ? 'production' : 'sandbox';
+      const production = environment === 'production';
+      const token = production ? settings.melhorEnvioProdToken : settings.melhorEnvioSandboxToken;
+      const refreshToken = production ? settings.melhorEnvioProdRefreshToken : settings.melhorEnvioSandboxRefreshToken;
+      const clientId = production ? settings.melhorEnvioProdClientId : settings.melhorEnvioSandboxClientId;
+      const clientSecret = production ? settings.melhorEnvioProdClientSecret : settings.melhorEnvioSandboxClientSecret;
+      // Credenciais vindas do navegador são descartadas; somente a configuração
+      // autoritativa do tenant é encaminhada aos handlers legados.
+      req.body = { ...(req.body || {}), environment, token, refreshToken, clientId, clientSecret };
+      next();
+    } catch {
+      return res.status(503).json({ error: 'Falha ao carregar integração da empresa.' });
+    }
+  });
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", tenantId: req.tenantId, realtime: process.env.TRACCAR_REALTIME_ENABLED === 'false' ? 'disabled' : traccarRealtimeService.status });
   });
 
+  app.get('/api/tenant/modules', requireAuth, async (req, res) => {
+    const modules = await getEnabledTenantModules(req.tenantId || '', req.headers.authorization || '');
+    res.json({ modules });
+  });
+
+  app.patch('/api/admin/tenants/:slug/limits', requireAuth, requireGlobalAdmin, async (req, res) => {
+    try {
+      const slug = String(req.params.slug || '').trim();
+      if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)) return res.status(400).json({ error: 'Empresa inválida.' });
+      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+      if (!projectId) return res.status(503).json({ error: 'Projeto Firebase local não configurado.' });
+      const authorization = req.headers.authorization || '';
+      const settingsFields: Record<string, unknown> = {};
+      const updateMasks: string[] = [];
+      for (const field of ['limiteTags', 'limiteVeiculos', 'maxUsers']) {
+        if (req.body?.[field] === undefined) continue;
+        const value = Number(req.body[field]);
+        if (!Number.isFinite(value) || value < 0) return res.status(400).json({ error: `${field} inválido.` });
+        settingsFields[field] = { integerValue: String(Math.trunc(value)) };
+        updateMasks.push(`settings.${field}`);
+      }
+      if (req.body?.features !== undefined) {
+        if (!Array.isArray(req.body.features)) return res.status(400).json({ error: 'Lista de módulos inválida.' });
+        const allowed = new Set<string>(BUSINESS_MODULE_IDS);
+        const features: string[] = [...new Set<string>((req.body.features as unknown[]).map(value => String(value)))];
+        if (features.some(id => !allowed.has(id))) return res.status(400).json({ error: 'A lista contém um módulo desconhecido.' });
+        settingsFields.features = { arrayValue: { values: features.map(stringValue => ({ stringValue })) } };
+        updateMasks.push('settings.features');
+      }
+      updateMasks.push('updatedAt');
+      const params = new URLSearchParams();
+      updateMasks.forEach(field => params.append('updateMask.fieldPaths', field));
+      const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/tenants/${encodeURIComponent(slug)}?${params}`;
+      // Usa o token do superadmin também na gravação REST. Assim o
+      // ambiente local continua sujeito às Firestore Rules e não precisa
+      // armazenar uma chave de service account no computador do desenvolvedor.
+      const firestoreResponse = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { settings: { mapValue: { fields: settingsFields } }, updatedAt: { integerValue: String(Date.now()) } } }),
+      });
+      if (!firestoreResponse.ok) {
+        const failure = await firestoreResponse.json().catch(() => ({})) as any;
+        const status = firestoreResponse.status === 404 ? 404 : firestoreResponse.status === 403 ? 403 : 502;
+        return res.status(status).json({ error: failure?.error?.message || 'O banco recusou a atualização da empresa.' });
+      }
+      return res.json({ slug, changed: true });
+    } catch (error) {
+      console.error('admin tenant limits update failed', error);
+      return res.status(500).json({ error: 'Falha ao atualizar limites e módulos da empresa.' });
+    }
+  });
+
   // ── Traccar integration ──────────────────────────────────────────────────
   app.use('/api/xadtags', xadTagsRouter);
+  app.use('/api/integrations/traccar/xadtags', xadTagsRouter);
   app.use('/api/livemap', liveMapRouter);
   app.use('/api/admin/integrations/traccar', adminTraccarRouter);
   app.use('/api/internal/traccar', internalTraccarRouter);
+  app.use('/api/client', clientRouter);
+  app.use('/api/trackers', requireAuth, requireTenantModule('trackers'), trackersRouter);
+  app.use('/api/vehicles', vehiclesRouter);
+  app.use('/api/livemap/vehicles', vehiclesRouter);
 
   app.post("/api/geocode", async (req, res) => {
     try {

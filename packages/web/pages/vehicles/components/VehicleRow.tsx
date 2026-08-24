@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
-import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi } from 'lucide-react';
+import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi, History } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { fetchTagLocation } from '../../../services/api';
 import { storage } from '../../../services/storage';
 
@@ -18,6 +19,7 @@ interface VehicleRowProps {
 }
 
 export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly, isSelected, toggleSelect }: VehicleRowProps) => {
+  const navigate = useNavigate();
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
@@ -117,6 +119,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
         {/* Mobile Actions - Ocultar se readonly */}
         {!isReadOnly && (
             <div className="flex md:hidden gap-1">
+                {tag && <button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500"><History size={16}/></button>}
                 <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
                 <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
             </div>
@@ -214,6 +217,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
           <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {tag && <button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-cyan-500 transition-colors" title="Histórico"><History size={14}/></button>}
             <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
           </div>
@@ -226,7 +230,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                  <Clock size={12} /> {timeAgo}
              </span>
              {tag && (
-                 <button 
+                 <div className="flex gap-2"><button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-zinc-100 dark:bg-zinc-800 text-zinc-500"><History size={12}/> Histórico</button><button
                      onClick={handleUpdateLocation}
                      disabled={isUpdating}
                      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
@@ -243,7 +247,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                          <RefreshCw size={12} />
                      )}
                      {isUpdating ? 'Atualizando...' : updateSuccess ? 'Atualizado' : 'Atualizar Tag'}
-                 </button>
+                 </button></div>
              )}
           </div>
       )}

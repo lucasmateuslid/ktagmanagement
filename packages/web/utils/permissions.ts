@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   SHIPMENTS: 'ROUTE_SHIPMENTS',
   CLIENTS: 'ROUTE_CLIENTS',
   TAGS: 'ROUTE_TAGS',
+  ASSETS: 'ROUTE_ASSETS',
   SCHEDULE_NEW: 'ROUTE_SCHEDULE_NEW',
   SCHEDULES: 'ROUTE_SCHEDULES',
   CALENDAR: 'ROUTE_CALENDAR',
@@ -31,6 +32,29 @@ export type PermissionId = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
 // IDs em ordem canônica — fonte para o PermissionsModule listar checkboxes.
 export const ALL_PERMISSION_IDS: PermissionId[] = Object.values(PERMISSIONS);
+
+export const BUSINESS_MODULES = [
+  {
+    id: 'scheduling',
+    label: 'Módulo de Agendamentos',
+    description: 'Solicitações, central de agenda, calendário e gestão de técnicos.',
+    permissions: [PERMISSIONS.SCHEDULE_NEW, PERMISSIONS.SCHEDULES, PERMISSIONS.CALENDAR, PERMISSIONS.TECHNICIANS, PERMISSIONS.FINANCIAL],
+  },
+  {
+    id: 'trackers',
+    label: 'Módulo de Rastreadores',
+    description: 'Cadastro de rastreadores, modelos globais, ativos e chips.',
+    permissions: [PERMISSIONS.ASSETS],
+  },
+  {
+    id: 'shipments',
+    label: 'Módulo de Envios',
+    description: 'Remessas, cotações, etiquetas, impressão e rastreamento logístico.',
+    permissions: [PERMISSIONS.SHIPMENTS],
+  },
+] as const;
+
+export const BUSINESS_MODULE_PERMISSION_IDS = new Set<string>(BUSINESS_MODULES.flatMap(module => [...module.permissions]));
 
 // Defaults por role base do sistema. Quando o usuário tem um cargo do sistema
 // (sem customRoleId), ou quando o cargo customizado não foi encontrado, caímos
@@ -54,6 +78,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionId[]> = {
     PERMISSIONS.SHIPMENTS,
     PERMISSIONS.CLIENTS,
     PERMISSIONS.TAGS,
+    PERMISSIONS.ASSETS,
     PERMISSIONS.SCHEDULE_NEW,
     PERMISSIONS.SCHEDULES,
     PERMISSIONS.CALENDAR,

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { Schedule, Technician, User, Company } from '../../../types';
 import { calculateServiceValue, calculateScheduleTotal } from '../utils/scheduleFinancialUtils';
+import { exportRowsToXlsx } from '../../../utils/excel';
 
 export const useScheduleExport = (
   filteredList: Schedule[],
@@ -177,7 +178,6 @@ export const useScheduleExport = (
 
   const handleExportExcel = async () => {
       try {
-          const XLSX = await import('xlsx');
           const sourceData = (isPrivileged && dashboardData) ? dashboardData.monthSchedules : filteredList;
 
           const data = sourceData.map((s: Schedule) => {
@@ -213,10 +213,7 @@ export const useScheduleExport = (
               };
           });
 
-          const ws = XLSX.utils.json_to_sheet(data);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Agendamentos");
-          XLSX.writeFile(wb, `agendamentos_${Date.now()}.xlsx`);
+          await exportRowsToXlsx(data, 'Agendamentos', `agendamentos_${Date.now()}.xlsx`);
           addNotification('success', 'Excel Gerado', 'Planilha exportada com sucesso.');
       } catch (e) {
           addNotification('error', 'Erro', 'Falha ao exportar Excel.');

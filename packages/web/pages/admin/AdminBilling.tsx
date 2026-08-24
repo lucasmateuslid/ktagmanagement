@@ -11,6 +11,7 @@ import { Select, type SelectOption } from '../../components/ui/select';
 import { Skeleton, SkeletonRows } from '../../components/ui/skeleton';
 import { Badge } from '../../components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
+import { adminApi } from '../../services/adminApi';
 
 const fmtBRL = (cents?: number) =>
   ((cents ?? 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -34,6 +35,11 @@ export const AdminBilling = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const { tenants, loading } = useTenants({ search });
   const [selected, setSelected] = useState<Tenant | null>(null);
+
+  React.useEffect(() => {
+    // A visão administrativa deve refletir o Asaas a cada abertura.
+    adminApi.syncAllTenantsBilling().catch(error => console.warn('automatic billing sync failed', error));
+  }, []);
 
   const filtered = React.useMemo(() => {
     if (statusFilter === 'all') return tenants;
@@ -83,7 +89,7 @@ export const AdminBilling = () => {
           <div className="p-10 text-center text-zinc-500">
             <CreditCard className="mx-auto mb-3 opacity-50" />
             <p className="text-sm font-bold uppercase tracking-widest">
-              {tenants.length === 0 ? 'Nenhuma empresa cadastrada' : 'Nenhum tenant no filtro atual'}
+              {tenants.length === 0 ? 'Nenhuma empresa cadastrada' : 'Nenhuma empresa no filtro atual'}
             </p>
           </div>
         ) : (

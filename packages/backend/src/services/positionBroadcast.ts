@@ -2,11 +2,19 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'node:http';
 import type { LiveMapTrackedAsset, TraccarPosition } from '@ktag/shared';
 import { adminAuth } from './firebaseAdmin.js';
+import { adminDb } from './firebaseAdmin.js';
 
-const clients = new Map<string, Set<WebSocket>>();
+type Subscription = { ws: WebSocket; vehicleIds: Set<string> | null };
+const clients = new Map<string, Set<Subscription>>();
 export function broadcastTenant(tenantId: string, payload: unknown): void {
   const message = JSON.stringify(payload);
-  for (const socket of clients.get(tenantId) || []) if (socket.readyState === WebSocket.OPEN) socket.send(message);
+  const data = (payload as any)?.data;
+  const linkedEntityId = data?.linkedEntityId ? String(data.linkedEntityId) : null;
+  for (const subscription of clients.get(tenantId) || []) {
+    if (subscription.ws.readyState !== WebSocket.OPEN) continue;
+    if (subscription.vehicleIds && (!linkedEntityId || !subscription.vehicleIds.has(linkedEntityId))) continue;
+    subscription.ws.send(message);
+  }
 }
 export const broadcastPosition = (tenantId: string, position: TraccarPosition | LiveMapTrackedAsset) => broadcastTenant(tenantId, { type: 'position', data: position });
 export const broadcastEvent = (tenantId: string, event: unknown) => broadcastTenant(tenantId, { type: 'event', data: event });
@@ -26,13 +34,22 @@ export function attachWebSocketServer(server: Server): WebSocketServer {
       const decoded = await adminAuth.verifyIdToken(token);
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
       const tenantId = url.searchParams.get('tenant') || '';
-      const hasMembership = decoded.superadmin === true || (typeof decoded.tn === 'object' && decoded.tn && Boolean((decoded.tn as Record<string, unknown>)[tenantId])) || decoded.tenantId === tenantId;
-      if (!tenantId || !hasMembership) throw new Error('forbidden');
+      if (!tenantId) throw new Error('forbidden');
+      const member = await adminDb.doc(`tenants/${tenantId}/users/${decoded.uid}`).get();
+      if (!member.exists || member.get('status') !== 'approved') throw new Error('forbidden');
+      let vehicleIds: Set<string> | null = null;
+      if (member.get('role') === 'client') {
+        const clientId = member.get('clientId');
+        if (!clientId) throw new Error('forbidden');
+        const vehicles = await adminDb.collection(`tenants/${tenantId}/vehicles`).where('clientId', '==', clientId).get();
+        vehicleIds = new Set(vehicles.docs.map(doc => doc.id));
+      }
       if (!clients.has(tenantId)) clients.set(tenantId, new Set());
-      clients.get(tenantId)!.add(ws);
+      const subscription: Subscription = { ws, vehicleIds };
+      clients.get(tenantId)!.add(subscription);
       ws.send(JSON.stringify({ type: 'connected' }));
-      ws.on('close', () => { clients.get(tenantId)?.delete(ws); if (!clients.get(tenantId)?.size) clients.delete(tenantId); });
-      ws.on('error', () => clients.get(tenantId)?.delete(ws));
+      ws.on('close', () => { clients.get(tenantId)?.delete(subscription); if (!clients.get(tenantId)?.size) clients.delete(tenantId); });
+      ws.on('error', () => clients.get(tenantId)?.delete(subscription));
     } catch { ws.close(1008, 'unauthorized'); }
   });
   return wss;

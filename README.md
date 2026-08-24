@@ -1,5 +1,5 @@
 
-# K-Tag Manager Pro (v3.0.2)
+# K-Tag Manager Pro (v5.1.0)
 
 **K-Tag Manager Pro** é uma plataforma Enterprise de gestão de rastreamento, controle de frota e orquestração de serviços técnicos. Desenvolvida como uma SPA (Single Page Application) moderna, ela foca em performance, funcionamento offline-first e integração com múltiplas APIs de telemetria.
 

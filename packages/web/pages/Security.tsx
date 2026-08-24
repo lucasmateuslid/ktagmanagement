@@ -130,7 +130,8 @@ export const Security = () => {
     }
 
     const timestamp = new Date(eventDate + 'T12:00:00').getTime();
-    const trackingToken = crypto.randomUUID().split('-')[0].toUpperCase();
+    // 128 bits de entropia; não encurtar tokens usados em links públicos.
+    const trackingToken = crypto.randomUUID().replace(/-/g, '').toUpperCase();
 
     const newRecord: StolenRecord = {
         id: crypto.randomUUID(),

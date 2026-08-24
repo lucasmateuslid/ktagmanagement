@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { MapComponent } from '../components/MapComponent';
@@ -43,6 +43,7 @@ export const LiveMap = () => {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [mapProvider, setMapProvider] = useState<'osm' | 'google'>('osm');
+  const autoHistoryOpenedRef = useRef('');
 
   useEffect(() => {
     storage.getSettings().then(s => {
@@ -62,7 +63,8 @@ export const LiveMap = () => {
   // 4. History Layer
   const { 
       historyItems, historyLoading, showHistoryList, 
-      fetchHistory, closeHistory, setShowHistoryList 
+      fetchHistory, closeHistory, setShowHistoryList, historyDays, changeHistoryDays,
+      nextCursor, loadMoreHistory, historyPartial, historyWarnings,
   } = useTagHistory(selectedTagId, tags, vehicles, fleetLocations, (items) => {
       items.forEach(resolveAddress);
   });
@@ -71,6 +73,12 @@ export const LiveMap = () => {
       const urlTagId = searchParams.get('tagId');
       if (urlTagId) handleSelection(urlTagId);
   }, [searchParams]);
+
+  useEffect(() => {
+      if (selectedTagId && searchParams.get('tagId') === selectedTagId && searchParams.get('history') === '1' && autoHistoryOpenedRef.current !== selectedTagId) {
+          autoHistoryOpenedRef.current = selectedTagId; fetchHistory();
+      }
+  }, [selectedTagId, searchParams, fetchHistory]);
 
   const stats = useMemo(() => calculateFleetStats(vehicles, fleetLocations), [vehicles, fleetLocations]);
   
@@ -193,6 +201,12 @@ export const LiveMap = () => {
         exporting={exporting}
         exportProgress={exportProgress}
         onExport={handleExport}
+        historyDays={historyDays}
+        onHistoryDaysChange={changeHistoryDays}
+        hasMore={Boolean(nextCursor)}
+        onLoadMore={loadMoreHistory}
+        partial={historyPartial}
+        warnings={historyWarnings}
       />
 
       <UpdateTagsModal

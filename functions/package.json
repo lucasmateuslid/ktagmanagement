@@ -1,5 +1,6 @@
 {
   "name": "functions",
+  "version": "5.1.1",
   "description": "K-Tag API Proxy Function",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
@@ -13,11 +14,14 @@
   },
   "main": "index.js",
   "dependencies": {
-    "axios": "^1.6.7",
-    "cors": "^2.8.5",
-    "firebase-admin": "^11.8.0",
-    "firebase-functions": "^7.2.5",
-    "web-push": "^3.6.0"
+    "axios": "^1.19.0",
+    "cors": "^2.8.6",
+    "firebase-admin": "^14.3.0",
+    "firebase-functions": "^7.3.2",
+    "web-push": "^3.6.7"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   },
   "private": true
 }

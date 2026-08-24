@@ -8,7 +8,10 @@ import {
   PERMISSIONS,
   ALL_PERMISSION_IDS,
   DEFAULT_ROLE_PERMISSIONS,
+  BUSINESS_MODULES,
+  BUSINESS_MODULE_PERMISSION_IDS,
 } from '../../utils/permissions';
+import { authenticatedFetch } from '../../services/authenticatedFetch';
 
 // Permissões de governança que NÃO podem ser removidas do cargo 'admin' do sistema —
 // impede que um tenant se tranque para fora da gestão de Cargos/Usuários.
@@ -38,6 +41,7 @@ const PERMISSION_GROUPS: Array<{
       { id: PERMISSIONS.SHIPMENTS,  label: 'Envios e Remessas' },
       { id: PERMISSIONS.CLIENTS,    label: 'Clientes' },
       { id: PERMISSIONS.TAGS,       label: 'Estoque de Tags' },
+      { id: PERMISSIONS.ASSETS,     label: 'Ativos, Rastreadores e Chips' },
     ],
   },
   {
@@ -92,8 +96,12 @@ export const PermissionsModule = () => {
   const { addNotification } = useNotification();
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
+  const [tenantModules, setTenantModules] = useState<string[]>([]);
 
-  useEffect(() => { loadRoles(); }, []);
+  useEffect(() => {
+    loadRoles();
+    authenticatedFetch('/api/tenant/modules').then(r => r.ok ? r.json() : Promise.reject()).then(data => setTenantModules(Array.isArray(data.modules) ? data.modules : [])).catch(() => setTenantModules([]));
+  }, []);
 
   const loadRoles = async () => {
     setLoading(true);
@@ -149,6 +157,12 @@ export const PermissionsModule = () => {
 
     const roleInfo = roles[roleIndex];
 
+    const ownerModule = BUSINESS_MODULES.find(module => module.permissions.includes(permId as never));
+    if (ownerModule && !tenantModules.includes(ownerModule.id)) {
+      addNotification('error', 'Módulo não liberado', 'O superadministrador precisa autorizar este módulo para a empresa primeiro.');
+      return;
+    }
+
     if (roleInfo.id === 'sysadmin') {
       addNotification('error', 'Bloqueado', 'Permissões do Super Admin não podem ser alteradas.');
       return;
@@ -189,7 +203,10 @@ export const PermissionsModule = () => {
 
     const updatedRole = {
       ...roleInfo,
-      permissions: enable ? [...ALL_PERMISSION_IDS] : []
+      permissions: enable ? ALL_PERMISSION_IDS.filter(permission => {
+        if (!BUSINESS_MODULE_PERMISSION_IDS.has(permission)) return true;
+        return BUSINESS_MODULES.some(module => tenantModules.includes(module.id) && module.permissions.includes(permission as never));
+      }) : []
     };
     await storage.saveCustomRole(updatedRole);
     await storage.logAction(null, 'UPDATE', 'Role', `${enable ? 'Todas as permissões concedidas' : 'Permissões revogadas'} no cargo "${roleInfo.name}"`, roleInfo.id);
@@ -281,9 +298,11 @@ export const PermissionsModule = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {group.items.map(perm => {
                       const isChecked = activeRole.permissions.includes(perm.id);
+                      const ownerModule = BUSINESS_MODULES.find(module => module.permissions.includes(perm.id as never));
+                      const isTenantLocked = !!ownerModule && !tenantModules.includes(ownerModule.id);
                       // Governança do Admin é obrigatória (anti-lockout) — trava o toggle.
                       const isGovLocked = activeRole.id === 'admin' && ADMIN_GOVERNANCE_PERMS.includes(perm.id);
-                      const isLocked = isReadOnlyRole || isGovLocked;
+                      const isLocked = isReadOnlyRole || isGovLocked || isTenantLocked;
                       return (
                         <label
                           key={perm.id}
@@ -299,7 +318,9 @@ export const PermissionsModule = () => {
                               {perm.label}
                               {isGovLocked && <Lock size={11} className="text-amber-500 shrink-0" />}
                             </span>
-                            {isGovLocked
+                            {isTenantLocked
+                              ? <span className="text-[10px] text-amber-600/80 dark:text-amber-500/70 mt-0.5 block">Não autorizado para esta empresa</span>
+                              : isGovLocked
                               ? <span className="text-[10px] text-amber-600/80 dark:text-amber-500/70 mt-0.5 block">Obrigatória no Admin (evita lock-out)</span>
                               : perm.hint && <span className="text-[10px] text-zinc-400 mt-0.5 block">{perm.hint}</span>}
                           </div>

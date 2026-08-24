@@ -77,7 +77,7 @@ export const AdminUsers = () => {
         <div>
           <h1 className="font-display text-2xl font-black uppercase tracking-widest">Usuários</h1>
           <p className="text-zinc-500 text-sm mt-1">
-            Visão cross-tenant — {users.length} {users.length === 1 ? 'usuário' : 'usuários'} em {tenants.length} {tenants.length === 1 ? 'empresa' : 'empresas'}.
+            Visão entre empresas — {users.length} {users.length === 1 ? 'usuário' : 'usuários'} em {tenants.length} {tenants.length === 1 ? 'empresa' : 'empresas'}.
           </p>
         </div>
       </header>

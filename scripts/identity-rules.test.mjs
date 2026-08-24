@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 
 const PROJECT = 'demo-ktag-rules';
 let testEnv;
@@ -59,6 +59,14 @@ async function main() {
   await seed('tenants/empresaA/users/uidAdminA', { id: 'uidAdminA', tenantId: 'empresaA', role: 'admin', status: 'approved', email: 'a@a.com' });
   await seed('tenants/empresaA/users/uidPendA', { id: 'uidPendA', tenantId: 'empresaA', role: 'user', status: 'pending', email: 'p@a.com' });
   await seed('tenants/empresaA/tags/t1', { id: 't1' });
+  await seed('tenants/empresaA/users/uidClientA', { id: 'uidClientA', tenantId: 'empresaA', role: 'client', status: 'approved', clientId: 'clientA' });
+  await seed('tenants/empresaA/clients/clientA', { id: 'clientA', name: 'Cliente A' });
+  await seed('tenants/empresaA/clients/clientB', { id: 'clientB', name: 'Cliente B' });
+  await seed('tenants/empresaA/vehicles/vehicleA', { id: 'vehicleA', clientId: 'clientA', plate: 'AAA0A00' });
+  await seed('tenants/empresaA/vehicles/vehicleB', { id: 'vehicleB', clientId: 'clientB', plate: 'BBB0B00' });
+  await seed('tenants/empresaA/trackers/860000000000001', { id: '860000000000001', imei: '860000000000001' });
+  await seed('tenants/empresaA/stolen_records/caseA', { vehicleId: 'vehicleA', trackingToken: 'SECRET_TOKEN' });
+  await seed('tracker_models/suntech-st340u', { manufacturer: 'Suntech', name: 'ST340U', active: true });
   await seed('tenants/empresaB', { id: 'empresaB', name: 'Empresa B', active: true });
   await seed('tenants/empresaB/tags/t2', { id: 't2' });
   await seed('tenants/empresaB/users/uidMultiUser', { id: 'uidMultiUser', tenantId: 'empresaB', role: 'user', status: 'approved', email: 'm@x.com' });
@@ -127,6 +135,39 @@ async function main() {
   // super admin pelo fallback de doc também (sem claim)
   await check('super admin via doc system_admins lê root doc',
     assertSucceeds(getDoc(doc(asUser('uidSuper'), 'tenants/empresaA'))));
+
+  console.log('\n=== ISOLAMENTO ENTRE CLIENTES ===');
+  const clientDb = asUser('uidClientA', { tn: { empresaA: 'client' } });
+  await check('cliente lê somente o próprio veículo por ID',
+    assertSucceeds(getDoc(doc(clientDb, 'tenants/empresaA/vehicles/vehicleA'))));
+  await check('cliente NÃO lê veículo de outro cliente',
+    assertFails(getDoc(doc(clientDb, 'tenants/empresaA/vehicles/vehicleB'))));
+  await check('cliente lista somente veículos com clientId próprio quando filtra a query',
+    assertSucceeds(getDocs(query(collection(clientDb, 'tenants/empresaA/vehicles'), where('clientId', '==', 'clientA'))))));
+  await check('cliente NÃO altera nem o próprio veículo',
+    assertFails(updateDoc(doc(clientDb, 'tenants/empresaA/vehicles/vehicleA'), { plate: 'XXX9X99' })));
+  await check('cliente NÃO lê cadastro de clientes',
+    assertFails(getDoc(doc(clientDb, 'tenants/empresaA/clients/clientA'))));
+  await check('cliente NÃO lê tags/estoque',
+    assertFails(getDoc(doc(clientDb, 'tenants/empresaA/tags/t1'))));
+  await check('cliente NÃO lê cadastro de rastreadores',
+    assertFails(getDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000001'))));
+  await check('cliente NÃO grava rastreadores diretamente',
+    assertFails(setDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000002'), { imei: '860000000000002' })));
+  await check('usuário autenticado lê catálogo global de modelos',
+    assertSucceeds(getDoc(doc(clientDb, 'tracker_models/suntech-st340u'))));
+  await check('cliente NÃO altera o próprio clientId',
+    assertFails(updateDoc(doc(clientDb, 'tenants/empresaA/users/uidClientA'), { clientId: 'clientB' })));
+
+  console.log('\n=== INTEGRIDADE E ACESSO PÚBLICO ===');
+  await check('anônimo NÃO lê ocorrência por ID mesmo quando ela contém token',
+    assertFails(getDoc(doc(anon(), 'tenants/empresaA/stolen_records/caseA'))));
+  await check('membro aprovado lê ocorrência do próprio tenant',
+    assertSucceeds(getDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/stolen_records/caseA'))));
+  await check('membro NÃO forja evento de auditoria pelo SDK',
+    assertFails(setDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/audit_logs/forged'), {
+      userId: 'outra-pessoa', action: 'DELETE', timestamp: 0,
+    })));
 
   console.log(`\n=== RESULTADO: ${passed} ok, ${failed} falhas ===\n`);
   await testEnv.cleanup();

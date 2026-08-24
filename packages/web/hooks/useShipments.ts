@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { collection, doc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { Shipment, ShippingAddress, Tracker, Tag } from '../types';
 import { storage } from '../services/storage';
 
@@ -63,9 +61,7 @@ export const useInventory = () => {
     const unsubscribeTags = storage.subscribeTags((data) => {
       setTags(data);
     });
-    const unsubscribeTrackers = onSnapshot(collection(db!, 'ktag_trackers'), (snapshot) => {
-      setTrackers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Tracker)));
-    });
+    const unsubscribeTrackers = storage.subscribeTrackers(setTrackers);
 
     // Wait a bit for both to load
     const timeout = setTimeout(() => setLoading(false), 1000);
@@ -78,13 +74,17 @@ export const useInventory = () => {
   }, []);
 
   const updateItemStatus = async (type: 'tag' | 'rastreador', id: string, status: string, shipmentId?: string) => {
-    const collectionName = type === 'tag' ? 'ktag_tags' : 'ktag_trackers';
-    const docRef = doc(db!, collectionName, id);
     const updates: any = { status };
     if (shipmentId !== undefined) {
       updates.shipmentId = shipmentId;
     }
-    await updateDoc(docRef, updates);
+    if (type === 'tag') {
+      const tag = tags.find((item) => item.id === id);
+      if (tag) await storage.saveTag({ ...tag, ...updates });
+    } else {
+      const tracker = trackers.find((item) => item.id === id);
+      if (tracker) await storage.saveTracker({ ...tracker, ...updates, updatedAt: Date.now() });
+    }
   };
 
   return { tags, trackers, loading, updateItemStatus };
