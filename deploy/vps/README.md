@@ -69,15 +69,20 @@ docker run --rm --network traccar_default curlimages/curl:8.12.1 \
 
 Troque os nomes da rede/serviço caso o resultado de `docker ps` seja diferente.
 
-Preencha também `KTAG_API_URL`, `KTAG_API_USER` e `KTAG_API_PASS` no
-`.env.vps`; o serviço `worker` usa essas credenciais para coletar posições sem
-expor segredos ao frontend. Defina `KTAG_HISTORY_EXECUTOR=vps` nas Cloud
-Functions antes de iniciar o worker, para impedir a coleta duplicada.
+Preencha também `KTAG_API_URL`, `KTAG_API_USER`, `KTAG_API_PASS`,
+`VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` no `.env.vps`; o serviço `worker` usa
+essas credenciais para coletar posições e notificar suspensões sem expor
+segredos ao frontend.
 
 O fluxo recomendado é executar manualmente `Deploy` no GitHub Actions com
 `target=all` e `environment=production`. O mesmo CI valida o projeto, implanta
 Cloud Run, Functions e Firestore, publica `ghcr.io/<owner>/ktag-platform:<commit>`
 e faz a VPS baixar a imagem imutável.
+
+Na primeira implantação desta migração, o Firebase precisa remover os três jobs
+agendados antigos. Conceda temporariamente `roles/cloudscheduler.admin` à conta
+de deploy ou remova os jobs `scheduledTagUpdate`, `cleanupOldHistory` e
+`dailyBillingEnforcement` pelo console depois de confirmar o worker saudável.
 
 Antes de usar `all` em produção, crie a variável de repositório
 `KTAG_TRACCAR_REALTIME_ENABLED=false`. Assim o Cloud Run continua servindo a
@@ -102,7 +107,7 @@ push.
 
 ## Migração sem indisponibilidade
 
-1. Implante primeiro a nova Function K-TAG (sem XADTAG e sem histórico).
+1. Suba o worker da VPS e valide os jobs K-TAG, limpeza e billing.
 2. Suba a VPS em `api-vps.ktagfinder.app` com `TRACCAR_REALTIME_ENABLED=false` e valide REST/autorização.
 3. Reduza o TTL DNS para 300 segundos.
 4. Na janela de corte, crie a variável de repositório `KTAG_TRACCAR_REALTIME_ENABLED=false` e atualize o Cloud Run com `TRACCAR_REALTIME_ENABLED=false`.
@@ -127,7 +132,7 @@ Nunca deixe os dois workers realtime ativos ao mesmo tempo: isso duplica process
 - Estado: `docker compose --env-file .env.vps ps`.
 - Health: `curl -H "X-Origin-Secret: $CF_ORIGIN_SECRET" http://127.0.0.1:4000/api/health`.
 - O mapa recebe todas as mensagens; o Firestore recebe checkpoints conforme `TRACCAR_POSITION_PERSIST_INTERVAL_MS`.
-- O worker da VPS é responsável por K-TAG e retenção de histórico; a Function `scheduledTagUpdate` deve permanecer desativada com `KTAG_HISTORY_EXECUTOR=vps`.
+- O worker da VPS é responsável por K-TAG, retenção de histórico e fiscalização diária de inadimplência.
 
 ## Permissões da service account
 

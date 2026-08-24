@@ -837,59 +837,6 @@ async function reverseGeocodePhoton(lat, lon) {
   return null;
 }
 
-/**
- * RASTREIO AGENDADO: Atualiza equipamentos a cada 30 min com fila stale-first.
- *
- * Tenant-aware: itera /tenants/* ativos e, para cada um, lê settings/tags/vehicles
- * do PRÓPRIO tenant. Credenciais K-TAG/XADTAG nunca vazam entre tenants.
- *
- * Stale-First: dentro de cada tenant, as tags com lastPosition.timestamp mais antigo
- * (ou sem posição) são processadas primeiro — garante que veículos mais defasados
- * sejam priorizados a cada ciclo.
- *
- * XADTAG/Traccar é processada exclusivamente pelo worker da VPS. Esta rotina
- * atende somente K-TAG e mantém apenas vehicle.lastPosition (sem série histórica).
- * Acima disso, mover para fila (Cloud Tasks).
- */
-exports.scheduledTagUpdate = onSchedule({
-  schedule: "every 30 minutes",
-  timeoutSeconds: 1800,
-  memory: "256MiB",
-  secrets: [KTAG_API_USER, KTAG_API_PASS]
-}, async (event) => {
-  if ((process.env.KTAG_HISTORY_EXECUTOR || 'functions') === 'vps') {
-    console.log('[Scheduled Update] ignorado: KTAG_HISTORY_EXECUTOR=vps');
-    return;
-  }
-  const db = admin.firestore();
-
-  let totalUpdated = 0;
-  let totalTenantsProcessed = 0;
-
-  try {
-    const tenantsSnap = await db.collection('tenants').where('active', '==', true).get();
-    if (tenantsSnap.empty) {
-      console.log('[Scheduled Update] Nenhum tenant ativo. Encerrando.');
-      return;
-    }
-
-    for (const tenantDoc of tenantsSnap.docs) {
-      const tenantId = tenantDoc.id;
-      try {
-        const tenantUpdated = await updateTagsForTenant(db, tenantId);
-        totalUpdated += tenantUpdated;
-        totalTenantsProcessed++;
-      } catch (e) {
-        console.error(`[Scheduled Update] tenant=${tenantId} falhou:`, e.message);
-      }
-    }
-
-    console.log(`[Scheduled Update] ${totalUpdated} veículos atualizados em ${totalTenantsProcessed} tenants.`);
-  } catch (error) {
-    console.error('Critical error in scheduledTagUpdate:', error);
-  }
-});
-
 async function updateTagsForTenant(db, tenantId) {
   const tenantRef = db.collection('tenants').doc(tenantId);
   const leaseRef = tenantRef.collection('job_leases').doc('ktag_history');
@@ -1091,63 +1038,6 @@ exports.syncKtagKeys = onCall({ secrets: [KTAG_API_USER, KTAG_API_PASS] }, async
     naoEncontradas: snsNaoEncontrados.length,
     snsNaoEncontrados: snsNaoEncontrados.slice(0, 50) // limita o payload de volta
   };
-});
-
-/**
- * CLEANUP DIÁRIO: fallback do TTL, remove pontos de histórico com mais de 30 dias.
- * Firestore batch delete em chunks de 500 (limite da API).
- */
-exports.cleanupOldHistory = onSchedule({
-  schedule: "every 24 hours",
-  timeoutSeconds: 1800,
-  memory: "256MiB",
-}, async (event) => {
-  const db = admin.firestore();
-  const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
-  let totalDeleted = 0;
-  let totalTenants = 0;
-
-  try {
-    const tenantsSnap = await db.collection('tenants').where('active', '==', true).get();
-    for (const tenantDoc of tenantsSnap.docs) {
-      const canonicalOldSnap = await tenantDoc.ref.collection('tag_history').where('savedAt', '<', cutoff).get();
-      const canonicalBatches = [];
-      let canonicalBatch = db.batch(); let canonicalCount = 0;
-      canonicalOldSnap.forEach(doc => { canonicalBatch.delete(doc.ref); canonicalCount++; if (canonicalCount === 500) { canonicalBatches.push(canonicalBatch); canonicalBatch = db.batch(); canonicalCount = 0; } });
-      if (canonicalCount > 0) canonicalBatches.push(canonicalBatch);
-      await Promise.all(canonicalBatches.map(batch => batch.commit()));
-      totalDeleted += canonicalOldSnap.size;
-      // Compatibilidade temporária com o formato legado por veículo.
-      const vehiclesSnap = await tenantDoc.ref.collection('vehicles').get();
-      for (const vehicleDoc of vehiclesSnap.docs) {
-        const oldSnap = await vehicleDoc.ref.collection('history')
-          .where('savedAt', '<', cutoff)
-          .get();
-        if (oldSnap.empty) continue;
-
-        // Batch delete em chunks de 500 (limite Firestore por batch)
-        const chunks = [];
-        let batch = db.batch();
-        let count = 0;
-        oldSnap.forEach(doc => {
-          batch.delete(doc.ref);
-          count++;
-          if (count === 500) {
-            chunks.push(batch);
-            batch = db.batch();
-            count = 0;
-          }
-        });
-        if (count > 0) chunks.push(batch);
-        await Promise.all(chunks.map(b => b.commit()));
-        totalDeleted += oldSnap.size;
-      }
-      totalTenants++;
-    }
-    console.log(`[cleanupOldHistory] ${totalDeleted} documentos deletados em ${totalTenants} tenants (> 7 dias).`);
-  } catch (error) {
-    console.error('[cleanupOldHistory] Erro crítico:', error.message);
-  }
 });
 
 // ============================================================
@@ -3175,49 +3065,6 @@ exports.asaasWebhook = onRequest(
       }
       return res.status(500).send('error');
     }
-  }
-);
-
-/**
- * Job diário: desativa tenants em atraso há mais de 7 dias.
- * (Soft: marca active=false; dados permanecem.)
- */
-exports.dailyBillingEnforcement = onSchedule(
-  { schedule: 'every day 03:30', timeZone: 'America/Sao_Paulo', secrets: VAPID_SECRETS },
-  async () => {
-    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
-    const snap = await admin.firestore()
-      .collection('tenants')
-      .where('billing.status', '==', 'overdue')
-      .get();
-
-    let suspended = 0;
-    for (const doc of snap.docs) {
-      const t = doc.data();
-      if (t.active === false) continue;
-      // Verifica se a invoice mais antiga em atraso passou do cutoff
-      const invs = await doc.ref.collection('invoices')
-        .where('status', '==', 'OVERDUE')
-        .orderBy('dueDate', 'asc')
-        .limit(1)
-        .get();
-      const oldestOverdue = invs.docs[0]?.data()?.dueDate;
-      if (oldestOverdue && oldestOverdue < cutoff) {
-        await doc.ref.update({ active: false });
-        await writeTenantPublicMeta(doc.id, { active: false });
-        await logAudit(null, 'SUSPEND', 'Tenant',
-          `Suspensão automática por inadimplência > 7d`,
-          doc.id, 'BILLING_JOB');
-        // Avisa admins do tenant sobre a suspensão.
-        await sendBillingPushToAdmins(doc.id, {
-          title: 'Empresa suspensa por inadimplência',
-          body: 'Seu acesso foi suspenso por fatura em atraso há mais de 7 dias. Regularize para reativar.',
-          url: '/#/billing',
-        });
-        suspended++;
-      }
-    }
-    console.log(`dailyBillingEnforcement: suspended=${suspended}`);
   }
 );
 

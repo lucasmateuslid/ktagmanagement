@@ -22,7 +22,7 @@ import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal
 import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
 import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
-import { authenticatedFetch } from '../services/authenticatedFetch';
+import { authenticatedFetch, readApiResponse } from '../services/authenticatedFetch';
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 
 const MotionDiv = motion.div as any;
@@ -614,7 +614,7 @@ export const Tags = () => {
             const response = await authenticatedFetch(formData.id ? `/api/tags/${encodeURIComponent(formData.id)}` : '/api/tags', {
               method: formData.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tag),
             });
-            const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao salvar equipamento.');
+            const payload = await readApiResponse(response); if (!response.ok) throw new Error(payload.error || 'Falha ao salvar equipamento.');
         }
 
         addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
@@ -631,7 +631,7 @@ export const Tags = () => {
       if(e) e.stopPropagation();
       try {
         const response = await authenticatedFetch(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao excluir equipamento.');
+        const payload = await readApiResponse(response); if (!response.ok) throw new Error(payload.error || 'Falha ao excluir equipamento.');
         addNotification('success', 'Sucesso', 'Equipamento removido.'); await loadData();
       } catch (error) { addNotification('error', 'Erro', (error as Error).message); throw error; }
   };
@@ -643,7 +643,7 @@ export const Tags = () => {
     try {
         const promises = Array.from(selectedTags).map(async (id: string) => {
           const response = await authenticatedFetch(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' });
-          const payload = await response.json(); if (!response.ok) throw new Error(payload.error || `Falha ao excluir ${id}.`);
+          const payload = await readApiResponse(response); if (!response.ok) throw new Error(payload.error || `Falha ao excluir ${id}.`);
         });
         await Promise.all(promises);
 

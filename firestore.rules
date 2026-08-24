@@ -369,9 +369,18 @@ service cloud.firestore {
     // Push subscriptions flat (Functions varre cross-tenant). Cada doc tem userId.
     match /push_subscriptions/{subId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && isMemberOf(request.resource.data.tenantId);
+      // setDoc também é update quando o navegador já registrou esse endpoint.
+      // O dono pode renovar somente a própria assinatura e não pode trocar
+      // userId/tenantId para assumir uma inscrição alheia.
+      allow update: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.tenantId == resource.data.tenantId
+                    && isMemberOf(resource.data.tenantId);
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow update: if false;
     }
   }
 }

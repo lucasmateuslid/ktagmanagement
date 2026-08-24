@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Sparkles, Bot, Loader2, Activity, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
 import { storage } from '../services/storage';
 import { ChatMessage } from './ai-assistant/types';
 import { AiMessageItem } from './ai-assistant/AiMessageItem';
@@ -11,6 +12,7 @@ const MotionDiv = motion.div as any;
 
 export const AiAssistant: React.FC = () => {
   const { user: currentUser } = useAuth();
+  const { enabledModules, modulesLoading } = useTenant();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   
@@ -40,7 +42,7 @@ export const AiAssistant: React.FC = () => {
 
   // --- MONITORAMENTO INTELIGENTE ---
   useEffect(() => {
-    if (!currentUser || hasAlertedRef.current) return;
+    if (!currentUser || modulesLoading || !enabledModules.includes('scheduling') || hasAlertedRef.current) return;
 
     const checkCriticalSchedules = async () => {
         try {
@@ -94,7 +96,7 @@ export const AiAssistant: React.FC = () => {
 
     const timer = setTimeout(checkCriticalSchedules, 10000);
     return () => clearTimeout(timer);
-  }, [currentUser]);
+  }, [currentUser, enabledModules, modulesLoading]);
 
   const handleConsoleSubmit = async (textOverride?: string) => {
     const userMessage = (textOverride ?? input).trim();

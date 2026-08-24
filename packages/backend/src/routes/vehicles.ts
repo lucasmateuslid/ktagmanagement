@@ -67,20 +67,26 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
     // valores autoritativos no servidor. Novas escritas também recebem o índice
     // HMAC, permitindo trocar este fallback por consulta indexada após backfill.
     if (search) {
-      let source: FirebaseFirestore.Query = adminDb.collection(`tenants/${tid}/vehicles`);
+      const vehicleCollection = adminDb.collection(`tenants/${tid}/vehicles`);
+      let source: FirebaseFirestore.Query = vehicleCollection;
       if (clientId) source = source.where('clientId', '==', clientId);
-      const snapshot = await source.get();
+      // Compatibilidade legada sem N+1: auxiliares são carregados uma vez e em
+      // paralelo, em vez de duas leituras sequenciais para cada veículo.
+      const [snapshot, clientsSnapshot, tagsSnapshot] = await Promise.all([
+        source.get(),
+        adminDb.collection(`tenants/${tid}/clients`).get(),
+        adminDb.collection(`tenants/${tid}/tags`).get(),
+      ]);
+      const clients = new Map(clientsSnapshot.docs.map(doc => [doc.id, doc]));
+      const tags = new Map(tagsSnapshot.docs.map(doc => [doc.id, doc]));
       const matched: FirebaseFirestore.QueryDocumentSnapshot[] = [];
       for (const doc of snapshot.docs) {
         if (!matchesFilters(doc.data(), filters)) continue;
-        const data = doc.data(); const [client, tag] = await Promise.all([
-          data.clientId ? adminDb.doc(`tenants/${tid}/clients/${data.clientId}`).get() : null,
-          data.tagId ? adminDb.doc(`tenants/${tid}/tags/${data.tagId}`).get() : null,
-        ]);
+        const data = doc.data(); const client = clients.get(String(data.clientId || '')); const tag = tags.get(String(data.tagId || ''));
         const haystack = normalizeSearch([
           decryptTenantValue(tid, data.plate), data.model,
-          client?.exists ? decryptTenantValue(tid, client.get('name')) : '',
-          tag?.exists ? [tag.get('accessoryId'), tag.get('imei'), tag.get('identifierOriginal'), tag.get('identifierNormalized')].join(' ') : '',
+          client ? decryptTenantValue(tid, client.get('name')) : '',
+          tag ? [tag.get('accessoryId'), tag.get('imei'), tag.get('identifierOriginal'), tag.get('identifierNormalized')].join(' ') : '',
         ].join(' '));
         if (haystack.includes(search)) matched.push(doc);
       }

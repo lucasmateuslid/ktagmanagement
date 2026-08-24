@@ -10,3 +10,16 @@ export async function authenticatedFetch(input: RequestInfo | URL, init: Request
   headers.set('X-Tenant-Id', activeTenant.id);
   return fetch(input, { ...init, headers });
 }
+
+/** Lê respostas de API sem falhar em operações bem-sucedidas com corpo vazio. */
+export async function readApiResponse(response: Response): Promise<any> {
+  const body = await response.text();
+  if (!body.trim()) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(response.ok
+      ? 'O servidor retornou uma resposta inválida.'
+      : `Falha na requisição (HTTP ${response.status}).`);
+  }
+}

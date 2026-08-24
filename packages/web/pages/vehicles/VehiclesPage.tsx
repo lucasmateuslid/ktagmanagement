@@ -46,7 +46,7 @@ export const VehiclesPage = () => {
     installationFilter, setInstallationFilter,
     tagFilter, setTagFilter
   } = useVehicleFilters([], []);
-  const { vehicles, tags, companies, categories, clients, loading, error: loadError, reload, loadMore, hasMore } = useVehiclesData(currentUser, {
+  const { vehicles, tags, companies, categories, clients, loading, error: loadError, reload, removeVehicle, loadMore, hasMore } = useVehiclesData(currentUser, {
     search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
     installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
   });
@@ -112,7 +112,11 @@ export const VehiclesPage = () => {
       const v = vehicles.find(v => v.id === id);
       const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Não foi possível excluir o veículo.');
-      console.info('Veículo excluído', { id, plate: v?.plate }); await reload();
+      removeVehicle(id);
+      console.info('Veículo excluído', { id, plate: v?.plate });
+      // A confirmação já pode fechar; a reconciliação da frota e das coleções
+      // auxiliares não deve manter o usuário preso no estado "Excluindo...".
+      void reload();
   };
 
   // --- CLIENT MOBILE VIEW COMPONENTS ---

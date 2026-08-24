@@ -184,6 +184,14 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
 
   useEffect(() => {
      let isM = true;
+     // O documento settings/config contém credenciais privadas e só pode ser
+     // assinado por administradores. Outros cargos usam o espelho público.
+     if (!isAdmin) {
+       storage.getPublicSettings().then(data => {
+         if (isM) setAppSettings((prev: any) => ({ ...prev, ...data }));
+       }).catch(() => {});
+       return () => { isM = false; };
+     }
      // Assina as settings DO TENANT (logo whitelabel, nome, anúncio). Antes lia o
      // doc global legado ktag_settings_v3/config, que não tem mais o whitelabel
      // após a migração D4 (settings por tenant) — por isso o logo caía no fallback.
@@ -204,10 +212,10 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
          isM = false;
          unsubscribe();
      };
-  }, [tenantId]);
+  }, [tenantId, isAdmin]);
 
   useEffect(() => {
-     if (user) {
+     if (user && hasPermission(user, customRoles, 'ACTION_VEHICLES_MANAGE')) {
         let isM = true;
         const checkReview = async () => {
            try {
@@ -227,7 +235,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         const promiseUnsub = checkReview();
         return () => { isM = false; promiseUnsub.then(u => { if (u) u(); }) };
      }
-  }, [user]);
+  }, [user, customRoles]);
 
   const handleResolveNow = async () => {
      const urgentUntil = Date.now() + 30 * 60 * 1000;

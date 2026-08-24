@@ -39,5 +39,8 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
     void loadData();
   }, [loadData]);
   const loadMore = () => { if (nextCursor && !loading) setCursor(nextCursor); };
-  return { vehicles, tags, companies, categories, clients, loading, error, reload: loadData, loadMore, hasMore: Boolean(nextCursor) };
+  const removeVehicle = useCallback((id: string) => {
+    setVehicles(previous => previous.filter(vehicle => vehicle.id !== id));
+  }, []);
+  return { vehicles, tags, companies, categories, clients, loading, error, reload: loadData, removeVehicle, loadMore, hasMore: Boolean(nextCursor) };
 };
