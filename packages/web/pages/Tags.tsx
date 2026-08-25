@@ -632,8 +632,8 @@ export const Tags = () => {
       try {
         const response = await authenticatedFetch(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' });
         const payload = await readApiResponse(response); if (!response.ok) throw new Error(payload.error || 'Falha ao excluir equipamento.');
-        addNotification('success', 'Sucesso', 'Equipamento removido.'); await loadData();
-      } catch (error) { addNotification('error', 'Erro', (error as Error).message); throw error; }
+        addNotification(payload.data?.pending ? 'info' : 'success', payload.data?.pending ? 'Exclusão agendada' : 'Sucesso', payload.message || 'Equipamento removido.'); await loadData();
+      } catch (error) { addNotification('error', 'Erro', (error as Error).message); }
   };
 
   const handleMassDelete = async () => {

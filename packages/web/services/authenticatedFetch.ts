@@ -20,6 +20,8 @@ export async function readApiResponse(response: Response): Promise<any> {
   } catch {
     throw new Error(response.ok
       ? 'O servidor retornou uma resposta inválida.'
-      : `Falha na requisição (HTTP ${response.status}).`);
+      : response.status === 502 || response.status === 503
+        ? 'Serviço temporariamente indisponível. Tente novamente em alguns instantes.'
+        : `Não foi possível concluir a operação (HTTP ${response.status}).`);
   }
 }

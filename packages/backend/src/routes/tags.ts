@@ -46,7 +46,13 @@ tagsRouter.delete('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'mod
     const tid = tenant(req); const ref = adminDb.doc(`tenants/${tid}/tags/${req.params.id}`); const snap = await ref.get(); if (!snap.exists) return res.status(404).json({ ok: false, error: 'Tag não encontrada.' }); const data = snap.data() || {}; const now = Date.now();
     await ref.update({ deletionStatus: 'pending', deletionRequestedAt: now, deletionRequestedBy: req.authUser!.uid });
     if ((data.type === 'XADTAG' || data.equipmentType === 'XADTAG') && Number.isInteger(data.traccarDeviceId)) {
-      try { await traccarClient.deleteDevice(data.traccarDeviceId); } catch (error) { if (!(error instanceof TraccarHttpError && error.status === 404)) { await ref.update({ deletionStatus: 'error', deletionError: (error as Error).message, updatedAt: Date.now() }); throw Object.assign(new Error('Traccar indisponível; exclusão registrada para nova tentativa.'), { status: 502 }); } }
+      try { await traccarClient.deleteDevice(data.traccarDeviceId); } catch (error) {
+        if (!(error instanceof TraccarHttpError && error.status === 404)) {
+          await ref.update({ deletionStatus: 'error', deletionError: (error as Error).message, deletionLastAttemptAt: Date.now(), updatedAt: Date.now() });
+          console.warn(JSON.stringify({ event: 'tag.deletion.queued', tenantId: tid, tagId: ref.id, traccarDeviceId: data.traccarDeviceId, error: (error as Error).message }));
+          return res.status(202).json({ ok: true, data: { id: ref.id, pending: true }, message: 'Traccar indisponível. A exclusão foi agendada e será concluída automaticamente.' });
+        }
+      }
     }
     await adminDb.runTransaction(async tx => {
       const vehicleQuery = await tx.get(adminDb.collection(`tenants/${tid}/vehicles`).where('tagId', '==', ref.id).limit(1)); const vehicle = vehicleQuery.docs[0];
