@@ -4,9 +4,11 @@ import { Vehicle, Tag, Company, VehicleCategory, Client, User } from '../../../t
 import { authenticatedFetch } from '../../../services/authenticatedFetch';
 
 interface VehicleQuery { search?: string; status?: string; companyId?: string; ownershipStatus?: string; installationType?: string; tag?: string }
+interface VehiclePage { items: Vehicle[]; nextCursor: string | null }
 export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery) => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [tags, setTags] = useState<Tag[]>([]); const [companies, setCompanies] = useState<Company[]>([]); const [categories, setCategories] = useState<VehicleCategory[]>([]); const [clients, setClients] = useState<Client[]>([]); const [loading, setLoading] = useState(true);
   const [error, setError] = useState(''); const requestRef = useRef<AbortController | null>(null);
+  const queryCacheRef = useRef(new Map<string, { expiresAt: number; page: VehiclePage }>());
   const [auxiliaryRevision, setAuxiliaryRevision] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null); const [cursor, setCursor] = useState<string | null>(null);
   const rawFilterKey = JSON.stringify(filters); const [filterKey, setFilterKey] = useState(rawFilterKey);
@@ -47,11 +49,23 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
       const params = new URLSearchParams({ limit: '50', ...(cursor ? { cursor } : {}) });
       const activeFilters = JSON.parse(filterKey) as VehicleQuery;
       Object.entries(activeFilters).forEach(([key, value]) => { if (value && value !== 'all') params.set(key, value); });
+      const queryKey = params.toString(); const cached = queryCacheRef.current.get(queryKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        setVehicles(previous => cursor ? [...new Map([...previous, ...cached.page.items].map(item => [item.id, item])).values()] : cached.page.items);
+        setNextCursor(cached.page.nextCursor); return;
+      }
       const response = await authenticatedFetch(`/api/vehicles?${params}`, { signal: controller.signal }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Falha ao carregar frota.');
       if (controller.signal.aborted) return;
       const incoming: Vehicle[] = payload.data.items || [];
-      setVehicles(previous => cursor ? [...new Map([...previous, ...incoming].map(item => [item.id, item])).values()] : incoming); setNextCursor(payload.data.nextCursor);
-    } catch (failure) { if ((failure as Error).name !== 'AbortError') setError((failure as Error).message || 'Falha ao carregar frota.'); }
+      queryCacheRef.current.set(queryKey, { expiresAt: Date.now() + 30_000, page: { items: incoming, nextCursor: payload.data.nextCursor || null } });
+      setVehicles(previous => {
+        if (cursor) return [...new Map([...previous, ...incoming].map(item => [item.id, item])).values()];
+        // Enquanto documentos antigos aguardam o backfill, não deixa uma
+        // resposta remota vazia apagar um resultado local já visível.
+        const searching = Boolean(activeFilters.search?.trim());
+        return searching && incoming.length === 0 ? previous : incoming;
+      }); setNextCursor(payload.data.nextCursor);
+    } catch (failure) { if ((failure as Error).name !== 'AbortError') setError((failure as Error).message || 'Não foi possível consultar os veículos agora.'); }
     finally { if (requestRef.current === controller) setLoading(false); }
   }, [currentUser, cursor, filterKey]);
   useEffect(() => {
@@ -60,7 +74,7 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
   }, [loadData]);
   useEffect(() => () => requestRef.current?.abort(), []);
   const loadMore = () => { if (nextCursor && !loading) setCursor(nextCursor); };
-  const reload = useCallback(() => { setAuxiliaryRevision(value => value + 1); void loadData(); }, [loadData]);
+  const reload = useCallback(() => { queryCacheRef.current.clear(); setAuxiliaryRevision(value => value + 1); void loadData(); }, [loadData]);
   const removeVehicle = useCallback((id: string) => {
     setVehicles(previous => previous.filter(vehicle => vehicle.id !== id));
   }, []);

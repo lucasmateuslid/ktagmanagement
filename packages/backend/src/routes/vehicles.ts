@@ -47,6 +47,42 @@ const matchesFilters = (data: any, filters: Record<string, string>) => (!filters
   && (!filters.ownershipStatus || data.ownershipStatus === filters.ownershipStatus)
   && (!filters.installationType || data.installationType === filters.installationType)
   && (!filters.tag || (filters.tag === 'linked' ? Boolean(data.tagId) : !data.tagId));
+const SEARCH_CACHE_TTL_MS = 30_000;
+const SEARCH_CACHE_MAX_ENTRIES = 250;
+const searchCache = new Map<string, { expiresAt: number; payload: unknown }>();
+const cachedSearch = (key: string) => {
+  const entry = searchCache.get(key);
+  if (!entry || entry.expiresAt <= Date.now()) { searchCache.delete(key); return null; }
+  return entry.payload;
+};
+const cacheSearch = (key: string, payload: unknown) => {
+  if (searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) searchCache.delete(searchCache.keys().next().value as string);
+  searchCache.set(key, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, payload });
+};
+const invalidateVehicleCache = (tenant: string) => {
+  for (const key of searchCache.keys()) if (key.startsWith(`${tenant}:`)) searchCache.delete(key);
+};
+const indexUnavailable = (error: any) => Number(error?.code) === 9
+  || String(error?.code || '').includes('failed-precondition')
+  || /index.*(?:building|requires an index)/i.test(String(error?.message || ''));
+
+async function fallbackVehicleSearch(tenant: string, clientId: string | null, search: string, filters: Record<string, string>, limit: number) {
+  let snapshot: FirebaseFirestore.QuerySnapshot;
+  try {
+    let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${tenant}/vehicles`).orderBy('createdAt', 'desc');
+    if (clientId) query = query.where('clientId', '==', clientId);
+    snapshot = await query.limit(500).get();
+  } catch {
+    snapshot = await adminDb.collection(`tenants/${tenant}/vehicles`).limit(500).get();
+  }
+  const candidates = snapshot.docs.filter(doc => (!clientId || doc.get('clientId') === clientId) && matchesFilters(doc.data(), filters));
+  const clientIds = [...new Set(candidates.map(doc => String(doc.get('clientId') || '')).filter(Boolean))];
+  const clientDocs = clientIds.length ? await adminDb.getAll(...clientIds.map(id => adminDb.doc(`tenants/${tenant}/clients/${id}`))) : [];
+  const clientNames = new Map(clientDocs.filter(doc => doc.exists).map(doc => [doc.id, decryptTenantValue(tenant, doc.get('name'))]));
+  return candidates.filter(doc => normalizeSearch([
+    decryptTenantValue(tenant, doc.get('plate')), doc.get('model'), clientNames.get(String(doc.get('clientId') || '')) || '',
+  ].join(' ')).includes(search)).sort((a, b) => Number(b.get('createdAt') || 0) - Number(a.get('createdAt') || 0)).slice(0, limit);
+}
 
 vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator', 'user', 'client']), async (req, res) => {
   try {
@@ -56,6 +92,9 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
     const signature = filtersHash({ filters, search, clientId }); const cursor = req.query.cursor ? decodeCursor(req.query.cursor) : null;
     if (cursor && (cursor.signature !== signature || !Number.isFinite(cursor.createdAt) || typeof cursor.id !== 'string')) throw Object.assign(new Error('Cursor não corresponde aos filtros atuais.'), { status: 400 });
     if (search) {
+      const cacheKey = `${tid}:${req.authUser?.uid || 'anonymous'}:${signature}:${String(req.query.cursor || 'first')}:${limit}`;
+      const hit = cachedSearch(cacheKey);
+      if (hit) return res.json(hit);
       const startedAt = Date.now(); const candidateToken = vehicleSearchCandidateToken(tid, search)!;
       let indexed: FirebaseFirestore.Query = adminDb.collection(`tenants/${tid}/vehicles`).where('searchNgrams', 'array-contains', candidateToken);
       if (clientId) indexed = indexed.where('clientId', '==', clientId);
@@ -65,7 +104,18 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
       while (matched.length < limit + 1 && !exhausted) {
         let batchQuery = indexed;
         if (scanCursor) batchQuery = batchQuery.startAfter(scanCursor.createdAt, scanCursor.id);
-        const snapshot = await batchQuery.limit(Math.max(50, limit * 2)).get(); scanned += snapshot.size;
+        let snapshot: FirebaseFirestore.QuerySnapshot;
+        try { snapshot = await batchQuery.limit(Math.max(50, limit * 2)).get(); }
+        catch (error) {
+          if (!indexUnavailable(error) || cursor) throw error;
+          const fallback = await fallbackVehicleSearch(tid, clientId, search, filters, limit);
+          const data = { items: await vehicleDtos(tid, fallback), nextCursor: null, previousCursor: null, hasNextPage: false, hasPreviousPage: false, pageSize: limit, fallback: true };
+          const payload = { ok: true, data };
+          cacheSearch(cacheKey, payload);
+          console.warn(JSON.stringify({ event: 'vehicles.search.index_unavailable', tenantId: tid, returned: fallback.length, durationMs: Date.now() - startedAt }));
+          return res.json(payload);
+        }
+        scanned += snapshot.size;
         if (snapshot.empty) { exhausted = true; break; }
         const clientIds = [...new Set(snapshot.docs.map(doc => String(doc.get('clientId') || '')).filter(Boolean))];
         const clientDocs = clientIds.length ? await adminDb.getAll(...clientIds.map(id => adminDb.doc(`tenants/${tid}/clients/${id}`))) : [];
@@ -80,9 +130,25 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
         scanCursor = boundary ? { createdAt: Number(boundary.get('createdAt') || 0), id: boundary.id } : scanCursor;
         exhausted = snapshot.size < Math.max(50, limit * 2);
       }
+      // O índice composto pode estar ativo antes do backfill dos documentos
+      // antigos. Nesse intervalo, uma consulta válida retorna zero candidatos.
+      // Confirma em uma varredura limitada para não apagar resultados que o
+      // navegador já encontrou na página carregada.
+      if (matched.length === 0 && !cursor) {
+        const fallback = await fallbackVehicleSearch(tid, clientId, search, filters, limit);
+        if (fallback.length > 0) {
+          const data = { items: await vehicleDtos(tid, fallback), nextCursor: null, previousCursor: null, hasNextPage: false, hasPreviousPage: false, pageSize: limit, fallback: true };
+          const payload = { ok: true, data };
+          cacheSearch(cacheKey, payload);
+          console.warn(JSON.stringify({ event: 'vehicles.search.backfill_pending', tenantId: tid, returned: fallback.length, durationMs: Date.now() - startedAt }));
+          return res.json(payload);
+        }
+      }
       const items = matched.slice(0, limit); const last = items.at(-1); const hasNextPage = matched.length > limit || !exhausted;
       console.info(JSON.stringify({ event: 'vehicles.search.completed', tenantId: tid, scanned, returned: items.length, durationMs: Date.now() - startedAt }));
-      return res.json({ ok: true, data: { items: await vehicleDtos(tid, items), nextCursor: hasNextPage && last ? encodeCursor({ createdAt: Number(last.get('createdAt') || 0), id: last.id, signature }) : null, previousCursor: null, hasNextPage, hasPreviousPage: false, pageSize: limit } });
+      const payload = { ok: true, data: { items: await vehicleDtos(tid, items), nextCursor: hasNextPage && last ? encodeCursor({ createdAt: Number(last.get('createdAt') || 0), id: last.id, signature }) : null, previousCursor: null, hasNextPage, hasPreviousPage: false, pageSize: limit } };
+      cacheSearch(cacheKey, payload);
+      return res.json(payload);
     }
     let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${tid}/vehicles`);
     if (clientId) query = query.where('clientId', '==', clientId);
@@ -112,7 +178,12 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
     const hasNextPage = direction === 'previous' ? Boolean(cursor) : Boolean(last && (hasExtra || !exhausted));
     const hasPreviousPage = direction === 'previous' ? Boolean(first && (hasExtra || !exhausted)) : Boolean(first && cursor);
     res.json({ ok: true, data: { items: await vehicleDtos(tid, itemsDocs), nextCursor: hasNextPage && last ? makeCursor(last) : null, previousCursor: hasPreviousPage && first ? makeCursor(first) : null, hasNextPage, hasPreviousPage, pageSize: limit } });
-  } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao listar veículos.' }); }
+  } catch (error: any) {
+    console.error(JSON.stringify({ event: 'vehicles.list.failed', code: error?.code, message: error?.message }));
+    const status = error.status && error.status < 500 ? error.status : indexUnavailable(error) ? 503 : 500;
+    const message = status === 503 ? 'A pesquisa está sendo preparada. Tente novamente em alguns instantes.' : status >= 500 ? 'Não foi possível consultar os veículos agora.' : error.message;
+    res.status(status).json({ ok: false, error: message, errorCode: indexUnavailable(error) ? 'SEARCH_INDEX_BUILDING' : 'VEHICLE_LIST_FAILED' });
+  }
 });
 
 vehiclesRouter.post('/reindex-client/:clientId', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', 'moderator']), async (req, res) => {
@@ -146,6 +217,7 @@ vehiclesRouter.post('/', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', '
     const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
     const data = defined({ ...body, id: undefined, tagId: undefined, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : undefined, searchNgrams, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now(), updatedBy: req.authUser!.uid });
     await ref.create(data); await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Vehicle', entityId: id, timestamp: FieldValue.serverTimestamp() });
+    invalidateVehicleCache(tid);
     res.status(201).json({ ok: true, data: vehicleDto(tid, await ref.get()) });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao criar veículo.' }); }
 });
@@ -159,6 +231,7 @@ vehiclesRouter.put('/:vehicleId', requirePermission('ACTION_VEHICLES_MANAGE', ['
     const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
     const protectedFields = new Set(['id', 'tagId', 'activeTrackingAssignmentId', 'lastPosition', 'createdAt']); const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => !protectedFields.has(key) && value !== undefined));
     await ref.update(defined({ ...changes, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : body.chassis === '' ? FieldValue.delete() : undefined, searchNgrams, updatedAt: Date.now(), updatedBy: req.authUser!.uid }));
+    invalidateVehicleCache(tid);
     await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Vehicle', entityId: ref.id, timestamp: FieldValue.serverTimestamp() });
     res.json({ ok: true, data: vehicleDto(tid, await ref.get()) });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao atualizar veículo.' }); }
@@ -175,6 +248,7 @@ vehiclesRouter.delete('/:vehicleId', requirePermission('ACTION_VEHICLES_MANAGE',
       if (tag?.exists) tx.update(tag.ref, { status: 'disponível', linkedEntityType: null, linkedEntityId: null, linkedEntityName: null, linkedAt: null, linkedBy: null, activeTrackingAssignmentId: null, updatedAt: now });
       tx.delete(vehicleRef); tx.set(adminDb.collection(`tenants/${tid}/audit_logs`).doc(), { userId: req.authUser!.uid, action: 'DELETE', entity: 'Vehicle', entityId: req.params.vehicleId, tagId: tagId || null, timestamp: FieldValue.serverTimestamp() });
     });
+    invalidateVehicleCache(tid);
     res.json({ ok: true, data: { id: req.params.vehicleId } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao excluir veículo.' }); }
 });
