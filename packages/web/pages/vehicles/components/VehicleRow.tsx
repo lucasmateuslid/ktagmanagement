@@ -206,7 +206,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
       {!isReadOnly && (
           <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
              <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
-               {vehicle.updatedBy || 'SISTEMA'}
+               {vehicle.updatedByName || vehicle.createdByName || 'SISTEMA'}
              </span>
              <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
                <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}

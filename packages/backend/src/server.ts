@@ -453,7 +453,7 @@ async function startServer() {
   }));
 
   // ---------- ORIGIN SECRET (Cloudflare → Cloud Run) ----------
-  // Cloudflare termina TLS pra ktagfinder.app/*.ktagfinder.app e injeta o
+  // Cloudflare termina TLS para os domínios públicos e injeta o
   // header X-Origin-Secret via Transform Rule. Tudo que chegar SEM o header
   // (ex: alguém batendo direto em *.run.app) recebe 403. Fail-closed se
   // CF_ORIGIN_SECRET não estiver configurado em produção.
@@ -478,9 +478,9 @@ async function startServer() {
   }
 
   // ---------- CORS ----------
-  // Default: aceita apenas ktagfinder.app e seus subdomínios em produção.
+  // Aceita o domínio atual e o legado durante a transição de marca.
   // Localhost liberado em dev. Override via CORS_ALLOW_ALL=true (NÃO RECOMENDADO).
-  const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+  const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?(?:monitora360\.online|ktagfinder\.app)$/;
   const LOCAL_ORIGIN_PATTERN = /^http:\/\/(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)?localhost(?::\d+)?$|^http:\/\/127\.0\.0\.1(?::\d+)?$/;
   app.use(cors({
     origin: (origin, cb) => {
@@ -1123,20 +1123,6 @@ async function startServer() {
       }
     }
   );
-
-  // Apex placeholder: quando o Host bate no domínio raiz (ktagfinder.app),
-  // serve um HTML estático leve em vez do SPA. Subdomínios continuam servindo
-  // o bundle React normalmente.
-  const apexHtmlProd = path.join(process.cwd(), 'dist', 'apex.html');
-  // Em dev, o public está em packages/web/public (raiz do pacote Vite)
-  const apexHtmlDev = path.join(process.cwd(), 'packages', 'web', 'public', 'apex.html');
-  app.use((req, res, next) => {
-    if (!req.isApex) return next();
-    if (req.method !== 'GET') return next();
-    if (req.path !== '/' && req.path !== '/index.html') return next();
-    const file = process.env.NODE_ENV === 'production' ? apexHtmlProd : apexHtmlDev;
-    return res.sendFile(file);
-  });
 
   // Em dev, o Vite roda separado (packages/web, porta 3005).
   // O backend só serve arquivos estáticos em produção.

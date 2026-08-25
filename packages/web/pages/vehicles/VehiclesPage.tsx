@@ -46,11 +46,28 @@ export const VehiclesPage = () => {
     installationFilter, setInstallationFilter,
     tagFilter, setTagFilter
   } = useVehicleFilters([], []);
-  const { vehicles, tags, companies, categories, clients, loading, error: loadError, reload, removeVehicle, loadMore, hasMore } = useVehiclesData(currentUser, {
+  const { vehicles, tags, companies, categories, clients, loading, searching, error: loadError, reload, removeVehicle, loadMore, hasMore } = useVehiclesData(currentUser, {
     search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
     installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
   });
-  const filteredVehicles = vehicles;
+  // Filtra imediatamente a página que já está em memória. A consulta remota
+  // continua sendo a fonte de verdade e encontra resultados fora da página,
+  // mas placas visíveis não precisam aguardar o debounce + rede.
+  const filteredVehicles = React.useMemo(() => {
+    const term = searchTerm.trim().toLocaleLowerCase('pt-BR');
+    return vehicles.filter(vehicle => {
+      const clientName = clients.find(client => client.id === vehicle.clientId)?.name || '';
+      const tag = tags.find(item => item.id === vehicle.tagId);
+      const searchable = [vehicle.plate, vehicle.model, clientName, tag?.accessoryId, tag?.imei]
+        .filter(Boolean).join(' ').toLocaleLowerCase('pt-BR');
+      return (!term || searchable.includes(term))
+        && (statusFilter === 'all' || vehicle.status === statusFilter)
+        && (companyFilter === 'all' || vehicle.companyId === companyFilter)
+        && (ownershipFilter === 'all' || vehicle.ownershipStatus === ownershipFilter)
+        && (installationFilter === 'all' || vehicle.installationType === installationFilter)
+        && (tagFilter === 'all' || (tagFilter === 'c_tag' ? Boolean(vehicle.tagId) : !vehicle.tagId));
+    });
+  }, [vehicles, clients, tags, searchTerm, statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter]);
 
   React.useEffect(() => {
      if (location.state?.searchTarget) {
@@ -470,6 +487,7 @@ export const VehiclesPage = () => {
 
       <VehicleTable 
         vehicles={filteredVehicles}
+        searching={searching}
         tags={tags}
         categories={categories}
         clients={clients}

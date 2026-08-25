@@ -21,6 +21,7 @@ import { functions } from '../services/firebase';
 import { useTenant } from '../contexts/TenantContext';
 import { formatCPF, isValidCPF } from '../utils/brDocument';
 import { exportRowsToXlsx } from '../utils/excel';
+import { authenticatedFetch } from '../services/authenticatedFetch';
 
 const MotionDiv = motion.div as any;
 
@@ -236,6 +237,9 @@ export const Clients = () => {
       });
 
       await Promise.all(updatePromises);
+      const reindexResponse = await authenticatedFetch(`/api/vehicles/reindex-client/${encodeURIComponent(clientId)}`, { method: 'POST' });
+      const reindexPayload = await reindexResponse.json();
+      if (!reindexResponse.ok) throw new Error(reindexPayload.error || 'Falha ao atualizar o índice de pesquisa da frota.');
       addNotification('success', 'Sucesso', 'Perfil e frota do cliente atualizados.');
       setIsModalOpen(false);
       loadData();

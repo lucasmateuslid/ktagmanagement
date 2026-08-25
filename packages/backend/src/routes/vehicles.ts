@@ -1,12 +1,17 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
-import { createCipheriv, createDecipheriv, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { traccarClient } from '../services/traccarClient.js';
 import { xadTagService } from '../services/xadtagService.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { HistoryRequestError, trackingHistoryService } from '../services/trackingHistoryService.js';
+import {
+  buildVehicleSearchNgrams, decryptTenantValue, encryptTenantValue,
+  normalizeVehicleSearch, vehicleSearchCandidateToken,
+} from '../services/vehicleSearch.js';
 
 export const vehiclesRouter = Router();
 vehiclesRouter.use(requireAuth);
@@ -16,36 +21,23 @@ const tenantId = (req: any) => {
   if (!value || value === 'admin' || value === '__apex__') throw Object.assign(new Error('Empresa inválida.'), { status: 400 });
   return value;
 };
-const normalizeSearch = (value: unknown) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-export const searchPrefix = (tenant: string, value: unknown) => createHmac('sha256', process.env.SEARCH_INDEX_KEY || 'ktag-search-index-v1').update(`${tenant}:${normalizeSearch(value)}`).digest('hex');
-export const buildSearchPrefixes = (tenant: string, values: unknown[]) => [...new Set(values.flatMap(value => {
-  const normalized = normalizeSearch(value); const tokens = [...new Set([normalized, ...normalized.split(' ')])];
-  return tokens.flatMap(token => Array.from({ length: token.length }, (_, index) => token.slice(0, index + 1))).filter(token => token.length >= 2);
-}).map(value => searchPrefix(tenant, value)))];
-
-function decryptTenantValue(tenant: string, value: unknown): string {
-  const text = String(value || '');
-  if (text.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(text)) return text;
-  try {
-    const raw = Buffer.from(text, 'base64'); const iv = raw.subarray(0, 12); const encrypted = raw.subarray(12, -16); const tag = raw.subarray(-16);
-    const key = pbkdf2Sync(`ktag-enterprise-master-key-${tenant}-v3`, 'ktag-enterprise-salt-2025', 100_000, 32, 'sha256');
-    const decipher = createDecipheriv('aes-256-gcm', key, iv); decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-  } catch { return text; }
-}
-function encryptTenantValue(tenant: string, value: unknown): string {
-  const text = String(value || '');
-  if (!text) return text;
-  const iv = randomBytes(12);
-  const key = pbkdf2Sync(`ktag-enterprise-master-key-${tenant}-v3`, 'ktag-enterprise-salt-2025', 100_000, 32, 'sha256');
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, encrypted, cipher.getAuthTag()]).toString('base64');
-}
+const normalizeSearch = normalizeVehicleSearch;
 const defined = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 const vehicleDto = (tenant: string, doc: FirebaseFirestore.DocumentSnapshot) => {
   const value = doc.data() || {};
   return { id: doc.id, ...value, plate: decryptTenantValue(tenant, value.plate), chassis: value.chassis ? decryptTenantValue(tenant, value.chassis) : undefined };
+};
+const vehicleDtos = async (tenant: string, docs: FirebaseFirestore.DocumentSnapshot[]) => {
+  const userIds = [...new Set(docs.map(doc => String(doc.get('updatedBy') || doc.get('createdBy') || '')).filter(Boolean))];
+  const userDocs = userIds.length
+    ? await adminDb.getAll(...userIds.map(id => adminDb.doc(`tenants/${tenant}/users/${id}`)))
+    : [];
+  const userNames = new Map(userDocs.filter(doc => doc.exists).map(doc => [doc.id, decryptTenantValue(tenant, doc.get('name'))]));
+  return docs.map(doc => {
+    const dto = vehicleDto(tenant, doc);
+    const userId = String(doc.get('updatedBy') || doc.get('createdBy') || '');
+    return { ...dto, updatedByName: userNames.get(userId) || doc.get('createdByName') || undefined };
+  });
 };
 const encodeCursor = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const decodeCursor = (value: unknown): any => { try { return JSON.parse(Buffer.from(String(value || ''), 'base64url').toString('utf8')); } catch { throw Object.assign(new Error('Cursor inválido.'), { status: 400 }); } };
@@ -63,37 +55,34 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
     const search = normalizeSearch(req.query.search); const clientId = req.authUser?.role === 'client' ? req.authUser.clientId : null;
     const signature = filtersHash({ filters, search, clientId }); const cursor = req.query.cursor ? decodeCursor(req.query.cursor) : null;
     if (cursor && (cursor.signature !== signature || !Number.isFinite(cursor.createdAt) || typeof cursor.id !== 'string')) throw Object.assign(new Error('Cursor não corresponde aos filtros atuais.'), { status: 400 });
-    // Compatibilidade com registros anteriores ao índice: a pesquisa valida os
-    // valores autoritativos no servidor. Novas escritas também recebem o índice
-    // HMAC, permitindo trocar este fallback por consulta indexada após backfill.
     if (search) {
-      const vehicleCollection = adminDb.collection(`tenants/${tid}/vehicles`);
-      let source: FirebaseFirestore.Query = vehicleCollection;
-      if (clientId) source = source.where('clientId', '==', clientId);
-      // Compatibilidade legada sem N+1: auxiliares são carregados uma vez e em
-      // paralelo, em vez de duas leituras sequenciais para cada veículo.
-      const [snapshot, clientsSnapshot, tagsSnapshot] = await Promise.all([
-        source.get(),
-        adminDb.collection(`tenants/${tid}/clients`).get(),
-        adminDb.collection(`tenants/${tid}/tags`).get(),
-      ]);
-      const clients = new Map(clientsSnapshot.docs.map(doc => [doc.id, doc]));
-      const tags = new Map(tagsSnapshot.docs.map(doc => [doc.id, doc]));
-      const matched: FirebaseFirestore.QueryDocumentSnapshot[] = [];
-      for (const doc of snapshot.docs) {
-        if (!matchesFilters(doc.data(), filters)) continue;
-        const data = doc.data(); const client = clients.get(String(data.clientId || '')); const tag = tags.get(String(data.tagId || ''));
-        const haystack = normalizeSearch([
-          decryptTenantValue(tid, data.plate), data.model,
-          client ? decryptTenantValue(tid, client.get('name')) : '',
-          tag ? [tag.get('accessoryId'), tag.get('imei'), tag.get('identifierOriginal'), tag.get('identifierNormalized')].join(' ') : '',
-        ].join(' '));
-        if (haystack.includes(search)) matched.push(doc);
+      const startedAt = Date.now(); const candidateToken = vehicleSearchCandidateToken(tid, search)!;
+      let indexed: FirebaseFirestore.Query = adminDb.collection(`tenants/${tid}/vehicles`).where('searchNgrams', 'array-contains', candidateToken);
+      if (clientId) indexed = indexed.where('clientId', '==', clientId);
+      indexed = indexed.orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
+      if (cursor) indexed = indexed.startAfter(cursor.createdAt, cursor.id);
+      const matched: FirebaseFirestore.QueryDocumentSnapshot[] = []; let exhausted = false; let scanCursor: { createdAt: number; id: string } | null = null; let scanned = 0;
+      while (matched.length < limit + 1 && !exhausted) {
+        let batchQuery = indexed;
+        if (scanCursor) batchQuery = batchQuery.startAfter(scanCursor.createdAt, scanCursor.id);
+        const snapshot = await batchQuery.limit(Math.max(50, limit * 2)).get(); scanned += snapshot.size;
+        if (snapshot.empty) { exhausted = true; break; }
+        const clientIds = [...new Set(snapshot.docs.map(doc => String(doc.get('clientId') || '')).filter(Boolean))];
+        const clientDocs = clientIds.length ? await adminDb.getAll(...clientIds.map(id => adminDb.doc(`tenants/${tid}/clients/${id}`))) : [];
+        const clientNames = new Map(clientDocs.filter(doc => doc.exists).map(doc => [doc.id, decryptTenantValue(tid, doc.get('name'))]));
+        for (const doc of snapshot.docs) {
+          const data = doc.data(); if (!matchesFilters(data, filters)) continue;
+          const haystack = normalizeSearch([decryptTenantValue(tid, data.plate), data.model, clientNames.get(String(data.clientId || '')) || ''].join(' '));
+          if (haystack.includes(search)) matched.push(doc);
+          if (matched.length >= limit + 1) break;
+        }
+        const boundary = snapshot.docs.at(-1);
+        scanCursor = boundary ? { createdAt: Number(boundary.get('createdAt') || 0), id: boundary.id } : scanCursor;
+        exhausted = snapshot.size < Math.max(50, limit * 2);
       }
-      matched.sort((a, b) => Number(b.get('createdAt') || 0) - Number(a.get('createdAt') || 0) || b.id.localeCompare(a.id));
-      const start = cursor ? Math.max(0, matched.findIndex(doc => doc.id === cursor.id) + 1) : 0;
-      const items = matched.slice(start, start + limit); const last = items.at(-1); const hasNextPage = start + limit < matched.length;
-      return res.json({ ok: true, data: { items: items.map(doc => vehicleDto(tid, doc)), nextCursor: hasNextPage && last ? encodeCursor({ createdAt: Number(last.get('createdAt') || 0), id: last.id, signature }) : null, previousCursor: null, hasNextPage, hasPreviousPage: false, pageSize: limit } });
+      const items = matched.slice(0, limit); const last = items.at(-1); const hasNextPage = matched.length > limit || !exhausted;
+      console.info(JSON.stringify({ event: 'vehicles.search.completed', tenantId: tid, scanned, returned: items.length, durationMs: Date.now() - startedAt }));
+      return res.json({ ok: true, data: { items: await vehicleDtos(tid, items), nextCursor: hasNextPage && last ? encodeCursor({ createdAt: Number(last.get('createdAt') || 0), id: last.id, signature }) : null, previousCursor: null, hasNextPage, hasPreviousPage: false, pageSize: limit } });
     }
     let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${tid}/vehicles`);
     if (clientId) query = query.where('clientId', '==', clientId);
@@ -122,8 +111,29 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
     const makeCursor = (doc?: FirebaseFirestore.QueryDocumentSnapshot) => doc ? encodeCursor({ createdAt: Number(doc.get('createdAt') || 0), id: doc.id, signature }) : null;
     const hasNextPage = direction === 'previous' ? Boolean(cursor) : Boolean(last && (hasExtra || !exhausted));
     const hasPreviousPage = direction === 'previous' ? Boolean(first && (hasExtra || !exhausted)) : Boolean(first && cursor);
-    res.json({ ok: true, data: { items: itemsDocs.map(doc => vehicleDto(tid, doc)), nextCursor: hasNextPage && last ? makeCursor(last) : null, previousCursor: hasPreviousPage && first ? makeCursor(first) : null, hasNextPage, hasPreviousPage, pageSize: limit } });
+    res.json({ ok: true, data: { items: await vehicleDtos(tid, itemsDocs), nextCursor: hasNextPage && last ? makeCursor(last) : null, previousCursor: hasPreviousPage && first ? makeCursor(first) : null, hasNextPage, hasPreviousPage, pageSize: limit } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao listar veículos.' }); }
+});
+
+vehiclesRouter.post('/reindex-client/:clientId', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', 'moderator']), async (req, res) => {
+  try {
+    const tid = tenantId(req); const clientId = String(req.params.clientId || '');
+    const [client, vehicles] = await Promise.all([
+      adminDb.doc(`tenants/${tid}/clients/${clientId}`).get(),
+      adminDb.collection(`tenants/${tid}/vehicles`).where('clientId', '==', clientId).get(),
+    ]);
+    if (!client.exists) return res.status(404).json({ ok: false, error: 'Cliente não encontrado.' });
+    const clientName = decryptTenantValue(tid, client.get('name')); let updated = 0;
+    for (let offset = 0; offset < vehicles.size; offset += 450) {
+      const batch = adminDb.batch();
+      for (const vehicle of vehicles.docs.slice(offset, offset + 450)) {
+        batch.update(vehicle.ref, { searchNgrams: buildVehicleSearchNgrams(tid, [decryptTenantValue(tid, vehicle.get('plate')), vehicle.get('model'), clientName]) });
+        updated += 1;
+      }
+      await batch.commit();
+    }
+    res.json({ ok: true, data: { clientId, updated } });
+  } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao reindexar veículos do cliente.' }); }
 });
 
 vehiclesRouter.post('/', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', 'moderator']), async (req, res) => {
@@ -132,9 +142,9 @@ vehiclesRouter.post('/', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', '
     const plate = String(body.plate || '').trim().toUpperCase(); const model = String(body.model || '').trim(); const clientId = String(body.clientId || '');
     if (!plate || !model || !clientId) return res.status(400).json({ ok: false, error: 'Placa, modelo e cliente são obrigatórios.' });
     const ref = adminDb.doc(`tenants/${tid}/vehicles/${id}`); if ((await ref.get()).exists) return res.status(409).json({ ok: false, error: 'Veículo já cadastrado.' });
-    const [client, tag] = await Promise.all([adminDb.doc(`tenants/${tid}/clients/${clientId}`).get(), body.tagId ? adminDb.doc(`tenants/${tid}/tags/${body.tagId}`).get() : null]);
-    const searchPrefixes = buildSearchPrefixes(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '', tag?.exists ? [tag.get('accessoryId'), tag.get('imei'), tag.get('identifierOriginal'), tag.get('identifierNormalized')].join(' ') : '']);
-    const data = defined({ ...body, id: undefined, tagId: undefined, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : undefined, plateHash: searchPrefix(tid, plate), searchPrefixes, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now(), updatedBy: req.authUser!.uid });
+    const client = await adminDb.doc(`tenants/${tid}/clients/${clientId}`).get();
+    const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
+    const data = defined({ ...body, id: undefined, tagId: undefined, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : undefined, searchNgrams, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now(), updatedBy: req.authUser!.uid });
     await ref.create(data); await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Vehicle', entityId: id, timestamp: FieldValue.serverTimestamp() });
     res.status(201).json({ ok: true, data: vehicleDto(tid, await ref.get()) });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao criar veículo.' }); }
@@ -145,10 +155,10 @@ vehiclesRouter.put('/:vehicleId', requirePermission('ACTION_VEHICLES_MANAGE', ['
     const tid = tenantId(req); const ref = adminDb.doc(`tenants/${tid}/vehicles/${req.params.vehicleId}`); const current = await ref.get();
     if (!current.exists) return res.status(404).json({ ok: false, error: 'Veículo não encontrado.' });
     const body = req.body || {}; const plate = String(body.plate || decryptTenantValue(tid, current.get('plate'))).trim().toUpperCase(); const model = String(body.model || current.get('model') || '').trim(); const clientId = String(body.clientId || current.get('clientId') || '');
-    const [client, tag] = await Promise.all([adminDb.doc(`tenants/${tid}/clients/${clientId}`).get(), current.get('tagId') ? adminDb.doc(`tenants/${tid}/tags/${current.get('tagId')}`).get() : null]);
-    const searchPrefixes = buildSearchPrefixes(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '', tag?.exists ? [tag.get('accessoryId'), tag.get('imei'), tag.get('identifierOriginal'), tag.get('identifierNormalized')].join(' ') : '']);
+    const client = await adminDb.doc(`tenants/${tid}/clients/${clientId}`).get();
+    const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
     const protectedFields = new Set(['id', 'tagId', 'activeTrackingAssignmentId', 'lastPosition', 'createdAt']); const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => !protectedFields.has(key) && value !== undefined));
-    await ref.update(defined({ ...changes, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : body.chassis === '' ? FieldValue.delete() : undefined, plateHash: searchPrefix(tid, plate), searchPrefixes, updatedAt: Date.now(), updatedBy: req.authUser!.uid }));
+    await ref.update(defined({ ...changes, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : body.chassis === '' ? FieldValue.delete() : undefined, searchNgrams, updatedAt: Date.now(), updatedBy: req.authUser!.uid }));
     await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Vehicle', entityId: ref.id, timestamp: FieldValue.serverTimestamp() });
     res.json({ ok: true, data: vehicleDto(tid, await ref.get()) });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao atualizar veículo.' }); }
@@ -228,6 +238,18 @@ const coalescedPosition = (key: string, load: () => Promise<any>) => {
   const pending = currentPositionRequests.get(key); if (pending) return pending;
   const request = load().finally(() => currentPositionRequests.delete(key)); currentPositionRequests.set(key, request); return request;
 };
+const historyRequestId = (value: unknown) => { const candidate = String(value || ''); return /^[A-Za-z0-9._-]{1,100}$/.test(candidate) ? candidate : crypto.randomUUID(); };
+
+const historyLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.HISTORY_RATE_LIMIT_PER_MINUTE) || 20,
+  standardHeaders: 'draft-7', legacyHeaders: false,
+  keyGenerator: req => `${req.authUser?.uid || 'anonymous'}:${req.params.vehicleId || 'unknown'}`,
+  handler: (req, res) => {
+    const requestId = historyRequestId(req.headers['x-request-id']);
+    res.status(429).json({ ok: false, requestId, errorCode: 'RATE_LIMITED', error: 'Muitas consultas de histórico. Tente novamente em instantes.' });
+  },
+});
 
 vehiclesRouter.get('/:vehicleId/position', async (req, res) => {
   try {
@@ -247,9 +269,18 @@ vehiclesRouter.get('/:vehicleId/position', async (req, res) => {
   } catch (error: any) { res.status(error.status || 502).json({ ok: false, error: error.message || 'Falha ao consultar posição.', errorCode: 'POSITION_UNAVAILABLE' }); }
 });
 
-vehiclesRouter.get('/:vehicleId/history', async (req, res) => {
+vehiclesRouter.get('/:vehicleId/history', historyLimiter, async (req, res) => {
+  const requestId = historyRequestId(req.headers['x-request-id']); const startedAt = Date.now();
+  res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId);
   try {
     const { tid } = await authorizedVehicle(req);
-    res.json({ ok: true, data: await trackingHistoryService.forVehicle(tid, req.params.vehicleId, req.query as Record<string, unknown>) });
-  } catch (error: any) { res.status(error instanceof HistoryRequestError ? error.status : error.status || 502).json({ ok: false, error: error.message || 'Falha ao consultar histórico.' }); }
+    const vehicleId = String(req.params.vehicleId);
+    const data = await trackingHistoryService.forVehicle(tid, vehicleId, req.query as Record<string, unknown>, requestId);
+    console.info(JSON.stringify({ event: 'tracking.history.completed', requestId, userId: req.authUser?.uid, vehicleId: req.params.vehicleId, from: data.from, to: data.to, providers: [...new Set(data.points.map(point => point.provider))], returned: data.points.length, truncated: data.truncated, partial: data.partial, durationMs: Date.now() - startedAt }));
+    res.json({ ok: true, data });
+  } catch (error: any) {
+    const mapped = error instanceof HistoryRequestError ? error : new HistoryRequestError('Falha ao consultar histórico.', error.status || 502, 'PROVIDER_UNAVAILABLE');
+    console.error(JSON.stringify({ event: 'tracking.history.failed', requestId, userId: req.authUser?.uid, vehicleId: req.params.vehicleId, errorCode: mapped.code, durationMs: Date.now() - startedAt }));
+    res.status(mapped.status).json({ ok: false, requestId, errorCode: mapped.code, error: mapped.message });
+  }
 });

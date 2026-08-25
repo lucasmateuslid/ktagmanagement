@@ -165,6 +165,12 @@ export interface TrackedPosition {
 
 export type TrackingHistoryProvider = 'traccar' | 'ktag';
 
+export interface TrackingBattery {
+  level: number;
+  label?: string;
+  color?: string;
+}
+
 export interface TrackingHistoryPoint {
   id: string;
   tagId: string;
@@ -178,7 +184,7 @@ export interface TrackingHistoryPoint {
   speed?: number;
   course?: number;
   accuracy?: number;
-  battery?: unknown;
+  battery?: TrackingBattery;
   heartbeat?: boolean;
 }
 
@@ -190,6 +196,7 @@ export interface TrackingHistoryWarning {
 }
 
 export interface TrackingHistoryPage {
+  requestId: string;
   subjectType: 'tag' | 'vehicle';
   subjectId: string;
   from: string;
@@ -199,6 +206,13 @@ export interface TrackingHistoryPage {
   truncated: boolean;
   partial: boolean;
   warnings: TrackingHistoryWarning[];
+}
+
+export interface TrackingHistoryError {
+  ok: false;
+  requestId: string;
+  errorCode: string;
+  error: string;
 }
 
 export interface TrackingAssignment {

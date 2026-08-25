@@ -11,6 +11,13 @@ test('busca por uniqueId e usa Bearer centralizado', async () => {
   assert.equal(device?.id, 7); assert.equal(url, 'https://traccar.test/api/devices?uniqueId=000007260412520');
   assert.equal((request?.headers as Record<string, string>).Authorization, 'Bearer secret');
 });
+test('usa Basic Auth somente quando email e senha estão configurados', async () => {
+  let request: RequestInit | undefined;
+  const client = new TraccarClient({ ...config, token: undefined, email: 'gps@example.com', password: 'secret' }, (async (_input, init) => { request = init; return new Response('[]', { headers: { 'content-type': 'application/json' } }); }) as typeof fetch);
+  assert.equal(client.safeConfig.configured, true); await client.getLatestPositions();
+  assert.equal((request?.headers as Record<string, string>).Authorization, `Basic ${Buffer.from('gps@example.com:secret').toString('base64')}`);
+  assert.equal(new TraccarClient({ ...config, token: undefined, email: 'gps@example.com', password: undefined }).safeConfig.configured, false);
+});
 test('interpreta texto e 204', async () => {
   const textClient = new TraccarClient(config, (async () => new Response('Rua A', { headers: { 'content-type': 'text/plain' } })) as typeof fetch);
   assert.equal(await textClient.reverseGeocode(-5, -35), 'Rua A');

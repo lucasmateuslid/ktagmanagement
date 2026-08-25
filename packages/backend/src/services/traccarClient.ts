@@ -12,7 +12,7 @@ export class TraccarClient {
   private pendingSession: Promise<string> | null = null;
   constructor(private readonly config: TraccarConfig = getTraccarConfig(), private readonly fetcher: typeof fetch = fetch) {}
 
-  get safeConfig() { return { configured: Boolean(this.config.apiUrl && (this.config.token || this.config.email)), webUrl: this.config.webUrl }; }
+  get safeConfig() { return { configured: Boolean(this.config.apiUrl && (this.config.token || (this.config.email && this.config.password))), webUrl: this.config.webUrl }; }
 
   private authHeader(): string | undefined {
     if (this.config.token) return `Bearer ${this.config.token}`;

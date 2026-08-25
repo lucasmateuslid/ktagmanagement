@@ -6,6 +6,7 @@ import { Car } from 'lucide-react';
 
 interface VehicleTableProps {
   vehicles: Vehicle[];
+  searching?: boolean;
   tags: Tag[];
   categories: VehicleCategory[];
   clients: Client[];
@@ -17,7 +18,7 @@ interface VehicleTableProps {
 }
 
 export const VehicleTable: React.FC<VehicleTableProps> = ({ 
-  vehicles, tags, categories, clients, isReadOnly, selectedVehicles, toggleSelect, onEdit, onDelete 
+  vehicles, searching = false, tags, categories, clients, isReadOnly, selectedVehicles, toggleSelect, onEdit, onDelete
 }) => {
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -32,8 +33,8 @@ export const VehicleTable: React.FC<VehicleTableProps> = ({
          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {vehicles.length === 0 ? (
                <div className="py-20 text-center flex flex-col items-center gap-4 opacity-30">
-                  <Car size={48} />
-                  <span className="text-[10px] font-black uppercase">Nenhum veículo localizado</span>
+                  <Car size={48} className={searching ? 'animate-pulse' : ''} />
+                  <span className="text-[10px] font-black uppercase">{searching ? 'Buscando veículos...' : 'Nenhum veículo localizado'}</span>
                </div>
             ) : (
               vehicles.map(v => (

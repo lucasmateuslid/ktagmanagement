@@ -1,39 +1,48 @@
 import { useEffect } from 'react';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
-import TrustBar from './components/TrustBar';
-import FeaturesGrid from './components/FeaturesGrid';
-import { CinematicHero } from './components/CinematicHero';
-import StatsSection from './components/StatsSection';
-import HowItWorks from './components/HowItWorks';
-import ProductShowcase from './components/ProductShowcase';
-import Pricing from './components/Pricing';
-import FinalCTA from './components/FinalCTA';
+import { AudienceSection, BenefitsSection, ComparisonSection, EditorialBreak, FAQSection, IntegrationsSection, InventorySection, MultiCompanySection, PlatformOverview, ProblemSection, SchedulingSection, TechnicianSection, TrackingSection, WorkflowSection } from './components/MarketingSections';
+import LeadForm from './components/LeadForm';
 import Footer from './components/Footer';
-import { BRAND } from './brand';
+import { OperationParallax } from '../../components/ui/parallax-scrolling';
 import './landing.css';
+import './motion.css';
+import './impact.css';
 
 export default function Landing() {
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = `${BRAND.name} — Plataforma whitelabel para centrais de rastreamento`;
-    return () => {
-      document.title = previousTitle;
-    };
+    const description = 'Centralize veículos, rastreadores, chips, técnicos, estoque, agendamentos e clientes no Monitora360.';
+    document.title = 'Monitora360 — Sua operação de rastreamento em um só lugar';
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    const previousDescription = meta?.content;
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'description'; document.head.appendChild(meta); }
+    meta.content = description;
+    return () => { document.title = previousTitle; if (meta && previousDescription !== undefined) meta.content = previousDescription; };
   }, []);
 
   return (
-    <div className="landing-root min-h-screen bg-[#0a0a0a] text-white selection:bg-[#F5A623] selection:text-black overflow-x-hidden">
+    <div className="landing-root">
       <Navbar />
-      <HeroSection />
-      <TrustBar />
-      <FeaturesGrid />
-      <CinematicHero />
-      <StatsSection />
-      <HowItWorks />
-      <ProductShowcase />
-      <Pricing />
-      <FinalCTA />
+      <main>
+        <HeroSection />
+        <ProblemSection />
+        <PlatformOverview />
+        <TrackingSection />
+        <InventorySection />
+        <TechnicianSection />
+        <SchedulingSection />
+        <MultiCompanySection />
+        <IntegrationsSection />
+        <ComparisonSection />
+        <AudienceSection />
+        <WorkflowSection />
+        <OperationParallax />
+        <EditorialBreak />
+        <BenefitsSection />
+        <FAQSection />
+        <LeadForm />
+      </main>
       <Footer />
     </div>
   );

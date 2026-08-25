@@ -11,6 +11,8 @@ import { LanguageProvider } from './contexts/LanguageContext';
 import { Layout } from './components/Layout';
 import { useScheduleNotifications } from './hooks/useScheduleNotifications';
 import { AdminApp } from './pages/admin/AdminApp';
+import Landing from './pages/Landing/Landing';
+import { isApexHost } from './utils/tenant';
 
 // Carregamento Preguiçoso (Lazy Loading) - Otimiza o bundle inicial
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -186,6 +188,16 @@ const AppRouter = () => {
 };
 
 function App() {
+  // O domínio raiz é a presença comercial. /landing mantém uma rota de
+  // preview explícita em desenvolvimento sem interferir nos subdomínios.
+  if (isApexHost() || window.location.pathname.replace(/\/$/, '') === '/landing') {
+    return (
+      <MotionConfig reducedMotion="user">
+        <Landing />
+      </MotionConfig>
+    );
+  }
+
   return (
     // reducedMotion="user" faz TODO o framer-motion respeitar prefers-reduced-motion (UI-001).
     <MotionConfig reducedMotion="user">

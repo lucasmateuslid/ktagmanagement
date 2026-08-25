@@ -1,12 +1,13 @@
 
 import * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { storage } from '../services/storage';
-import { xadtagService } from '../services/xadtag';
-import { Vehicle, VehicleCategory, Tag, KTagLocationResult } from '../types';
+import { trackingApi } from '../services/trackingApi';
+import { Vehicle, VehicleCategory, LocationHistory } from '../types';
+import { mergeHistoryLocations, trackingPointToLocation } from './livemap/utils/historyPoints';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, Filter, FileSpreadsheet, Download, TrendingUp, Activity, Battery, Signal, MapPin, Search, ChevronDown, Check, Link as LinkIcon, Unlink } from 'lucide-react';
+import { FileText, Filter, FileSpreadsheet, Download, TrendingUp, Activity, Battery, Signal, MapPin, Search, ChevronDown, Check } from 'lucide-react';
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -34,52 +35,50 @@ export const Reports = () => {
 
   // --- TELEMETRY STATE ---
   const [activeTab, setActiveTab] = useState<'vehicles' | 'telemetry'>('vehicles');
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [selectedTagId, setSelectedTagId] = useState<string>('');
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [tagSearch, setTagSearch] = useState('');
   const [isTagSelectorOpen, setIsTagSelectorOpen] = useState(false);
-  const [historyData, setHistoryData] = useState<KTagLocationResult[]>([]);
+  const [historyData, setHistoryData] = useState<LocationHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [telemetryStats, setTelemetryStats] = useState({ totalPings: 0, avgBattery: 0, distance: 0 });
+  const telemetryRequest = useRef<{ id: number; controller?: AbortController }>({ id: 0 });
 
   useEffect(() => {
     const load = async () => {
-        const [v, c, t] = await Promise.all([storage.getVehicles(), storage.getCategories(), storage.getTags()]);
-        setVehicles(v); setCategories(c); setTags(t);
+        const [v, c] = await Promise.all([storage.getVehicles(), storage.getCategories()]);
+        setVehicles(v); setCategories(c);
     };
     load();
   }, []);
 
   // --- TELEMETRY LOGIC ---
   const fetchTelemetry = useCallback(async () => {
-      if (!selectedTagId || !appliedStartDate || !appliedEndDate) return;
-      
-      const tag = tags.find(t => t.id === selectedTagId);
-      if (!tag) return;
-
-      setIsLoadingHistory(true);
+      if (!selectedVehicleId || !appliedStartDate || !appliedEndDate) return;
+      telemetryRequest.current.controller?.abort(); const controller = new AbortController(); const requestId = telemetryRequest.current.id + 1;
+      telemetryRequest.current = { id: requestId, controller }; setIsLoadingHistory(true);
       try {
           const start = new Date(`${appliedStartDate}T00:00:00`).getTime();
           const end = new Date(`${appliedEndDate}T23:59:59`).getTime();
-          
-          const history = await xadtagService.fetchHistory(tag, start, end);
+          const response = await trackingApi.allVehicleHistory(selectedVehicleId, new Date(start).toISOString(), new Date(end).toISOString(), controller.signal);
+          const history = mergeHistoryLocations(response.points.map(trackingPointToLocation)).reverse();
+          if (telemetryRequest.current.id !== requestId) return;
           setHistoryData(history);
 
           // Calculate Stats
           const totalPings = history.length;
-          const avgBattery = totalPings > 0 
-              ? history.reduce((acc, curr) => acc + (curr.battery?.level || 0), 0) / totalPings 
-              : 0;
-          const distance = history.reduce((acc, curr) => acc + (curr.distance || 0), 0); // Assuming distance is in meters/km from API
+          const batteryPoints = history.filter(point => Number.isFinite(point.battery?.level));
+          const avgBattery = batteryPoints.length ? batteryPoints.reduce((acc, curr) => acc + Number(curr.battery!.level), 0) / batteryPoints.length : 0;
+          const radians = (value: number) => value * Math.PI / 180;
+          const distance = history.slice(1).reduce((total, point, index) => { const previous = history[index]; const dLat = radians(point.lat - previous.lat); const dLon = radians(point.lon - previous.lon); const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(previous.lat)) * Math.cos(radians(point.lat)) * Math.sin(dLon / 2) ** 2; return total + 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); }, 0);
 
           setTelemetryStats({ totalPings, avgBattery, distance });
 
       } catch (error) {
-          console.error("Erro ao buscar telemetria:", error);
+          if ((error as Error).name !== 'AbortError') console.error("Erro ao buscar telemetria:", error);
       } finally {
-          setIsLoadingHistory(false);
+          if (telemetryRequest.current.id === requestId) setIsLoadingHistory(false);
       }
-  }, [selectedTagId, appliedStartDate, appliedEndDate, tags]);
+  }, [selectedVehicleId, appliedStartDate, appliedEndDate]);
 
   useEffect(() => {
       if (activeTab === 'telemetry') {
@@ -144,25 +143,13 @@ export const Reports = () => {
   }, [vehicles, appliedStartDate, appliedEndDate, categories]);
 
   useEffect(() => { filterData(); }, [filterData]);
+  useEffect(() => () => telemetryRequest.current.controller?.abort(), []);
 
-  // --- TAG LINKAGE INFO ---
-  const tagLinkageMap = React.useMemo(() => {
-    const map: Record<string, Vehicle> = {};
-    vehicles.forEach(v => {
-      if (v.tagId) map[v.tagId] = v;
-    });
-    return map;
-  }, [vehicles]);
-
-  const filteredTags = React.useMemo(() => {
+  const telemetryVehicles = React.useMemo(() => {
     const term = tagSearch.toLowerCase();
-    return tags.filter(t => 
-      t.name.toLowerCase().includes(term) || 
-      t.accessoryId.toLowerCase().includes(term)
-    );
-  }, [tags, tagSearch]);
-
-  const selectedTag = tags.find(t => t.id === selectedTagId);
+    return vehicles.filter(vehicle => vehicle.tagId && (`${vehicle.plate} ${vehicle.model}`).toLowerCase().includes(term));
+  }, [vehicles, tagSearch]);
+  const selectedTelemetryVehicle = vehicles.find(vehicle => vehicle.id === selectedVehicleId);
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -379,7 +366,7 @@ export const Reports = () => {
                         onClick={() => setActiveTab('telemetry')}
                         className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'telemetry' ? 'bg-white dark:bg-zinc-800 text-primary-500 shadow-sm' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
                     >
-                        Telemetria K-Tag
+                        Telemetria
                     </button>
                 </div>
 
@@ -387,10 +374,10 @@ export const Reports = () => {
                      {activeTab === 'telemetry' && (
                         <div className="relative w-full md:w-72">
                             <div className="flex flex-col bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl px-6 py-2 transition-all cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setIsTagSelectorOpen(!isTagSelectorOpen)}>
-                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Tag / Dispositivo</label>
+                                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Veículo</label>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm font-bold dark:text-white truncate">
-                                        {selectedTag ? `${selectedTag.name} (${selectedTag.accessoryId})` : 'Selecione uma Tag...'}
+                                        {selectedTelemetryVehicle ? `${selectedTelemetryVehicle.plate} — ${selectedTelemetryVehicle.model}` : 'Selecione um veículo...'}
                                     </span>
                                     <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isTagSelectorOpen ? 'rotate-180' : ''}`} />
                                 </div>
@@ -411,7 +398,7 @@ export const Reports = () => {
                                                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                                                     <input 
                                                         type="text" 
-                                                        placeholder="Buscar por nome ou ID..." 
+                                                        placeholder="Buscar por placa ou modelo..."
                                                         value={tagSearch}
                                                         onChange={e => setTagSearch(e.target.value)}
                                                         className="w-full pl-9 pr-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 ring-primary-500/20"
@@ -421,19 +408,18 @@ export const Reports = () => {
                                                 </div>
                                             </div>
                                             <div className="overflow-y-auto custom-scrollbar p-1">
-                                                {filteredTags.length === 0 ? (
+                                                {telemetryVehicles.length === 0 ? (
                                                     <div className="p-8 text-center">
-                                                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhuma tag encontrada</p>
+                                                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Nenhum veículo com tag encontrado</p>
                                                     </div>
                                                 ) : (
-                                                    filteredTags.map(t => {
-                                                        const linkedVehicle = tagLinkageMap[t.id];
-                                                        const isSelected = selectedTagId === t.id;
+                                                    telemetryVehicles.map(vehicle => {
+                                                        const isSelected = selectedVehicleId === vehicle.id;
                                                         return (
                                                             <button 
-                                                                key={t.id}
+                                                                key={vehicle.id}
                                                                 onClick={() => {
-                                                                    setSelectedTagId(t.id);
+                                                                    setSelectedVehicleId(vehicle.id);
                                                                     setIsTagSelectorOpen(false);
                                                                 }}
                                                                 className={`w-full p-3 rounded-2xl flex items-center justify-between transition-all group ${isSelected ? 'bg-primary-500/10 text-primary-500' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
@@ -443,22 +429,11 @@ export const Reports = () => {
                                                                         <Activity size={18} />
                                                                     </div>
                                                                     <div className="min-w-0">
-                                                                        <p className="text-xs font-black uppercase truncate">{t.name}</p>
-                                                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{t.accessoryId}</p>
+                                                                        <p className="text-xs font-black uppercase truncate">{vehicle.plate}</p>
+                                                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{vehicle.model}</p>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex flex-col items-end gap-1">
-                                                                    {linkedVehicle ? (
-                                                                        <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-500 rounded-full border border-emerald-500/20">
-                                                                            <LinkIcon size={8} />
-                                                                            <span className="text-[8px] font-black uppercase tracking-widest">{linkedVehicle.plate}</span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-full border border-zinc-200 dark:border-zinc-700">
-                                                                            <Unlink size={8} />
-                                                                            <span className="text-[8px] font-black uppercase tracking-widest">Livre</span>
-                                                                        </div>
-                                                                    )}
                                                                     {isSelected && <Check size={14} className="text-primary-500" />}
                                                                 </div>
                                                             </button>
@@ -577,13 +552,13 @@ export const Reports = () => {
         ) : (
             /* --- TELEMETRY REPORT --- */
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {!selectedTagId ? (
+                {!selectedVehicleId ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                         <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-zinc-400">
                             <Activity size={32} />
                         </div>
-                        <h3 className="text-xl font-bold text-zinc-900 dark:text-white">Selecione uma Tag</h3>
-                        <p className="text-zinc-500 max-w-md mt-2">Escolha um dispositivo K-Tag acima para visualizar o histórico de telemetria, bateria e sinal.</p>
+                        <h3 className="text-xl font-bold text-zinc-900 dark:text-white">Selecione um veículo</h3>
+                        <p className="text-zinc-500 max-w-md mt-2">Escolha um veículo para visualizar o histórico unificado de telemetria, bateria e sinal.</p>
                     </div>
                 ) : isLoadingHistory ? (
                     <div className="flex items-center justify-center py-40">

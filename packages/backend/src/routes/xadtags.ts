@@ -109,10 +109,12 @@ export const liveMapRouter = Router();
 liveMapRouter.use(requireAuth);
 liveMapRouter.get('/', async (req, res) => { try { const ids = await clientVehicleIds(req); const items = await xadTagRepository.list(tenant(req)); const authorized = ids ? items.filter(item => item.linkedEntityId && ids.has(item.linkedEntityId)) : items; const data = authorized.map(item => xadTagService.toLiveMap(item)).filter(Boolean); res.json({ ok: true, data }); } catch (error) { fail(res, error); } });
 liveMapRouter.get('/tags/:id/history', async (req, res) => {
+  const requestId = crypto.randomUUID(); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId);
   try {
     if (req.authUser?.role === 'client') return res.status(403).json({ ok: false, error: 'Permissão insuficiente.' });
-    res.json({ ok: true, data: await trackingHistoryService.forTag(tenant(req), req.params.id, req.query as Record<string, unknown>) });
+    res.json({ ok: true, data: await trackingHistoryService.forTag(tenant(req), String(req.params.id), req.query as Record<string, unknown>, requestId) });
   } catch (error: any) {
-    res.status(error instanceof HistoryRequestError ? error.status : 502).json({ ok: false, error: error.message || 'Falha ao consultar histórico.' });
+    const mapped = error instanceof HistoryRequestError ? error : new HistoryRequestError('Falha ao consultar histórico.', 502, 'PROVIDER_UNAVAILABLE');
+    res.status(mapped.status).json({ ok: false, requestId, errorCode: mapped.code, error: mapped.message });
   }
 });

@@ -504,6 +504,7 @@ export interface Vehicle {
   ownershipStatus?: 'leased' | 'purchased'; 
   createdAt: number;
   updatedBy?: string;
+  updatedByName?: string;
   chassis?: string;
   createdBy?: string;
   createdByName?: string;

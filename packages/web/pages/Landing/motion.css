@@ -1,0 +1,39 @@
+@keyframes marketing-hero-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes marketing-view-in {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.landing-root .marketing-hero__copy > *,
+.landing-root .marketing-hero__product {
+  opacity: 0;
+  animation: marketing-hero-in 800ms cubic-bezier(.16, 1, .3, 1) forwards;
+}
+
+.landing-root .marketing-hero__copy > :nth-child(2) { animation-delay: 80ms; }
+.landing-root .marketing-hero__copy > :nth-child(3) { animation-delay: 160ms; }
+.landing-root .marketing-hero__copy > :nth-child(4) { animation-delay: 240ms; }
+.landing-root .marketing-hero__copy > :nth-child(5) { animation-delay: 320ms; }
+.landing-root .marketing-hero__product { animation-delay: 280ms; }
+
+@supports (animation-timeline: view()) {
+  .landing-root .marketing-section > .marketing-shell,
+  .landing-root .editorial-break .marketing-shell,
+  .landing-root .process-break .marketing-shell {
+    animation: marketing-view-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-root .marketing-hero__copy > *,
+  .landing-root .marketing-hero__product {
+    opacity: 1;
+    animation: none;
+  }
+}

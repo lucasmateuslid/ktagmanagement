@@ -64,6 +64,9 @@ async function main() {
   await seed('tenants/empresaA/clients/clientB', { id: 'clientB', name: 'Cliente B' });
   await seed('tenants/empresaA/vehicles/vehicleA', { id: 'vehicleA', clientId: 'clientA', plate: 'AAA0A00' });
   await seed('tenants/empresaA/vehicles/vehicleB', { id: 'vehicleB', clientId: 'clientB', plate: 'BBB0B00' });
+  await seed('tenants/empresaA/tag_history/pointA', { tagId: 't1', vehicleIdAtCapture: 'vehicleA', timestamp: Date.now(), lat: -8, lon: -35 });
+  await seed('tenants/empresaA/tracking_assignments/assignmentA', { tagId: 't1', vehicleId: 'vehicleA', startedAt: Date.now() });
+  await seed('tenants/empresaA/job_leases/history', { expiresAt: Date.now() + 60_000 });
   await seed('tenants/empresaA/trackers/860000000000001', { id: '860000000000001', imei: '860000000000001' });
   await seed('tenants/empresaA/stolen_records/caseA', { vehicleId: 'vehicleA', trackingToken: 'SECRET_TOKEN' });
   await seed('tracker_models/suntech-st340u', { manufacturer: 'Suntech', name: 'ST340U', active: true });
@@ -154,6 +157,15 @@ async function main() {
     assertFails(getDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000001'))));
   await check('cliente NÃO grava rastreadores diretamente',
     assertFails(setDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000002'), { imei: '860000000000002' })));
+  await check('cliente NÃO lê histórico interno diretamente',
+    assertFails(getDoc(doc(clientDb, 'tenants/empresaA/tag_history/pointA'))));
+  await check('admin NÃO lê histórico interno diretamente',
+    assertFails(getDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/tag_history/pointA'))));
+  await check('cliente NÃO lê assignments nem leases internos',
+    Promise.all([
+      assertFails(getDoc(doc(clientDb, 'tenants/empresaA/tracking_assignments/assignmentA'))),
+      assertFails(getDoc(doc(clientDb, 'tenants/empresaA/job_leases/history'))),
+    ]));
   await check('usuário autenticado lê catálogo global de modelos',
     assertSucceeds(getDoc(doc(clientDb, 'tracker_models/suntech-st340u'))));
   await check('cliente NÃO altera o próprio clientId',

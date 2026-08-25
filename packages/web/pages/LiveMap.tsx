@@ -7,7 +7,7 @@ import { MapComponent } from '../components/MapComponent';
 // Hooks - Relative Paths
 import { useFleetData } from './livemap/hooks/useFleetData';
 import { useFleetTracking } from './livemap/hooks/useFleetTracking';
-import { useTagHistory } from './livemap/hooks/useTagHistory';
+import { useVehicleHistory } from './livemap/hooks/useVehicleHistory';
 import { useAddressResolver } from './livemap/hooks/useAddressResolver';
 
 // Utils - Relative Paths
@@ -61,14 +61,17 @@ export const LiveMap = () => {
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
 
+  const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
+  const seedHistoryAddresses = React.useCallback((items: any[]) => {
+      items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`, item.address); });
+  }, [addResolvedAddress]);
+
   // 4. History Layer
   const { 
       historyItems, historyLoading, showHistoryList, 
       fetchHistory, closeHistory, setShowHistoryList, historyDays, changeHistoryDays,
       nextCursor, loadMoreHistory, historyPartial, historyWarnings,
-  } = useTagHistory(selectedTagId, tags, vehicles, fleetLocations, (items) => {
-      items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`, item.address); });
-  });
+  } = useVehicleHistory(activeVehicle?.id || '', selectedTagId, fleetLocations, seedHistoryAddresses);
 
   const handleSelection = React.useCallback((tagId: string) => {
     setSelectedTagId(tagId); setIsSheetExpanded(true); setShowHistoryList(false);
@@ -98,7 +101,6 @@ export const LiveMap = () => {
       return filtered;
   }, [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
 
-  const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
   const activeTag = useMemo(() => tags.find(t => t.id === selectedTagId), [tags, selectedTagId]);
   const activeCategory = useMemo(() => activeVehicle ? categories.find(c => c.id === activeVehicle.type) : undefined, [activeVehicle, categories]);
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
