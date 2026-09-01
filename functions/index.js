@@ -715,8 +715,8 @@ exports.onFeedbackCreate = onDocumentCreated(
 
 // --- HELPERS PARA RASTREIO AGENDADO ---
 
-// ktagBatteryStatus agora vem de ./ktagLocation.js (escala corrigida conforme a
-// doc do fornecedor: 0=极低/muito baixo … 3=高/alto).
+// ktagBatteryStatus agora vem de ./ktagLocation.js (telemetria observada:
+// 0=alta … 3=muito baixa).
 
 const xadtagBatteryToInfo = (battery) => {
   // API XADTAG (Traqcare): 0=Normal, 3=Muito baixo (mesma semântica do K-TAG)

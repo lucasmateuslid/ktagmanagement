@@ -1,22 +1,19 @@
 /**
  * K-TAG location — helpers PUROS (sem dependências Firebase), unit-testáveis.
  *
- * Fonte da verdade: doc do fornecedor "Tag终端API接入文档 v0.4" (endpoint feibao).
- * Campo `status` = nível de bateria: 0=极低 (muito baixo) … 3=高 (alto).
- * ATENÇÃO: escala INVERTIDA em relação à implementação antiga (que assumia
- * 0=Normal/cheio). A doc nova é a autoridade — ver PR de migração api.gps308.com.
+ * A telemetria observada em produção usa a escala 0=alta … 3=muito baixa.
  */
 
 /**
  * Interpreta o campo `status` (nível de bateria) do feibao.
- * 0=极低 (muito baixo) … 3=高 (alto). Fora da faixa → Desconhecido.
+ * 0=Alta … 3=Muito baixa. Fora da faixa → Desconhecido.
  */
 function ktagBatteryStatus(status) {
   switch (status) {
-    case 0: return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // 极低 — vermelho
-    case 1: return { level: 30, label: 'Baixo', color: '#f97316' };       // 低   — laranja
-    case 2: return { level: 60, label: 'Médio', color: '#eab308' };       // 中   — amarelo
-    case 3: return { level: 100, label: 'Alto', color: '#10b981' };       // 高   — verde
+    case 0: return { level: 100, label: 'Alto', color: '#10b981' };
+    case 1: return { level: 60, label: 'Médio', color: '#eab308' };
+    case 2: return { level: 30, label: 'Baixo', color: '#f97316' };
+    case 3: return { level: 10, label: 'Muito baixo', color: '#ef4444' };
     default: return { level: 0, label: 'Desconhecido', color: '#71717a' };
   }
 }

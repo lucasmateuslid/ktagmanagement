@@ -125,6 +125,12 @@ export const LiveMap = () => {
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
 
+  // No mapa ao vivo, somente o ponto atual é geocodificado automaticamente.
+  // Os pontos de histórico continuam sob demanda para evitar uma fila contínua.
+  useEffect(() => {
+      if (lastLoc && !lastLoc.address) void resolveAddress(lastLoc);
+  }, [lastLoc?.tagId, lastLoc?.lat, lastLoc?.lon, lastLoc?.address, resolveAddress]);
+
   const handleExport = async (type: 'pdf' | 'excel') => {
     setExporting(true);
     try {

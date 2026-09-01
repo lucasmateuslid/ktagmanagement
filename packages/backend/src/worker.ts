@@ -22,7 +22,7 @@ const decrypt = (tenant: string, value: unknown) => {
   const text = String(value || ''); if (text.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(text)) return text;
   try { const raw = Buffer.from(text, 'base64'); const iv = raw.subarray(0, 12); const encrypted = raw.subarray(12, -16); const tag = raw.subarray(-16); const key = pbkdf2Sync(`ktag-enterprise-master-key-${tenant}-v3`, 'ktag-enterprise-salt-2025', 100_000, 32, 'sha256'); const decipher = createDecipheriv('aes-256-gcm', key, iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8'); } catch { return text; }
 };
-const battery = (status: number) => status === 3 ? { level: 100, label: 'Alto', color: '#10b981' } : status === 2 ? { level: 60, label: 'Médio', color: '#eab308' } : status === 1 ? { level: 30, label: 'Baixo', color: '#f97316' } : { level: 10, label: 'Muito baixo', color: '#ef4444' };
+const battery = (status: number) => status === 0 ? { level: 100, label: 'Alto', color: '#10b981' } : status === 1 ? { level: 60, label: 'Médio', color: '#eab308' } : status === 2 ? { level: 30, label: 'Baixo', color: '#f97316' } : { level: 10, label: 'Muito baixo', color: '#ef4444' };
 
 async function acquireLease(tenantId: string) {
   const ref = adminDb.doc(`tenants/${tenantId}/job_leases/ktag_history_vps`); const owner = randomUUID(); const now = Date.now();

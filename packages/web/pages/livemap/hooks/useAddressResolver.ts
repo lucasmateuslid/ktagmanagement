@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { geocodingService } from '../../../services/geocoding';
 import { LocationHistory } from '../../../types';
 
@@ -10,19 +10,27 @@ export const coordKey = (item: Pick<LocationHistory, 'lat' | 'lon'>) =>
 
 export const useAddressResolver = () => {
   const [resolvedAddresses, setResolvedAddresses] = useState<Record<string, string>>({});
+  const resolvedRef = useRef<Record<string, string>>({});
+  const attemptedRef = useRef(new Set<string>());
 
   // Resolve endereço de um item específico (se ainda não resolvido para estas coords)
-  const resolveAddress = async (item: LocationHistory) => {
-      const key = coordKey(item);
-      if (!resolvedAddresses[key]) {
-          try {
-              const addr = await geocodingService.reverseGeocode(item.lat, item.lon);
-              setResolvedAddresses(prev => ({ ...prev, [key]: addr }));
-          } catch {
-              // Ignore errors
-          }
+  const resolveAddress = useCallback(async (item: LocationHistory) => {
+    const key = coordKey(item);
+      if (item.address || resolvedRef.current[key] || attemptedRef.current.has(key)) return;
+      attemptedRef.current.add(key);
+      try {
+          const address = await geocodingService.reverseGeocode(item.lat, item.lon);
+          // O serviço retorna coordenadas quando todos os provedores falham.
+          // Não as apresentamos como endereço, nem tentamos novamente em loop.
+          const fallback = `${item.lat.toFixed(6)}, ${item.lon.toFixed(6)}`;
+          const value = address === fallback ? 'Endereço indisponível' : address;
+          resolvedRef.current[key] = value;
+          setResolvedAddresses(previous => ({ ...previous, [key]: value }));
+      } catch {
+          resolvedRef.current[key] = 'Endereço indisponível';
+          setResolvedAddresses(previous => ({ ...previous, [key]: 'Endereço indisponível' }));
       }
-  };
+  }, []);
 
   // Resolve múltiplos endereços (ex: para histórico)
   const resolveBatch = async (items: LocationHistory[]) => {
@@ -47,6 +55,7 @@ export const useAddressResolver = () => {
 
   // Atualizador manual de estado (usado na exportação)
   const addResolvedAddress = (id: string, address: string) => {
+      resolvedRef.current[id] = address;
       setResolvedAddresses(prev => ({ ...prev, [id]: address }));
   };
 

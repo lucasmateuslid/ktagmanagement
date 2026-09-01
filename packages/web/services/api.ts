@@ -5,19 +5,18 @@ import { xadtagService } from './xadtag';
 import { trackingApi } from './trackingApi';
 
 // K-Tag API (api.gps308.com/feibao) — campo `status` = nível de bateria.
-// Doc do fornecedor v0.4: 0=极低 (muito baixo) … 3=高 (alto). ESCALA INVERTIDA
-// em relação à versão antiga (que assumia 0=Normal/cheio). Compartilhado entre
-// o mapa e o inventário.
+// A telemetria observada em produção usa 0=Alta … 3=Muito baixa. Esta tabela
+// é compartilhada pelo mapa e pelo inventário.
 export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
   switch (status) {
     case 0:
-      return { level: 10, label: 'Muito baixo', color: '#ef4444' }; // 极低 — vermelho
+      return { level: 100, label: 'Alto', color: '#10b981' };
     case 1:
-      return { level: 30, label: 'Baixo', color: '#f97316' }; // 低 — laranja
+      return { level: 60, label: 'Médio', color: '#eab308' };
     case 2:
-      return { level: 60, label: 'Médio', color: '#eab308' }; // 中 — amarelo
+      return { level: 30, label: 'Baixo', color: '#f97316' };
     case 3:
-      return { level: 100, label: 'Alto', color: '#10b981' }; // 高 — verde
+      return { level: 10, label: 'Muito baixo', color: '#ef4444' };
     default:
       return { level: 0, label: 'Desconhecido', color: '#71717a' }; // Gray
   }

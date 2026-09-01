@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMap, Popup, ZoomControl } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
@@ -293,9 +293,14 @@ export const MapComponent: React.FC<MapProps> = ({
           center={highlightedLoc ? [highlightedLoc.lat, highlightedLoc.lon] : (locations.length > 0 ? [locations[0].lat, locations[0].lon] : [RN_CENTER.lat, RN_CENTER.lon])} 
           zoom={highlightedLoc ? 17 : 13} 
           zoomControl={false}
+          maxZoom={22}
+          maxBounds={[[-85, -180], [85, 180]]}
+          maxBoundsViscosity={1}
+          worldCopyJump={false}
           className="h-full w-full"
         >
-          <TileLayer key={layer} url={tileUrl} attribution={layer === 'streets' ? '&copy; OpenStreetMap contributors' : '&copy; Google'} className={layer === 'streets' ? 'map-light-tiles' : undefined} eventHandlers={{ tileerror: () => setTileErrors(value => { const next = value + 1; if (next >= 3) setLayer('streets'); return next; }) }} />
+          <TileLayer key={layer} url={tileUrl} maxZoom={22} attribution={layer === 'streets' ? '&copy; OpenStreetMap contributors' : '&copy; Google'} className={layer === 'streets' ? 'map-light-tiles' : undefined} eventHandlers={{ tileerror: () => setTileErrors(value => { const next = value + 1; if (next >= 3) setLayer('streets'); return next; }) }} />
+          <ZoomControl position="topleft" />
           <ResponsiveMapSize />
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}

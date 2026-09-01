@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchTagsLocationBatch } from '../../../services/api';
 import { Tag, Vehicle, LocationHistory } from '../../../types';
 import { storage } from '../../../services/storage';
@@ -9,6 +9,7 @@ import type { LiveMapTrackedAsset } from '@ktag/shared';
 export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId: string) => {
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
   const [loading, setLoading] = useState(false);
+  const refreshingTagIdsRef = useRef(new Set<string>());
   // Controle de última gravação no banco para economizar writes (Throttling)
   const lastSaveRef = useRef<Record<string, number>>({});
   useEffect(() => {
@@ -36,9 +37,12 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       }
   }, [vehicles]);
 
-  const refreshTag = async (tagId: string) => {
+  const refreshTag = useCallback(async (tagId: string) => {
     const tag = tags.find(t => t.id === tagId);
     if (!tag) return;
+    // Um clique manual não deve duplicar a consulta automática em andamento.
+    if (refreshingTagIdsRef.current.has(tagId)) return;
+    refreshingTagIdsRef.current.add(tagId);
     
     setLoading(true);
     try {
@@ -60,8 +64,9 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
       }
     } finally {
       setLoading(false);
+      refreshingTagIdsRef.current.delete(tagId);
     }
-  };
+  }, [tags, vehicles]);
 
   const fetchUpdate = async () => {
     if (tags.length === 0) return;
@@ -107,8 +112,15 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
     } finally { setLoading(false); }
   };
 
-  // K-TAG é atualizada pela Function agendada e chega pelo listener de veículos.
-  // fetchUpdate/refreshTag permanecem apenas para ações manuais explícitas.
+  // Atualiza a tag aberta imediatamente e mantém a posição recente enquanto a
+  // ficha estiver visível. A frota inteira continua dependendo do realtime/
+  // worker para não sobrecarregar a API K-TAG.
+  useEffect(() => {
+    if (!selectedTagId) return;
+    void refreshTag(selectedTagId);
+    const interval = window.setInterval(() => void refreshTag(selectedTagId), 60_000);
+    return () => window.clearInterval(interval);
+  }, [selectedTagId, refreshTag]);
 
   const injectLocations = (locs: LocationHistory[]) => {
     setFleetLocations(prev => {

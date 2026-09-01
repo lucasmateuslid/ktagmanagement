@@ -108,9 +108,9 @@ export function normalizeFirestorePosition(data: FirebaseFirestore.DocumentData,
 }
 
 export function normalizeKtagApiPosition(tagId: string, vehicleId: string | null, raw: Awaited<ReturnType<KtagClient['getHistory']>>[number]): TrackingHistoryPoint {
-  const battery = raw.status === 3 ? { level: 100, label: 'Alto', color: '#10b981' }
-    : raw.status === 2 ? { level: 60, label: 'Médio', color: '#eab308' }
-      : raw.status === 1 ? { level: 30, label: 'Baixo', color: '#f97316' }
+  const battery = raw.status === 0 ? { level: 100, label: 'Alto', color: '#10b981' }
+    : raw.status === 1 ? { level: 60, label: 'Médio', color: '#eab308' }
+      : raw.status === 2 ? { level: 30, label: 'Baixo', color: '#f97316' }
         : { level: 10, label: 'Muito baixo', color: '#ef4444' };
   return {
     id: pointId('ktag', tagId, raw.sourceId, raw.timestamp, raw.lat, raw.lon), tagId, vehicleId,
