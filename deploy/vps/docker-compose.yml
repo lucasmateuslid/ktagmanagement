@@ -12,7 +12,6 @@ services:
         VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET}
         VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID}
         VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
-        VITE_TRACKING_API_URL: ${VITE_TRACKING_API_URL:-https://api-vps.ktagfinder.app}
     image: ${KTAG_IMAGE_REPOSITORY:-ktag-platform}:${KTAG_IMAGE_TAG:-latest}
     restart: unless-stopped
     init: true

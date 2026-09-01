@@ -193,7 +193,6 @@ jobs:
             VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
             VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
             VITE_FIREBASE_APP_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
-            VITE_TRACKING_API_URL=${{ vars.KTAG_VPS_PUBLIC_URL || 'https://api-vps.ktagfinder.app' }}
 
       - name: Configurar SSH estrito
         env:
@@ -280,18 +279,15 @@ jobs:
           PRD_BUCKET: ${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
           PRD_SENDER: ${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
           PRD_APP_ID: ${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
-          VPS_PUBLIC_URL: ${{ vars.KTAG_VPS_PUBLIC_URL || 'https://api-vps.ktagfinder.app' }}
         run: |
           if [ "$ENVIRONMENT" = production ]; then
             API_KEY="$PRD_API_KEY"; AUTH_DOMAIN="$PRD_AUTH_DOMAIN"
             FIREBASE_PROJECT_ID="$PRD_PROJECT_ID"; BUCKET="$PRD_BUCKET"
             SENDER="$PRD_SENDER"; APP_ID="$PRD_APP_ID"
-            TRACKING_API_URL="$VPS_PUBLIC_URL"
           else
             API_KEY="$SBX_API_KEY"; AUTH_DOMAIN="$SBX_AUTH_DOMAIN"
             FIREBASE_PROJECT_ID="$SBX_PROJECT_ID"; BUCKET="$SBX_BUCKET"
             SENDER="$SBX_SENDER"; APP_ID="$SBX_APP_ID"
-            TRACKING_API_URL=""
           fi
           echo "::add-mask::$API_KEY"
           echo "api_key=$API_KEY" >> "$GITHUB_OUTPUT"
@@ -300,7 +296,6 @@ jobs:
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "sender=$SENDER" >> "$GITHUB_OUTPUT"
           echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
-          echo "tracking_api_url=$TRACKING_API_URL" >> "$GITHUB_OUTPUT"
 
       - name: Build & push image
         env:
@@ -310,7 +305,6 @@ jobs:
           VITE_BUCKET: ${{ steps.vite.outputs.bucket }}
           VITE_SENDER: ${{ steps.vite.outputs.sender }}
           VITE_APP_ID: ${{ steps.vite.outputs.app_id }}
-          VITE_TRACKING_API_URL: ${{ steps.vite.outputs.tracking_api_url }}
         run: |
           IMAGE_SHA=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${{ github.sha }}
           IMAGE_LATEST=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest
@@ -321,7 +315,6 @@ jobs:
             --build-arg VITE_FIREBASE_STORAGE_BUCKET="$VITE_BUCKET" \
             --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="$VITE_SENDER" \
             --build-arg VITE_FIREBASE_APP_ID="$VITE_APP_ID" \
-            --build-arg VITE_TRACKING_API_URL="$VITE_TRACKING_API_URL" \
             -t "$IMAGE_SHA" -t "$IMAGE_LATEST" .
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_LATEST"

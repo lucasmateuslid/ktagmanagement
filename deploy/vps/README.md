@@ -13,10 +13,8 @@ implanta automaticamente na VPS, Cloud Run, Functions ou Firestore.
 - service account Firebase dedicada, com o menor conjunto de permissões necessário;
 - DNS do domínio da aplicação apontando para a VPS.
 
-O frontend permanece no Cloud Run. Somente o domínio público de tracking
-`api-vps.ktagfinder.app` aponta para esta VPS. O build de produção recebe
-`VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app`, portanto REST de
-tracking e WebSocket saem do frontend Cloud Run e chegam ao Nginx da VPS.
+O frontend e a API de rastreamento usam o mesmo domínio público da aplicação.
+Não é necessário configurar um subdomínio de tracking ou `VITE_TRACKING_API_URL`.
 
 Recomenda-se manter o proxy laranja do Cloudflare e ativar Authenticated Origin Pulls ou restringir no firewall/Nginx as conexões HTTPS às faixas do Cloudflare. O backend fica publicado apenas em `127.0.0.1`.
 
@@ -108,12 +106,12 @@ push.
 ## Migração sem indisponibilidade
 
 1. Suba o worker da VPS e valide os jobs K-TAG, limpeza e billing.
-2. Suba a VPS em `api-vps.ktagfinder.app` com `TRACCAR_REALTIME_ENABLED=false` e valide REST/autorização.
+2. Suba a VPS com `TRACCAR_REALTIME_ENABLED=false` e valide o backend internamente.
 3. Reduza o TTL DNS para 300 segundos.
 4. Na janela de corte, crie a variável de repositório `KTAG_TRACCAR_REALTIME_ENABLED=false` e atualize o Cloud Run com `TRACCAR_REALTIME_ENABLED=false`.
 5. Defina `TRACCAR_REALTIME_ENABLED=true` na VPS e recrie somente o backend.
 6. Valide snapshot, WebSocket, uma posição real e isolamento usando tenant de teste.
-7. Troque o DNS/API para a VPS.
+7. Direcione o domínio público da aplicação para a infraestrutura escolhida.
 8. Observe por 24 horas CPU, RAM, Firestore writes, reconnects e erros HTTP.
 9. Mantenha Cloud Run com escala zero por sete dias. Depois defina a variável de repositório `KTAG_DEPLOY_CLOUD_RUN=false` e remova o serviço de produção.
 
