@@ -145,6 +145,17 @@ const FitFleetBounds = ({ locations }: { locations: LocationHistory[] }) => {
   return null;
 };
 
+const FitHistoryBounds = ({ locations }: { locations: LocationHistory[] }) => {
+  const map = useMap();
+  const signature = `${locations.length}:${locations[0]?.id || ''}:${locations[locations.length - 1]?.id || ''}`;
+  useEffect(() => {
+    if (!locations.length) return;
+    const bounds = L.latLngBounds(locations.map(item => [item.lat, item.lon] as [number, number]));
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17, animate: true });
+  }, [map, signature, locations]);
+  return null;
+};
+
 const ResponsiveMapSize = () => {
   const map = useMap();
   useEffect(() => {
@@ -166,6 +177,8 @@ interface MapProps {
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
   focusLocation?: LocationHistory | null;
+  replayLocation?: LocationHistory | null;
+  replayTrail?: LocationHistory[];
 }
 
 export const MapComponent: React.FC<MapProps> = ({ 
@@ -177,7 +190,7 @@ export const MapComponent: React.FC<MapProps> = ({
   highlightedTagId, 
   showPlates = false, // Default false
   onMarkerClick,
-  mapProvider = 'osm', focusLocation = null,
+  mapProvider = 'osm', focusLocation = null, replayLocation = null, replayTrail = [],
 }) => {
   const [layer, setLayer] = useState<'streets' | 'satellite' | 'hybrid'>(mapProvider === 'google' ? 'streets' : 'streets');
   const [tileErrors, setTileErrors] = useState(0);
@@ -287,6 +300,7 @@ export const MapComponent: React.FC<MapProps> = ({
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
           {isFleetMode && !highlightedLoc && <FitFleetBounds locations={locations} />}
+          {!isFleetMode && <FitHistoryBounds locations={locations} />}
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
           {focusLocation && <RecenterMap lat={focusLocation.lat} lon={focusLocation.lon} zoom={18} />}
 
@@ -312,6 +326,7 @@ export const MapComponent: React.FC<MapProps> = ({
                     lineCap="round"
                     lineJoin="round"
                 />
+                {replayTrail.length > 1 && <Polyline positions={replayTrail.map(l => [l.lat, l.lon] as [number, number])} color="#0ea5e9" weight={7} opacity={0.95} lineCap="round" lineJoin="round" />}
                 
                 {/* Pontos intermediários */}
                 {locations.map((loc, idx) => (
@@ -344,6 +359,11 @@ export const MapComponent: React.FC<MapProps> = ({
                         position={[locations[locations.length-1].lat, locations[locations.length-1].lon]} 
                         icon={createVehicleIcon(true, undefined, undefined, '#ef4444', false, showPlates, 'INÍCIO')}
                     />
+                )}
+                {replayLocation && (
+                    <Marker position={[replayLocation.lat, replayLocation.lon]} zIndexOffset={2000} icon={createVehicleIcon(true, undefined, undefined, '#0ea5e9', false, true, 'REPLAY')}>
+                        <Popup className="font-sans text-xs"><div className="font-bold">{new Date(replayLocation.timestamp).toLocaleString()}</div></Popup>
+                    </Marker>
                 )}
               </>
           )}

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowLeft, FileText, FileSpreadsheet, CalendarDays, Navigation, BatteryCharging, Signal, MapPinned } from 'lucide-react';
+import { Loader2, ArrowLeft, FileText, FileSpreadsheet, CalendarDays, Navigation, BatteryCharging, Signal, MapPinned, Play, Pause } from 'lucide-react';
 import { LocationHistory, Vehicle, Tag } from '../../../types';
 
 const MotionDiv = motion.div as any;
@@ -25,6 +25,13 @@ interface HistoryOverlayProps {
     warnings: string[];
     onResolveAddress: (item: LocationHistory) => void;
     onViewPoint: (item: LocationHistory) => void;
+    replayIndex: number;
+    replayPlaying: boolean;
+    replaySpeed: 1 | 2 | 4;
+    replayPoint: LocationHistory | null;
+    onReplayToggle: () => void;
+    onReplaySeek: (index: number) => void;
+    onReplaySpeedChange: (speed: 1 | 2 | 4) => void;
 }
 
 export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({ 
@@ -32,6 +39,7 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
     historyItems, historyLoading, resolvedAddresses, 
     exporting, exportProgress, onExport, historyDays, onHistoryDaysChange,
     hasMore, onLoadMore, partial, warnings, onResolveAddress, onViewPoint,
+    replayIndex, replayPlaying, replaySpeed, replayPoint, onReplayToggle, onReplaySeek, onReplaySpeedChange,
 }) => {
     return (
         <AnimatePresence>
@@ -124,7 +132,24 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                         )}
                     </div>
     
-                    <div className="p-8 bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="px-6 py-4 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex items-center gap-3">
+                            <button type="button" onClick={onReplayToggle} disabled={historyItems.length < 2} aria-label={replayPlaying ? 'Pausar replay' : 'Iniciar replay'} className="w-11 h-11 shrink-0 rounded-2xl bg-cyan-600 text-white flex items-center justify-center disabled:opacity-40">
+                                {replayPlaying ? <Pause size={18} className="fill-current"/> : <Play size={18} className="fill-current"/>}
+                            </button>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex justify-between mb-2 text-[9px] font-black uppercase tracking-wider text-zinc-400">
+                                    <span>Replay do trajeto</span>
+                                    <span>{replayPoint ? new Date(replayPoint.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--'}</span>
+                                </div>
+                                <input type="range" min={0} max={Math.max(0, historyItems.length - 1)} value={Math.min(replayIndex, Math.max(0, historyItems.length - 1))} onChange={event => onReplaySeek(Number(event.target.value))} disabled={historyItems.length < 2} className="w-full accent-cyan-600" aria-label="Posição do replay"/>
+                            </div>
+                            <div className="flex rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1">
+                                {([1, 2, 4] as const).map(speed => <button key={speed} type="button" onClick={() => onReplaySpeedChange(speed)} className={`px-2 py-1.5 rounded-lg text-[9px] font-black ${replaySpeed === speed ? 'bg-white dark:bg-zinc-700 text-cyan-600 shadow-sm' : 'text-zinc-400'}`}>{speed}x</button>)}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="px-8 py-4 bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800">
                         <p className="text-[10px] font-bold text-zinc-400 text-center uppercase tracking-[0.2em] leading-relaxed">
                             Sistema K-TAG Intelligence • Relatório de Fluxo Operacional
                         </p>

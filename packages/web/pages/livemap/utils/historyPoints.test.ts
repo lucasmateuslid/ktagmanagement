@@ -11,7 +11,8 @@ describe('historyPoints', () => {
   });
 
   it('converte o contrato compartilhado e completa metadados de bateria', () => {
-    const value = trackingPointToLocation({ id: 'x', tagId: 'tag-1', vehicleId: 'v', provider: 'traccar', timestamp: 20, latitude: -8, longitude: -35, battery: { level: 70 } });
+    const value = trackingPointToLocation({ id: 'x', tagId: 'tag-1', vehicleId: 'v', provider: 'traccar', timestamp: 20, latitude: -8, longitude: -35, speed: 12, course: 90, battery: { level: 70 } });
     expect(value.battery).toEqual({ level: 70, label: 'Não informado', color: '#71717a' });
+    expect(value).toMatchObject({ provider: 'traccar', vehicleId: 'v', speed: 12, course: 90 });
   });
 });

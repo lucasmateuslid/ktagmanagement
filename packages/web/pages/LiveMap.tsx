@@ -44,6 +44,9 @@ export const LiveMap = () => {
   const [exportProgress, setExportProgress] = useState(0);
   const [mapProvider, setMapProvider] = useState<'osm' | 'google'>('osm');
   const [focusedHistoryPoint, setFocusedHistoryPoint] = useState<any>(null);
+  const [replayIndex, setReplayIndex] = useState(0);
+  const [replayPlaying, setReplayPlaying] = useState(false);
+  const [replaySpeed, setReplaySpeed] = useState<1 | 2 | 4>(1);
   const autoHistoryOpenedRef = useRef('');
 
   useEffect(() => {
@@ -72,11 +75,27 @@ export const LiveMap = () => {
       fetchHistory, closeHistory, setShowHistoryList, historyDays, changeHistoryDays,
       nextCursor, loadMoreHistory, historyPartial, historyWarnings,
   } = useVehicleHistory(activeVehicle?.id || '', selectedTagId, fleetLocations, seedHistoryAddresses);
+  const replayPoints = useMemo(() => [...historyItems].sort((a, b) => a.timestamp - b.timestamp), [historyItems]);
+  const replayPoint = replayPoints[replayIndex] || null;
+
+  useEffect(() => {
+      if (!replayPlaying || replayPoints.length < 2) return;
+      const timer = window.setInterval(() => setReplayIndex(current => {
+          if (current >= replayPoints.length - 1) { setReplayPlaying(false); return current; }
+          return current + 1;
+      }), 900 / replaySpeed);
+      return () => window.clearInterval(timer);
+  }, [replayPlaying, replayPoints.length, replaySpeed]);
 
   const handleSelection = React.useCallback((tagId: string) => {
     setSelectedTagId(tagId); setIsSheetExpanded(true); setShowHistoryList(false);
+    setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null);
     setTagSearchTerm(''); setIsSearchFocused(false);
   }, [setShowHistoryList]);
+
+  const handleHistoryDaysChange = React.useCallback((days: 1 | 7 | 30) => {
+    setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null); changeHistoryDays(days);
+  }, [changeHistoryDays]);
 
   useEffect(() => {
       const urlTagId = searchParams.get('tagId');
@@ -168,6 +187,8 @@ export const LiveMap = () => {
             showPlates={showPlates} 
             mapProvider={mapProvider}
             focusLocation={focusedHistoryPoint}
+            replayLocation={showHistoryList ? replayPoint : null}
+            replayTrail={showHistoryList ? replayPoints.slice(0, replayIndex + 1) : []}
         />
       </div>
 
@@ -189,7 +210,7 @@ export const LiveMap = () => {
 
       <HistoryOverlay 
         isVisible={showHistoryList}
-        onClose={closeHistory}
+        onClose={() => { setReplayPlaying(false); closeHistory(); }}
         activeVehicle={activeVehicle}
         activeTag={activeTag}
         historyItems={historyItems}
@@ -199,13 +220,20 @@ export const LiveMap = () => {
         exportProgress={exportProgress}
         onExport={handleExport}
         historyDays={historyDays}
-        onHistoryDaysChange={changeHistoryDays}
+        onHistoryDaysChange={handleHistoryDaysChange}
         hasMore={Boolean(nextCursor)}
         onLoadMore={loadMoreHistory}
         partial={historyPartial}
         warnings={historyWarnings}
         onResolveAddress={resolveAddress}
-        onViewPoint={setFocusedHistoryPoint}
+        onViewPoint={(item) => { setReplayPlaying(false); setReplayIndex(Math.max(0, replayPoints.findIndex(point => point.id === item.id))); setFocusedHistoryPoint(item); }}
+        replayIndex={replayIndex}
+        replayPlaying={replayPlaying}
+        replaySpeed={replaySpeed}
+        replayPoint={replayPoint}
+        onReplayToggle={() => { if (replayIndex >= replayPoints.length - 1) setReplayIndex(0); setReplayPlaying(value => !value); }}
+        onReplaySeek={(index) => { setReplayPlaying(false); setReplayIndex(index); setFocusedHistoryPoint(replayPoints[index] || null); }}
+        onReplaySpeedChange={setReplaySpeed}
       />
 
       <UpdateTagsModal

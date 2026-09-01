@@ -7,6 +7,8 @@ export const trackingPointToLocation = (point: TrackingHistoryPoint): LocationHi
   id: point.id, tagId: point.tagId, lat: point.latitude, lon: point.longitude,
   timestamp: point.timestamp, isodatetime: new Date(point.timestamp).toISOString(),
   conf: point.accuracy ?? 100, status: 1, address: point.address || undefined,
+  vehicleId: point.vehicleId || undefined, provider: point.provider, speed: point.speed,
+  course: point.course, altitude: point.altitude,
   battery: point.battery ? { level: point.battery.level, label: point.battery.label || 'Não informado', color: point.battery.color || '#71717a' } : undefined,
 });
 
