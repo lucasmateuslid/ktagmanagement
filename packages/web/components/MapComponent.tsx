@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Polyline, useMap, Popup, ZoomControl }
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
-import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging } from 'lucide-react';
+import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging, Layers } from 'lucide-react';
 
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 
@@ -194,6 +194,7 @@ export const MapComponent: React.FC<MapProps> = ({
 }) => {
   const [layer, setLayer] = useState<'streets' | 'satellite' | 'hybrid'>(mapProvider === 'google' ? 'streets' : 'streets');
   const [tileErrors, setTileErrors] = useState(0);
+  const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
   const tileUrl = layer === 'satellite' ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' : layer === 'hybrid' ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   
   const displayLocations = highlightedTagId 
@@ -373,7 +374,17 @@ export const MapComponent: React.FC<MapProps> = ({
               </>
           )}
         </MapContainer>
-        <div className="absolute bottom-4 left-1/2 z-[800] flex -translate-x-1/2 gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur md:bottom-auto md:left-auto md:right-4 md:top-4 md:translate-x-0 dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
+        <div className="absolute right-4 top-[116px] z-[800] md:hidden">
+          <button type="button" onClick={() => setIsLayerMenuOpen(open => !open)} aria-expanded={isLayerMenuOpen} aria-label="Escolher estilo do mapa" className="flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/95 text-zinc-700 shadow-lg backdrop-blur transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200">
+            <Layers size={18} />
+          </button>
+          {isLayerMenuOpen && (
+            <div className="absolute right-0 top-12 flex min-w-28 flex-col gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
+              {([['streets', 'Ruas'], ['satellite', 'Satélite'], ['hybrid', 'Híbrido']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => { setTileErrors(0); setLayer(id); setIsLayerMenuOpen(false); }} className={`min-h-9 rounded-xl px-3 text-left text-[10px] font-black uppercase tracking-wide ${layer === id ? 'bg-brand-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
+            </div>
+          )}
+        </div>
+        <div className="absolute right-4 top-4 z-[800] hidden gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur md:flex dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
           {([['streets', 'Ruas'], ['satellite', 'Satélite'], ['hybrid', 'Híbrido']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => { setTileErrors(0); setLayer(id); }} className={`min-h-10 rounded-xl px-3 text-[10px] font-black uppercase tracking-wide ${layer === id ? 'bg-brand-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
         </div>
         {tileErrors >= 3 && layer === 'streets' && <div className="absolute bottom-20 left-1/2 z-[800] -translate-x-1/2 rounded-xl bg-danger-soft px-4 py-2 text-xs font-bold text-danger md:bottom-4">Falha de rede no mapa. Tentando novamente em Ruas.</div>}
