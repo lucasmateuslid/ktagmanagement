@@ -10,8 +10,10 @@ export interface KtagSnapshot {
 }
 
 export const normalizeKtagSnapshot = (raw: Record<string, unknown>): KtagSnapshot | null => {
-  const lat = Number(raw.lat); const lon = Number(raw.lon); const sourceTimestamp = Number(raw.timestamp);
-  const timestamp = sourceTimestamp < 1e12 ? sourceTimestamp * 1_000 : sourceTimestamp;
+  const lat = Number(raw.lat ?? raw.latitude); const lon = Number(raw.lon ?? raw.lng ?? raw.longitude); const sourceTimestamp = Number(raw.timestamp);
+  const timestamp = Number.isFinite(sourceTimestamp) && sourceTimestamp > 0
+    ? (sourceTimestamp < 1e12 ? sourceTimestamp * 1_000 : sourceTimestamp)
+    : Date.parse(String(raw.isodatetime || ''));
   if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(lat) || !Number.isFinite(lon)
     || lat < -90 || lat > 90 || lon < -180 || lon > 180 || (lat === 0 && lon === 0)) return null;
   const date = new Date(timestamp);

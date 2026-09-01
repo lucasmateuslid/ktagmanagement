@@ -34,7 +34,9 @@ async function pollTenant(tenantId: string) {
   if (!await acquireLease(tenantId)) return;
   const [tagSnap, vehicleSnap] = await Promise.all([adminDb.collection(`tenants/${tenantId}/tags`).get(), adminDb.collection(`tenants/${tenantId}/vehicles`).get()]);
   const vehicleByTag = new Map(vehicleSnap.docs.filter(doc => doc.get('tagId')).map(doc => [String(doc.get('tagId')), doc]));
-  const tags = tagSnap.docs.filter(doc => String(doc.get('type') || doc.get('equipmentType')) === 'K_TAG' && vehicleByTag.has(doc.id)).map(doc => ({ doc, hashedAdvKey: decrypt(tenantId, doc.get('hashedAdvKey')), privateKey: decrypt(tenantId, doc.get('privateKey')) })).filter(item => item.hashedAdvKey && item.privateKey);
+  // A primeira comunicação também precisa ser observada antes do vínculo a um
+  // veículo: é esse evento que inicia a vida útil da bateria da K-TAG.
+  const tags = tagSnap.docs.filter(doc => String(doc.get('type') || doc.get('equipmentType')) === 'K_TAG').map(doc => ({ doc, hashedAdvKey: decrypt(tenantId, doc.get('hashedAdvKey')), privateKey: decrypt(tenantId, doc.get('privateKey')) })).filter(item => item.hashedAdvKey && item.privateKey);
   const url = process.env.KTAG_API_URL; const username = process.env.KTAG_API_USER; const password = process.env.KTAG_API_PASS; if (!url || !username || !password) throw new Error('Credenciais K-TAG não configuradas no worker.');
   const metrics = { received: 0, valid: 0, saved: 0, duplicated: 0, delayed: 0, rejected: 0 };
   for (let offset = 0; offset < tags.length; offset += BATCH_SIZE) {
@@ -44,17 +46,25 @@ async function pollTenant(tenantId: string) {
     for (const raw of Array.isArray(payload?.results) ? payload.results : []) {
       metrics.received++; const item = byKey.get(String(raw.key || '')); const normalized = normalizeKtagSnapshot(raw);
       if (!item || !normalized) { metrics.rejected++; continue; } metrics.valid++;
-      const vehicle = vehicleByTag.get(item.doc.id)!; const id = ktagHistoryPointId(item.doc.id, normalized);
-      const point = { ...normalized, id, tagId: item.doc.id, vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id, provider: 'ktag', battery: battery(normalized.status) };
+      const vehicle = vehicleByTag.get(item.doc.id); const id = ktagHistoryPointId(item.doc.id, normalized);
+      const point = { ...normalized, id, tagId: item.doc.id, ...(vehicle ? { vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id } : {}), provider: 'ktag', battery: battery(normalized.status) };
       const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${id}`);
       const outcome = await adminDb.runTransaction(async tx => {
-        const [freshVehicle, freshTag, existing] = await Promise.all([tx.get(vehicle.ref), tx.get(item.doc.ref), tx.get(historyRef)]);
-        const currentTimestamp = Number(freshVehicle.get('lastPosition.timestamp') || 0); const captured = Number(freshVehicle.get('ktagHistoryCapturedThrough') || 0);
+        const [freshTag, existing, freshVehicle] = await Promise.all([tx.get(item.doc.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null)]);
+        const currentTimestamp = Number(freshVehicle?.get('lastPosition.timestamp') || 0); const captured = Number(freshVehicle?.get('ktagHistoryCapturedThrough') || 0);
         if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
-        const vehicleUpdate: Record<string, unknown> = { ktagHistoryCapturedThrough: Math.max(captured, normalized.timestamp) };
-        if (normalized.timestamp >= currentTimestamp) Object.assign(vehicleUpdate, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
-        tx.update(vehicle.ref, vehicleUpdate);
-        if (normalized.timestamp >= Number(freshTag.get('lastPosition.timestamp') || 0)) tx.update(item.doc.ref, { lastPosition: point, lastBattery: point.battery.level, updatedAt: Date.now() });
+        if (freshVehicle) {
+          const vehicleUpdate: Record<string, unknown> = { ktagHistoryCapturedThrough: Math.max(captured, normalized.timestamp) };
+          if (normalized.timestamp >= currentTimestamp) Object.assign(vehicleUpdate, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
+          tx.update(freshVehicle.ref, vehicleUpdate);
+        }
+        const tagUpdate: Record<string, unknown> = {
+          updatedAt: Date.now(),
+          ...(freshTag.get('firstCommunicationAt') ? {} : { firstCommunicationAt: normalized.timestamp }),
+          ...(freshTag.get('batteryStartedAt') ? {} : { batteryStartedAt: normalized.timestamp, batteryStartSource: 'first_communication' }),
+        };
+        if (normalized.timestamp >= Number(freshTag.get('lastPosition.timestamp') || 0)) Object.assign(tagUpdate, { lastPosition: point, lastBattery: point.battery.level });
+        tx.update(item.doc.ref, tagUpdate);
         return { duplicate: existing.exists, delayed: normalized.timestamp < currentTimestamp };
       });
       if (outcome.duplicate) metrics.duplicated++; else metrics.saved++; if (outcome.delayed) metrics.delayed++;

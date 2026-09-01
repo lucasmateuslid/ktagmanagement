@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { FieldPath } from 'firebase-admin/firestore';
 import type {
   TrackingAssignment, TrackingBattery, TrackingHistoryPage, TrackingHistoryPoint,
   TrackingHistoryProvider, TrackingHistoryWarning, TraccarPosition,
 } from '@ktag/shared';
+import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin.js';
+import { decryptKtagSecret, KtagConfigurationError, KtagHttpError, ktagClient, type KtagClient } from './ktagClient.js';
 import { TraccarHttpError, traccarClient } from './traccarClient.js';
 
 const DAY = 86_400_000;
@@ -106,6 +107,18 @@ export function normalizeFirestorePosition(data: FirebaseFirestore.DocumentData,
   };
 }
 
+export function normalizeKtagApiPosition(tagId: string, vehicleId: string | null, raw: Awaited<ReturnType<KtagClient['getHistory']>>[number]): TrackingHistoryPoint {
+  const battery = raw.status === 3 ? { level: 100, label: 'Alto', color: '#10b981' }
+    : raw.status === 2 ? { level: 60, label: 'Médio', color: '#eab308' }
+      : raw.status === 1 ? { level: 30, label: 'Baixo', color: '#f97316' }
+        : { level: 10, label: 'Muito baixo', color: '#ef4444' };
+  return {
+    id: pointId('ktag', tagId, raw.sourceId, raw.timestamp, raw.lat, raw.lon), tagId, vehicleId,
+    provider: 'ktag', timestamp: raw.timestamp, latitude: raw.lat, longitude: raw.lon,
+    accuracy: raw.conf, battery,
+  };
+}
+
 const olderThanCursor = (point: TrackingHistoryPoint, cursor: HistoryRange['cursor']) => !cursor || point.timestamp < cursor.timestamp || (point.timestamp === cursor.timestamp && point.id < cursor.id);
 export const historyPointKey = (point: Pick<TrackingHistoryPoint, 'tagId' | 'timestamp' | 'latitude' | 'longitude'>) => `${point.tagId}|${point.timestamp}|${point.latitude}|${point.longitude}`;
 
@@ -126,15 +139,42 @@ export interface HistoryProvider {
 
 export class KtagHistoryProvider implements HistoryProvider {
   readonly provider = 'ktag' as const;
+  constructor(private readonly client: Pick<KtagClient, 'getHistory'> = ktagClient) {}
   async load(input: { tenantId: string; tagId: string; vehicleId: string | null; from: number; to: number; range: HistoryRange }) {
-    const field = input.vehicleId ? 'vehicleIdAtCapture' : 'tagId'; const value = input.vehicleId || input.tagId;
+    if (!input.tagId) return [];
+    const tag = await adminDb.doc(`tenants/${input.tenantId}/tags/${input.tagId}`).get();
+    if (!tag.exists) throw new HistoryRequestError('K-TAG não encontrada.', 404, 'TAG_NOT_FOUND');
+
+    // A coleção persistida é a fonte do trajeto (incluindo paginação de 30
+    // dias). A API K-TAG é consultada apenas na primeira página para não
+    // deixar o usuário esperar o próximo ciclo do worker pelo último ponto.
     const upperBound = Math.min(input.to, input.range.cursor?.timestamp ?? input.to);
     let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${input.tenantId}/tag_history`)
-      .where(field, '==', value).where('timestamp', '>=', input.from).where('timestamp', '<=', upperBound)
+      .where('tagId', '==', input.tagId).where('timestamp', '>=', input.from).where('timestamp', '<=', upperBound)
       .orderBy('timestamp', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(input.range.limit + 1);
     if (input.range.cursor?.id.startsWith('ktag:')) query = query.startAfter(input.range.cursor.timestamp, input.range.cursor.id.slice(5));
-    const snap = await query.get();
-    return snap.docs.map(doc => normalizeFirestorePosition(doc.data(), doc.id)).filter((point): point is TrackingHistoryPoint => Boolean(point));
+    const stored = (await query.get()).docs
+      .map(doc => normalizeFirestorePosition(doc.data(), doc.id))
+      .filter((point): point is TrackingHistoryPoint => Boolean(point));
+
+    if (input.range.cursor) return stored;
+    const hashedKey = decryptKtagSecret(input.tenantId, tag.get('hashedAdvKey'));
+    const privateKey = decryptKtagSecret(input.tenantId, tag.get('privateKey'));
+    if (!hashedKey || !privateKey) {
+      if (stored.length) return stored;
+      throw new HistoryRequestError('K-TAG sem credenciais válidas.', 409, 'DEVICE_NOT_LINKED');
+    }
+    try {
+      const values = await this.client.getHistory([{ hashedKey, privateKey }]);
+      const current = values.map(raw => normalizeKtagApiPosition(input.tagId, input.vehicleId, raw))
+        .filter(point => point.timestamp >= input.from && point.timestamp <= input.to);
+      return [...stored, ...current];
+    } catch (error) {
+      // Um histórico já capturado continua útil mesmo se a API pontual estiver
+      // indisponível. Só propagamos a falha quando não há nenhum dado local.
+      if (stored.length) return stored;
+      throw mapProviderError(error);
+    }
   }
 }
 
@@ -157,6 +197,12 @@ export class TraccarHistoryProvider implements HistoryProvider {
 
 export function mapProviderError(error: unknown): HistoryRequestError {
   if (error instanceof HistoryRequestError) return error;
+  if (error instanceof KtagConfigurationError) return new HistoryRequestError(error.message, 503, 'PROVIDER_NOT_CONFIGURED');
+  if (error instanceof KtagHttpError) {
+    if (error.status === 401 || error.status === 403) return new HistoryRequestError('Integração K-TAG recusou a autenticação.', 502, 'PROVIDER_UNAUTHORIZED');
+    if (error.status === 429) return new HistoryRequestError('Limite de consultas da K-TAG excedido.', 502, 'PROVIDER_RATE_LIMITED');
+    return new HistoryRequestError('A API K-TAG está indisponível.', 502, 'PROVIDER_UNAVAILABLE');
+  }
   if (error instanceof TraccarHttpError) {
     if (error.status === 401 || error.status === 403) return new HistoryRequestError('Integração Traccar recusou a autenticação.', 502, 'PROVIDER_UNAUTHORIZED');
     if (error.status === 429) return new HistoryRequestError('Limite de consultas do provedor excedido.', 502, 'PROVIDER_RATE_LIMITED');
@@ -194,16 +240,16 @@ export class TrackingHistoryService {
     const assignmentSnap = await adminDb.collection(`tenants/${tenantId}/tracking_assignments`).where('vehicleId', '==', vehicleId).get();
     let assignments = assignmentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TrackingAssignment)).filter(item => item.startedAt <= range.to && (item.endedAt === null || item.endedAt >= range.from));
     if (!assignments.length && vehicle.get('tagId')) assignments = [{ id: 'legacy-current', tenantId, vehicleId, tagId: String(vehicle.get('tagId')), startedAt: range.from, endedAt: null, startedBy: null, endedBy: null, endReason: null, startEstimated: true }];
-    const points = await this.ktag.load({ tenantId, tagId: '', vehicleId, from: range.from, to: range.to, range });
-    if (!assignments.length && !points.length) throw new HistoryRequestError('Veículo sem dispositivo vinculado no período.', 409, 'DEVICE_NOT_LINKED');
+    const points: TrackingHistoryPoint[] = [];
+    if (!assignments.length) throw new HistoryRequestError('Veículo sem dispositivo vinculado no período.', 409, 'DEVICE_NOT_LINKED');
     for (const assignment of assignments) {
       const tag = await adminDb.doc(`tenants/${tenantId}/tags/${assignment.tagId}`).get();
       if (!tag.exists) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'TAG_NOT_FOUND', message: 'Uma tag vinculada ao período não foi encontrada.' }); continue; }
       const type = tagType(tag);
-      if (type === 'K_TAG') continue;
-      if (type !== 'XADTAG') { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'UNKNOWN_DEVICE_TYPE', message: 'Uma tag possui tipo incompatível com histórico.' }); continue; }
-      try { points.push(...await this.traccar.load({ tenantId, tagId: assignment.tagId, vehicleId, deviceId: tag.get('traccarDeviceId'), from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range })); }
-      catch (error) { const mapped = mapProviderError(error); warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: mapped.code, message: mapped.message }); }
+      const provider = type === 'K_TAG' ? this.ktag : type === 'XADTAG' ? this.traccar : null;
+      if (!provider) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'UNKNOWN_DEVICE_TYPE', message: 'Uma tag possui tipo incompatível com histórico.' }); continue; }
+      try { points.push(...await provider.load({ tenantId, tagId: assignment.tagId, vehicleId, deviceId: tag.get('traccarDeviceId'), from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range })); }
+      catch (error) { const mapped = mapProviderError(error); warnings.push({ provider: provider.provider, tagId: assignment.tagId, code: mapped.code, message: mapped.message }); }
     }
     if (!points.length && warnings.length) { const warning = warnings[0]; const status = warning.code === 'DEVICE_NOT_LINKED' ? 409 : warning.code === 'UNKNOWN_DEVICE_TYPE' ? 422 : warning.code === 'TAG_NOT_FOUND' ? 404 : 502; throw new HistoryRequestError(warning.message, status, warning.code as HistoryErrorCode); }
     return page(requestId, 'vehicle', vehicleId, range, points, warnings);

@@ -29,8 +29,11 @@ try {
   auth = getAuth(app);
   const useEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
   if (useEmulators) {
-    connectFirestoreEmulator(db, '127.0.0.1', 8080);
-    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    const emulatorHost = import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1';
+    const firestorePort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080);
+    const authPort = Number(import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099);
+    connectFirestoreEmulator(db, emulatorHost, firestorePort);
+    connectAuthEmulator(auth, `http://${emulatorHost}:${authPort}`, { disableWarnings: true });
   }
   // Persistência local — mantém o usuário logado entre abas/refresh; alinha com
   // o comportamento offline-first do app.
@@ -52,7 +55,7 @@ try {
   };
 
   functions = getFunctions(app);
-  if (useEmulators) connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  if (useEmulators) connectFunctionsEmulator(functions, import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1', Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT || 5001));
 
   console.log("Firebase initialized: Auth + Firestore (Long Polling + Offline) + Functions.");
 } catch (e: any) {

@@ -26,6 +26,15 @@ import { authenticatedFetch, readApiResponse } from '../services/authenticatedFe
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 
 const MotionDiv = motion.div as any;
+const toLocalDateTimeInput = (timestamp?: number) => timestamp
+  ? new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+  : '';
+const batteryUsageLabel = (tag: Tag) => {
+  if (!tag.batteryStartedAt) return 'Aguardando comunicação';
+  const days = Math.max(0, Math.floor((Date.now() - tag.batteryStartedAt) / 86_400_000));
+  const warrantyEndsAt = tag.batteryWarrantyYears ? tag.batteryStartedAt + tag.batteryWarrantyYears * 365 * 86_400_000 : null;
+  return `${days} dias${warrantyEndsAt ? ` • garantia até ${new Date(warrantyEndsAt).toLocaleDateString('pt-BR')}` : ''}`;
+};
 
 /** SN exibido/persistido localmente; remove padding apenas de registros legados. */
 const displayTagSerial = (tag: Partial<Tag>): string => {
@@ -591,6 +600,8 @@ export const Tags = () => {
             traqcareId: formData.traqcareId,
             powerType: formData.powerType,
             batteryWarrantyYears: formData.batteryWarrantyYears
+            ,batteryStartedAt: formData.batteryStartedAt,
+            batteryStartSource: formData.batteryStartSource,
         };
 
         if (!tag.name) throw new Error("Nome é obrigatório");
@@ -600,7 +611,7 @@ export const Tags = () => {
 
         setFormData(prev => ({ ...prev, id: tagId }));
         if (tag.type === 'XADTAG') {
-            const input = { name: tag.name, identifierOriginal: identifierOriginal!, traqcareId: formData.traqcareId, powerType: formData.powerType, batteryWarrantyYears: formData.batteryWarrantyYears };
+            const input = { name: tag.name, identifierOriginal: identifierOriginal!, traqcareId: formData.traqcareId, powerType: formData.powerType, batteryWarrantyYears: formData.batteryWarrantyYears, batteryStartedAt: formData.batteryStartedAt };
             const registered = formData.id
               ? await trackingApi.updateXadTag(formData.id, input)
               : await trackingApi.registerXadTag(input);
@@ -973,6 +984,7 @@ export const Tags = () => {
                   </button>
                 </th>
                 <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Equipamento</th>
+                <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Bateria</th>
                 <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Identificação</th>
                 <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</th>
                 <th className="p-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Veículo</th>
@@ -1018,6 +1030,14 @@ export const Tags = () => {
                                   </div>
                                 </div>
                               </div>
+                            </td>
+                            <td className="p-4">
+                              {(tag.type === 'K_TAG' || tag.powerType === 'battery') ? (
+                                <div className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
+                                  <div>{batteryUsageLabel(tag)}</div>
+                                  {tag.batteryStartedAt && <div className="mt-1 text-[8px] font-black uppercase tracking-wider text-zinc-400">Início: {new Date(tag.batteryStartedAt).toLocaleDateString('pt-BR')}</div>}
+                                </div>
+                              ) : <span className="text-zinc-400 text-xs">12V</span>}
                             </td>
                             <td className="p-4">
                               <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium">
@@ -1088,7 +1108,7 @@ export const Tags = () => {
                       })}
                       {filteredTags.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="p-8 text-center text-zinc-500 text-sm">
+                          <td colSpan={7} className="p-8 text-center text-zinc-500 text-sm">
                             Nenhum equipamento encontrado.
                           </td>
                         </tr>
@@ -1166,6 +1186,11 @@ export const Tags = () => {
                                 )}
                             </div>
 
+                            {(tag.type === 'K_TAG' || tag.powerType === 'battery') && (
+                              <div className="rounded-xl bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
+                                <span className="text-[8px] font-black uppercase tracking-wider text-zinc-400">Bateria: </span>{batteryUsageLabel(tag)}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-800/50">
                                 <div>
                                     {testResult && (
@@ -1346,6 +1371,13 @@ export const Tags = () => {
                         <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><BatteryCharging size={12}/> Garantia Bateria (Anos)</label>
                         <input type="number" min="1" max="10" value={formData.batteryWarrantyYears || 1} onChange={e => setFormData({...formData, batteryWarrantyYears: parseInt(e.target.value)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
                     </div>
+                    {(formData.type === 'K_TAG' || formData.powerType === 'battery') && (
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Início manual da bateria</label>
+                        <input type="datetime-local" value={toLocalDateTimeInput(formData.batteryStartedAt)} onChange={e => setFormData({...formData, batteryStartedAt: e.target.value ? new Date(e.target.value).getTime() : undefined, batteryStartSource: e.target.value ? 'manual' : undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
+                        <p className="text-[10px] text-zinc-500">Deixe vazio para iniciar automaticamente na primeira comunicação GPS válida.</p>
+                      </div>
+                    )}
 
                 </form>
         </ModalSection>

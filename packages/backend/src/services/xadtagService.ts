@@ -24,7 +24,7 @@ export const toTrackedPosition = (position: TraccarPosition, address?: string | 
 });
 
 export class XadTagService {
-  async register(input: { tenantId: string; tenantSlug: string; name: string; identifierKind: EquipmentIdentifierKind; identifierOriginal: string; traccarUniqueId: string; identifierProfile?: EquipmentIdentifierProfile; requestId?: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number }) {
+  async register(input: { tenantId: string; tenantSlug: string; name: string; identifierKind: EquipmentIdentifierKind; identifierOriginal: string; traccarUniqueId: string; identifierProfile?: EquipmentIdentifierProfile; requestId?: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) {
     const { tenantId, tenantSlug } = input;
     if (!input.name?.trim()) throw new Error('Informe o nome da XADTag.');
     if (!input.traccarUniqueId || input.traccarUniqueId !== input.traccarUniqueId.trim()) throw new Error('traccarUniqueId deve ser informado exatamente, sem espaços externos.');
@@ -49,6 +49,7 @@ export class XadTagService {
       ...(input.traqcareId !== undefined ? { traqcareId: input.traqcareId } : {}),
       ...(input.powerType !== undefined ? { powerType: input.powerType } : {}),
       ...(input.batteryWarrantyYears !== undefined ? { batteryWarrantyYears: input.batteryWarrantyYears } : {}),
+      ...(Number.isFinite(input.batteryStartedAt) ? { batteryStartedAt: input.batteryStartedAt, batteryStartSource: 'manual' as const } : {}),
       createdAt: now, updatedAt: now,
     };
     const reservation = await xadTagRepository.reservePending(pending);
@@ -92,7 +93,7 @@ export class XadTagService {
     return { item, created: externalCreated, localTagCreated: reservation.created, reusedExistingDevice: !externalCreated };
   }
 
-  async reconcile(item: XadTag, input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number }) {
+  async reconcile(item: XadTag, input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) {
     const normalized = normalizeXadTagIdentity(input.identifierOriginal);
     const desiredUniqueId = normalized.normalized;
     const tenantSlug = item.tenantId;
@@ -127,6 +128,7 @@ export class XadTagService {
       ...(input.traqcareId !== undefined ? { traqcareId: input.traqcareId } : {}),
       ...(input.powerType !== undefined ? { powerType: input.powerType } : {}),
       ...(input.batteryWarrantyYears !== undefined ? { batteryWarrantyYears: input.batteryWarrantyYears } : {}),
+      ...(Number.isFinite(input.batteryStartedAt) ? { batteryStartedAt: input.batteryStartedAt, batteryStartSource: 'manual' as const } : {}),
     });
     console.info(JSON.stringify({ event: 'traccar.device.reconciled', tenantId: item.tenantId, equipmentId: item.id, identifierFingerprint: desiredUniqueId.slice(-4), traccarDeviceId: device.id }));
     return await xadTagRepository.get(item.tenantId, item.id) || { ...item, name, identifierOriginal: normalized.original, identifierNormalized: normalized.normalized, traccarUniqueId: desiredUniqueId };

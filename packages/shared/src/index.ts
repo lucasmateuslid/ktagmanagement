@@ -55,6 +55,9 @@ export interface XadTag {
   traqcareId?: string;
   powerType?: 'battery' | '12v';
   batteryWarrantyYears?: number;
+  firstCommunicationAt?: number;
+  batteryStartedAt?: number;
+  batteryStartSource?: 'first_communication' | 'manual';
   traccarUniqueId: string;
   protocol: 'gt06';
   traccarPort: number;

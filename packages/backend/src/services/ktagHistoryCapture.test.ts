@@ -8,6 +8,12 @@ test('normaliza segundos e gera ID idempotente', () => {
   assert.equal(ktagHistoryPointId('tag-1', point!), ktagHistoryPointId('tag-1', point!));
 });
 
+test('aceita aliases de coordenadas e horário ISO do Feibao', () => {
+  const point = normalizeKtagSnapshot({ isodatetime: '2026-08-31T12:00:00Z', latitude: -8, lng: -35, conf: 10, status: 2 });
+  assert.equal(point?.timestamp, Date.parse('2026-08-31T12:00:00Z'));
+  assert.equal(point?.lon, -35);
+});
+
 test('rejeita timestamps e coordenadas inválidos', () => {
   assert.equal(normalizeKtagSnapshot({ timestamp: 0, lat: -8, lon: -35 }), null);
   assert.equal(normalizeKtagSnapshot({ timestamp: 1_700_000_000, lat: 0, lon: 0 }), null);

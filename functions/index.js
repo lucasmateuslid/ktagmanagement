@@ -1408,6 +1408,7 @@ exports.provisionClientAccess = onCall(async (request) => {
   const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
   const name = String(request.data?.name || '').trim();
   const clientId = String(request.data?.clientId || '').trim();
+  const resetInitialPassword = request.data?.resetInitialPassword === true;
 
   if (!isValidCpf(cpf)) {
     throw new HttpsError('invalid-argument', 'CPF inválido.');
@@ -1437,6 +1438,17 @@ exports.provisionClientAccess = onCall(async (request) => {
   }
 
   const uid = userRecord.uid;
+  // Ao habilitar um cadastro que já possui uma conta Auth legada, a senha
+  // antiga não é conhecida pelo administrador. Reaplica a senha inicial
+  // combinada para que o primeiro acesso não dependa de reset manual.
+  const effectiveInitialPassword = created || resetInitialPassword ? initialPassword : null;
+  if (resetInitialPassword && !created) {
+    try {
+      await admin.auth().updateUser(uid, { password: initialPassword, disabled: false, displayName: name });
+    } catch (e) {
+      throw new HttpsError('internal', `Falha ao preparar senha inicial: ${e.message}`);
+    }
+  }
   const users = admin.firestore().collection('tenants').doc(tenantId).collection('users');
   const legacyRef = users.doc(`client_${cpf}`);
   const targetRef = users.doc(uid);
@@ -1468,7 +1480,29 @@ exports.provisionClientAccess = onCall(async (request) => {
 
   await logAudit(tenantId, created ? 'CREATE' : 'UPDATE', 'Client',
     `Acesso do cliente provisionado: ${email}`, uid, callerUid);
-  return { uid, email, created, initialPassword: created ? initialPassword : null };
+  return { uid, email, created, initialPassword: effectiveInitialPassword };
+});
+
+/** Revoga somente o acesso deste cliente a este tenant, sem apagar a conta global. */
+exports.revokeClientAccess = onCall(async (request) => {
+  const { tenantId, callerUid } = await requireTenantAdmin(request);
+  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
+  if (!isValidCpf(cpf)) throw new HttpsError('invalid-argument', 'CPF inválido.');
+  const email = `${cpf}@client.ktag`;
+  let userRecord;
+  try { userRecord = await admin.auth().getUserByEmail(email); }
+  catch (e) {
+    if (e.code === 'auth/user-not-found') return { ok: true, revoked: false };
+    throw new HttpsError('internal', `Falha ao consultar conta do cliente: ${e.message}`);
+  }
+  const memberRef = admin.firestore().collection('tenants').doc(tenantId).collection('users').doc(userRecord.uid);
+  const member = await memberRef.get();
+  if (member.exists && member.data()?.role !== 'client') throw new HttpsError('permission-denied', 'A conta não é um cliente deste tenant.');
+  await memberRef.delete();
+  await removeMembership(userRecord.uid, tenantId);
+  await rebuildIdentityAndClaims(userRecord.uid);
+  await logAudit(tenantId, 'DELETE', 'Client', `Acesso do cliente revogado: ${email}`, userRecord.uid, callerUid);
+  return { ok: true, revoked: member.exists };
 });
 
 /** Redefine no Firebase Auth a senha de um cliente pertencente ao tenant. */

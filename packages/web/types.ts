@@ -273,6 +273,9 @@ export interface Tag {
   isActivated?: boolean;
   lastBattery?: number;
   batteryWarrantyYears?: number;
+  firstCommunicationAt?: number;
+  batteryStartedAt?: number;
+  batteryStartSource?: 'first_communication' | 'manual';
   status?: 'disponível' | 'enviada' | 'em_uso' | 'manutencao';
   shipmentId?: string;
   createdAt: number;

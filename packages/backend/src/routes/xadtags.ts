@@ -69,6 +69,7 @@ xadTagsRouter.post('/', async (req, res) => { try {
     ...(body.traqcareId !== undefined ? { traqcareId: String(body.traqcareId) } : {}),
     ...(body.powerType === 'battery' || body.powerType === '12v' ? { powerType: body.powerType } : {}),
     ...(Number.isFinite(Number(body.batteryWarrantyYears)) ? { batteryWarrantyYears: Number(body.batteryWarrantyYears) } : {}),
+    ...(Number.isFinite(Number(body.batteryStartedAt)) ? { batteryStartedAt: Number(body.batteryStartedAt) } : {}),
   });
   await xadTagRepository.audit(tid, req.authUser!.uid, 'xadtag.created', result.item.id, result.item.integrationStatus);
   await traccarRealtimeService.refreshMapping();
@@ -84,6 +85,7 @@ xadTagsRouter.put('/:id', async (req, res) => { try {
     ...(req.body?.traqcareId !== undefined ? { traqcareId: String(req.body.traqcareId) } : {}),
     ...(req.body?.powerType === 'battery' || req.body?.powerType === '12v' ? { powerType: req.body.powerType } : {}),
     ...(Number.isFinite(Number(req.body?.batteryWarrantyYears)) ? { batteryWarrantyYears: Number(req.body.batteryWarrantyYears) } : {}),
+    ...(Number.isFinite(Number(req.body?.batteryStartedAt)) ? { batteryStartedAt: Number(req.body.batteryStartedAt) } : {}),
   });
   await xadTagRepository.audit(tid, req.authUser!.uid, 'xadtag.reconciled', item.id, 'success');
   await traccarRealtimeService.refreshMapping();

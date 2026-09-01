@@ -198,6 +198,8 @@ export const Clients = () => {
     // doc (setDoc sobrescreve em vez de duplicar).
     const clientId = selectedClient.id || crypto.randomUUID();
     const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
+    const previousClient = clients.find(client => client.id === clientId);
+    const wasAccessEnabled = Boolean(previousClient?.hasAccess);
 
     setIsSaving(true);
     try {
@@ -215,18 +217,29 @@ export const Clients = () => {
       // não duplicar o log aqui.
       await storage.saveClient(clientData);
 
-      // Cria/repara a conta no Firebase Auth e mantém o documento do tenant sob
-      // o UID real. A callable também migra docs legados client_{cpf}.
-      if (clientData.hasAccess) {
+      // O indicador visual só permanece ativado se o provisionamento tiver
+      // concluído. Isso elimina o estado "acesso ativado" sem conta utilizável.
+      if (clientData.hasAccess && !wasAccessEnabled) {
           if (!functions) throw new Error('Serviço de criação de acesso indisponível.');
           const provision = httpsCallable<
-            { tenantId: string; cpf: string; name: string; clientId: string },
+            { tenantId: string; cpf: string; name: string; clientId: string; resetInitialPassword?: boolean },
             { uid: string; email: string; created: boolean; initialPassword: string | null }
           >(functions, 'provisionClientAccess');
-          const result = await provision({ tenantId, cpf: cleanCpf, name: clientData.name, clientId });
-          if (result.data.created && result.data.initialPassword) {
-            addNotification('success', 'Acesso Criado', `Login: ${result.data.email} — senha inicial: ${result.data.initialPassword}`);
+          try {
+            const result = await provision({ tenantId, cpf: cleanCpf, name: clientData.name, clientId, resetInitialPassword: true });
+            if (result.data.initialPassword) {
+              addNotification('success', 'Acesso Criado', `Login: ${result.data.email} — senha inicial: ${result.data.initialPassword}`);
+            }
+          } catch (error) {
+            await storage.saveClient({ ...clientData, hasAccess: false });
+            throw error;
           }
+      }
+      if (!clientData.hasAccess && wasAccessEnabled) {
+        if (!functions) throw new Error('Serviço de revogação de acesso indisponível.');
+        const revoke = httpsCallable<{ tenantId: string; cpf: string }, { ok: boolean }>(functions, 'revokeClientAccess');
+        try { await revoke({ tenantId, cpf: cleanCpf }); }
+        catch (error) { await storage.saveClient({ ...clientData, hasAccess: true }); throw error; }
       }
 
       const updatePromises = allVehicles.map(async (v) => {

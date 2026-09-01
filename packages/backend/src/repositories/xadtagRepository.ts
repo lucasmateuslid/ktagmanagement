@@ -118,7 +118,18 @@ export class XadTagRepository {
       const current = await transaction.get(ref);
       const previousTime = Date.parse(String(current.get('lastPosition.fixTime') || current.get('lastPosition.serverTime') || '')) || 0;
       const nextTime = Date.parse(String(position.fixTime || position.serverTime || '')) || 0;
-      if (nextTime >= previousTime) transaction.update(ref, { lastPosition: position, traccarPositionId: position.id || null, traccarStatus: 'online', communicationValidatedAt: Date.now(), updatedAt: Date.now() });
+      const validCoordinate = Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
+        && position.latitude >= -90 && position.latitude <= 90 && position.longitude >= -180 && position.longitude <= 180
+        && !(position.latitude === 0 && position.longitude === 0);
+      const timestamp = nextTime || Date.now();
+      const isBatteryPowered = current.get('powerType') !== '12v';
+      const update: Record<string, unknown> = {
+        traccarStatus: 'online', communicationValidatedAt: Date.now(), updatedAt: Date.now(),
+        ...(validCoordinate && !current.get('firstCommunicationAt') ? { firstCommunicationAt: timestamp } : {}),
+        ...(validCoordinate && isBatteryPowered && !current.get('batteryStartedAt') ? { batteryStartedAt: timestamp, batteryStartSource: 'first_communication' } : {}),
+      };
+      if (nextTime >= previousTime) Object.assign(update, { lastPosition: position, traccarPositionId: position.id || null });
+      transaction.update(ref, update);
     });
   }
   async audit(tenantId: string, userId: string, event: string, equipmentId: string | null, result: string) {
