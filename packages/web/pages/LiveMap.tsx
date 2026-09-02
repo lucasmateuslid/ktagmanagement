@@ -72,7 +72,7 @@ export const LiveMap = () => {
   // 4. History Layer
   const { 
       historyItems, historyLoading, showHistoryList, 
-      fetchHistory, closeHistory, setShowHistoryList, historyDays, changeHistoryDays,
+      fetchHistory, closeHistory, setShowHistoryList,
       nextCursor, loadMoreHistory, historyPartial, historyWarnings,
   } = useVehicleHistory(activeVehicle?.id || '', selectedTagId, fleetLocations, seedHistoryAddresses);
   const replayPoints = useMemo(() => [...historyItems].sort((a, b) => a.timestamp - b.timestamp), [historyItems]);
@@ -93,20 +93,16 @@ export const LiveMap = () => {
     setTagSearchTerm(''); setIsSearchFocused(false);
   }, [setShowHistoryList]);
 
-  const handleHistoryDaysChange = React.useCallback((days: 1 | 7 | 30) => {
-    setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null); changeHistoryDays(days);
-  }, [changeHistoryDays]);
-
   useEffect(() => {
       const urlTagId = searchParams.get('tagId');
       if (urlTagId) handleSelection(urlTagId);
   }, [searchParams]);
 
   useEffect(() => {
-      if (selectedTagId && searchParams.get('tagId') === selectedTagId && searchParams.get('history') === '1' && autoHistoryOpenedRef.current !== selectedTagId) {
+      if (activeVehicle?.id && selectedTagId && searchParams.get('tagId') === selectedTagId && searchParams.get('history') === '1' && autoHistoryOpenedRef.current !== selectedTagId) {
           autoHistoryOpenedRef.current = selectedTagId; fetchHistory();
       }
-  }, [selectedTagId, searchParams, fetchHistory]);
+  }, [activeVehicle?.id, selectedTagId, searchParams, fetchHistory]);
 
   const stats = useMemo(() => calculateFleetStats(vehicles, fleetLocations), [vehicles, fleetLocations]);
   
@@ -225,8 +221,6 @@ export const LiveMap = () => {
         exporting={exporting}
         exportProgress={exportProgress}
         onExport={handleExport}
-        historyDays={historyDays}
-        onHistoryDaysChange={handleHistoryDaysChange}
         hasMore={Boolean(nextCursor)}
         onLoadMore={loadMoreHistory}
         partial={historyPartial}

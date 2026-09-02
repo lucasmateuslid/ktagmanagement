@@ -6,7 +6,7 @@ const { vehicleHistory, addNotification } = vi.hoisted(() => ({ vehicleHistory: 
 vi.mock('../../../services/trackingApi', () => ({ trackingApi: { vehicleHistory } }));
 vi.mock('../../../contexts/NotificationContext', () => ({ useNotification: () => ({ addNotification }) }));
 
-import { useVehicleHistory } from './useVehicleHistory';
+import { HISTORY_WINDOW_MS, useVehicleHistory } from './useVehicleHistory';
 
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 const page = (id: string, tagId: string) => ({ requestId: id, subjectType: 'vehicle' as const, subjectId: id, from: new Date(1).toISOString(), to: new Date(2).toISOString(), points: [{ id, tagId, vehicleId: id, provider: 'ktag' as const, timestamp: id === 'old' ? 10 : 20, latitude: -8, longitude: -35 }], nextCursor: null, truncated: false, partial: false, warnings: [] });
@@ -31,5 +31,17 @@ describe('useVehicleHistory', () => {
     const { result } = renderHook(() => useVehicleHistory('v2', 'tag-2', current, vi.fn()));
     await act(async () => { await result.current.fetchHistory(); });
     expect(result.current.historyItems).toHaveLength(1);
+  });
+
+  it('consulta sempre as últimas 48 horas', async () => {
+    vehicleHistory.mockResolvedValue(page('new', 'tag-2'));
+    const now = new Date('2026-09-02T12:00:00.000Z').getTime();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { result } = renderHook(() => useVehicleHistory('v2', 'tag-2', [], vi.fn()));
+
+    await act(async () => { await result.current.fetchHistory(); });
+
+    expect(Date.parse(vehicleHistory.mock.calls[0][2]) - Date.parse(vehicleHistory.mock.calls[0][1])).toBe(HISTORY_WINDOW_MS);
+    vi.restoreAllMocks();
   });
 });

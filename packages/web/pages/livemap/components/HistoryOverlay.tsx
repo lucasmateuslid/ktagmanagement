@@ -17,8 +17,6 @@ interface HistoryOverlayProps {
     exporting: boolean;
     exportProgress: number;
     onExport: (type: 'pdf' | 'excel') => void;
-    historyDays: 1 | 7 | 30;
-    onHistoryDaysChange: (days: 1 | 7 | 30) => void;
     hasMore: boolean;
     onLoadMore: () => void;
     partial: boolean;
@@ -37,7 +35,7 @@ interface HistoryOverlayProps {
 export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({ 
     isVisible, onClose, activeVehicle, activeTag, 
     historyItems, historyLoading, resolvedAddresses, 
-    exporting, exportProgress, onExport, historyDays, onHistoryDaysChange,
+    exporting, exportProgress, onExport,
     hasMore, onLoadMore, partial, warnings, onResolveAddress, onViewPoint,
     replayIndex, replayPlaying, replaySpeed, replayPoint, onReplayToggle, onReplaySeek, onReplaySpeedChange,
 }) => {
@@ -77,10 +75,7 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                             <div className="flex items-center gap-3 mt-2">
                                 <span className="text-sm font-black text-primary-500 uppercase tracking-widest">{activeVehicle ? activeVehicle.plate : (activeTag?.name || 'TAG')}</span>
                                 <div className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700"/>
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Últimos {historyDays === 1 ? '24 horas' : `${historyDays} dias`}</span>
-                            </div>
-                            <div className="flex gap-2 mt-5">
-                                {([1, 7, 30] as const).map(days => <button key={days} onClick={() => onHistoryDaysChange(days)} disabled={historyLoading} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase ${historyDays === days ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>{days === 1 ? '24h' : `${days}d`}</button>)}
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Últimas 48 horas</span>
                             </div>
                         </div>
                     </div>
