@@ -6,6 +6,7 @@ import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
 import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging, Layers } from 'lucide-react';
+import { hasValidCoordinates } from '../pages/livemap/utils/livemapFilters';
 
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 
@@ -197,11 +198,17 @@ export const MapComponent: React.FC<MapProps> = ({
   const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
   const tileUrl = layer === 'satellite' ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' : layer === 'hybrid' ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   
-  const displayLocations = highlightedTagId 
-    ? locations.filter(l => l.tagId === highlightedTagId) 
-    : locations;
+  // Protege o Leaflet inclusive de registros históricos gravados por versões
+  // antigas sem latitude/longitude.
+  const safeLocations = locations.filter(hasValidCoordinates);
+  const safeFocusLocation = hasValidCoordinates(focusLocation) ? focusLocation : null;
+  const safeReplayLocation = hasValidCoordinates(replayLocation) ? replayLocation : null;
+  const safeReplayTrail = replayTrail.filter(hasValidCoordinates);
+  const displayLocations = highlightedTagId
+    ? safeLocations.filter(l => l.tagId === highlightedTagId)
+    : safeLocations;
 
-  const highlightedLoc = highlightedTagId ? locations.find(l => l.tagId === highlightedTagId) : null;
+  const highlightedLoc = highlightedTagId ? safeLocations.find(l => l.tagId === highlightedTagId) : null;
 
   const renderMarkers = (locs: LocationHistory[]) => {
     return locs.map((loc) => {
@@ -291,7 +298,7 @@ export const MapComponent: React.FC<MapProps> = ({
   return (
     <div className="h-full w-full relative">
         <MapContainer 
-          center={highlightedLoc ? [highlightedLoc.lat, highlightedLoc.lon] : (locations.length > 0 ? [locations[0].lat, locations[0].lon] : [RN_CENTER.lat, RN_CENTER.lon])} 
+          center={highlightedLoc ? [highlightedLoc.lat, highlightedLoc.lon] : (safeLocations.length > 0 ? [safeLocations[0].lat, safeLocations[0].lon] : [RN_CENTER.lat, RN_CENTER.lon])}
           zoom={highlightedLoc ? 17 : 13} 
           zoomControl={false}
           maxZoom={22}
@@ -305,10 +312,10 @@ export const MapComponent: React.FC<MapProps> = ({
           <ResponsiveMapSize />
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
-          {isFleetMode && !highlightedLoc && <FitFleetBounds locations={locations} />}
-          {!isFleetMode && <FitHistoryBounds locations={locations} />}
+          {isFleetMode && !highlightedLoc && <FitFleetBounds locations={safeLocations} />}
+          {!isFleetMode && <FitHistoryBounds locations={safeLocations} />}
           {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
-          {focusLocation && <RecenterMap lat={focusLocation.lat} lon={focusLocation.lon} zoom={18} />}
+          {safeFocusLocation && <RecenterMap lat={safeFocusLocation.lat} lon={safeFocusLocation.lon} zoom={18} />}
 
           {isFleetMode ? (
               highlightedTagId ? (
@@ -325,17 +332,17 @@ export const MapComponent: React.FC<MapProps> = ({
           ) : (
               <>
                 <Polyline 
-                    positions={locations.map(l => [l.lat, l.lon] as [number, number])} 
+                    positions={safeLocations.map(l => [l.lat, l.lon] as [number, number])}
                     color="#f59e0b" 
                     weight={5} 
                     opacity={0.7} 
                     lineCap="round"
                     lineJoin="round"
                 />
-                {replayTrail.length > 1 && <Polyline positions={replayTrail.map(l => [l.lat, l.lon] as [number, number])} color="#0ea5e9" weight={7} opacity={0.95} lineCap="round" lineJoin="round" />}
+                {safeReplayTrail.length > 1 && <Polyline positions={safeReplayTrail.map(l => [l.lat, l.lon] as [number, number])} color="#0ea5e9" weight={7} opacity={0.95} lineCap="round" lineJoin="round" />}
                 
                 {/* Pontos intermediários */}
-                {locations.map((loc, idx) => (
+                {safeLocations.map((loc, idx) => (
                     <Marker 
                         key={loc.id || idx}
                         position={[loc.lat, loc.lon]}
@@ -353,22 +360,22 @@ export const MapComponent: React.FC<MapProps> = ({
                     </Marker>
                 ))}
 
-                {locations.length > 0 && (
+                {safeLocations.length > 0 && (
                     <Marker 
-                        position={[locations[0].lat, locations[0].lon]} 
+                        position={[safeLocations[0].lat, safeLocations[0].lon]}
                         icon={createVehicleIcon(true, undefined, undefined, '#10b981', false, showPlates, 'FIM/ATUAL')}
                     />
                 )}
                 
-                {locations.length > 1 && (
+                {safeLocations.length > 1 && (
                     <Marker 
-                        position={[locations[locations.length-1].lat, locations[locations.length-1].lon]} 
+                        position={[safeLocations[safeLocations.length-1].lat, safeLocations[safeLocations.length-1].lon]}
                         icon={createVehicleIcon(true, undefined, undefined, '#ef4444', false, showPlates, 'INÍCIO')}
                     />
                 )}
-                {replayLocation && (
-                    <Marker position={[replayLocation.lat, replayLocation.lon]} zIndexOffset={2000} icon={createVehicleIcon(true, undefined, undefined, '#0ea5e9', false, true, 'REPLAY')}>
-                        <Popup className="font-sans text-xs"><div className="font-bold">{new Date(replayLocation.timestamp).toLocaleString()}</div></Popup>
+                {safeReplayLocation && (
+                    <Marker position={[safeReplayLocation.lat, safeReplayLocation.lon]} zIndexOffset={2000} icon={createVehicleIcon(true, undefined, undefined, '#0ea5e9', false, true, 'REPLAY')}>
+                        <Popup className="font-sans text-xs"><div className="font-bold">{new Date(safeReplayLocation.timestamp).toLocaleString()}</div></Popup>
                     </Marker>
                 )}
               </>

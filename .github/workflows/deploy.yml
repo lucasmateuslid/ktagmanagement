@@ -19,6 +19,7 @@ name: Deploy
 #   VPS (somente produção):
 #     VPS_HOST, VPS_USER, VPS_SSH_PORT, VPS_APP_PATH
 #     VPS_SSH_PRIVATE_KEY, VPS_SSH_KNOWN_HOSTS
+#     KTAG_API_USER, KTAG_API_PASS
 on:
   workflow_dispatch:
     inputs:
@@ -105,6 +106,8 @@ jobs:
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          KTAG_API_USER: ${{ secrets.KTAG_API_USER }}
+          KTAG_API_PASS: ${{ secrets.KTAG_API_PASS }}
           CLOUD_RUN_REALTIME: ${{ vars.KTAG_TRACCAR_REALTIME_ENABLED }}
         run: |
           missing=()
@@ -137,6 +140,8 @@ jobs:
               [ -z "$VPS_APP_PATH" ] && missing+=("VPS_APP_PATH")
               [ -z "$VPS_SSH_PRIVATE_KEY" ] && missing+=("VPS_SSH_PRIVATE_KEY")
               [ -z "$VPS_SSH_KNOWN_HOSTS" ] && missing+=("VPS_SSH_KNOWN_HOSTS")
+              [ -z "$KTAG_API_USER" ] && missing+=("KTAG_API_USER")
+              [ -z "$KTAG_API_PASS" ] && missing+=("KTAG_API_PASS")
             fi
           else
             [ -z "$SBX_PROJECT_ID" ] && missing+=("SAASTAGMANAGER_PROJECT_ID")
@@ -193,6 +198,7 @@ jobs:
             VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
             VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
             VITE_FIREBASE_APP_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
+            VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app
 
       - name: Configurar SSH estrito
         env:
@@ -211,11 +217,17 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
           IMAGE: ${{ steps.image.outputs.name }}
+          KTAG_API_USER: ${{ secrets.KTAG_API_USER }}
+          KTAG_API_PASS: ${{ secrets.KTAG_API_PASS }}
         run: |
+          umask 077
+          printf 'KTAG_API_URL=%s\nKTAG_API_USER=%s\nKTAG_API_PASS=%s\n' \
+            'https://api.gps308.com/feibao/' "$KTAG_API_USER" "$KTAG_API_PASS" > .env.ktag
           scp -P "${VPS_PORT:-22}" \
             deploy/vps/docker-compose.yml \
             deploy/vps/deploy-image.sh \
             deploy/vps/rollback.sh \
+            .env.ktag \
             "$VPS_USER@$VPS_HOST:$VPS_APP_PATH/deploy/vps/"
           ssh -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
             "cd '$VPS_APP_PATH' && chmod 750 deploy/vps/deploy-image.sh deploy/vps/rollback.sh && ./deploy/vps/deploy-image.sh '$IMAGE' '${{ github.sha }}'"
@@ -305,6 +317,7 @@ jobs:
           VITE_BUCKET: ${{ steps.vite.outputs.bucket }}
           VITE_SENDER: ${{ steps.vite.outputs.sender }}
           VITE_APP_ID: ${{ steps.vite.outputs.app_id }}
+          TRACKING_API_URL: ${{ inputs.environment == 'production' && 'https://api-vps.ktagfinder.app' || '' }}
         run: |
           IMAGE_SHA=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${{ github.sha }}
           IMAGE_LATEST=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest
@@ -315,6 +328,7 @@ jobs:
             --build-arg VITE_FIREBASE_STORAGE_BUCKET="$VITE_BUCKET" \
             --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="$VITE_SENDER" \
             --build-arg VITE_FIREBASE_APP_ID="$VITE_APP_ID" \
+            --build-arg VITE_TRACKING_API_URL="$TRACKING_API_URL" \
             -t "$IMAGE_SHA" -t "$IMAGE_LATEST" .
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_LATEST"

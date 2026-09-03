@@ -5,6 +5,7 @@ import { Tag, Vehicle, LocationHistory } from '../../../types';
 import { storage } from '../../../services/storage';
 import { trackingApi } from '../../../services/trackingApi';
 import type { LiveMapTrackedAsset } from '@ktag/shared';
+import { hasValidCoordinates } from '../utils/livemapFilters';
 
 export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId: string) => {
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
@@ -14,7 +15,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
   const lastSaveRef = useRef<Record<string, number>>({});
   useEffect(() => {
     let disposed = false; let socket: WebSocket | null = null;
-    const mergeAsset = (asset: LiveMapTrackedAsset) => { const tag = tags.find(item => item.identifierNormalized === asset.uniqueId); const tagId = tag?.id || asset.id.replace('xadtag_', ''); const location = { id: tagId, tagId, lat: asset.latitude, lon: asset.longitude, timestamp: Date.parse(asset.fixTime || asset.serverTime || '') || Date.now(), isodatetime: asset.fixTime || asset.serverTime || new Date().toISOString(), conf: asset.valid ? 100 : 0, status: asset.status === 'online' ? 1 : 0, address: asset.address || undefined, battery: { level: 0, label: asset.status, color: asset.status === 'online' ? '#10b981' : '#71717a' } } as LocationHistory; setFleetLocations(previous => { const map = new Map(previous.map(item => [item.tagId, item])); map.set(tagId, location); return [...map.values()]; }); };
+    const mergeAsset = (asset: LiveMapTrackedAsset) => { const tag = tags.find(item => item.identifierNormalized === asset.uniqueId); const tagId = tag?.id || asset.id.replace('xadtag_', ''); const location = { id: tagId, tagId, lat: asset.latitude, lon: asset.longitude, timestamp: Date.parse(asset.fixTime || asset.serverTime || '') || Date.now(), isodatetime: asset.fixTime || asset.serverTime || new Date().toISOString(), conf: asset.valid ? 100 : 0, status: asset.status === 'online' ? 1 : 0, address: asset.address || undefined, battery: { level: 0, label: asset.status, color: asset.status === 'online' ? '#10b981' : '#71717a' } } as LocationHistory; if (!tagId || !hasValidCoordinates(location)) return; setFleetLocations(previous => { const map = new Map(previous.map(item => [item.tagId, item])); map.set(tagId, location); return [...map.values()]; }); };
     void trackingApi.liveMap().then(items => { if (!disposed) items.forEach(mergeAsset); }).catch(() => undefined);
     void trackingApi.websocket().then(ws => { if (disposed) return ws.close(); socket = ws; ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (message.type === 'remove') setFleetLocations(previous => previous.filter(item => `xadtag_${tags.find(tag => tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* ignore */ } }; }).catch(() => undefined);
     return () => { disposed = true; socket?.close(); };
@@ -24,7 +25,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
   useEffect(() => {
       if (vehicles.length > 0) {
           const persistedLocations = vehicles
-              .filter(v => v.lastPosition && v.tagId)
+              .filter(v => v.lastPosition && v.tagId && hasValidCoordinates(v.lastPosition))
               .map(v => ({ ...v.lastPosition!, tagId: v.tagId!, id: v.tagId! }));
           
           if (persistedLocations.length > 0) {
@@ -83,7 +84,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
 
       // BUSCA EM LOTE (BATCHING)
       // Usando o valor padrão (3) para evitar erros 429 (Rate Limit)
-      const valid = await fetchTagsLocationBatch(tagsToTrack);
+      const valid = (await fetchTagsLocationBatch(tagsToTrack)).filter(hasValidCoordinates);
       
       // PERSISTÊNCIA INTELIGENTE (Smart Save)
       const now = Date.now();
@@ -126,7 +127,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[], selectedTagId
     setFleetLocations(prev => {
       const newMap = new Map(prev.map(i => [i.tagId, i]));
       locs.forEach(v => {
-        if (v.tagId) newMap.set(v.tagId, { ...v, id: v.tagId } as LocationHistory);
+        if (v.tagId && hasValidCoordinates(v)) newMap.set(v.tagId, { ...v, id: v.tagId } as LocationHistory);
       });
       return Array.from(newMap.values());
     });

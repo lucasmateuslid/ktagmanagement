@@ -8,6 +8,7 @@ cd "$DEPLOY_DIR"
 test -f .env.vps || { echo ".env.vps ausente." >&2; exit 1; }
 test -f secrets/firebase-service-account.json || { echo "Service account Firebase ausente." >&2; exit 1; }
 chmod 600 .env.vps secrets/firebase-service-account.json
+if [ -f .env.ktag ]; then chmod 600 .env.ktag; fi
 # A imagem roda como USER node (UID/GID 1000). O bind mount preserva o dono do
 # arquivo no host, então root:root 0600 impede o Firebase Admin de lê-lo.
 chown 1000:1000 secrets/firebase-service-account.json

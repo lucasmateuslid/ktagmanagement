@@ -4,8 +4,10 @@ import { storage } from '../services/storage';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { Schedule } from '../types';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { tenantCollection } from '../lib/firestore';
+import { useTenant } from '../contexts/TenantContext';
 
 // SINGLETON AUDIO CONTEXT
 // Mantém uma única instância de áudio para toda a aplicação para evitar bloqueios de hardware e política de autoplay
@@ -23,6 +25,7 @@ const getAudioContext = () => {
 
 export const useScheduleNotifications = () => {
   const { user, isAdmin } = useAuth();
+  const { enabledModules, modulesLoading } = useTenant();
   const { addNotification, setCriticalAlerts } = useNotification();
   
   // Refs para rastrear estado anterior (para comparar mudanças)
@@ -191,19 +194,19 @@ export const useScheduleNotifications = () => {
 
   // Lógica para ADMIN / MODERADOR (Monitoramento Geral & Lembretes Pessoais)
   useEffect(() => {
-    if (!user || !db || (!isAdmin && user.role !== 'moderator')) return;
+    if (!user || !db || modulesLoading || !enabledModules.includes('scheduling') || (!isAdmin && user.role !== 'moderator')) return;
 
     // Escuta agendamentos recentes
-    const q = query(collection(db, 'ktag_schedules'), orderBy('createdAt', 'desc'), limit(50));
+    const q = query(tenantCollection('schedules'), orderBy('createdAt', 'desc'), limit(50));
     
     // Escuta agendamentos ativos para checagem de 24h
-    const qActive = query(collection(db, 'ktag_schedules'), where('status', 'in', ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local']));
+    const qActive = query(tenantCollection('schedules'), where('status', 'in', ['Confirmada', 'Reagendada', 'Técnico no local', 'Cliente no local']));
 
     const unsubscribeActive = onSnapshot(qActive, (snapshot) => {
         const active: Schedule[] = [];
         snapshot.forEach(doc => active.push(doc.data() as Schedule));
         activeSchedulesRef.current = active;
-    });
+    }, error => console.warn('Falha ao acompanhar agendamentos ativos:', error.code));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const currentSchedules: Schedule[] = [];
@@ -260,7 +263,7 @@ export const useScheduleNotifications = () => {
         pendingSchedulesRef.current = currentSchedules.filter(s => ['Solicitada', 'Em análise'].includes(s.status));
         
         if (isFirstLoadRef.current) isFirstLoadRef.current = false;
-    });
+    }, error => console.warn('Falha ao acompanhar agendamentos recentes:', error.code));
 
     // 3. TIMER DE SLA E LEMBRETES RECORRENTES
     const timerInterval = setInterval(() => {
@@ -339,5 +342,5 @@ export const useScheduleNotifications = () => {
         unsubscribeActive();
         clearInterval(timerInterval);
     };
-  }, [user, addNotification, setCriticalAlerts]);
+  }, [user, isAdmin, addNotification, setCriticalAlerts, enabledModules, modulesLoading]);
 };

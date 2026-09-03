@@ -3,6 +3,15 @@ import { Vehicle, Tag, Client, LocationHistory, User } from '../../../types';
 
 type FleetFilter = 'all' | 'online' | 'offline';
 
+export const hasValidCoordinates = (location: Pick<LocationHistory, 'lat' | 'lon'> | null | undefined) =>
+    !!location
+    && Number.isFinite(location.lat)
+    && Number.isFinite(location.lon)
+    && location.lat >= -90
+    && location.lat <= 90
+    && location.lon >= -180
+    && location.lon <= 180;
+
 export const filterFleetList = (
     searchTerm: string,
     filter: FleetFilter,
@@ -72,7 +81,7 @@ export const filterLocationsToRender = (
     vehicles: Vehicle[]
 ) => {
     if (selectedTagId) {
-        return fleetLocations.filter(l => l.tagId === selectedTagId);
+        return fleetLocations.filter(l => l.tagId === selectedTagId && hasValidCoordinates(l));
     }
     
     // Se não tem nada selecionado, mostra frota
@@ -81,7 +90,7 @@ export const filterLocationsToRender = (
     const activeVehicleTagIds = new Set(vehicles.map(v => v.tagId));
     
     // Mostra todas as localizações que têm tagId
-    const base = fleetLocations.filter(l => l.tagId);
+    const base = fleetLocations.filter(l => l.tagId && hasValidCoordinates(l));
 
     // Se filter === 'online', já está implícito pois fleetLocations são os onlines
     

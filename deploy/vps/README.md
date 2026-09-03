@@ -13,8 +13,9 @@ implanta automaticamente na VPS, Cloud Run, Functions ou Firestore.
 - service account Firebase dedicada, com o menor conjunto de permissões necessário;
 - DNS do domínio da aplicação apontando para a VPS.
 
-O frontend e a API de rastreamento usam o mesmo domínio público da aplicação.
-Não é necessário configurar um subdomínio de tracking ou `VITE_TRACKING_API_URL`.
+Em produção, o frontend usa `VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app`
+para enviar HTTP e WebSocket de rastreamento ao backend dedicado da VPS. Em
+desenvolvimento e sandbox, a variável pode ficar vazia para usar same-origin.
 
 Recomenda-se manter o proxy laranja do Cloudflare e ativar Authenticated Origin Pulls ou restringir no firewall/Nginx as conexões HTTPS às faixas do Cloudflare. O backend fica publicado apenas em `127.0.0.1`.
 
@@ -88,7 +89,10 @@ aplicação sem competir com o worker realtime ativo na VPS.
 
 Secrets necessários no GitHub: `VPS_HOST`, `VPS_USER`, `VPS_SSH_PORT`,
 `VPS_SSH_PRIVATE_KEY`, `VPS_SSH_KNOWN_HOSTS`, `VPS_APP_PATH` e os
-`KTAGFINDER_PROD_FIREBASE_*` já usados no build atual. Use
+`KTAGFINDER_PROD_FIREBASE_*` já usados no build atual. Cadastre também
+`KTAG_API_USER` e `KTAG_API_PASS`: o workflow grava esses dois valores e a URL
+da API em `deploy/vps/.env.ktag` com permissão `0600`, sem alterar o `.env.vps`.
+Use
 `VPS_APP_PATH=/opt/ktagmanagement`.
 
 Cadastre `VPS_SSH_KNOWN_HOSTS` a partir de uma estação confiável, conferindo a
