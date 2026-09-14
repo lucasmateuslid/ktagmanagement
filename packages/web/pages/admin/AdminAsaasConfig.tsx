@@ -5,6 +5,7 @@ import { functions } from '../../services/firebase';
 import {
   Settings2, Zap, Globe, Copy, Check, Loader2, CheckCircle2, XCircle, AlertTriangle,
 } from 'lucide-react';
+import { formatCpfCnpj } from '@ktag/shared';
 
 interface AsaasConfig {
   env: 'sandbox' | 'production';
@@ -175,7 +176,7 @@ export const AdminAsaasConfig = () => {
                 <div className="text-xs text-zinc-400 space-y-1">
                   <div><span className="text-zinc-500">Conta:</span> {connection.account?.name}</div>
                   <div><span className="text-zinc-500">Email:</span> {connection.account?.email}</div>
-                  <div><span className="text-zinc-500">CPF/CNPJ:</span> {connection.account?.cpfCnpj}</div>
+                  <div><span className="text-zinc-500">CPF/CNPJ:</span> {formatCpfCnpj(connection.account?.cpfCnpj) || '—'}</div>
                   <div><span className="text-zinc-500">Ambiente:</span> {connection.env}</div>
                 </div>
               </div>

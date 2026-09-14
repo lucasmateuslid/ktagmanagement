@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
+import { normalizeDigits } from '@ktag/shared';
 
 interface Option {
   id: string;
@@ -38,9 +39,11 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const filteredOptions = useMemo(() => {
     if (!search) return options;
     const term = search.toLowerCase();
+    const digitTerm = normalizeDigits(search);
     return options.filter(o => 
       o.label.toLowerCase().includes(term) || 
-      (o.subLabel && o.subLabel.toLowerCase().includes(term))
+      (o.subLabel && o.subLabel.toLowerCase().includes(term)) ||
+      (digitTerm.length > 0 && normalizeDigits(`${o.label} ${o.subLabel ?? ''}`).includes(digitTerm))
     );
   }, [options, search]);
 

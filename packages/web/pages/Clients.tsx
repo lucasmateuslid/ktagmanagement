@@ -19,9 +19,11 @@ import autoTable from 'jspdf-autotable';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { useTenant } from '../contexts/TenantContext';
-import { formatCPF, isValidCPF } from '../utils/brDocument';
+import { formatCPF, formatPhone, isValidPhone, normalizeCPF, normalizeDigits, normalizePhone, validateCPF } from '@ktag/shared';
 import { exportRowsToXlsx } from '../utils/excel';
 import { authenticatedFetch } from '../services/authenticatedFetch';
+import { BrazilianDocumentInput } from '../components/ui/brazilian-document-input';
+import { BrazilianPhoneInput } from '../components/ui/brazilian-phone-input';
 
 const MotionDiv = motion.div as any;
 
@@ -61,9 +63,12 @@ export const Clients = () => {
   };
 
   const filteredClients = useMemo(() => {
-    return clients.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.cpf.includes(searchTerm)
+    const textTerm = searchTerm.toLowerCase().trim();
+    const digitTerm = normalizeDigits(searchTerm);
+    return clients.filter(c =>
+      c.name.toLowerCase().includes(textTerm)
+      || (digitTerm.length > 0 && normalizeDigits(c.cpf).includes(digitTerm))
+      || (digitTerm.length > 0 && normalizePhone(c.phone).includes(normalizePhone(searchTerm)))
     ).sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, searchTerm]);
 
@@ -109,8 +114,8 @@ export const Clients = () => {
           const vehs = allVehicles.filter(v => v.clientId === c.id).map(v => v.plate).join(', ');
           return {
               "Nome": c.name,
-              "CPF": c.cpf,
-              "Telefone": c.phone,
+              "CPF": formatCPF(c.cpf),
+              "Telefone": formatPhone(c.phone),
               "Email": c.email || '-',
               "Veiculos": vehs || 'Nenhum',
               "Acesso Portal": c.hasAccess ? 'Sim' : 'Não',
@@ -189,15 +194,25 @@ export const Clients = () => {
     // gerado via crypto.randomUUID() a cada submit, criava clientes duplicados.
     if (isSaving) return;
     if (!selectedClient.name || !selectedClient.cpf) return;
-    if (!isValidCPF(selectedClient.cpf)) {
-      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+    const cpfValidation = validateCPF(selectedClient.cpf);
+    if (!cpfValidation.valid) {
+      const message = !cpfValidation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : cpfValidation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.';
+      addNotification('error', 'CPF inválido', message);
+      return;
+    }
+    if (selectedClient.phone && !isValidPhone(selectedClient.phone)) {
+      addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
       return;
     }
 
     // id estável: gera UMA vez e fixa no estado, para que retry reuse o mesmo
     // doc (setDoc sobrescreve em vez de duplicar).
     const clientId = selectedClient.id || crypto.randomUUID();
-    const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
+    const cleanCpf = normalizeCPF(selectedClient.cpf);
     const previousClient = clients.find(client => client.id === clientId);
     const wasAccessEnabled = Boolean(previousClient?.hasAccess);
 
@@ -300,7 +315,7 @@ export const Clients = () => {
           <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input 
             type="text" 
-            placeholder="Buscar por nome ou CPF..." 
+            placeholder="Buscar por nome, CPF ou telefone..."
             value={searchTerm} 
             onChange={e => setSearchTerm(e.target.value)} 
             className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
@@ -515,11 +530,11 @@ export const Clients = () => {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF (Somente Números)</label>
-                                    <input type="text" required inputMode="numeric" maxLength={14} value={selectedClient.cpf || ''} onChange={e => setSelectedClient({...selectedClient, cpf: formatCPF(e.target.value)})} placeholder="000.000.000-00" className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
+                                    <BrazilianDocumentInput id="client-cpf" kind="cpf" required value={selectedClient.cpf || ''} onValueChange={cpf => setSelectedClient({...selectedClient, cpf})} placeholder="000.000.000-00" className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl font-mono text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
-                                    <input type="text" value={selectedClient.phone || ''} onChange={e => setSelectedClient({...selectedClient, phone: e.target.value})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
+                                    <BrazilianPhoneInput value={selectedClient.phone || ''} onValueChange={phone => setSelectedClient({...selectedClient, phone})} className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500" placeholder="(00) 00000-0000" />
                                 </div>
                             </div>
                             <div className="space-y-1.5">

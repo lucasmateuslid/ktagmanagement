@@ -20,7 +20,7 @@ import * as XLSX from 'xlsx';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { useTenant } from '../contexts/TenantContext';
-import { formatCPF, isValidCPF } from '../utils/brDocument';
+import { formatCPF, normalizeCPF, normalizeDigits, validateCPF } from '../utils/brDocument';
 
 const MotionDiv = motion.div as any;
 
@@ -62,7 +62,7 @@ export const Clients = () => {
   const filteredClients = useMemo(() => {
     return clients.filter(c => 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.cpf.includes(searchTerm)
+      (normalizeDigits(searchTerm).length > 0 && normalizeCPF(c.cpf).includes(normalizeDigits(searchTerm)))
     ).sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, searchTerm]);
 
@@ -191,15 +191,20 @@ export const Clients = () => {
     // gerado via crypto.randomUUID() a cada submit, criava clientes duplicados.
     if (isSaving) return;
     if (!selectedClient.name || !selectedClient.cpf) return;
-    if (!isValidCPF(selectedClient.cpf)) {
-      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+    const validation = validateCPF(selectedClient.cpf);
+    if (!validation.valid) {
+      addNotification('error', 'CPF inválido', !validation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : validation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.');
       return;
     }
 
     // id estável: gera UMA vez e fixa no estado, para que retry reuse o mesmo
     // doc (setDoc sobrescreve em vez de duplicar).
     const clientId = selectedClient.id || crypto.randomUUID();
-    const cleanCpf = selectedClient.cpf.replace(/\D/g, '');
+    const cleanCpf = normalizeCPF(selectedClient.cpf);
 
     setIsSaving(true);
     try {

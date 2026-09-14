@@ -22,6 +22,8 @@ import {
 import { GeocodingConfigModule } from './GeocodingConfigModule';
 import { WhitelabelModule } from './WhitelabelModule';
 import { AiConfigModule } from './AiConfigModule';
+import { BrazilianDocumentInput } from '../ui/brazilian-document-input';
+import { BrazilianPhoneInput } from '../ui/brazilian-phone-input';
 
 // ------------------------------------------------------------------
 // Catálogo de seções — fonte única para a sidebar interna e o painel.
@@ -258,8 +260,8 @@ export const SystemApisModule = () => {
       if ((window as any).google && (window as any).google.maps) {
         setTimeout(() => window.location.reload(), 1000);
       }
-    } catch (err) {
-      addNotification('error', 'Erro', 'Falha ao salvar configurações.');
+    } catch (err: any) {
+      addNotification('error', 'Erro', err?.message || 'Falha ao salvar configurações.');
     }
   };
 
@@ -510,15 +512,19 @@ export const SystemApisModule = () => {
                   </button>
                 )}
                 <button onClick={async () => {
-                  const env = settings.melhorEnvioEnvironment || 'sandbox';
-                  const clientId = env === 'production' ? settings.melhorEnvioProdClientId : settings.melhorEnvioSandboxClientId;
-                  const clientSecret = env === 'production' ? settings.melhorEnvioProdClientSecret : settings.melhorEnvioSandboxClientSecret;
-                  if (!clientId || !clientSecret) { addNotification('info', 'Atenção', 'Preencha Client ID e Secret antes de autorizar.'); return; }
-                  await storage.saveSettings(settings);
-                  const baseUrl = env === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
-                  const redirectUri = window.location.origin + window.location.pathname;
-                  const authorizeUrl = `${baseUrl}/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=melhorenvio_${env}&scope=shipping-calculate shipping-companies shipping-generate shipping-checkout shipping-print shipping-cancel shipping-tracking cart-read cart-write`;
-                  window.open(authorizeUrl, '_blank');
+                  try {
+                    const env = settings.melhorEnvioEnvironment || 'sandbox';
+                    const clientId = env === 'production' ? settings.melhorEnvioProdClientId : settings.melhorEnvioSandboxClientId;
+                    const clientSecret = env === 'production' ? settings.melhorEnvioProdClientSecret : settings.melhorEnvioSandboxClientSecret;
+                    if (!clientId || !clientSecret) { addNotification('info', 'Atenção', 'Preencha Client ID e Secret antes de autorizar.'); return; }
+                    await storage.saveSettings(settings);
+                    const baseUrl = env === 'production' ? 'https://melhorenvio.com.br' : 'https://sandbox.melhorenvio.com.br';
+                    const redirectUri = window.location.origin + window.location.pathname;
+                    const authorizeUrl = `${baseUrl}/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=melhorenvio_${env}&scope=shipping-calculate shipping-companies shipping-generate shipping-checkout shipping-print shipping-cancel shipping-tracking cart-read cart-write`;
+                    window.open(authorizeUrl, '_blank');
+                  } catch (error) {
+                    addNotification('error', 'Erro', error instanceof Error ? error.message : 'Falha ao validar os dados do remetente.');
+                  }
                 }} className="w-full flex-1 bg-emerald-500 hover:bg-emerald-400 text-white dark:text-black px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-xl shadow-emerald-500/20 whitespace-nowrap">
                   Autorizar ({settings.melhorEnvioEnvironment === 'production' ? 'Produção' : 'Sandbox'})
                 </button>
@@ -543,18 +549,38 @@ export const SystemApisModule = () => {
                 ].map(field => (
                   <div key={field.k} className={`space-y-2 ${field.col === 2 ? 'md:col-span-2' : ''}`}>
                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">{field.label}</label>
-                    <input type="text" disabled={!isAdmin}
-                      value={(settings.melhorEnvioSenderAddress as any)?.[field.k] || ''}
-                      onChange={e => {
-                        let v = e.target.value;
-                        if ((field as any).cleanNumber) v = v.replace(/\D/g, '');
-                        if ((field as any).upper) v = v.toUpperCase();
-                        setSettings({ ...settings, melhorEnvioSenderAddress: { ...(settings.melhorEnvioSenderAddress as any), [field.k]: v } });
-                      }}
-                      maxLength={(field as any).maxLength}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500"
-                      placeholder={field.placeholder}
-                    />
+                    {field.k === 'document' ? (
+                      <BrazilianDocumentInput
+                        id="melhor-envio-sender-document"
+                        kind="cpf-cnpj"
+                        disabled={!isAdmin}
+                        value={(settings.melhorEnvioSenderAddress as any)?.document || ''}
+                        onValueChange={document => setSettings({ ...settings, melhorEnvioSenderAddress: { ...(settings.melhorEnvioSenderAddress as any), document } })}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500"
+                        placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                      />
+                    ) : field.k === 'phone' ? (
+                      <BrazilianPhoneInput
+                        disabled={!isAdmin}
+                        value={(settings.melhorEnvioSenderAddress as any)?.phone || ''}
+                        onValueChange={phone => setSettings({ ...settings, melhorEnvioSenderAddress: { ...(settings.melhorEnvioSenderAddress as any), phone } })}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500"
+                        placeholder="(00) 00000-0000"
+                      />
+                    ) : (
+                      <input type="text" disabled={!isAdmin}
+                        value={(settings.melhorEnvioSenderAddress as any)?.[field.k] || ''}
+                        onChange={e => {
+                          let v = e.target.value;
+                          if ((field as any).cleanNumber) v = v.replace(/\D/g, '');
+                          if ((field as any).upper) v = v.toUpperCase();
+                          setSettings({ ...settings, melhorEnvioSenderAddress: { ...(settings.melhorEnvioSenderAddress as any), [field.k]: v } });
+                        }}
+                        maxLength={(field as any).maxLength}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-xs outline-none focus:border-emerald-500"
+                        placeholder={field.placeholder}
+                      />
+                    )}
                   </div>
                 ))}
               </div>

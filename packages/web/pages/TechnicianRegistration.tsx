@@ -3,7 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { storage } from '../services/storage';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, User as UserIcon, CreditCard } from 'lucide-react';
-import { formatCPF, isValidCPF } from '../utils/brDocument';
+import { validateCPF } from '@ktag/shared';
+import { BrazilianDocumentInput } from '../components/ui/brazilian-document-input';
 
 export const TechnicianRegistration = () => {
   const { user, login } = useAuth();
@@ -19,7 +20,15 @@ export const TechnicianRegistration = () => {
       setError('Por favor, preencha todos os campos.');
       return;
     }
-    if (!isValidCPF(cpf)) { setError('Informe um CPF válido. Sequências repetidas não são aceitas.'); return; }
+    const validation = validateCPF(cpf);
+    if (!validation.valid) {
+      setError(!validation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : validation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -31,8 +40,8 @@ export const TechnicianRegistration = () => {
         // onAuthStateChanged. Aqui apenas forçamos navegação.
         window.location.href = '/';
       }
-    } catch (err) {
-      setError('Erro ao salvar os dados. Tente novamente.');
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao salvar os dados. Tente novamente.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -69,12 +78,11 @@ export const TechnicianRegistration = () => {
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
                 <UserIcon size={18} />
               </div>
-              <input
-                type="text"
+              <BrazilianDocumentInput
+                id="technician-registration-cpf"
+                kind="cpf"
                 value={cpf}
-                onChange={(e) => setCpf(formatCPF(e.target.value))}
-                inputMode="numeric"
-                maxLength={14}
+                onValueChange={setCpf}
                 placeholder="000.000.000-00"
                 className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
                 required

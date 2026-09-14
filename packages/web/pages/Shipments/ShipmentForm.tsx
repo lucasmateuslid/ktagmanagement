@@ -242,7 +242,7 @@ export const ShipmentForm = () => {
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Nome do Destinatário *</label>
               <SearchableSelect
-                options={clients.map(c => ({ id: c.id, label: c.name, subLabel: c.phone || c.cpf }))}
+                options={clients.map(c => ({ id: c.id, label: c.name, subLabel: [c.phone, c.cpf].filter(Boolean).join(' · ') }))}
                 value={clients.find(c => c.name === destinatarioNome)?.id || ''}
                 onChange={(val, option) => setDestinatarioNome(option?.label || '')}
                 placeholder="Buscar cliente..."

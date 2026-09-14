@@ -17,7 +17,8 @@ import { Badge } from '../../components/ui/badge';
 import { adminApi } from '../../services/adminApi';
 import { cn } from '../../lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
-import { formatCpfCnpj, isValidCpfCnpj } from '../../utils/brDocument';
+import { validateCpfCnpj } from '@ktag/shared';
+import { BrazilianDocumentInput } from '../../components/ui/brazilian-document-input';
 
 const fmtBRL = (cents?: number) =>
   ((cents ?? 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -188,7 +189,16 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
     if (!functions) return;
     setError(''); setInfo(''); setSubmitting(true);
     try {
-      if (!hasSubscription && !isValidCpfCnpj(form.payerCpfCnpj)) throw new Error('CPF/CNPJ do pagador inválido.');
+      if (!hasSubscription) {
+        const validation = validateCpfCnpj(form.payerCpfCnpj);
+        if (!validation.valid) {
+          throw new Error(!validation.complete
+            ? 'CPF/CNPJ do pagador está incompleto.'
+            : validation.reason === 'repeated'
+              ? `${validation.type.toUpperCase()} não pode ter todos os dígitos iguais.`
+              : `${validation.type.toUpperCase()} do pagador inválido.`);
+        }
+      }
       const fnName = hasSubscription ? 'updateTenantSubscription' : 'createTenantSubscription';
       const payload: any = {
         slug: tenant.slug,
@@ -386,7 +396,7 @@ export const TenantBillingDetail = ({ tenant, onClose }: Props) => {
                   <input type="email" value={form.payerEmail} onChange={e => setForm({ ...form, payerEmail: e.target.value })} className={inputCls} required />
                 </Field>
                 <Field label="CPF / CNPJ" hint="Somente números">
-                  <input inputMode="numeric" maxLength={18} value={form.payerCpfCnpj} onChange={e => setForm({ ...form, payerCpfCnpj: formatCpfCnpj(e.target.value) })} className={inputCls} required />
+                  <BrazilianDocumentInput id="billing-payer-document" kind="cpf-cnpj" value={form.payerCpfCnpj} onValueChange={payerCpfCnpj => setForm({ ...form, payerCpfCnpj })} className={inputCls} required />
                 </Field>
                 <Field label="Período de trial" hint="0 = sem trial (cobrança imediata)">
                   <div className="flex items-center gap-2">

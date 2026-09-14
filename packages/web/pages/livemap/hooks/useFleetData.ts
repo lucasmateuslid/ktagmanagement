@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { storage } from '../../../services/storage';
 import { Tag, Vehicle, VehicleCategory, Client, User } from '../../../types';
 import { authenticatedFetch } from '../../../services/authenticatedFetch';
+import { normalizeCPF } from '@ktag/shared';
 
 export const useFleetData = (user: User | null) => {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -39,7 +40,7 @@ export const useFleetData = (user: User | null) => {
           let filteredVehicles = allVehicles;
           
           if (user?.role === 'client' && user?.cpf) {
-            const myClientData = allClients.find(c => c.cpf.replace(/\D/g, '') === user.cpf);
+            const myClientData = allClients.find(c => normalizeCPF(c.cpf) === normalizeCPF(user.cpf));
             if (myClientData) {
               filteredVehicles = allVehicles.filter(v => v.clientId === myClientData.id);
               setVehicles(filteredVehicles);

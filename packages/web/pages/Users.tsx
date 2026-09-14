@@ -14,6 +14,7 @@ import { httpsCallable } from 'firebase/functions';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DataTable, DataTableColumn } from '../components/ui/basic-data-table';
 import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
+import { normalizeDigits, normalizePhone } from '@ktag/shared';
 import { 
   Users as UsersIcon, Check, X, Trash2, Loader2, ShieldAlert, 
   Mail, Calendar, Edit2, Plus, Search, ShieldCheck, UserCog, 
@@ -85,9 +86,13 @@ export const Users = () => {
   // Filtra todos os ativos/aprovados/bloqueados baseados na busca
   const filteredAllActiveUsers = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
+    const digitTerm = normalizeDigits(searchTerm);
     return users
       .filter(u => u.status !== 'pending')
-      .filter(u => u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term));
+      .filter(u => u.name.toLowerCase().includes(term)
+        || u.email.toLowerCase().includes(term)
+        || (digitTerm.length > 0 && normalizeDigits(u.cpf).includes(digitTerm))
+        || (digitTerm.length > 0 && normalizePhone(u.phone).includes(normalizePhone(searchTerm))));
   }, [users, searchTerm]);
 
   // SEPARAÇÃO: EQUIPE vs CLIENTES
@@ -454,7 +459,7 @@ export const Users = () => {
       <div className="bg-white dark:bg-zinc-900 p-3 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input type="text" placeholder="Filtrar por nome ou e-mail..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white" />
+          <input type="text" placeholder="Filtrar por nome, e-mail, CPF ou telefone..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary-500/20 transition-all text-zinc-900 dark:text-white" />
         </div>
       </div>
 

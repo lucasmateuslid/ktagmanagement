@@ -1,4 +1,5 @@
 import { storage } from './storage';
+import { isValidPhone, toBrazilianE164 } from '@ktag/shared';
 
 class WhatsAppService {
   /**
@@ -16,17 +17,8 @@ class WhatsAppService {
         return false;
       }
 
-      if (!phone) return false;
-
-      // Limpa a formatação (ex: (11) 99999-9999 vira 11999999999)
-      let formattedPhone = phone.replace(/\D/g, '');
-      
-      // Adiciona o DDI do Brasil se não tiver
-      if (formattedPhone.length === 10 || formattedPhone.length === 11) {
-        formattedPhone = '55' + formattedPhone;
-      }
-
-      console.log(`[WhatsApp] Tentando envio p/ ${formattedPhone}...`);
+      if (!phone || !isValidPhone(phone)) return false;
+      const formattedPhone = toBrazilianE164(phone);
 
       const url = `${settings.evolutionApiUrl}/message/sendText/${settings.evolutionInstanceName}`;
       

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { hinovaService } from '../../../services/hinova';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { Vehicle, Client } from '../../../types';
+import { formatCPF, formatPhone, normalizeCPF } from '@ktag/shared';
 
 export const useHinovaLookup = (
   setFormData: React.Dispatch<React.SetStateAction<Partial<Vehicle>>>,
@@ -38,14 +39,18 @@ export const useHinovaLookup = (
             setFormData(prev => ({ ...prev, ...vehicleData }));
             setStatus('success');
             
-            const hinovaCpf = String(result.client.cpf || '').replace(/\D/g, '');
-            const existingClient = clients.find(c => String(c.cpf || '').replace(/\D/g, '') === hinovaCpf);
+            const hinovaCpf = normalizeCPF(result.client.cpf);
+            const existingClient = clients.find(c => normalizeCPF(c.cpf) === hinovaCpf);
             
             if (existingClient) {
                 setClientData(existingClient);
                 addNotification('success', 'SGA/Hinova', 'Veículo localizado e vinculado ao cliente existente.');
             } else {
-                setClientData(result.client);
+                setClientData({
+                    ...result.client,
+                    cpf: formatCPF(result.client.cpf),
+                    phone: formatPhone(result.client.phone),
+                });
                 addNotification('success', 'SGA/Hinova', 'Veículo e novo cliente importados.');
             }
         } else {

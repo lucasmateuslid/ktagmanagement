@@ -17,6 +17,15 @@ import { rateLimitService } from '../services/rateLimit';
 import { auth } from '../services/firebase';
 import { tenantDoc } from '../lib/firestore';
 import { encryption } from '../services/encryption';
+import {
+  formatCPF,
+  formatPhone,
+  isValidCPF,
+  isValidPhone,
+  normalizeCPF,
+  normalizePhone,
+  validateCPF,
+} from '@ktag/shared';
 import { loadMyIdentity, type MyIdentity } from '../services/identity';
 import { useTenant } from './TenantContext';
 
@@ -110,7 +119,8 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
     const decrypted: User = {
       ...raw,
       name: raw.name ? await encryption.decrypt(raw.name) : raw.name,
-      cpf: raw.cpf ? await encryption.decrypt(raw.cpf) : undefined,
+      cpf: raw.cpf ? formatCPF(await encryption.decrypt(raw.cpf)) : undefined,
+      phone: raw.phone ? formatPhone(raw.phone) : undefined,
     };
     return decrypted;
   };
@@ -277,14 +287,27 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
   const updateProfile = async (data: Partial<User>) => {
     if (!user || !auth) return;
 
-    const dataToUpdate: Partial<User> = { ...data };
+    if (data.cpf && !isValidCPF(data.cpf)) {
+      throw new Error(validateCPF(data.cpf).reason === 'repeated'
+        ? 'CPF não pode ter todos os dígitos iguais.'
+        : 'CPF inválido. Verifique os dígitos informados.');
+    }
+    if (data.phone && !isValidPhone(data.phone)) {
+      throw new Error('Telefone deve conter DDD e 10 ou 11 dígitos.');
+    }
+
+    const dataToUpdate: Partial<User> = {
+      ...data,
+      cpf: data.cpf ? normalizeCPF(data.cpf) : data.cpf,
+      phone: data.phone ? normalizePhone(data.phone) : data.phone,
+    };
     // Senha agora é gerenciada pelo Firebase Auth — não persiste no doc.
     delete (dataToUpdate as any).password;
 
     // Criptografa campos sensíveis antes de persistir.
     const encrypted: Record<string, any> = { ...dataToUpdate };
     if (data.name) encrypted.name = await encryption.encrypt(data.name);
-    if (data.cpf) encrypted.cpf = await encryption.encrypt(data.cpf);
+    if (dataToUpdate.cpf) encrypted.cpf = await encryption.encrypt(dataToUpdate.cpf);
 
     await updateDoc(tenantDoc(USERS_COLLECTION, user.id), encrypted);
 
@@ -299,7 +322,12 @@ export const AuthProvider = ({ children }: { children?: ReactNode }) => {
       }
     }
 
-    setUser({ ...user, ...dataToUpdate });
+    setUser({
+      ...user,
+      ...dataToUpdate,
+      cpf: dataToUpdate.cpf ? formatCPF(dataToUpdate.cpf) : dataToUpdate.cpf,
+      phone: dataToUpdate.phone ? formatPhone(dataToUpdate.phone) : dataToUpdate.phone,
+    });
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {

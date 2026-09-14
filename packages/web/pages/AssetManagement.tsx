@@ -3,6 +3,8 @@ import { AlertTriangle, Boxes, Cpu, Plus, Radio, RefreshCw, WalletCards } from '
 import { EquipmentSupplier, SimCard, Tag, Tracker } from '../types';
 import { storage } from '../services/storage';
 import { auditSimCards, auditTags, auditTrackers } from '../services/assetAudit';
+import { BrazilianPhoneInput } from '../components/ui/brazilian-phone-input';
+import { isValidPhone } from '@ktag/shared';
 
 type Kind = 'sim_card';
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -44,9 +46,14 @@ export const AssetManagement = () => {
 
   const saveOne = async () => {
     if (!form.identifier.trim()) return setMessage('Informe o ICCID.');
-    const item = buildItem(form.identifier);
-    await storage.saveSimCard(item as SimCard);
-    setMessage('Item cadastrado e incluído na auditoria.'); setShowForm(false); setForm({ ...form, identifier: '', phone: '' }); await load();
+    if (form.phone && !isValidPhone(form.phone)) return setMessage('Número da linha deve conter DDD e 10 ou 11 dígitos.');
+    try {
+      const item = buildItem(form.identifier);
+      await storage.saveSimCard(item as SimCard);
+      setMessage('Item cadastrado e incluído na auditoria.'); setShowForm(false); setForm({ ...form, identifier: '', phone: '' }); await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Falha ao salvar a linha.');
+    }
   };
 
   const addSupplier = async () => {
@@ -75,7 +82,7 @@ export const AssetManagement = () => {
 
       {showForm && <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-4"><h2 className="font-black dark:text-white">Cadastrar linha / chip</h2><p className="text-xs text-zinc-500">Cadastre a linha antes de vinculá-la a um equipamento na aba Rastreadores. Importações em lote de equipamentos ficam centralizadas naquela aba.</p></div>
-        <div className="grid gap-3 md:grid-cols-3"><input className={inputClass} placeholder="ICCID" value={form.identifier} onChange={(e)=>setForm({...form,identifier:e.target.value})}/><input className={inputClass} placeholder="Número da linha" value={form.phone} onChange={(e)=>setForm({...form,phone:e.target.value})}/><input className={inputClass} type="number" step="0.01" placeholder="Custo mensal" value={form.cost} onChange={(e)=>setForm({...form,cost:e.target.value})}/><select className={inputClass} value={form.supplierId} onChange={(e)=>setForm({...form,supplierId:e.target.value})}><option value="">Sem fornecedor</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><select className={inputClass} value={form.provider} onChange={(e)=>setForm({...form,provider:e.target.value})}>{['smartsim','allcom','algar','arqia','arya','smartgps','other'].map(p=><option key={p}>{p}</option>)}</select><div className="flex gap-2"><button onClick={() => void saveOne()} className="flex-1 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-black uppercase text-white dark:bg-white dark:text-black">Salvar linha</button><button onClick={() => void addSupplier()} className="rounded-xl border px-3 text-xs font-bold dark:border-zinc-700">Fornecedor +</button></div></div>
+        <div className="grid gap-3 md:grid-cols-3"><input className={inputClass} placeholder="ICCID" value={form.identifier} onChange={(e)=>setForm({...form,identifier:e.target.value})}/><BrazilianPhoneInput className={inputClass} placeholder="Número da linha" value={form.phone} onValueChange={phone=>setForm({...form,phone})}/><input className={inputClass} type="number" step="0.01" placeholder="Custo mensal" value={form.cost} onChange={(e)=>setForm({...form,cost:e.target.value})}/><select className={inputClass} value={form.supplierId} onChange={(e)=>setForm({...form,supplierId:e.target.value})}><option value="">Sem fornecedor</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><select className={inputClass} value={form.provider} onChange={(e)=>setForm({...form,provider:e.target.value})}>{['smartsim','allcom','algar','arqia','arya','smartgps','other'].map(p=><option key={p}>{p}</option>)}</select><div className="flex gap-2"><button onClick={() => void saveOne()} className="flex-1 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-black uppercase text-white dark:bg-white dark:text-black">Salvar linha</button><button onClick={() => void addSupplier()} className="rounded-xl border px-3 text-xs font-bold dark:border-zinc-700">Fornecedor +</button></div></div>
       </section>}
 
       <section className="grid gap-5 xl:grid-cols-2">

@@ -4,6 +4,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { Schedule, Technician, User, Company } from '../../../types';
 import { calculateServiceValue, calculateScheduleTotal } from '../utils/scheduleFinancialUtils';
 import { exportRowsToXlsx } from '../../../utils/excel';
+import { formatPhone } from '@ktag/shared';
 
 export const useScheduleExport = (
   filteredList: Schedule[],
@@ -195,6 +196,7 @@ export const useScheduleExport = (
                   "Placa": s.vehiclePlate,
                   "Modelo": s.vehicleModel,
                   "Cliente": s.clientName || '-',
+                  "Telefone Cliente": s.clientPhone ? formatPhone(s.clientPhone) : '-',
                   "Serviço": s.serviceType,
                   "Status": s.status,
                   "Técnico": tech?.name || '-',

@@ -6,6 +6,7 @@ import { storage } from '../services/storage';
 import { Shipment } from '../types';
 import { db } from '../services/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { isValidPhone, isValidCpfCnpj, normalizeDigits, normalizePhone } from '@ktag/shared';
 
 export const MelhorEnvioFlowModal = ({ 
   isOpen, 
@@ -126,13 +127,24 @@ export const MelhorEnvioFlowModal = ({
 
   const handleAddToCart = async () => {
     if (!selectedOption) return;
+    if (!isValidCpfCnpj(fromAddress.document)) {
+      addNotification('error', 'Documento inválido', 'Corrija o CPF/CNPJ do remetente nas configurações do Melhor Envio.');
+      return;
+    }
+    if (!isValidPhone(fromAddress.phone)) {
+      addNotification('error', 'Telefone inválido', 'Corrija o telefone do remetente nas configurações do Melhor Envio.');
+      return;
+    }
     setLoading(true);
     try {
       const payload = {
         service: selectedOption.id,
         agency: selectedOption.company?.name?.toLowerCase().includes('jadlog') ? 1 : null, // Simplificado, ideal é buscar agencia
         from: {
-          ...fromAddress, postal_code: fromPostalCode
+          ...fromAddress,
+          document: normalizeDigits(fromAddress.document),
+          phone: normalizePhone(fromAddress.phone),
+          postal_code: fromPostalCode,
         },
         to: {
           name: shipment?.destinatario?.nome || 'Destinatário',

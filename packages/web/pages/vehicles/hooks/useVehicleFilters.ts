@@ -1,6 +1,7 @@
 
 import { useState, useMemo } from 'react';
 import { Vehicle, Client } from '../../../types';
+import { normalizeDigits, normalizePhone } from '@ktag/shared';
 
 export const useVehicleFilters = (vehicles: Vehicle[], clients: Client[]) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -11,14 +12,18 @@ export const useVehicleFilters = (vehicles: Vehicle[], clients: Client[]) => {
   const [tagFilter, setTagFilter] = useState<string>('all');
 
   const filteredVehicles = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
+    const digitTerm = normalizeDigits(searchTerm);
+    const phoneTerm = normalizePhone(searchTerm);
     return vehicles.filter(v => {
       // Search term filter
-      const term = searchTerm.toLowerCase().trim();
       const client = clients.find(c => c.id === v.clientId);
       const matchesSearch = !term || (
         v.plate.toLowerCase().includes(term) || 
         v.model.toLowerCase().includes(term) || 
-        client?.name.toLowerCase().includes(term)
+        client?.name.toLowerCase().includes(term) ||
+        (digitTerm.length > 0 && normalizeDigits(client?.cpf).includes(digitTerm)) ||
+        (phoneTerm.length > 0 && normalizePhone(client?.phone).includes(phoneTerm))
       );
 
       // Status filter

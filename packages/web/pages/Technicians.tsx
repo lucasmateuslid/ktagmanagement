@@ -8,6 +8,8 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { securityService } from '../services/security';
 import { Checkbox } from '../components/ui/checkbox';
 import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
+import { isValidPhone } from '@ktag/shared';
+import { BrazilianPhoneInput } from '../components/ui/brazilian-phone-input';
 import { Users, Plus, Trash2, CheckCircle, XCircle, Save, Phone, Palette, Calendar, Edit2, BarChart3, X, Filter, Wrench, Activity, RotateCcw, DollarSign, ClipboardCheck, CalendarOff, Layers, Radio, Tag } from 'lucide-react';
 
 // --- COMPONENTE MODAL DE DETALHES DO TÉCNICO ---
@@ -192,6 +194,10 @@ export const Technicians = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !formData.email) return;
+    if (!isValidPhone(formData.phone)) {
+        addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
+        return;
+    }
 
     const techId = formData.id || crypto.randomUUID();
 
@@ -412,7 +418,7 @@ export const Technicians = () => {
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefone</label>
-                        <input type="text" required value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="(00) 00000-0000" />
+                        <BrazilianPhoneInput required value={formData.phone || ''} onValueChange={phone => setFormData({...formData, phone})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none" placeholder="(00) 00000-0000" />
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tipo de Atendimento</label>

@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { storage } from '../services/storage';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, User as UserIcon, CreditCard } from 'lucide-react';
-import { formatCPF, isValidCPF } from '../utils/brDocument';
+import { formatCPF, validateCPF } from '../utils/brDocument';
 
 export const TechnicianRegistration = () => {
   const { user, login } = useAuth();
@@ -19,7 +19,15 @@ export const TechnicianRegistration = () => {
       setError('Por favor, preencha todos os campos.');
       return;
     }
-    if (!isValidCPF(cpf)) { setError('Informe um CPF válido. Sequências repetidas não são aceitas.'); return; }
+    const validation = validateCPF(cpf);
+    if (!validation.valid) {
+      setError(!validation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : validation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.');
+      return;
+    }
 
     setLoading(true);
     setError('');

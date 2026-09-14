@@ -5,6 +5,9 @@ import { X, Save, Trash2, Calendar, FileText, Download, CheckSquare, Square, Dol
 import { ConfirmModal } from './ConfirmModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { validateCPF } from '@ktag/shared';
+import { BrazilianDocumentInput } from './ui/brazilian-document-input';
+import { useNotification } from '../contexts/NotificationContext';
 
 interface Props {
   technician: Technician;
@@ -14,6 +17,7 @@ interface Props {
 }
 
 export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose, onUpdate }: Props) => {
+  const { addNotification } = useNotification();
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -102,12 +106,22 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
   // NOVO CÓDIGO - FIM
 
   const handleSaveTechnician = async () => {
-    await storage.saveTechnician({
-      ...technician,
-      pixKey,
-      cpf
-    });
-    onUpdate();
+    const validation = validateCPF(cpf);
+    if (cpf && !validation.valid) {
+      addNotification('error', 'CPF inválido', !validation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : validation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.');
+      return;
+    }
+    try {
+      await storage.saveTechnician({ ...technician, pixKey, cpf });
+      addNotification('success', 'Dados salvos', 'Os dados financeiros do técnico foram atualizados.');
+      onUpdate();
+    } catch (error: any) {
+      addNotification('error', 'Erro ao salvar', error?.message || 'Não foi possível atualizar o técnico.');
+    }
   };
 
   const calculateBaseAmount = (serviceType: string, deviceType: string | undefined, rates: any) => {
@@ -532,11 +546,12 @@ export const TechnicianFinancialDetailsModal = ({ technician, schedules, onClose
                 </div>
                 <div className="flex-1 min-w-[120px]">
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">CPF</label>
-                  <input 
-                    type="text" 
+                  <BrazilianDocumentInput
+                    id="technician-financial-cpf"
+                    kind="cpf"
                     value={cpf} 
-                    onChange={e => setCpf(e.target.value)} 
-                    placeholder="CPF"
+                    onValueChange={setCpf}
+                    placeholder="000.000.000-00"
                     className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl px-3 py-2 text-sm font-bold outline-none border border-transparent focus:border-primary-500" 
                   />
                 </div>

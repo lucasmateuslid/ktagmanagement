@@ -2,6 +2,7 @@
 import { useState, useMemo } from 'react';
 import { Schedule, Technician, User } from '../../../types';
 import { useAuth } from '../../../contexts/AuthContext';
+import { normalizePhone } from '@ktag/shared';
 
 export const useScheduleFilters = (
   schedules: Schedule[],
@@ -33,6 +34,7 @@ export const useScheduleFilters = (
     // 1. Search Text
     if (searchTerm) {
         const lower = searchTerm.toLowerCase();
+        const phoneTerm = normalizePhone(searchTerm);
         filtered = filtered.filter(s => 
             s.vehiclePlate.toLowerCase().includes(lower) || 
             s.vehicleModel.toLowerCase().includes(lower) ||
@@ -41,7 +43,8 @@ export const useScheduleFilters = (
             s.locationAddress.toLowerCase().includes(lower) ||
             s.osNumber?.toLowerCase().includes(lower) ||
             s.installedImei?.toLowerCase().includes(lower) ||
-            s.installedTagImei?.toLowerCase().includes(lower)
+            s.installedTagImei?.toLowerCase().includes(lower) ||
+            (phoneTerm.length > 0 && normalizePhone(s.clientPhone).includes(phoneTerm))
         );
     }
 

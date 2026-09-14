@@ -9,6 +9,8 @@ import { LocationPicker } from '../components/LocationPicker';
 import { Calendar, Clock, Car, User as UserIcon, CreditCard, Search, Loader2, Phone, Lock, ChevronDown, Check, Building2, ClipboardCheck, Wallet, Send, X, Tag, MapPin } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { TechnicianAvailabilityAlert } from '../components/TechnicianAvailabilityAlert';
+import { isValidPhone } from '@ktag/shared';
+import { BrazilianPhoneInput } from '../components/ui/brazilian-phone-input';
 
 
 export const ScheduleRequest = () => {
@@ -214,6 +216,11 @@ export const ScheduleRequest = () => {
         return;
     }
 
+    if (formData.clientPhone && !isValidPhone(formData.clientPhone)) {
+        addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
+        return;
+    }
+
     if (formData.needsInspection === undefined) {
         addNotification('error', 'Campos Obrigatórios', 'Informe se o veículo necessita de vistoria.');
         return;
@@ -327,8 +334,8 @@ export const ScheduleRequest = () => {
         await storage.saveSchedule(schedule);
         addNotification('success', 'Solicitação Enviada', `Agendamento criado com sucesso.`);
         navigate('/schedules'); 
-    } catch (err) {
-        addNotification('error', 'Erro', 'Falha ao enviar solicitação.');
+    } catch (err: any) {
+        addNotification('error', 'Erro', err?.message || 'Falha ao enviar solicitação.');
     } finally {
         setLoading(false);
     }
@@ -485,7 +492,7 @@ export const ScheduleRequest = () => {
                             </div>
                             <div>
                                 <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Telefone</label>
-                                <input type="text" value={formData.clientPhone || ''} onChange={e => setFormData(prev => ({...prev, clientPhone: e.target.value}))} className="w-full px-4 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none mt-1" placeholder="(00) 00000-0000" />
+                                <BrazilianPhoneInput value={formData.clientPhone || ''} onValueChange={clientPhone => setFormData(prev => ({...prev, clientPhone}))} className="w-full px-4 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none mt-1" placeholder="(00) 00000-0000" />
                             </div>
                         </div>
                     </div>

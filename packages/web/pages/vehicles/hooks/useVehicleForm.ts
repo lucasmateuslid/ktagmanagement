@@ -4,7 +4,7 @@ import { Vehicle, Client, User } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { validateBrazilianPlate } from '../utils/plateValidation';
-import { isValidCPF } from '../../../utils/brDocument';
+import { isValidPhone, normalizeCPF, validateCPF } from '@ktag/shared';
 import { authenticatedFetch } from '../../../services/authenticatedFetch';
 
 export const useVehicleForm = (
@@ -23,9 +23,9 @@ export const useVehicleForm = (
   // Auto-fill existing client data
   const checkExistingClient = useCallback((cpf: string) => {
     if (!cpf) return;
-    const cleanCpf = cpf.replace(/\D/g, '');
+    const cleanCpf = normalizeCPF(cpf);
     if (cleanCpf.length < 11) return;
-    const existing = clients.find(c => c.cpf.replace(/\D/g, '') === cleanCpf);
+    const existing = clients.find(c => normalizeCPF(c.cpf) === cleanCpf);
     if (existing) {
         setClientData(existing);
         addNotification('info', 'Banco de Dados', `Cliente ${existing.name} já cadastrado. Dados carregados.`);
@@ -54,8 +54,18 @@ export const useVehicleForm = (
       return;
     }
     if (!formData.plate || !formData.model || !clientData.cpf) return;
-    if (!isValidCPF(clientData.cpf)) {
-      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+    const cpfValidation = validateCPF(clientData.cpf);
+    if (!cpfValidation.valid) {
+      const message = !cpfValidation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : cpfValidation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.';
+      addNotification('error', 'CPF inválido', message);
+      return;
+    }
+    if (clientData.phone && !isValidPhone(clientData.phone)) {
+      addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
       return;
     }
 
@@ -70,8 +80,8 @@ export const useVehicleForm = (
       }
     }
 
-    const cleanCpf = clientData.cpf.replace(/\D/g, '');
-    const existingClient = clients.find(c => c.cpf.replace(/\D/g, '') === cleanCpf);
+    const cleanCpf = normalizeCPF(clientData.cpf);
+    const existingClient = clients.find(c => normalizeCPF(c.cpf) === cleanCpf);
 
     // GUARD DE INTEGRIDADE (anti cross-cliente):
     // Se o formulário ainda carrega o id de um cliente cujo CPF NÃO é o digitado,
@@ -79,7 +89,7 @@ export const useVehicleForm = (
     // pessoa. Bloqueia e orienta a corrigir antes de sobrescrever.
     if (clientData.id) {
       const loaded = clients.find(c => c.id === clientData.id);
-      if (loaded && loaded.cpf.replace(/\D/g, '') !== cleanCpf) {
+      if (loaded && normalizeCPF(loaded.cpf) !== cleanCpf) {
         addNotification('error', 'Conflito de Cliente',
           'O CPF informado não corresponde ao cliente carregado no formulário. Limpe os dados do cliente e preencha novamente para não sobrescrever outro cadastro.');
         return;

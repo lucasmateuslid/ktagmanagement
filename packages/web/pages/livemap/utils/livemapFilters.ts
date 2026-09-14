@@ -1,5 +1,6 @@
 
 import { Vehicle, Tag, Client, LocationHistory, User } from '../../../types';
+import { normalizeDigits, normalizePhone } from '@ktag/shared';
 
 type FleetFilter = 'all' | 'online' | 'offline';
 
@@ -22,6 +23,8 @@ export const filterFleetList = (
     user: User | null
 ) => {
     const term = searchTerm.toLowerCase().trim();
+    const digitTerm = normalizeDigits(searchTerm);
+    const phoneTerm = normalizePhone(searchTerm);
 
     if (!term) {
         // Se não tem busca, retorna apenas veículos (comportamento padrão)
@@ -49,7 +52,11 @@ export const filterFleetList = (
             v.plate.toLowerCase().includes(term) ||
             v.model.toLowerCase().includes(term) ||
             (tag && (tag.name.toLowerCase().includes(term) || tag.accessoryId.toLowerCase().includes(term))) ||
-            (client && client.name.toLowerCase().includes(term))
+            (client && (
+                client.name.toLowerCase().includes(term) ||
+                (digitTerm.length > 0 && normalizeDigits(client.cpf).includes(digitTerm)) ||
+                (phoneTerm.length > 0 && normalizePhone(client.phone).includes(phoneTerm))
+            ))
         );
     });
 

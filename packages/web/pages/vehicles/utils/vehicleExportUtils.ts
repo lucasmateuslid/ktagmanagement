@@ -1,5 +1,6 @@
 
 import { Vehicle, Tag, Company, VehicleCategory, Client } from '../../../types';
+import { formatCPF } from '@ktag/shared';
 
 export const mapVehiclesToExportData = (
   vehicles: Vehicle[],
@@ -22,7 +23,7 @@ export const mapVehiclesToExportData = (
       'Categoria': category?.name || '-',
       'Regional': company?.name || '-',
       'Cliente': client?.name || 'Sem Vínculo',
-      'CPF Cliente': client?.cpf || '-',
+      'CPF Cliente': client?.cpf ? formatCPF(client.cpf) : '-',
       'Equipamento': v.installationType === 'tag_tracker' ? 'Tag + Rastreador' : 'Só Tag',
       'Propriedade': v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato',
       'ID Tag': tag?.accessoryId || '-',

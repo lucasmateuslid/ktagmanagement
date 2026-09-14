@@ -2,6 +2,157 @@
 // K-Tag domain types ficam em packages/web/types.ts até migração completa.
 // Aqui vivem tipos agnósticos de plataforma (Traccar, API contracts).
 
+export type BrazilianDocumentType = 'cpf' | 'cnpj';
+export type BrazilianDocumentValidationReason =
+  | 'empty'
+  | 'incomplete'
+  | 'invalid-length'
+  | 'repeated'
+  | 'invalid-check-digits'
+  | 'valid';
+
+export interface BrazilianDocumentValidation {
+  type: BrazilianDocumentType;
+  digits: string;
+  complete: boolean;
+  valid: boolean;
+  reason: BrazilianDocumentValidationReason;
+}
+
+/** Remove qualquer caractere não numérico e limita o tamanho quando solicitado. */
+export function normalizeDigits(value: unknown, maxLength?: number): string {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return maxLength === undefined ? digits : digits.slice(0, maxLength);
+}
+
+export const documentDigits = (value: unknown): string => normalizeDigits(value);
+export const normalizeCPF = (value: unknown): string => normalizeDigits(value);
+export const normalizeCNPJ = (value: unknown): string => normalizeDigits(value);
+
+/** Verdadeiro somente quando TODOS os dígitos são iguais. */
+export function isFullyRepeatedDigits(value: unknown): boolean {
+  const digits = normalizeDigits(value);
+  return digits.length > 1 && /^(\d)\1+$/.test(digits);
+}
+
+export function validateCPF(value: unknown): BrazilianDocumentValidation {
+  const cpf = normalizeCPF(value);
+  if (!cpf) return { type: 'cpf', digits: cpf, complete: false, valid: false, reason: 'empty' };
+  if (cpf.length < 11) return { type: 'cpf', digits: cpf, complete: false, valid: false, reason: 'incomplete' };
+  if (cpf.length > 11) return { type: 'cpf', digits: cpf, complete: true, valid: false, reason: 'invalid-length' };
+  if (isFullyRepeatedDigits(cpf)) return { type: 'cpf', digits: cpf, complete: true, valid: false, reason: 'repeated' };
+
+  for (let size = 9; size <= 10; size += 1) {
+    let sum = 0;
+    for (let index = 0; index < size; index += 1) {
+      sum += Number(cpf[index]) * (size + 1 - index);
+    }
+    const checkDigit = ((sum * 10) % 11) % 10;
+    if (checkDigit !== Number(cpf[size])) {
+      return { type: 'cpf', digits: cpf, complete: true, valid: false, reason: 'invalid-check-digits' };
+    }
+  }
+
+  return { type: 'cpf', digits: cpf, complete: true, valid: true, reason: 'valid' };
+}
+
+export function validateCNPJ(value: unknown): BrazilianDocumentValidation {
+  const cnpj = normalizeCNPJ(value);
+  if (!cnpj) return { type: 'cnpj', digits: cnpj, complete: false, valid: false, reason: 'empty' };
+  if (cnpj.length < 14) return { type: 'cnpj', digits: cnpj, complete: false, valid: false, reason: 'incomplete' };
+  if (cnpj.length > 14) return { type: 'cnpj', digits: cnpj, complete: true, valid: false, reason: 'invalid-length' };
+  if (isFullyRepeatedDigits(cnpj)) return { type: 'cnpj', digits: cnpj, complete: true, valid: false, reason: 'repeated' };
+
+  const calculateCheckDigit = (length: 12 | 13): number => {
+    const weights = length === 12
+      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const remainder = weights.reduce(
+      (sum, weight, index) => sum + Number(cnpj[index]) * weight,
+      0,
+    ) % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  const valid = calculateCheckDigit(12) === Number(cnpj[12])
+    && calculateCheckDigit(13) === Number(cnpj[13]);
+  return {
+    type: 'cnpj',
+    digits: cnpj,
+    complete: true,
+    valid,
+    reason: valid ? 'valid' : 'invalid-check-digits',
+  };
+}
+
+export function validateCpfCnpj(value: unknown): BrazilianDocumentValidation {
+  const digits = documentDigits(value);
+  if (digits.length <= 11) return validateCPF(digits);
+  return validateCNPJ(digits);
+}
+
+export const isValidCPF = (value: unknown): boolean => validateCPF(value).valid;
+export const isValidCNPJ = (value: unknown): boolean => validateCNPJ(value).valid;
+export const isValidCpfCnpj = (value: unknown): boolean => validateCpfCnpj(value).valid;
+
+export function formatCPF(value: unknown): string {
+  const digits = normalizeCPF(value).slice(0, 11);
+  return digits
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1-$2');
+}
+
+export function formatCNPJ(value: unknown): string {
+  const digits = normalizeCNPJ(value).slice(0, 14);
+  return digits
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\/\d{4})(\d)/, '$1-$2');
+}
+
+export function formatCpfCnpj(value: unknown): string {
+  const digits = documentDigits(value).slice(0, 14);
+  return digits.length <= 11 ? formatCPF(digits) : formatCNPJ(digits);
+}
+
+/**
+ * Normaliza telefone brasileiro para DDD+número. Aceita o DDI 55 em entradas
+ * legadas/E.164 e evita confundi-lo com o DDD 55 em números nacionais.
+ */
+export function normalizePhone(value: unknown): string {
+  const raw = String(value ?? '');
+  let digits = normalizeDigits(raw);
+  const explicitlyInternational = /^\s*\+\s*55(?:\D|$)/.test(raw);
+  if (digits.startsWith('55') && (explicitlyInternational || digits.length > 11)) {
+    digits = digits.slice(2);
+  }
+  return digits;
+}
+
+export function isValidPhone(value: unknown): boolean {
+  const length = normalizePhone(value).length;
+  return length === 10 || length === 11;
+}
+
+export function formatPhone(value: unknown): string {
+  const digits = normalizePhone(value).slice(0, 11);
+  if (!digits) return '';
+  if (digits.length <= 2) return `(${digits}`;
+
+  const areaCode = digits.slice(0, 2);
+  const number = digits.slice(2);
+  if (number.length <= 4) return `(${areaCode}) ${number}`;
+  const prefixLength = digits.length === 11 ? 5 : 4;
+  return `(${areaCode}) ${number.slice(0, prefixLength)}-${number.slice(prefixLength)}`;
+}
+
+export function toBrazilianE164(value: unknown): string {
+  const digits = normalizePhone(value);
+  return isValidPhone(digits) ? `55${digits}` : digits;
+}
+
 export interface TraccarPosition {
   id: number;
   deviceId: number;

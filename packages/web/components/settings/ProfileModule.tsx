@@ -4,6 +4,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AvatarSelector } from '../AvatarSelector';
+import { isValidPhone, validateCPF } from '@ktag/shared';
+import { BrazilianDocumentInput } from '../ui/brazilian-document-input';
+import { BrazilianPhoneInput } from '../ui/brazilian-phone-input';
 
 const getRoleStyle = (role?: string) => {
     switch (role) {
@@ -48,6 +51,19 @@ export const ProfileModule = () => {
 
     const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
+        const cpfValidation = validateCPF(profileForm.cpf);
+        if (profileForm.cpf && !cpfValidation.valid) {
+            addNotification('error', 'CPF inválido', !cpfValidation.complete
+                ? 'CPF deve conter exatamente 11 dígitos.'
+                : cpfValidation.reason === 'repeated'
+                    ? 'CPF não pode ter todos os dígitos iguais.'
+                    : 'CPF inválido. Verifique os dígitos informados.');
+            return;
+        }
+        if (profileForm.phone && !isValidPhone(profileForm.phone)) {
+            addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
+            return;
+        }
         setLoading(true);
         try {
             await updateProfile({
@@ -185,14 +201,14 @@ export const ProfileModule = () => {
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Celular / WhatsApp</label>
                                     <div className="relative">
                                         <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><Phone size={16} /></div>
-                                        <input type="tel" value={profileForm.phone} onChange={e => setProfileForm({...profileForm, phone: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-colors" />
+                                        <BrazilianPhoneInput value={profileForm.phone} onValueChange={phone => setProfileForm({...profileForm, phone})} className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-colors" placeholder="(00) 00000-0000" />
                                     </div>
                                 </div>
                                 <div className="space-y-1 md:col-span-2">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">CPF</label>
                                     <div className="relative">
                                         <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><Fingerprint size={16} /></div>
-                                        <input type="text" value={profileForm.cpf} onChange={e => setProfileForm({...profileForm, cpf: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-colors" />
+                                        <BrazilianDocumentInput id="profile-cpf" kind="cpf" value={profileForm.cpf} onValueChange={cpf => setProfileForm({...profileForm, cpf})} className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-sm outline-none focus:border-primary-500 transition-colors" placeholder="000.000.000-00" />
                                     </div>
                                 </div>
                             </div>

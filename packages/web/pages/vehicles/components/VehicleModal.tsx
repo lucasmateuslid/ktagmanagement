@@ -5,7 +5,8 @@ import { Vehicle, Client, Company, VehicleCategory, Tag, DeviceType } from '../.
 import { getPlateInputStatus, validateBrazilianPlate } from '../utils/plateValidation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { formatCPF } from '../../../utils/brDocument';
+import { BrazilianDocumentInput } from '../../../components/ui/brazilian-document-input';
+import { BrazilianPhoneInput } from '../../../components/ui/brazilian-phone-input';
 
 interface VehicleModalProps {
   onClose: () => void;
@@ -403,14 +404,14 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
 
                         <div className="space-y-2">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">CPF</label>
-                            <input type="text" required inputMode="numeric" maxLength={14} value={clientData.cpf || ''} onBlur={(e) => onCheckClient(e.target.value)} onChange={e => setClientData({...clientData, cpf: formatCPF(e.target.value)})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-mono font-bold text-xs outline-none" placeholder="000.000.000-00" />
+                            <BrazilianDocumentInput id="vehicle-client-cpf" kind="cpf" required value={clientData.cpf || ''} onBlur={(e) => onCheckClient(e.currentTarget.value)} onValueChange={cpf => setClientData({...clientData, cpf})} className="w-full px-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-mono font-bold text-xs outline-none" placeholder="000.000.000-00" />
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TELEFONE</label>
                             <div className="relative">
                                 <Phone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-200" />
-                                <input type="text" value={clientData.phone || ''} onChange={e => setClientData({...clientData, phone: e.target.value})} className="w-full pl-11 pr-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="(84) 99999-9999" />
+                                <BrazilianPhoneInput value={clientData.phone || ''} onValueChange={phone => setClientData({...clientData, phone})} className="w-full pl-11 pr-4 h-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold text-xs outline-none" placeholder="(84) 99999-9999" />
                             </div>
                         </div>
 

@@ -16,6 +16,14 @@ const dns = require("node:dns").promises;
 const net = require("node:net");
 const crypto = require("node:crypto");
 const asaas = require("./asaas");
+const {
+  isValidCPF,
+  isValidCpfCnpj,
+  isValidPhone,
+  normalizeCPF,
+  normalizeDigits,
+  normalizePhone,
+} = require("./brData");
 // K-TAG (api.gps308.com): helpers puros (bateria/lote) + cripto server-side
 // (espelho de packages/web/services/encryption.ts) para ler/gravar as chaves das
 // tags no MESMO formato cifrado que a UI usa.
@@ -1273,36 +1281,6 @@ function generateRandomPassword() {
   return result;
 }
 
-function isRepeatedDocument(digits) {
-  return /^(\d)\1+$/.test(digits);
-}
-function isValidCpf(value) {
-  const cpf = String(value || '').replace(/\D/g, '');
-  if (cpf.length !== 11 || isRepeatedDocument(cpf)) return false;
-  for (let size = 9; size <= 10; size++) {
-    let sum = 0;
-    for (let i = 0; i < size; i++) sum += Number(cpf[i]) * (size + 1 - i);
-    if ((sum * 10) % 11 % 10 !== Number(cpf[size])) return false;
-  }
-  return true;
-}
-function isValidCnpj(value) {
-  const cnpj = String(value || '').replace(/\D/g, '');
-  if (cnpj.length !== 14 || isRepeatedDocument(cnpj)) return false;
-  const calc = (length) => {
-    const weights = length === 12
-      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    const remainder = weights.reduce((sum, weight, i) => sum + Number(cnpj[i]) * weight, 0) % 11;
-    return remainder < 2 ? 0 : 11 - remainder;
-  };
-  return calc(12) === Number(cnpj[12]) && calc(13) === Number(cnpj[13]);
-}
-function isValidCpfCnpj(value) {
-  const digits = String(value || '').replace(/\D/g, '');
-  return digits.length === 11 ? isValidCpf(digits) : digits.length === 14 ? isValidCnpj(digits) : false;
-}
-
 /**
  * Admin do tenant cria um novo usuário (Auth + doc) com senha temporária.
  * Retorna { uid, email, password } — frontend exibe e envia ao colaborador.
@@ -1315,8 +1293,11 @@ exports.createTenantUser = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'email e name são obrigatórios.');
   }
   const cleanEmail = String(email).toLowerCase().trim();
-  if (cpf && !isValidCpf(cpf)) {
+  if (cpf && !isValidCPF(cpf)) {
     throw new HttpsError('invalid-argument', 'CPF inválido.');
+  }
+  if (phone && !isValidPhone(phone)) {
+    throw new HttpsError('invalid-argument', 'Telefone deve conter DDD e 10 ou 11 dígitos.');
   }
   const password = generateRandomPassword();
 
@@ -1348,8 +1329,8 @@ exports.createTenantUser = onCall(async (request) => {
     status: 'approved',
     tenantId,
     customRoleId: customRoleId || undefined,
-    cpf: cpf || undefined,
-    phone: phone || undefined,
+    cpf: cpf ? normalizeCPF(cpf) : undefined,
+    phone: phone ? normalizePhone(phone) : undefined,
     pixKey: pixKey || undefined,
     technicianId: technicianId || undefined,
     createdAt: Date.now(),
@@ -1405,12 +1386,12 @@ exports.resetTenantUserPassword = onCall(async (request) => {
  */
 exports.provisionClientAccess = onCall(async (request) => {
   const { tenantId, callerUid } = await requireTenantAdmin(request);
-  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
+  const cpf = normalizeCPF(request.data?.cpf);
   const name = String(request.data?.name || '').trim();
   const clientId = String(request.data?.clientId || '').trim();
   const resetInitialPassword = request.data?.resetInitialPassword === true;
 
-  if (!isValidCpf(cpf)) {
+  if (!isValidCPF(cpf)) {
     throw new HttpsError('invalid-argument', 'CPF inválido.');
   }
   if (!name) throw new HttpsError('invalid-argument', 'name é obrigatório.');
@@ -1486,8 +1467,8 @@ exports.provisionClientAccess = onCall(async (request) => {
 /** Revoga somente o acesso deste cliente a este tenant, sem apagar a conta global. */
 exports.revokeClientAccess = onCall(async (request) => {
   const { tenantId, callerUid } = await requireTenantAdmin(request);
-  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
-  if (!isValidCpf(cpf)) throw new HttpsError('invalid-argument', 'CPF inválido.');
+  const cpf = normalizeCPF(request.data?.cpf);
+  if (!isValidCPF(cpf)) throw new HttpsError('invalid-argument', 'CPF inválido.');
   const email = `${cpf}@client.ktag`;
   let userRecord;
   try { userRecord = await admin.auth().getUserByEmail(email); }
@@ -1508,9 +1489,9 @@ exports.revokeClientAccess = onCall(async (request) => {
 /** Redefine no Firebase Auth a senha de um cliente pertencente ao tenant. */
 exports.resetClientPassword = onCall(async (request) => {
   const { tenantId, callerUid } = await requireTenantAdmin(request);
-  const cpf = String(request.data?.cpf || '').replace(/\D/g, '');
+  const cpf = normalizeCPF(request.data?.cpf);
   const mode = request.data?.mode === 'default' ? 'default' : 'cpf';
-  if (!isValidCpf(cpf)) {
+  if (!isValidCPF(cpf)) {
     throw new HttpsError('invalid-argument', 'CPF inválido.');
   }
 
@@ -2090,6 +2071,12 @@ async function createSubscriptionForTenant(slug, data, callerUid) {
   if (!isValidCpfCnpj(payer.cpfCnpj)) {
     throw new HttpsError('invalid-argument', 'CPF/CNPJ do pagador inválido.');
   }
+  if (payer.phone && !isValidPhone(payer.phone)) {
+    throw new HttpsError('invalid-argument', 'Telefone do pagador deve conter DDD e 10 ou 11 dígitos.');
+  }
+
+  const payerDocument = normalizeDigits(payer.cpfCnpj, 14);
+  const payerPhone = payer.phone ? normalizePhone(payer.phone) : undefined;
 
   const cycle = data.cycle || 'MONTHLY';
   const billingType = data.billingType || 'UNDEFINED';
@@ -2107,8 +2094,8 @@ async function createSubscriptionForTenant(slug, data, callerUid) {
   const customer = await asaas.findOrCreateCustomer(apiKey, {
     name: payer.name,
     email: payer.email,
-    cpfCnpj: String(payer.cpfCnpj).replace(/\D/g, ''),
-    phone: payer.phone,
+    cpfCnpj: payerDocument,
+    phone: payerPhone,
     externalReference: slug,
   });
 
@@ -2138,7 +2125,7 @@ async function createSubscriptionForTenant(slug, data, callerUid) {
     nextDueDate: nextDueDateMs,
     asaasCustomerId: customer.id,
     asaasSubscriptionId: sub.id,
-    payerCpfCnpj: payer.cpfCnpj,
+    payerCpfCnpj: payerDocument,
     payerName: payer.name,
     payerEmail: payer.email,
     lastSyncedAt: Date.now(),

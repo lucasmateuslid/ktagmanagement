@@ -19,6 +19,17 @@ import { activeTenant } from './activeTenant';
 import { encryption } from './encryption';
 import { securityService } from './security';
 import { authenticatedFetch } from './authenticatedFetch';
+import {
+  formatCpfCnpj,
+  formatCPF,
+  formatPhone,
+  isValidCpfCnpj,
+  isValidCPF,
+  isValidPhone,
+  normalizeDigits,
+  normalizePhone,
+  validateCPF,
+} from '@ktag/shared';
 
 // Integrações configuradas no nível da plataforma pelo super admin
 // (/ktag_settings_v3/platform_integrations). Proxy e provedor de IA são
@@ -118,6 +129,96 @@ const cleanData = <T extends Record<string, any>>(data: T): T => {
   return copy;
 };
 
+const invalidCpfMessage = (value: unknown): string => (
+  validateCPF(value).reason === 'repeated'
+    ? 'CPF não pode ter todos os dígitos iguais.'
+    : 'CPF inválido. Verifique os dígitos informados.'
+);
+
+const presentUserContacts = (user: User): User => ({
+  ...user,
+  cpf: user.cpf ? formatCPF(user.cpf) : undefined,
+  phone: user.phone ? formatPhone(user.phone) : undefined,
+});
+
+const presentScheduleContacts = (schedule: Schedule): Schedule => ({
+  ...schedule,
+  clientPhone: schedule.clientPhone ? formatPhone(schedule.clientPhone) : undefined,
+});
+
+const presentTechnicianContacts = (technician: Technician): Technician => ({
+  ...technician,
+  cpf: technician.cpf ? formatCPF(technician.cpf) : undefined,
+  phone: formatPhone(technician.phone),
+});
+
+const presentSenderContacts = (settings: AppSettings): AppSettings => {
+  const sender = settings.melhorEnvioSenderAddress;
+  if (!sender) return settings;
+  return {
+    ...settings,
+    melhorEnvioSenderAddress: {
+      ...sender,
+      document: sender.document ? formatCpfCnpj(sender.document) : sender.document,
+      phone: sender.phone ? formatPhone(sender.phone) : sender.phone,
+    },
+  };
+};
+
+const normalizeSenderContacts = (settings: AppSettings): AppSettings => {
+  const sender = settings.melhorEnvioSenderAddress;
+  if (!sender) return settings;
+  if (sender.document && !isValidCpfCnpj(sender.document)) {
+    throw new Error('CPF/CNPJ do remetente inválido.');
+  }
+  if (sender.phone && !isValidPhone(sender.phone)) {
+    throw new Error('Telefone do remetente deve conter DDD e 10 ou 11 dígitos.');
+  }
+  return {
+    ...settings,
+    melhorEnvioSenderAddress: {
+      ...sender,
+      document: sender.document ? normalizeDigits(sender.document, 14) : sender.document,
+      phone: sender.phone ? normalizePhone(sender.phone) : sender.phone,
+    },
+  };
+};
+
+const presentSimCardContacts = (item: SimCard): SimCard => ({
+  ...item,
+  phoneNumber: item.phoneNumber ? formatPhone(item.phoneNumber) : undefined,
+});
+
+const normalizeSimCardContacts = (item: SimCard): SimCard => {
+  if (item.phoneNumber && !isValidPhone(item.phoneNumber)) {
+    throw new Error('Número da linha deve conter DDD e 10 ou 11 dígitos.');
+  }
+  return {
+    ...item,
+    phoneNumber: item.phoneNumber ? normalizePhone(item.phoneNumber) : undefined,
+  };
+};
+
+const presentSupplierContacts = (item: EquipmentSupplier): EquipmentSupplier => ({
+  ...item,
+  document: item.document ? formatCpfCnpj(item.document) : undefined,
+  phone: item.phone ? formatPhone(item.phone) : undefined,
+});
+
+const normalizeSupplierContacts = (item: EquipmentSupplier): EquipmentSupplier => {
+  if (item.document && !isValidCpfCnpj(item.document)) {
+    throw new Error('CPF/CNPJ do fornecedor inválido.');
+  }
+  if (item.phone && !isValidPhone(item.phone)) {
+    throw new Error('Telefone do fornecedor deve conter DDD e 10 ou 11 dígitos.');
+  }
+  return {
+    ...item,
+    document: item.document ? normalizeDigits(item.document) : undefined,
+    phone: item.phone ? normalizePhone(item.phone) : undefined,
+  };
+};
+
 // Fetch resiliente: tenta server, cai para cache do SDK em caso de erro/offline.
 const fetchResilient = async (col: CollectionReference) => {
   if (!db) return [];
@@ -152,11 +253,11 @@ export const storage = {
       if (!snap.exists()) return null;
       const raw = { ...snap.data(), id: snap.id } as User;
       await encryption.waitReady();
-      return {
+      return presentUserContacts({
         ...raw,
         name: raw.name ? await encryption.decrypt(raw.name) : raw.name,
         cpf: raw.cpf ? await encryption.decrypt(raw.cpf) : undefined,
-      };
+      });
     } catch (e) {
       return null;
     }
@@ -189,11 +290,11 @@ export const storage = {
       if (snap.empty) return null;
       const userData = { ...snap.docs[0].data(), id: snap.docs[0].id } as User;
       if (decrypt) {
-        return {
+        return presentUserContacts({
           ...userData,
           name: await encryption.decrypt(userData.name),
           cpf: userData.cpf ? await encryption.decrypt(userData.cpf) : undefined
-        };
+        });
       }
       return userData;
     } catch (e) {
@@ -204,7 +305,7 @@ export const storage = {
 
   getAllUsers: async (): Promise<User[]> => {
     const data = await fetchResilient(tenantCollection(COLLECTIONS.USERS)) as User[];
-    return Promise.all(data.map(async u => ({
+    return Promise.all(data.map(async u => presentUserContacts({
       ...u,
       name: await encryption.decrypt(u.name),
       cpf: u.cpf ? await encryption.decrypt(u.cpf) : undefined
@@ -212,8 +313,15 @@ export const storage = {
   },
 
   registerUserRequest: async (user: User) => {
+    if (user.cpf && !isValidCPF(user.cpf)) throw new Error(invalidCpfMessage(user.cpf));
+    if (user.phone && !isValidPhone(user.phone)) throw new Error('Telefone deve conter DDD e 10 ou 11 dígitos.');
     // Garante que o usuário pertença ao tenant ativo.
-    const userWithTenant = { ...user, tenantId: user.tenantId || activeTenant.id };
+    const userWithTenant = {
+      ...user,
+      tenantId: user.tenantId || activeTenant.id,
+      cpf: user.cpf ? normalizeDigits(user.cpf, 11) : undefined,
+      phone: user.phone ? normalizePhone(user.phone) : undefined,
+    };
     const encryptedUser = {
       ...userWithTenant,
       name: await encryption.encrypt(userWithTenant.name),
@@ -225,10 +333,15 @@ export const storage = {
 
   updateUserProfile: async (id: string, data: Partial<User>) => {
     if (db) {
+      if (data.cpf && !isValidCPF(data.cpf)) throw new Error(invalidCpfMessage(data.cpf));
+      if (data.phone && !isValidPhone(data.phone)) throw new Error('Telefone deve conter DDD e 10 ou 11 dígitos.');
       const userRef = tenantDoc(COLLECTIONS.USERS, id);
-      const encryptedData: Partial<User> = { ...data };
+      const encryptedData: Partial<User> = {
+        ...data,
+        phone: data.phone ? normalizePhone(data.phone) : data.phone,
+      };
       if (data.name) encryptedData.name = await encryption.encrypt(data.name);
-      if (data.cpf) encryptedData.cpf = await encryption.encrypt(data.cpf);
+      if (data.cpf) encryptedData.cpf = await encryption.encrypt(normalizeDigits(data.cpf, 11));
       await updateDoc(userRef, cleanData(encryptedData as Record<string, any>));
       await storage.logAction(null, 'UPDATE', 'User', `Perfil atualizado: ${id}`, id);
     }
@@ -342,26 +455,34 @@ export const storage = {
     const raw = await fetchResilient(tenantCollection(COLLECTIONS.CLIENTS)) as Client[];
     if (raw.length > 0) cache.set(COLLECTIONS.CLIENTS, raw);
     await encryption.waitReady();
-    return Promise.all(raw.map(async c => ({
-      ...c,
-      name: await encryption.decrypt(c.name),
-      cpf: await encryption.decrypt(c.cpf),
-      phone: await encryption.decrypt(c.phone),
-      email: c.email ? await encryption.decrypt(c.email) : undefined,
-      address: c.address ? await encryption.decrypt(c.address) : undefined
-    })));
+    return Promise.all(raw.map(async c => {
+      const cpf = await encryption.decrypt(c.cpf);
+      const phone = await encryption.decrypt(c.phone);
+      return {
+        ...c,
+        name: await encryption.decrypt(c.name),
+        cpf: formatCPF(cpf),
+        phone: formatPhone(phone),
+        email: c.email ? await encryption.decrypt(c.email) : undefined,
+        address: c.address ? await encryption.decrypt(c.address) : undefined,
+      };
+    }));
   },
 
   saveClient: async (c: Client) => {
     await encryption.waitReady();
+    if (!isValidCPF(c.cpf)) throw new Error(invalidCpfMessage(c.cpf));
+    if (c.phone && !isValidPhone(c.phone)) throw new Error('Telefone deve conter DDD e 10 ou 11 dígitos.');
+    const normalizedCpf = normalizeDigits(c.cpf, 11);
+    const normalizedPhone = c.phone ? normalizePhone(c.phone) : '';
     const encryptedClient = {
       ...c,
       name: await encryption.encrypt(c.name),
-      cpf: await encryption.encrypt(c.cpf),
-      phone: await encryption.encrypt(c.phone),
+      cpf: await encryption.encrypt(normalizedCpf),
+      phone: await encryption.encrypt(normalizedPhone),
       email: c.email ? await encryption.encrypt(c.email) : undefined,
       address: c.address ? await encryption.encrypt(c.address) : undefined,
-      cpfHash: await securityService.generateSearchIndex(c.cpf)
+      cpfHash: await securityService.generateSearchIndex(normalizedCpf)
     };
     if (db) await setDoc(tenantDoc(COLLECTIONS.CLIENTS, c.id), cleanData(encryptedClient));
     const list = cache.get<Client[]>(COLLECTIONS.CLIENTS, []);
@@ -626,7 +747,7 @@ export const storage = {
     // Overlay de plataforma: super admin define a URL única do proxy compartilhado.
     // K-TAG URL e Traqcare token permanecem por-tenant (cada empresa configura).
     const platform = await storage.getPlatformIntegrations().catch(() => ({} as PlatformIntegrations));
-    return {
+    return presentSenderContacts({
       ...tenantSettings,
       customProxyUrl: platform.proxyUrl || tenantSettings.customProxyUrl || '',
       aiProvider: platform.aiProvider || tenantSettings.aiProvider,
@@ -637,7 +758,7 @@ export const storage = {
       deepseekApiKey: platform.deepseekApiKey || tenantSettings.deepseekApiKey,
       nvidiaApiKey: platform.nvidiaApiKey || tenantSettings.nvidiaApiKey,
       nvidiaModel: platform.nvidiaModel || tenantSettings.nvidiaModel,
-    };
+    });
   },
 
   // Assina o doc de settings DO TENANT em tempo real (logo whitelabel, nome,
@@ -649,7 +770,7 @@ export const storage = {
     }
     return onSnapshot(
       tenantDoc(COLLECTIONS.SETTINGS, 'config'),
-      (snap) => callback(snap.exists() ? (snap.data() as AppSettings) : ({} as AppSettings)),
+      (snap) => callback(presentSenderContacts(snap.exists() ? (snap.data() as AppSettings) : ({} as AppSettings))),
       () => callback({} as AppSettings),
     );
   },
@@ -675,7 +796,8 @@ export const storage = {
   saveSettings: async (s: AppSettings) => {
     // customProxyUrl vem da plataforma (super admin) — não persiste no doc
     // do tenant para evitar drift. getSettings sempre faz overlay no read.
-    const { customProxyUrl: _p, ...tenantOnly } = s as any;
+    const normalizedSettings = normalizeSenderContacts(s);
+    const { customProxyUrl: _p, ...tenantOnly } = normalizedSettings as any;
     const persisted = tenantOnly as AppSettings;
     if (db) {
       await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(persisted));
@@ -685,14 +807,14 @@ export const storage = {
       try {
         await setDoc(
           tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC),
-          cleanData(pickPublicSettings(s) as any),
+          cleanData(pickPublicSettings(normalizedSettings) as any),
         );
       } catch (e) {
         console.warn('Mirror de public_settings falhou:', e);
       }
     }
-    cache.set(COLLECTIONS.SETTINGS, s);
-    cache.set(COLLECTIONS.PUBLIC_SETTINGS, pickPublicSettings(s));
+    cache.set(COLLECTIONS.SETTINGS, normalizedSettings);
+    cache.set(COLLECTIONS.PUBLIC_SETTINGS, pickPublicSettings(normalizedSettings));
   },
 
   // --- AUDIT LOGS ---
@@ -745,11 +867,18 @@ export const storage = {
   getTechnicians: async (): Promise<Technician[]> => {
     if (!db) return [];
     const res = await fetchResilient(tenantCollection(COLLECTIONS.TECHNICIANS));
-    return res as Technician[];
+    return (res as Technician[]).map(presentTechnicianContacts);
   },
 
   saveTechnician: async (tech: Technician) => {
-    if (db) await setDoc(tenantDoc(COLLECTIONS.TECHNICIANS, tech.id), cleanData(tech));
+    if (tech.cpf && !isValidCPF(tech.cpf)) throw new Error(invalidCpfMessage(tech.cpf));
+    if (!isValidPhone(tech.phone)) throw new Error('Telefone deve conter DDD e 10 ou 11 dígitos.');
+    const normalized = {
+      ...tech,
+      cpf: tech.cpf ? normalizeDigits(tech.cpf, 11) : undefined,
+      phone: normalizePhone(tech.phone),
+    };
+    if (db) await setDoc(tenantDoc(COLLECTIONS.TECHNICIANS, tech.id), cleanData(normalized));
   },
 
   deleteTechnician: async (id: string) => {
@@ -768,13 +897,18 @@ export const storage = {
       q = tenantCollection(COLLECTIONS.SCHEDULES);
     }
     const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as Schedule);
+    return snap.docs.map(d => presentScheduleContacts(d.data() as Schedule));
   },
 
   saveSchedule: async (s: Schedule) => {
     if (db) {
+      if (s.clientPhone && !isValidPhone(s.clientPhone)) throw new Error('Telefone do cliente deve conter DDD e 10 ou 11 dígitos.');
+      const normalized = {
+        ...s,
+        clientPhone: s.clientPhone ? normalizePhone(s.clientPhone) : undefined,
+      };
       const isNew = !(await getDoc(tenantDoc(COLLECTIONS.SCHEDULES, s.id))).exists();
-      await setDoc(tenantDoc(COLLECTIONS.SCHEDULES, s.id), cleanData(s));
+      await setDoc(tenantDoc(COLLECTIONS.SCHEDULES, s.id), cleanData(normalized));
       await storage.logAction(null, isNew ? 'CREATE' : 'UPDATE', 'Schedule', `${isNew ? 'Nova solicitação' : 'Atualização'} de agendamento: ${s.vehiclePlate}`, s.id);
     }
   },
@@ -797,7 +931,7 @@ export const storage = {
       q = tenantCollection(COLLECTIONS.SCHEDULES);
     }
     return onSnapshot(q, (snap) => {
-      const schedules = snap.docs.map(d => d.data() as Schedule);
+      const schedules = snap.docs.map(d => presentScheduleContacts(d.data() as Schedule));
       onUpdate(schedules);
     });
   },
@@ -993,8 +1127,14 @@ export const storage = {
     if (!db) return () => {};
     return onSnapshot(tenantCollection(COLLECTIONS.TRACKERS), (snap) => callback(snap.docs.map((item) => ({ ...item.data(), id: item.id } as Tracker))));
   },
-  getSimCards: async (): Promise<SimCard[]> => fetchResilient(tenantCollection(COLLECTIONS.SIM_CARDS)) as Promise<SimCard[]>,
-  getEquipmentSuppliers: async (): Promise<EquipmentSupplier[]> => fetchResilient(tenantCollection(COLLECTIONS.EQUIPMENT_SUPPLIERS)) as Promise<EquipmentSupplier[]>,
+  getSimCards: async (): Promise<SimCard[]> => {
+    const rows = await fetchResilient(tenantCollection(COLLECTIONS.SIM_CARDS)) as SimCard[];
+    return rows.map(presentSimCardContacts);
+  },
+  getEquipmentSuppliers: async (): Promise<EquipmentSupplier[]> => {
+    const rows = await fetchResilient(tenantCollection(COLLECTIONS.EQUIPMENT_SUPPLIERS)) as EquipmentSupplier[];
+    return rows.map(presentSupplierContacts);
+  },
   getEquipmentPurchases: async (): Promise<EquipmentPurchase[]> => fetchResilient(tenantCollection(COLLECTIONS.EQUIPMENT_PURCHASES)) as Promise<EquipmentPurchase[]>,
   getInventoryMovements: async (): Promise<InventoryMovement[]> => fetchResilient(tenantCollection(COLLECTIONS.INVENTORY_MOVEMENTS)) as Promise<InventoryMovement[]>,
 
@@ -1005,12 +1145,14 @@ export const storage = {
   },
   saveSimCard: async (item: SimCard) => {
     if (!db) return;
-    await setDoc(tenantDoc(COLLECTIONS.SIM_CARDS, item.id), cleanData(item));
+    const normalized = normalizeSimCardContacts(item);
+    await setDoc(tenantDoc(COLLECTIONS.SIM_CARDS, item.id), cleanData(normalized));
     await storage.logAction(null, 'UPDATE', 'SimCard', `Linha salva: ${item.iccid}`, item.id);
   },
   saveEquipmentSupplier: async (item: EquipmentSupplier) => {
     if (!db) return;
-    await setDoc(tenantDoc(COLLECTIONS.EQUIPMENT_SUPPLIERS, item.id), cleanData(item));
+    const normalized = normalizeSupplierContacts(item);
+    await setDoc(tenantDoc(COLLECTIONS.EQUIPMENT_SUPPLIERS, item.id), cleanData(normalized));
   },
   saveEquipmentPurchase: async (item: EquipmentPurchase) => {
     if (!db) return;
@@ -1023,10 +1165,13 @@ export const storage = {
 
   saveAssetBatch: async (collectionName: 'trackers' | 'sim_cards', items: Array<Tracker | SimCard>) => {
     if (!db || items.length === 0) return;
+    const normalizedItems = collectionName === 'sim_cards'
+      ? items.map((item) => normalizeSimCardContacts(item as SimCard))
+      : items;
     // Firestore aceita até 500 operações; 450 deixa margem para evolução do lote.
-    for (let offset = 0; offset < items.length; offset += 450) {
+    for (let offset = 0; offset < normalizedItems.length; offset += 450) {
       const batch = writeBatch(db);
-      items.slice(offset, offset + 450).forEach((item) => {
+      normalizedItems.slice(offset, offset + 450).forEach((item) => {
         batch.set(tenantDoc(collectionName, item.id), cleanData(item));
       });
       await batch.commit();

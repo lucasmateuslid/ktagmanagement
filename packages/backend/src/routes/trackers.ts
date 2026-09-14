@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { ManagedTracker, TrackerModel } from '@ktag/shared';
+import { formatPhone, normalizePhone, type ManagedTracker, type TrackerModel } from '@ktag/shared';
 import { requireAuth, requireInternalUser, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { isValidTrackerImei, normalizeTrackerImei } from '../domain/tracker.js';
@@ -45,7 +45,8 @@ trackersRouter.get('/available-sim-cards', async (req, res) => {
   const rows = snap.docs
     .map(doc => ({ id: doc.id, ...doc.data() } as any))
     .filter(item => !item.trackerId && ['in_stock', 'returned'].includes(String(item.status || 'in_stock')))
-    .sort((a, b) => String(a.phoneNumber || a.iccid).localeCompare(String(b.phoneNumber || b.iccid)));
+    .sort((a, b) => String(normalizePhone(a.phoneNumber) || a.iccid).localeCompare(String(normalizePhone(b.phoneNumber) || b.iccid)))
+    .map(item => ({ ...item, phoneNumber: item.phoneNumber ? formatPhone(item.phoneNumber) : undefined }));
   res.json({ ok: true, data: rows });
 });
 

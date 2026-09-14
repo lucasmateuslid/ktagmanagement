@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { traccarGet, traccarPost, traccarDelete } from '../services/traccarClient.js';
 import { broadcastPosition, broadcastEvent } from '../services/positionBroadcast.js';
-import type { TraccarDevice, TraccarPosition } from '@ktag/shared';
+import { isValidPhone, normalizePhone, type TraccarDevice, type TraccarPosition } from '@ktag/shared';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 
 // ── REST: /api/tracking/* ─────────────────────────────────────────────────────
@@ -25,10 +25,13 @@ trackingRouter.post('/devices', async (req, res) => {
     if (!name || !uniqueId) {
       return res.status(400).json({ error: 'name e uniqueId são obrigatórios', ok: false });
     }
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({ error: 'phone deve conter DDD e 10 ou 11 dígitos', ok: false });
+    }
     const device = await traccarPost<TraccarDevice>('/devices', {
       name,
       uniqueId,
-      phone: phone ?? '',
+      phone: phone ? normalizePhone(phone) : '',
       model: model ?? '',
       category: category ?? '',
       attributes: {},

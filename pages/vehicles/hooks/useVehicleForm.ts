@@ -4,7 +4,7 @@ import { Vehicle, Client, User } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { validateBrazilianPlate } from '../utils/plateValidation';
-import { isValidCPF } from '../../../utils/brDocument';
+import { normalizeCPF, validateCPF } from '../../../utils/brDocument';
 
 export const useVehicleForm = (
   vehicles: Vehicle[],
@@ -22,9 +22,9 @@ export const useVehicleForm = (
   // Auto-fill existing client data
   const checkExistingClient = useCallback((cpf: string) => {
     if (!cpf) return;
-    const cleanCpf = cpf.replace(/\D/g, '');
+    const cleanCpf = normalizeCPF(cpf);
     if (cleanCpf.length < 11) return;
-    const existing = clients.find(c => c.cpf.replace(/\D/g, '') === cleanCpf);
+    const existing = clients.find(c => normalizeCPF(c.cpf) === cleanCpf);
     if (existing) {
         setClientData(existing);
         addNotification('info', 'Banco de Dados', `Cliente ${existing.name} já cadastrado. Dados carregados.`);
@@ -53,8 +53,13 @@ export const useVehicleForm = (
       return;
     }
     if (!formData.plate || !formData.model || !clientData.cpf) return;
-    if (!isValidCPF(clientData.cpf)) {
-      addNotification('error', 'CPF inválido', 'Informe um CPF válido. Sequências repetidas não são aceitas.');
+    const validation = validateCPF(clientData.cpf);
+    if (!validation.valid) {
+      addNotification('error', 'CPF inválido', !validation.complete
+        ? 'CPF deve conter exatamente 11 dígitos.'
+        : validation.reason === 'repeated'
+          ? 'CPF não pode ter todos os dígitos iguais.'
+          : 'CPF inválido. Verifique os dígitos informados.');
       return;
     }
 
@@ -69,8 +74,8 @@ export const useVehicleForm = (
       }
     }
 
-    const cleanCpf = clientData.cpf.replace(/\D/g, '');
-    const existingClient = clients.find(c => c.cpf.replace(/\D/g, '') === cleanCpf);
+    const cleanCpf = normalizeCPF(clientData.cpf);
+    const existingClient = clients.find(c => normalizeCPF(c.cpf) === cleanCpf);
 
     // GUARD DE INTEGRIDADE (anti cross-cliente):
     // Se o formulário ainda carrega o id de um cliente cujo CPF NÃO é o digitado,

@@ -21,6 +21,8 @@ import { Checkbox } from './ui/checkbox';
 import { LocationHistory, defaultChecklistItems, ChecklistStatus } from '../types';
 
 import { getDisplayDate } from '../pages/schedules/utils/scheduleTimeUtils';
+import { isValidPhone, toBrazilianE164 } from '@ktag/shared';
+import { BrazilianPhoneInput } from './ui/brazilian-phone-input';
 
 const MotionDiv = motion.div as any;
 
@@ -116,6 +118,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         osSignature: schedule.osSignature || '',
         checklist: schedule.checklist && schedule.checklist.length > 0 ? schedule.checklist : defaultChecklistItems.map(name => ({ name, before: '' as ChecklistStatus, after: '' as ChecklistStatus }))
     });
+
+    const validateClientPhone = () => {
+        if (!formData.clientPhone || isValidPhone(formData.clientPhone)) return true;
+        addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
+        return false;
+    };
 
     const handleHinovaLookup = async () => {
         if (hinovaStatus === 'loading') return;
@@ -361,6 +369,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 return;
         }
 
+        if (!validateClientPhone()) return;
+
         const updatedSchedule: Schedule = {
             ...schedule,
             status: newStatus,
@@ -430,6 +440,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     };
 
     const handleUserSave = () => {
+        if (!validateClientPhone()) return;
         const updatedSchedule: Schedule = {
             ...schedule,
             ...(schedule.status === 'Solicitada' || schedule.status === 'Em análise' ? {
@@ -485,6 +496,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
     // Salvar Apenas Dados (sem mudar status)
     const handleAdminDataSave = () => {
+        if (!validateClientPhone()) return;
         const updatedSchedule: Schedule = {
             ...schedule,
             confirmedDate: formData.date,
@@ -610,7 +622,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             `📍 *Local:* ${formData.locationAddress}\n` +
             `🗺 *Google Maps:* ${mapLink}`;
             
-        const url = `https://wa.me/55${selectedTech.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`;
+        const url = `https://wa.me/${toBrazilianE164(selectedTech.phone)}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
     };
 
@@ -651,7 +663,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] font-black uppercase text-zinc-400 tracking-wider mb-1 block">Telefone do Cliente</label>
-                                                    <input type="text" value={formData.clientPhone} onChange={e => setFormData({...formData, clientPhone: e.target.value})} className="w-full bg-white dark:bg-zinc-900 px-2 py-1.5 rounded-lg text-xs font-bold outline-none border border-zinc-200 dark:border-zinc-800 focus:border-primary-500" placeholder="Opcional" />
+                                                    <BrazilianPhoneInput value={formData.clientPhone} onValueChange={clientPhone => setFormData({...formData, clientPhone})} className="w-full bg-white dark:bg-zinc-900 px-2 py-1.5 rounded-lg text-xs font-bold outline-none border border-zinc-200 dark:border-zinc-800 focus:border-primary-500" placeholder="(00) 00000-0000" />
                                                 </div>
                                             </div>
                                         </div>
@@ -1067,7 +1079,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider mb-1 block">Telefone do Cliente</label>
-                                    <input type="text" value={formData.clientPhone} onChange={e => setFormData({...formData, clientPhone: e.target.value})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none" placeholder="Opcional" />
+                                    <BrazilianPhoneInput value={formData.clientPhone} onValueChange={clientPhone => setFormData({...formData, clientPhone})} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold outline-none" placeholder="(00) 00000-0000" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">

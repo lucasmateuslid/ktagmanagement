@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { isValidCPF } from '../utils/brDocument';
+import { formatCPF, normalizeCPF, validateCPF } from '@ktag/shared';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
@@ -78,6 +78,13 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [appSettings, setAppSettings] = useState<{appName?: string, appLogo?: string} | null>(null);
+  const isCpfCandidate = !emailOrCpf.includes('@') && /^[\d.\s-]*$/.test(emailOrCpf) && normalizeCPF(emailOrCpf).length > 0;
+  const loginCpfValidation = isCpfCandidate ? validateCPF(emailOrCpf) : null;
+  const loginCpfError = loginCpfValidation?.complete && !loginCpfValidation.valid
+    ? loginCpfValidation.reason === 'repeated'
+      ? 'CPF não pode ter todos os dígitos iguais.'
+      : 'CPF inválido. Verifique os dígitos informados.'
+    : '';
 
   useEffect(() => {
     try {
@@ -120,12 +127,15 @@ export const Login = () => {
       const rawIdentifier = loginIdentifier;
 
       // Aceita CPF com ou sem máscara. E-mails permanecem inalterados.
-      if (!loginIdentifier.includes('@')) {
-        const cpfDigits = loginIdentifier.replace(/\D/g, '');
-        if (cpfDigits.length === 11) {
-          if (!isValidCPF(cpfDigits)) throw new Error('CPF inválido.');
-          loginIdentifier = `${cpfDigits}@client.ktag`;
+      if (!loginIdentifier.includes('@') && /^[\d.\s-]+$/.test(loginIdentifier)) {
+        const validation = validateCPF(loginIdentifier);
+        if (!validation.complete) throw new Error('CPF deve conter exatamente 11 dígitos.');
+        if (!validation.valid) {
+          throw new Error(validation.reason === 'repeated'
+            ? 'CPF não pode ter todos os dígitos iguais.'
+            : 'CPF inválido. Verifique os dígitos informados.');
         }
+        loginIdentifier = `${validation.digits}@client.ktag`;
       }
 
       const err = await login(loginIdentifier, password);
@@ -145,8 +155,8 @@ export const Login = () => {
             console.warn("Falha ao salvar", storageErr);
         }
       }
-    } catch (e) {
-      const safeError = xssProtection.getSafeErrorMessage('SERVER_ERROR');
+    } catch (e: any) {
+      const safeError = xssProtection.sanitizeText(e?.message || xssProtection.getSafeErrorMessage('SERVER_ERROR'));
       setError(safeError);
     } finally {
       setLoading(false);
@@ -271,14 +281,20 @@ export const Login = () => {
                   type="text"
                   required
                   value={emailOrCpf}
-                  onChange={(e) => setEmailOrCpf(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setEmailOrCpf(!next.includes('@') && /^[\d.\s-]*$/.test(next) ? formatCPF(next) : next);
+                  }}
                   placeholder="E-mail ou CPF"
                   autoComplete="username"
+                  aria-invalid={loginCpfError ? true : undefined}
+                  aria-describedby={loginCpfError ? 'login-cpf-error' : undefined}
                 />
                 <div className="text-zinc-500 pointer-events-none absolute inset-y-0 start-0 flex items-center justify-center ps-3 peer-disabled:opacity-50">
                   <AtSignIcon className="size-4" aria-hidden="true" />
                 </div>
               </div>
+              {loginCpfError && <p id="login-cpf-error" role="alert" className="mb-3 text-xs font-bold text-red-400">{loginCpfError}</p>}
 
               <div className="relative h-max">
                 <Input

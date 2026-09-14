@@ -1,6 +1,7 @@
 
 import { storage } from './storage';
 import { Vehicle, Client, AppSettings } from '../types';
+import { normalizeCPF, normalizePhone } from '@ktag/shared';
 
 let cachedUserToken: string | null = null;
 let authPromise: Promise<string> | null = null;
@@ -237,8 +238,8 @@ export const hinovaService = {
             const result = {
                 client: {
                     name: item.nome,
-                    cpf: String(item.cpf || ''),
-                    phone: item.telefone_celular ? `(${item.ddd_celular}) ${item.telefone_celular}` : (item.telefone ? `(${item.ddd}) ${item.telefone}` : ''),
+                    cpf: normalizeCPF(item.cpf),
+                    phone: normalizePhone(item.telefone_celular ? `${item.ddd_celular}${item.telefone_celular}` : (item.telefone ? `${item.ddd}${item.telefone}` : '')),
                     email: item.email,
                     address: `${item.logradouro}, ${item.numero} - ${item.bairro}`,
                     city: item.cidade, state: item.estado, createdAt: Date.now()
