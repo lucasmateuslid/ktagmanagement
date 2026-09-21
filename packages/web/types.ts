@@ -485,6 +485,8 @@ export interface LocationHistory {
   vehicleId?: string;
   provider?: 'traccar' | 'ktag';
   address?: string;
+  addressResolvedAt?: number;
+  addressResolutionProvider?: string | null;
   speed?: number;
   course?: number;
   altitude?: number;

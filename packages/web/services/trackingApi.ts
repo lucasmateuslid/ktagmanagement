@@ -5,6 +5,28 @@ import { trackingHttpUrl, trackingWebSocketUrl } from './trackingEndpoint';
 export class TrackingApiError extends Error {
   constructor(message: string, public errorCode = 'TRACKING_UNAVAILABLE', public requestId?: string, public status?: number) { super(message); }
 }
+export interface FleetRefreshEntry {
+  vehicleId: string;
+  plate: string;
+  model: string;
+  tagId: string | null;
+  provider: 'ktag' | 'traccar' | null;
+  status: 'updated' | 'unchanged' | 'no_tag' | 'no_position' | 'error';
+  address: string | null;
+  timestamp: number | null;
+  error?: string;
+}
+export interface FleetRefreshReport {
+  id: string;
+  tenantId: string;
+  trigger: 'worker' | 'manual';
+  startedAt: number;
+  completedAt: number;
+  busy: boolean;
+  summary: { totalVehicles: number; linkedVehicles: number; positionsUpdated: number; addressesResolved: number; addressesReused: number; addressesFailed: number; withoutPosition: number; errors: number };
+  vehicles: FleetRefreshEntry[];
+  locations: any[];
+}
 const friendlyHistoryError = (code: string) => ({
   INVALID_RANGE: 'O período informado é inválido.', INVALID_CURSOR: 'A página solicitada expirou. Refaça a pesquisa.',
   DEVICE_NOT_LINKED: 'O rastreador ainda não está vinculado ao provedor.', UNKNOWN_DEVICE_TYPE: 'Este equipamento não oferece histórico.',
@@ -38,6 +60,7 @@ export const trackingApi = {
   tagHistory: (tagId: string, from: string, to: string, cursor?: string, signal?: AbortSignal) => request<TrackingHistoryPage>(`/api/livemap/tags/${encodeURIComponent(tagId)}/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal }),
   importCommit: (rows: unknown[]) => request<{ total: number; created: number; existing: number; invalid: number; unavailable: number }>('/api/xadtags/import/commit', { method: 'POST', body: JSON.stringify({ rows }) }),
   liveMap: () => request<LiveMapTrackedAsset[]>('/api/livemap'), adminStatus: () => request<any>('/api/admin/integrations/traccar/status'),
+  refreshFleet: () => request<FleetRefreshReport>('/api/livemap/refresh', { method: 'POST', body: '{}' }),
   adminTestWebSocket: () => request<any>('/api/admin/integrations/traccar/test-websocket', { method: 'POST', body: '{}' }),
   websocket: async () => { const token = await auth?.currentUser?.getIdToken(); if (!token) throw new Error('Autenticação necessária.'); return new WebSocket(trackingWebSocketUrl(activeTenant.id), [`firebase.${token}`]); },
 };

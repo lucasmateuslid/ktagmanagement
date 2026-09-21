@@ -549,7 +549,6 @@ export const Dashboard = () => {
       <UpdateTagsModal 
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
-        tags={tags}
         vehicles={vehicles}
       />
 

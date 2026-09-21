@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { requireAuth, requireInternalUser, requirePermission } from '../middleware/auth.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { broadcastTenant } from '../services/positionBroadcast.js';
@@ -7,6 +7,7 @@ import { traccarRealtimeService } from '../services/traccarRealtimeService.js';
 import { xadTagService } from '../services/xadtagService.js';
 import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { HistoryRequestError, trackingHistoryService } from '../services/trackingHistoryService.js';
+import { refreshTenantFleet } from '../services/fleetRefreshService.js';
 
 export const xadTagsRouter = Router();
 xadTagsRouter.use(requireAuth);
@@ -109,6 +110,12 @@ xadTagsRouter.post('/import/commit', async (req, res) => { try { const tid = ten
 
 export const liveMapRouter = Router();
 liveMapRouter.use(requireAuth);
+liveMapRouter.post('/refresh', requireInternalUser, async (req, res) => {
+  try {
+    const report = await refreshTenantFleet(tenant(req), 'manual');
+    res.status(report.busy ? 202 : 200).json({ ok: true, data: report });
+  } catch (error) { fail(res, error); }
+});
 liveMapRouter.get('/', async (req, res) => { try { const ids = await clientVehicleIds(req); const items = await xadTagRepository.list(tenant(req)); const authorized = ids ? items.filter(item => item.linkedEntityId && ids.has(item.linkedEntityId)) : items; const data = authorized.map(item => xadTagService.toLiveMap(item)).filter(Boolean); res.json({ ok: true, data }); } catch (error) { fail(res, error); } });
 liveMapRouter.get('/tags/:id/history', async (req, res) => {
   const requestId = crypto.randomUUID(); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId);

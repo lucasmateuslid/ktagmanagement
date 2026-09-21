@@ -23,7 +23,9 @@ export const useVehicleHistory = (vehicleId: string, selectedTagId: string, curr
     if (!vehicleId || !selectedTagId) { addNotification('info', 'Histórico indisponível', 'Selecione um veículo com equipamento vinculado.'); return; }
     requestRef.current.controller?.abort();
     const controller = new AbortController(); const requestId = requestRef.current.id + 1;
-    requestRef.current = { id: requestId, controller }; setHistoryLoading(true); setShowHistoryList(true);
+    requestRef.current = { id: requestId, controller };
+    if (!append) setHistoryItems([]);
+    setHistoryLoading(true); setShowHistoryList(true);
     try {
       const end = Date.now(); const start = end - HISTORY_WINDOW_MS;
       const response: TrackingHistoryPage = await trackingApi.vehicleHistory(vehicleId, new Date(start).toISOString(), new Date(end).toISOString(), cursor, controller.signal);

@@ -42,8 +42,8 @@ export const TopHUD: React.FC<TopHUDProps> = ({
     };
 
     return (
-        <div className="absolute top-4 left-0 right-0 z-[400] px-4 pointer-events-none flex flex-col items-center gap-3">
-            <div className="w-full flex justify-end max-w-lg pointer-events-auto">
+        <div className="absolute left-0 right-0 top-3 z-[1000] flex max-w-full flex-col items-center gap-2 px-3 pointer-events-none sm:top-4 sm:gap-3 sm:px-4">
+            <div className="flex w-full max-w-xl justify-end pointer-events-auto">
                 <button 
                     onClick={onOpenUpdateModal}
                     className="bg-primary-500 text-black hover:bg-primary-400 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95"
@@ -61,10 +61,10 @@ export const TopHUD: React.FC<TopHUDProps> = ({
             )}
 
             {/* BARRA DE PESQUISA REATORADA */}
-            <div className="w-full max-w-lg pointer-events-auto relative z-30">
-              <div className="flex items-center gap-2">
+            <div className="relative z-30 w-full min-w-0 max-w-xl pointer-events-auto">
+              <div className="flex w-full min-w-0 items-center gap-1.5 sm:gap-2">
                 <div className={`
-                    flex-1 flex items-center gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl 
+                    min-w-0 flex-1 flex items-center gap-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl
                     border transition-all duration-300
                     ${isFocused 
                       ? 'rounded-[24px] border-primary-500 ring-4 ring-primary-500/10 shadow-xl' 
@@ -119,9 +119,11 @@ export const TopHUD: React.FC<TopHUDProps> = ({
                 {isFocused && (
                     <button
                         onClick={() => setIsFocused(false)}
-                        className="px-3 py-2 text-sm font-bold text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition-colors shrink-0"
+                        aria-label="Fechar pesquisa"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-zinc-600 transition-colors hover:bg-white/80 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-900/80 dark:hover:text-white sm:h-auto sm:w-auto sm:rounded-none sm:px-3 sm:py-2"
                     >
-                        Cancelar
+                        <X size={17} className="sm:hidden" />
+                        <span className="hidden sm:inline">Cancelar</span>
                     </button>
                 )}
               </div>

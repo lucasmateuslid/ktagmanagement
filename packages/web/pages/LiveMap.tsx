@@ -59,7 +59,7 @@ export const LiveMap = () => {
   const { tags, vehicles, categories, clients } = useFleetData(user);
 
   // 2. Tracking Layer
-  const { fleetLocations, loading, manualRefresh, refreshTag, injectLocations } = useFleetTracking(tags, vehicles, selectedTagId);
+  const { fleetLocations, loading, manualRefresh, refreshTag, injectLocations } = useFleetTracking(tags, vehicles);
 
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
@@ -121,12 +121,6 @@ export const LiveMap = () => {
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
 
-  // No mapa ao vivo, somente o ponto atual é geocodificado automaticamente.
-  // Os pontos de histórico continuam sob demanda para evitar uma fila contínua.
-  useEffect(() => {
-      if (lastLoc && !lastLoc.address) void resolveAddress(lastLoc);
-  }, [lastLoc?.tagId, lastLoc?.lat, lastLoc?.lon, lastLoc?.address, resolveAddress]);
-
   const handleExport = async (type: 'pdf' | 'excel') => {
     setExporting(true);
     try {
@@ -153,7 +147,7 @@ export const LiveMap = () => {
   return (
     <div className="relative h-full w-full flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 font-sans">
       
-      <TopHUD 
+      {!showHistoryList && <TopHUD
         searchTerm={tagSearchTerm}
         setSearchTerm={setTagSearchTerm}
         isFocused={isSearchFocused}
@@ -175,11 +169,11 @@ export const LiveMap = () => {
         showPlates={showPlates} // Pass
         setShowPlates={setShowPlates} // Pass
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
-      />
+      />}
 
       <div className="flex-1 relative z-0">
         <MapComponent 
-            locations={showHistoryList && historyItems.length > 0 ? historyItems : locationsToRender} 
+            locations={showHistoryList ? historyItems : locationsToRender}
             isFleetMode={!showHistoryList} 
             vehicles={vehicles}
             tags={tags}
@@ -187,6 +181,7 @@ export const LiveMap = () => {
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
+            showTagIds={Boolean(user && user.role !== 'client')}
             mapProvider={mapProvider}
             focusLocation={focusedHistoryPoint}
             replayLocation={showHistoryList ? replayPoint : null}
@@ -203,7 +198,7 @@ export const LiveMap = () => {
         category={activeCategory}
         client={activeClient}
         lastLoc={lastLoc}
-        resolvedAddress={lastLoc ? resolvedAddresses[`${lastLoc.lat.toFixed(4)},${lastLoc.lon.toFixed(4)}`] : undefined}
+        resolvedAddress={lastLoc ? (lastLoc.address || resolvedAddresses[`${lastLoc.lat.toFixed(4)},${lastLoc.lon.toFixed(4)}`]) : undefined}
         userRole={user?.role}
         onFetchHistory={fetchHistory}
         onRefreshTag={refreshTag}
@@ -239,7 +234,6 @@ export const LiveMap = () => {
       <UpdateTagsModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
-        tags={tags}
         vehicles={vehicles}
         onLocationsUpdated={injectLocations}
       />

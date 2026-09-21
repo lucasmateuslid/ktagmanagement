@@ -69,7 +69,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
         <AnimatePresence>
             {isVisible && (
               <MotionDiv initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="absolute top-full mt-3 left-0 right-0 bg-white dark:bg-zinc-900 rounded-[28px] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden max-h-[40vh] overflow-y-auto p-2"
+                className="absolute left-0 right-0 top-full mt-2 max-h-[min(55dvh,28rem)] w-full overflow-y-auto overflow-x-hidden rounded-2xl border border-zinc-200 bg-white p-2 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:mt-3 sm:rounded-[28px]"
               >
                  {items.length === 0 ? <div className="py-10 text-center text-zinc-400 text-[10px] font-black uppercase tracking-widest opacity-40 italic">Nenhum resultado encontrado</div> : 
                    items.map((item: any) => {

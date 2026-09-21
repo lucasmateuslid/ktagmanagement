@@ -5,10 +5,11 @@ import { MapContainer, TileLayer, Marker, Polyline, useMap, Popup, ZoomControl }
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
-import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging, Layers } from 'lucide-react';
+import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging, Check, Layers } from 'lucide-react';
 import { hasValidCoordinates } from '../pages/livemap/utils/livemapFilters';
 
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
+const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character);
 
 // Componente auxiliar para renderizar o ícone correto
 const VehicleIconComponent = ({ type, catName, size = 16, className = '', isUnlinked = false }: { type?: string, catName?: string, size?: number, className?: string, isUnlinked?: boolean }) => {
@@ -32,7 +33,9 @@ const createVehicleIcon = (
     color = '#f59e0b', 
     isUnlinked = false,
     showPlates = false,
-    plateText = ''
+    plateText = '',
+    showTagIds = false,
+    tagIdText = ''
 ) => {
   const size = isSelected ? 20 : 16;
   
@@ -48,7 +51,8 @@ const createVehicleIcon = (
   const textColor = isUnlinked ? '#ffffff' : (isSelected ? '#000000' : '#18181b');
 
   // Badge HTML (condicional)
-  const badgeHtml = (showPlates && plateText && !isUnlinked) ? `
+  const badgeLines = [showPlates && plateText && !isUnlinked ? escapeHtml(plateText) : '', showTagIds && tagIdText ? `ID ${escapeHtml(tagIdText)}` : ''].filter(Boolean);
+  const badgeHtml = badgeLines.length ? `
     <div style="
         position: absolute;
         bottom: ${isSelected ? '54px' : '42px'};
@@ -66,8 +70,12 @@ const createVehicleIcon = (
         box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         border: 1px solid #27272a;
         z-index: 1000;
+        max-width: 210px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        ${badgeLines.length > 1 ? 'line-height: 1.35;' : ''}
     ">
-        ${plateText}
+        ${badgeLines.join('<br>')}
         <div style="
             position: absolute;
             bottom: -4px;
@@ -119,11 +127,14 @@ const createClusterCustomIcon = function (cluster: any) {
   });
 };
 
-const RecenterMap = ({ lat, lon, zoom }: { lat: number; lon: number, zoom?: number }) => {
+const FocusMapOnce = ({ lat, lon, focusKey, zoom }: { lat: number; lon: number; focusKey: string; zoom?: number }) => {
   const map = useMap();
+  const lastFocusKey = useRef('');
   useEffect(() => {
+    if (!focusKey || lastFocusKey.current === focusKey) return;
+    lastFocusKey.current = focusKey;
     map.setView([lat, lon], zoom || map.getZoom(), { animate: true, duration: 1.5 });
-  }, [lat, lon, map, zoom]);
+  }, [focusKey, lat, lon, map, zoom]);
   return null;
 };
 
@@ -148,12 +159,30 @@ const FitFleetBounds = ({ locations }: { locations: LocationHistory[] }) => {
 
 const FitHistoryBounds = ({ locations }: { locations: LocationHistory[] }) => {
   const map = useMap();
-  const signature = `${locations.length}:${locations[0]?.id || ''}:${locations[locations.length - 1]?.id || ''}`;
+  const hasFitted = useRef(false);
+  const hasLocations = locations.length > 0;
   useEffect(() => {
-    if (!locations.length) return;
+    if (hasFitted.current || !hasLocations) return;
+    hasFitted.current = true;
     const bounds = L.latLngBounds(locations.map(item => [item.lat, item.lon] as [number, number]));
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17, animate: true });
-  }, [map, signature, locations]);
+    if (!bounds.isValid()) return;
+
+    const container = map.getContainer();
+    const isMobile = container.clientWidth < 768;
+    map.fitBounds(bounds, {
+      paddingTopLeft: isMobile ? [28, 36] : [70, 70],
+      // No celular o histórico ocupa a metade inferior; no desktop ele ocupa
+      // a lateral direita. O trajeto inicial fica visível na área livre.
+      paddingBottomRight: isMobile
+        ? [28, Math.round(container.clientHeight * 0.54)]
+        : [500, 70],
+      maxZoom: 17,
+      animate: true,
+    });
+    // O enquadramento é apenas uma ajuda inicial. Depois disso o zoom e o pan
+    // pertencem ao usuário, mesmo quando endereços ou novos pontos atualizam.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLocations, map]);
   return null;
 };
 
@@ -175,12 +204,32 @@ interface MapProps {
   categories?: VehicleCategory[];
   highlightedTagId?: string;
   showPlates?: boolean; // Nova prop
+  showTagIds?: boolean;
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
   focusLocation?: LocationHistory | null;
   replayLocation?: LocationHistory | null;
   replayTrail?: LocationHistory[];
 }
+
+type MapLayer = 'streets' | 'google' | 'satellite' | 'hybrid';
+
+const MAP_LAYERS: Array<{ id: MapLayer; label: string; description: string }> = [
+  { id: 'streets', label: 'Ruas', description: 'Mapa claro' },
+  { id: 'google', label: 'Google', description: 'Mapa padrão' },
+  { id: 'satellite', label: 'Satélite', description: 'Imagem aérea' },
+  { id: 'hybrid', label: 'Híbrido', description: 'Imagem com ruas' },
+];
+
+const initialMapLayer = (provider: 'osm' | 'google'): MapLayer => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem('ktag-livemap-layer');
+      if (MAP_LAYERS.some(option => option.id === saved)) return saved as MapLayer;
+    } catch { /* armazenamento pode estar bloqueado */ }
+  }
+  return provider === 'google' ? 'google' : 'streets';
+};
 
 export const MapComponent: React.FC<MapProps> = ({ 
   locations, 
@@ -190,13 +239,38 @@ export const MapComponent: React.FC<MapProps> = ({
   categories = [],
   highlightedTagId, 
   showPlates = false, // Default false
+  showTagIds = false,
   onMarkerClick,
   mapProvider = 'osm', focusLocation = null, replayLocation = null, replayTrail = [],
 }) => {
-  const [layer, setLayer] = useState<'streets' | 'satellite' | 'hybrid'>(mapProvider === 'google' ? 'streets' : 'streets');
+  const [layer, setLayer] = useState<MapLayer>(() => initialMapLayer(mapProvider));
   const [tileErrors, setTileErrors] = useState(0);
   const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
-  const tileUrl = layer === 'satellite' ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' : layer === 'hybrid' ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const tileErrorCount = useRef(0);
+  const tileUrl = layer === 'satellite'
+    ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+    : layer === 'hybrid'
+      ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
+      : layer === 'google'
+        ? 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+  const selectLayer = (nextLayer: MapLayer) => {
+    tileErrorCount.current = 0;
+    setTileErrors(0);
+    setLayer(nextLayer);
+    setIsLayerMenuOpen(false);
+    try { window.localStorage.setItem('ktag-livemap-layer', nextLayer); } catch { /* armazenamento pode estar bloqueado */ }
+  };
+
+  const handleTileError = () => {
+    tileErrorCount.current += 1;
+    setTileErrors(tileErrorCount.current);
+    if (tileErrorCount.current < 3 || layer === 'streets') return;
+    setLayer('streets');
+    setIsLayerMenuOpen(false);
+    try { window.localStorage.setItem('ktag-livemap-layer', 'streets'); } catch { /* armazenamento pode estar bloqueado */ }
+  };
   
   // Protege o Leaflet inclusive de registros históricos gravados por versões
   // antigas sem latitude/longitude.
@@ -207,6 +281,9 @@ export const MapComponent: React.FC<MapProps> = ({
   const displayLocations = highlightedTagId
     ? safeLocations.filter(l => l.tagId === highlightedTagId)
     : safeLocations;
+  const routeLocations = isFleetMode
+    ? safeLocations
+    : [...safeLocations].sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
 
   const highlightedLoc = highlightedTagId ? safeLocations.find(l => l.tagId === highlightedTagId) : null;
 
@@ -245,7 +322,9 @@ export const MapComponent: React.FC<MapProps> = ({
                   statusColor, 
                   isUnlinked, 
                   showPlates, // Passa estado
-                  vehicle?.plate // Passa texto
+                  vehicle?.plate,
+                  showTagIds,
+                  loc.tagId
               )}
               eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
           >
@@ -259,6 +338,8 @@ export const MapComponent: React.FC<MapProps> = ({
                               {isUnlinked ? 'ESTOQUE' : (vehicle?.status === 'stolen' ? 'ROUBO' : vehicle?.status === 'maintenance' ? 'MANUT' : 'ATIVO')}
                           </span>
                       </div>
+
+                      {showTagIds && <div className="mb-2 break-all rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[9px] font-bold text-zinc-600"><span className="font-black uppercase text-zinc-400">ID da tag </span>{loc.tagId}</div>}
                       
                       <div className="flex items-center gap-2 mb-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
                           <div className="text-zinc-500">
@@ -307,15 +388,15 @@ export const MapComponent: React.FC<MapProps> = ({
           worldCopyJump={false}
           className="h-full w-full"
         >
-          <TileLayer key={layer} url={tileUrl} maxZoom={22} attribution={layer === 'streets' ? '&copy; OpenStreetMap contributors' : '&copy; Google'} className={layer === 'streets' ? 'map-light-tiles' : undefined} eventHandlers={{ tileerror: () => setTileErrors(value => { const next = value + 1; if (next >= 3) setLayer('streets'); return next; }) }} />
-          <ZoomControl position="topleft" />
+          <TileLayer key={layer} url={tileUrl} maxZoom={22} maxNativeZoom={layer === 'streets' ? 19 : 22} attribution={layer === 'streets' ? '&copy; OpenStreetMap contributors' : '&copy; Google'} className={layer === 'streets' ? 'map-light-tiles' : undefined} eventHandlers={{ tileerror: handleTileError }} />
+          <ZoomControl position="bottomleft" />
           <ResponsiveMapSize />
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
           {isFleetMode && !highlightedLoc && <FitFleetBounds locations={safeLocations} />}
-          {!isFleetMode && <FitHistoryBounds locations={safeLocations} />}
-          {highlightedLoc && <RecenterMap lat={highlightedLoc.lat} lon={highlightedLoc.lon} zoom={18} />}
-          {safeFocusLocation && <RecenterMap lat={safeFocusLocation.lat} lon={safeFocusLocation.lon} zoom={18} />}
+          {!isFleetMode && <FitHistoryBounds locations={routeLocations} />}
+          {highlightedLoc && <FocusMapOnce lat={highlightedLoc.lat} lon={highlightedLoc.lon} focusKey={`vehicle:${highlightedTagId}`} zoom={18} />}
+          {safeFocusLocation && <FocusMapOnce lat={safeFocusLocation.lat} lon={safeFocusLocation.lon} focusKey={`history:${safeFocusLocation.id}`} zoom={18} />}
 
           {isFleetMode ? (
               highlightedTagId ? (
@@ -332,7 +413,7 @@ export const MapComponent: React.FC<MapProps> = ({
           ) : (
               <>
                 <Polyline 
-                    positions={safeLocations.map(l => [l.lat, l.lon] as [number, number])}
+                    positions={routeLocations.map(l => [l.lat, l.lon] as [number, number])}
                     color="#f59e0b" 
                     weight={5} 
                     opacity={0.7} 
@@ -342,7 +423,7 @@ export const MapComponent: React.FC<MapProps> = ({
                 {safeReplayTrail.length > 1 && <Polyline positions={safeReplayTrail.map(l => [l.lat, l.lon] as [number, number])} color="#0ea5e9" weight={7} opacity={0.95} lineCap="round" lineJoin="round" />}
                 
                 {/* Pontos intermediários */}
-                {safeLocations.map((loc, idx) => (
+                {routeLocations.map((loc, idx) => (
                     <Marker 
                         key={loc.id || idx}
                         position={[loc.lat, loc.lon]}
@@ -360,17 +441,17 @@ export const MapComponent: React.FC<MapProps> = ({
                     </Marker>
                 ))}
 
-                {safeLocations.length > 0 && (
+                {routeLocations.length > 0 && (
                     <Marker 
-                        position={[safeLocations[0].lat, safeLocations[0].lon]}
-                        icon={createVehicleIcon(true, undefined, undefined, '#10b981', false, showPlates, 'FIM/ATUAL')}
+                        position={[routeLocations[0].lat, routeLocations[0].lon]}
+                        icon={createVehicleIcon(true, undefined, undefined, '#10b981', false, showPlates, 'INÍCIO')}
                     />
                 )}
                 
-                {safeLocations.length > 1 && (
+                {routeLocations.length > 1 && (
                     <Marker 
-                        position={[safeLocations[safeLocations.length-1].lat, safeLocations[safeLocations.length-1].lon]}
-                        icon={createVehicleIcon(true, undefined, undefined, '#ef4444', false, showPlates, 'INÍCIO')}
+                        position={[routeLocations[routeLocations.length-1].lat, routeLocations[routeLocations.length-1].lon]}
+                        icon={createVehicleIcon(true, undefined, undefined, '#ef4444', false, showPlates, 'FIM/ATUAL')}
                     />
                 )}
                 {safeReplayLocation && (
@@ -381,18 +462,27 @@ export const MapComponent: React.FC<MapProps> = ({
               </>
           )}
         </MapContainer>
-        <div className="absolute right-4 top-[116px] z-[800] md:hidden">
-          <button type="button" onClick={() => setIsLayerMenuOpen(open => !open)} aria-expanded={isLayerMenuOpen} aria-label="Escolher estilo do mapa" className="flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/95 text-zinc-700 shadow-lg backdrop-blur transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200">
-            <Layers size={18} />
+        <div className={`absolute left-3 z-[700] md:left-4 ${isFleetMode ? 'top-[176px] md:top-4' : 'top-3 md:top-4'}`}>
+          <button type="button" onClick={() => setIsLayerMenuOpen(open => !open)} aria-expanded={isLayerMenuOpen} aria-label="Escolher estilo do mapa" className="flex min-h-11 items-center gap-3 rounded-2xl border border-white/70 bg-white/95 px-3 text-left text-zinc-700 shadow-xl backdrop-blur transition-transform active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200">
+            <Layers size={18} className="shrink-0 text-sky-500" />
+            <span>
+              <span className="block text-[8px] font-black uppercase tracking-[0.18em] text-zinc-400">Estilo do mapa</span>
+              <span className="block text-[11px] font-black">{MAP_LAYERS.find(option => option.id === layer)?.label}</span>
+            </span>
           </button>
           {isLayerMenuOpen && (
-            <div className="absolute right-0 top-12 flex min-w-28 flex-col gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
-              {([['streets', 'Ruas'], ['satellite', 'Satélite'], ['hybrid', 'Híbrido']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => { setTileErrors(0); setLayer(id); setIsLayerMenuOpen(false); }} className={`min-h-9 rounded-xl px-3 text-left text-[10px] font-black uppercase tracking-wide ${layer === id ? 'bg-brand-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
+            <div className="absolute left-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
+              {MAP_LAYERS.map(option => (
+                <button key={option.id} type="button" onClick={() => selectLayer(option.id)} className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left transition-colors ${layer === option.id ? 'bg-brand-500/10 text-amber-700 dark:text-brand-400' : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}>
+                  <span>
+                    <span className="block text-[11px] font-black">{option.label}</span>
+                    <span className="block text-[9px] font-medium text-zinc-400">{option.description}</span>
+                  </span>
+                  {layer === option.id && <Check size={16} className="text-brand-500" strokeWidth={3} />}
+                </button>
+              ))}
             </div>
           )}
-        </div>
-        <div className="absolute right-4 top-4 z-[800] hidden gap-1 rounded-2xl border border-white/60 bg-white/95 p-1.5 shadow-xl backdrop-blur md:flex dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
-          {([['streets', 'Ruas'], ['satellite', 'Satélite'], ['hybrid', 'Híbrido']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => { setTileErrors(0); setLayer(id); }} className={`min-h-10 rounded-xl px-3 text-[10px] font-black uppercase tracking-wide ${layer === id ? 'bg-brand-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
         </div>
         {tileErrors >= 3 && layer === 'streets' && <div className="absolute bottom-20 left-1/2 z-[800] -translate-x-1/2 rounded-xl bg-danger-soft px-4 py-2 text-xs font-bold text-danger md:bottom-4">Falha de rede no mapa. Tentando novamente em Ruas.</div>}
     </div>

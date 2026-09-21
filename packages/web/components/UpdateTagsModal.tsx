@@ -1,183 +1,67 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Tag, Vehicle, LocationHistory } from '../types';
-import { fetchTagsLocationBatch } from '../services/api';
-import { storage } from '../services/storage';
+import { X, RefreshCw, CheckCircle2, AlertCircle, MinusCircle } from 'lucide-react';
+import type { Vehicle, LocationHistory } from '../types';
+import { trackingApi, type FleetRefreshReport } from '../services/trackingApi';
 
 interface UpdateTagsModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    tags: Tag[];
-    vehicles: Vehicle[];
-    onLocationsUpdated?: (locs: LocationHistory[]) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  vehicles: Vehicle[];
+  onLocationsUpdated?: (locations: LocationHistory[]) => void;
 }
 
-export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClose, tags, vehicles, onLocationsUpdated }) => {
-    const [isUpdating, setIsUpdating] = useState(false);
-    const [progress, setProgress] = useState(0);
-    const [results, setResults] = useState<{ tagId: string; status: 'success' | 'error'; label: string }[]>([]);
-    
-    // Filtramos apenas as tags que desejamos atualizar neste batch
-    // (Apenas XADTAGs ou tags vinculadas a veículos)
-    const tagsToUpdate = tags.filter(t => {
-        const isLinked = vehicles.some(v => v.tagId === t.id);
-        const isXad = t.type === 'XADTAG';
-        return isLinked || isXad;
-    });
+const statusLabel = { updated: 'Atualizado', unchanged: 'Sem mudança', no_tag: 'Sem tag', no_position: 'Sem posição', error: 'Erro' } as const;
 
-    const handleUpdate = async () => {
-        if (isUpdating || tagsToUpdate.length === 0) return;
-        setIsUpdating(true);
-        setResults([]);
-        setProgress(0);
+export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClose, vehicles, onLocationsUpdated }) => {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [report, setReport] = useState<FleetRefreshReport | null>(null);
+  const [error, setError] = useState('');
 
-        try {
-            const validLocs = await fetchTagsLocationBatch(tagsToUpdate, 3, (idx, total, currentTag) => {
-                setProgress(Math.round((idx / total) * 100));
-                
-                // Vehicle label
-                const v = vehicles.find(v => v.tagId === currentTag.id);
-                // currentTag label uses id
-            });
+  const handleUpdate = async () => {
+    if (isUpdating || vehicles.length === 0) return;
+    setIsUpdating(true); setReport(null); setError('');
+    try {
+      const next = await trackingApi.refreshFleet();
+      setReport(next);
+      onLocationsUpdated?.(next.locations as LocationHistory[]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a frota.');
+    } finally { setIsUpdating(false); }
+  };
 
-            // Processar salvamento
-            for (const loc of validLocs) {
-                const tagId = loc.tagId || '';
-                const tag = tagsToUpdate.find(t => t.id === tagId);
-                const v = vehicles.find(v => v.tagId === tagId);
-                const label = v ? `${v.plate} / ${v.model}` : tag?.id || tagId;
-
-                try {
-                    // Atualiza veiculo se existir (caminho tenant-aware via storage)
-                    if (v) {
-                        await storage.updateVehiclePosition(v.id, loc as LocationHistory);
-                    }
-
-                    // Se logar sucesso do tag
-                    setResults(prev => [{ tagId, status: 'success', label }, ...prev]);
-                } catch (err) {
-                    setResults(prev => [{ tagId, status: 'error', label }, ...prev]);
-                }
-            }
-
-            // Notifica o mapa para refletir as novas posições imediatamente
-            onLocationsUpdated?.(validLocs as LocationHistory[]);
-
-            setProgress(100);
-        } catch (error) {
-            console.error('Update Tags flow error:', error);
-        } finally {
-            setIsUpdating(false);
-        }
-    };
-
-    return (
-        <AnimatePresence>
-            {isOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={onClose}
-                        className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
-                    />
-
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[32px] shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[85vh]"
-                    >
-                        {/* Header */}
-                        <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
-                            <div>
-                                <h3 className="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">Atualização de Tags</h3>
-                                <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{tagsToUpdate.length} equipamentos suportados</p>
-                            </div>
-                            <button
-                                onClick={onClose}
-                                disabled={isUpdating}
-                                className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors disabled:opacity-50"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        {/* Body */}
-                        <div className="p-6 flex flex-col gap-6 overflow-hidden flex-1">
-                            {/* Actions / Progress */}
-                            <div className="bg-zinc-50 dark:bg-zinc-950 rounded-2xl p-6 flex flex-col items-center justify-center gap-4 text-center border border-zinc-100 dark:border-zinc-800">
-                                {isUpdating || results.length > 0 ? (
-                                    <div className="w-full flex flex-col gap-3">
-                                        <div className="flex justify-between items-center px-1">
-                                            <span className="text-xs font-black uppercase text-zinc-600 dark:text-zinc-400">Progresso</span>
-                                            <span className="text-xs font-black text-primary-500">{progress}%</span>
-                                        </div>
-                                        <div className="w-full h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                            <motion.div 
-                                                className="h-full bg-primary-500"
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${progress}%` }}
-                                                transition={{ ease: "linear" }}
-                                            />
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="w-16 h-16 rounded-full bg-primary-500/10 text-primary-500 flex items-center justify-center">
-                                            <RefreshCw size={32} />
-                                        </div>
-                                        <p className="text-sm font-bold text-zinc-600 dark:text-zinc-400 max-w-sm">
-                                            Inicie a varredura para atualizar as coordenadas de toda a sua frota / estoque em tempo real.
-                                        </p>
-                                    </>
-                                )}
-
-                                {!isUpdating && progress !== 100 && (
-                                    <button
-                                        onClick={handleUpdate}
-                                        className="mt-2 w-full h-12 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-black uppercase tracking-widest text-xs rounded-xl hover:bg-primary-500 hover:text-zinc-900 transition-colors"
-                                    >
-                                        Iniciar Atualização
-                                    </button>
-                                )}
-                                
-                                {!isUpdating && progress === 100 && (
-                                    <button
-                                        onClick={handleUpdate}
-                                        className="mt-2 w-full h-12 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                                    >
-                                        Refazer Atualização
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Results list */}
-                            {results.length > 0 && (
-                                <div className="flex-1 overflow-y-auto min-h-[200px] border border-zinc-100 dark:border-zinc-800 rounded-2xl p-2 space-y-1">
-                                    {results.map((res, i) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl">
-                                            {res.status === 'success' ? (
-                                                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                                            ) : (
-                                                <AlertCircle size={18} className="text-red-500 shrink-0" />
-                                            )}
-                                            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 truncate">
-                                                {res.label}
-                                            </span>
-                                            <span className={`ml-auto text-[10px] font-black uppercase tracking-widest ${res.status === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                {res.status === 'success' ? 'OK' : 'ERRO'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </motion.div>
-                </div>
-            )}
-        </AnimatePresence>
-    );
+  return <AnimatePresence>{isOpen && (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm" />
+      <motion.div initial={{ opacity: 0, scale: .95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .95, y: 20 }} className="relative flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[32px] border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-zinc-100 p-6 dark:border-zinc-800">
+          <div><h3 className="text-xl font-black uppercase tracking-tight text-zinc-900 dark:text-white">Atualizar toda a frota</h3><p className="text-xs font-bold uppercase tracking-widest text-zinc-500">{vehicles.length} veículos · processamento no servidor</p></div>
+          <button onClick={onClose} disabled={isUpdating} className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 disabled:opacity-50 dark:bg-zinc-800"><X size={20} /></button>
+        </div>
+        <div className="flex flex-1 flex-col gap-5 overflow-hidden p-6">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-zinc-100 bg-zinc-50 p-5 text-center dark:border-zinc-800 dark:bg-zinc-950">
+            <RefreshCw size={32} className={`text-primary-500 ${isUpdating ? 'animate-spin' : ''}`} />
+            <p className="max-w-lg text-sm font-bold text-zinc-600 dark:text-zinc-400">O servidor consulta todos os veículos, atualiza as posições e resolve novamente os endereços. A rotina também roda automaticamente a cada 30 minutos, sem depender desta tela.</p>
+            <button onClick={handleUpdate} disabled={isUpdating || vehicles.length === 0} className="h-12 w-full rounded-xl bg-zinc-900 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-primary-500 hover:text-zinc-900 disabled:opacity-50 dark:bg-white dark:text-zinc-900">{isUpdating ? 'Atualizando no servidor…' : report ? 'Refazer atualização' : 'Iniciar atualização'}</button>
+            {error && <p className="text-xs font-bold text-red-500">{error}</p>}
+          </div>
+          {report && <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[['Veículos', report.summary.totalVehicles], ['Posições', report.summary.positionsUpdated], ['Endereços', report.summary.addressesResolved], ['Erros', report.summary.errors]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-zinc-100 p-3 dark:border-zinc-800"><div className="text-lg font-black text-zinc-900 dark:text-white">{value}</div><div className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{label}</div></div>)}
+            </div>
+            <div className="min-h-[180px] flex-1 space-y-1 overflow-y-auto rounded-2xl border border-zinc-100 p-2 dark:border-zinc-800">
+              {report.vehicles.map(item => {
+                const success = item.status === 'updated'; const failed = item.status === 'error';
+                return <div key={item.vehicleId} className="flex items-start gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/60">
+                  {success ? <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-500" /> : failed ? <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-500" /> : <MinusCircle size={18} className="mt-0.5 shrink-0 text-zinc-400" />}
+                  <div className="min-w-0"><div className="truncate text-xs font-black text-zinc-800 dark:text-zinc-200">{item.plate} {item.model && `· ${item.model}`}</div><div className="truncate text-[10px] text-zinc-500">{item.address || item.error || (item.tagId ? `Tag ${item.tagId}` : 'Veículo sem tag vinculada')}</div></div>
+                  <span className={`ml-auto shrink-0 text-[9px] font-black uppercase tracking-widest ${success ? 'text-emerald-500' : failed ? 'text-red-500' : 'text-zinc-400'}`}>{statusLabel[item.status]}</span>
+                </div>;
+              })}
+            </div>
+          </>}
+        </div>
+      </motion.div>
+    </div>
+  )}</AnimatePresence>;
 };
