@@ -181,7 +181,6 @@ export const LiveMap = () => {
             highlightedTagId={selectedTagId} 
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
-            showTagIds={Boolean(user && user.role !== 'client')}
             mapProvider={mapProvider}
             focusLocation={focusedHistoryPoint}
             replayLocation={showHistoryList ? replayPoint : null}

@@ -33,9 +33,7 @@ const createVehicleIcon = (
     color = '#f59e0b', 
     isUnlinked = false,
     showPlates = false,
-    plateText = '',
-    showTagIds = false,
-    tagIdText = ''
+    plateText = ''
 ) => {
   const size = isSelected ? 20 : 16;
   
@@ -51,7 +49,7 @@ const createVehicleIcon = (
   const textColor = isUnlinked ? '#ffffff' : (isSelected ? '#000000' : '#18181b');
 
   // Badge HTML (condicional)
-  const badgeLines = [showPlates && plateText && !isUnlinked ? escapeHtml(plateText) : '', showTagIds && tagIdText ? `ID ${escapeHtml(tagIdText)}` : ''].filter(Boolean);
+  const badgeLines = [showPlates && plateText && !isUnlinked ? escapeHtml(plateText) : ''].filter(Boolean);
   const badgeHtml = badgeLines.length ? `
     <div style="
         position: absolute;
@@ -204,7 +202,6 @@ interface MapProps {
   categories?: VehicleCategory[];
   highlightedTagId?: string;
   showPlates?: boolean; // Nova prop
-  showTagIds?: boolean;
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
   focusLocation?: LocationHistory | null;
@@ -239,7 +236,6 @@ export const MapComponent: React.FC<MapProps> = ({
   categories = [],
   highlightedTagId, 
   showPlates = false, // Default false
-  showTagIds = false,
   onMarkerClick,
   mapProvider = 'osm', focusLocation = null, replayLocation = null, replayTrail = [],
 }) => {
@@ -322,9 +318,7 @@ export const MapComponent: React.FC<MapProps> = ({
                   statusColor, 
                   isUnlinked, 
                   showPlates, // Passa estado
-                  vehicle?.plate,
-                  showTagIds,
-                  loc.tagId
+                  vehicle?.plate
               )}
               eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
           >
@@ -339,8 +333,6 @@ export const MapComponent: React.FC<MapProps> = ({
                           </span>
                       </div>
 
-                      {showTagIds && <div className="mb-2 break-all rounded-lg bg-zinc-100 px-2 py-1.5 font-mono text-[9px] font-bold text-zinc-600"><span className="font-black uppercase text-zinc-400">ID da tag </span>{loc.tagId}</div>}
-                      
                       <div className="flex items-center gap-2 mb-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
                           <div className="text-zinc-500">
                               <VehicleIconComponent type={category?.fipeType} catName={category?.name} size={16} isUnlinked={isUnlinked} />

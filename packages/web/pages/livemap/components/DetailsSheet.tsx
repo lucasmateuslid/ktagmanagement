@@ -34,6 +34,9 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
     const [isUpdating, setIsUpdating] = useState(false);
     const [updateSuccess, setUpdateSuccess] = useState(false);
     const [timeAgo, setTimeAgo] = useState<string>('');
+    const tagIdentifier = tag?.type === 'XADTAG'
+        ? (tag.identifierOriginal || tag.accessoryId || selectedTagId)
+        : selectedTagId;
 
     const updateTimeAgo = () => {
         if (lastLoc?.timestamp) {
@@ -165,6 +168,20 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
                             <div className="overflow-hidden">
                                 <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">Cliente Responsável</span>
                                 <span className="text-xs font-bold text-zinc-900 dark:text-white uppercase truncate block">{client.name}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {userRole !== 'client' && tagIdentifier && (
+                        <div className="flex items-center gap-3 p-3 md:p-4 bg-primary-500/10 rounded-[20px] border border-primary-500/30">
+                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-primary-500 text-black flex items-center justify-center shadow-sm shrink-0">
+                                <TagIcon size={16} className="md:w-[18px] md:h-[18px]" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">
+                                    {tag?.type === 'XADTAG' ? 'XADTAG (Identificador)' : 'K-TAG (ID da tag)'}
+                                </span>
+                                <span className="text-xs font-mono font-bold text-zinc-900 dark:text-white break-all block">{tagIdentifier}</span>
                             </div>
                         </div>
                     )}
