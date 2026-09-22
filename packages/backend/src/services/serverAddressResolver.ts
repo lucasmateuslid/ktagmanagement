@@ -9,6 +9,7 @@ export type ServerAddressResult = {
 type CacheEntry = { expiresAt: number; result: ServerAddressResult };
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = Number(process.env.SERVER_ADDRESS_CACHE_TTL_MS) || 24 * 60 * 60_000;
+const FAILURE_CACHE_TTL_MS = Number(process.env.SERVER_ADDRESS_FAILURE_CACHE_TTL_MS) || 5 * 60_000;
 const USER_AGENT = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/5.1 ServerWorker';
 
 const key = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`;
@@ -22,7 +23,7 @@ const fetchJson = async (url: string) => {
 };
 
 const remember = (cacheKey: string, result: ServerAddressResult) => {
-  cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, result });
+  cache.set(cacheKey, { expiresAt: Date.now() + (result.address ? CACHE_TTL_MS : FAILURE_CACHE_TTL_MS), result });
   return result;
 };
 

@@ -1,8 +1,10 @@
-import { createDecipheriv, pbkdf2Sync, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { TraccarPosition } from '@ktag/shared';
 import { adminDb } from './firebaseAdmin.js';
 import { fetchKtagWithRetry, ktagHistoryPointId, normalizeKtagSnapshot } from './ktagHistoryCapture.js';
+import { pairKtagResults } from './ktagFleetUtils.js';
+import { makeKtagRefreshItem, syncKtagKeysForTenant } from './ktagKeySyncService.js';
 import { resolveServerAddress, samePosition } from './serverAddressResolver.js';
 import { traccarClient } from './traccarClient.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
@@ -18,6 +20,7 @@ export type FleetRefreshEntry = {
   plate: string;
   model: string;
   tagId: string | null;
+  tagIdentifier: string | null;
   provider: 'ktag' | 'traccar' | null;
   status: 'updated' | 'unchanged' | 'no_tag' | 'no_position' | 'error';
   address: string | null;
@@ -46,15 +49,7 @@ export type FleetRefreshReport = {
   locations: any[];
 };
 
-const decrypt = (tenantId: string, value: unknown) => {
-  const text = String(value || ''); if (text.length < 16 || !/^[A-Za-z0-9+/=]+$/.test(text)) return text;
-  try {
-    const raw = Buffer.from(text, 'base64'); const iv = raw.subarray(0, 12); const encrypted = raw.subarray(12, -16); const tag = raw.subarray(-16);
-    const key = pbkdf2Sync(`ktag-enterprise-master-key-${tenantId}-v3`, 'ktag-enterprise-salt-2025', 100_000, 32, 'sha256');
-    const decipher = createDecipheriv('aes-256-gcm', key, iv); decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-  } catch { return text; }
-};
+const emptySummary = () => ({ totalVehicles: 0, linkedVehicles: 0, positionsUpdated: 0, addressesResolved: 0, addressesReused: 0, addressesFailed: 0, withoutPosition: 0, errors: 0 });
 
 const battery = (status: number) => status === 0
   ? { level: 100, label: 'Alto', color: '#10b981' }
@@ -87,16 +82,20 @@ const validCoordinates = (lat: number, lon: number) => Number.isFinite(lat) && N
 
 export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | 'manual' = 'worker'): Promise<FleetRefreshReport> {
   const id = randomUUID(); const startedAt = Date.now(); const lease = await acquireLease(tenantId);
-  const emptySummary = { totalVehicles: 0, linkedVehicles: 0, positionsUpdated: 0, addressesResolved: 0, addressesReused: 0, addressesFailed: 0, withoutPosition: 0, errors: 0 };
-  if (!lease) return { id, tenantId, trigger, startedAt, completedAt: Date.now(), busy: true, summary: emptySummary, vehicles: [], locations: [] };
+  if (!lease) {
+    const latest = await adminDb.doc(`tenants/${tenantId}/job_reports/fleet_refresh_latest`).get();
+    if (latest.exists) return { ...(latest.data() as FleetRefreshReport), id, trigger, startedAt, completedAt: Date.now(), busy: true };
+    return { id, tenantId, trigger, startedAt, completedAt: Date.now(), busy: true, summary: emptySummary(), vehicles: [], locations: [] };
+  }
 
   try {
     const [tagSnap, vehicleSnap] = await Promise.all([
       adminDb.collection(`tenants/${tenantId}/tags`).get(),
       adminDb.collection(`tenants/${tenantId}/vehicles`).get(),
     ]);
-    const summary = { ...emptySummary, totalVehicles: vehicleSnap.size, linkedVehicles: vehicleSnap.docs.filter(doc => doc.get('tagId')).length };
+    const summary = { ...emptySummary(), totalVehicles: vehicleSnap.size, linkedVehicles: vehicleSnap.docs.filter(doc => doc.get('tagId')).length };
     const vehicleByTag = new Map(vehicleSnap.docs.filter(doc => doc.get('tagId')).map(doc => [String(doc.get('tagId')), doc]));
+    const tagById = new Map(tagSnap.docs.map(doc => [doc.id, doc]));
     const locationByTag = new Map<string, any>();
     const errorsByTag = new Map<string, string>();
     const updatedTags = new Set<string>();
@@ -104,30 +103,43 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
 
     const ktagItems = tagSnap.docs
       .filter(doc => String(doc.get('type') || doc.get('equipmentType')) === 'K_TAG')
-      .map(doc => ({ doc, hashedAdvKey: decrypt(tenantId, doc.get('hashedAdvKey')), privateKey: decrypt(tenantId, doc.get('privateKey')) }))
-      .filter(item => item.hashedAdvKey && item.privateKey);
+      .map(doc => makeKtagRefreshItem(tenantId, doc));
+    if (ktagItems.length) {
+      try {
+        const keySync = await syncKtagKeysForTenant(tenantId, ktagItems);
+        console.info(JSON.stringify({ event: 'fleet.ktag.keys_synced', tenantId, ...keySync }));
+      } catch (error) {
+        console.warn(JSON.stringify({ event: 'fleet.ktag.keys_sync_failed', tenantId, error: (error as Error).message }));
+      }
+    }
+    const readyKtagItems = ktagItems.filter(item => item.hashedAdvKey && item.privateKey);
+    ktagItems.filter(item => !item.hashedAdvKey || !item.privateKey).forEach(item => {
+      errorsByTag.set(item.doc.id, item.accessoryId
+        ? 'Chaves de rastreamento não encontradas para o serial desta K-TAG.'
+        : 'Serial Number da K-TAG não cadastrado.');
+    });
     const url = process.env.KTAG_API_URL; const username = process.env.KTAG_API_USER; const password = process.env.KTAG_API_PASS;
 
-    if (ktagItems.length && (!url || !username || !password)) {
-      ktagItems.forEach(item => errorsByTag.set(item.doc.id, 'Credenciais K-TAG não configuradas no servidor.'));
+    if (readyKtagItems.length && (!url || !username || !password)) {
+      readyKtagItems.forEach(item => errorsByTag.set(item.doc.id, 'Integração K-TAG não configurada.'));
     } else {
-      for (let offset = 0; offset < ktagItems.length; offset += BATCH_SIZE) {
-        const chunk = ktagItems.slice(offset, offset + BATCH_SIZE);
+      for (let offset = 0; offset < readyKtagItems.length; offset += BATCH_SIZE) {
+        const chunk = readyKtagItems.slice(offset, offset + BATCH_SIZE);
         try {
           const response = await fetchKtagWithRetry(() => fetch(url!, {
             method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`, 'User-Agent': 'KTagManagerPro/5.1 FleetRefresh' },
             body: JSON.stringify({ hashed_keys: chunk.map(item => item.hashedAdvKey), priv_keys: chunk.map(item => item.privateKey) }), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           }));
           if (!response.ok) throw new Error(`K-TAG respondeu HTTP ${response.status}.`);
-          const payload: any = await response.json(); const byKey = new Map(chunk.map(item => [item.hashedAdvKey, item]));
+          const payload: any = await response.json();
           const seen = new Set<string>();
-          for (const raw of Array.isArray(payload?.results) ? payload.results : []) {
-            const item = byKey.get(String(raw.key || '')); const normalized = normalizeKtagSnapshot(raw);
-            if (!item || !normalized) continue;
+          for (const { item, raw } of pairKtagResults(chunk, Array.isArray(payload?.results) ? payload.results : [])) {
+            const normalized = normalizeKtagSnapshot(raw);
+            if (!normalized) { errorsByTag.set(item.doc.id, 'K-TAG retornou uma posição inválida.'); continue; }
             seen.add(item.doc.id);
             const previous = item.doc.get('lastPosition');
             const reusableAddress = samePosition(previous, normalized.lat, normalized.lon) ? String(previous?.address || '') : '';
-            const freshAddress = await resolveServerAddress(normalized.lat, normalized.lon, reusableAddress || null, true);
+            const freshAddress = await resolveServerAddress(normalized.lat, normalized.lon, reusableAddress || null);
             const resolved = freshAddress.address ? freshAddress : { ...freshAddress, address: reusableAddress || null, provider: reusableAddress ? 'existing' as const : null };
             if (resolved.address) resolved.provider === 'existing' ? summary.addressesReused++ : summary.addressesResolved++; else summary.addressesFailed++;
             const vehicle = vehicleByTag.get(item.doc.id); const pointId = ktagHistoryPointId(item.doc.id, normalized);
@@ -167,7 +179,7 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
       const previous = item.get('lastPosition'); const lat = Number(raw?.latitude ?? previous?.lat ?? previous?.latitude); const lon = Number(raw?.longitude ?? previous?.lon ?? previous?.longitude);
       if (!validCoordinates(lat, lon)) { if (traccarError) errorsByTag.set(item.id, traccarError); continue; }
       const reusableAddress = samePosition(previous, lat, lon) ? String(previous?.address || '') : '';
-      const freshAddress = await resolveServerAddress(lat, lon, reusableAddress || null, true);
+      const freshAddress = await resolveServerAddress(lat, lon, reusableAddress || null);
       const resolved = freshAddress.address ? freshAddress : { ...freshAddress, address: reusableAddress || null, provider: reusableAddress ? 'existing' as const : null };
       if (resolved.address) resolved.provider === 'existing' ? summary.addressesReused++ : summary.addressesResolved++; else summary.addressesFailed++;
       const vehicle = vehicleByTag.get(item.id); const tracked = raw
@@ -182,9 +194,13 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
 
     const vehicles: FleetRefreshEntry[] = vehicleSnap.docs.map(vehicle => {
       const tagId = String(vehicle.get('tagId') || ''); const location = tagId ? locationByTag.get(tagId) : null; const error = tagId ? errorsByTag.get(tagId) : undefined;
+      const linkedTag = tagId ? tagById.get(tagId) : undefined;
+      const tagIdentifier = linkedTag
+        ? String(linkedTag.get('identifierOriginal') || linkedTag.get('accessoryId') || linkedTag.get('name') || linkedTag.id)
+        : null;
       const status: FleetRefreshEntry['status'] = !tagId ? 'no_tag' : error ? 'error' : !location ? 'no_position' : updatedTags.has(tagId) ? 'updated' : 'unchanged';
       if (status === 'no_position') summary.withoutPosition++; if (status === 'error') summary.errors++;
-      return { vehicleId: vehicle.id, plate: String(vehicle.get('plate') || 'Sem placa'), model: String(vehicle.get('model') || ''), tagId: tagId || null, provider: location?.provider || null, status, address: location?.address || null, timestamp: location ? positionTime(location) : null, ...(error ? { error } : {}) };
+      return { vehicleId: vehicle.id, plate: String(vehicle.get('plate') || 'Sem placa'), model: String(vehicle.get('model') || ''), tagId: tagId || null, tagIdentifier, provider: location?.provider || null, status, address: location?.address || null, timestamp: location ? positionTime(location) : null, ...(error ? { error } : {}) };
     });
     summary.errors += [...errorsByTag.keys()].filter(tagId => !vehicleByTag.has(tagId)).length;
     const report: FleetRefreshReport = { id, tenantId, trigger, startedAt, completedAt: Date.now(), busy: false, summary, vehicles, locations: [...locationByTag.values()] };
@@ -194,6 +210,17 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
   } finally {
     await releaseLease(lease);
   }
+}
+
+export async function latestTenantFleetRefresh(tenantId: string): Promise<FleetRefreshReport> {
+  const [lease, latest] = await Promise.all([
+    adminDb.doc(`tenants/${tenantId}/job_leases/fleet_refresh`).get(),
+    adminDb.doc(`tenants/${tenantId}/job_reports/fleet_refresh_latest`).get(),
+  ]);
+  const busy = Number(lease.get('expiresAt') || 0) > Date.now();
+  if (latest.exists) return { ...(latest.data() as FleetRefreshReport), busy };
+  const now = Date.now();
+  return { id: randomUUID(), tenantId, trigger: 'manual', startedAt: now, completedAt: now, busy, summary: emptySummary(), vehicles: [], locations: [] };
 }
 
 export async function refreshAllActiveTenants() {

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
-import { createCipheriv, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
+import { encryptKtagSecret } from '../services/ktagSecrets.js';
 import { traccarClient, TraccarHttpError } from '../services/traccarClient.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { traccarRealtimeService } from '../services/traccarRealtimeService.js';
@@ -10,12 +10,6 @@ import { traccarRealtimeService } from '../services/traccarRealtimeService.js';
 export const tagsRouter = Router();
 tagsRouter.use(requireAuth);
 const tenant = (req: any) => { const value = String(req.tenantId || ''); if (!value || value === 'admin' || value === '__apex__') throw Object.assign(new Error('Empresa inválida.'), { status: 400 }); return value; };
-const encrypt = (tid: string, value: unknown) => {
-  const text = String(value || ''); if (!text) return text; const iv = randomBytes(12);
-  const key = pbkdf2Sync(`ktag-enterprise-master-key-${tid}-v3`, 'ktag-enterprise-salt-2025', 100_000, 32, 'sha256');
-  const cipher = createCipheriv('aes-256-gcm', key, iv); const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, encrypted, cipher.getAuthTag()]).toString('base64');
-};
 const clean = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 
 tagsRouter.post('/', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderator']), async (req, res) => {
@@ -25,7 +19,7 @@ tagsRouter.post('/', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderato
     if (!name || !accessoryId) return res.status(400).json({ ok: false, error: 'Nome e Serial Number são obrigatórios.' });
     const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(1).get(); if (!duplicate.empty) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
     const tenantDoc = await adminDb.doc(`tenants/${tid}`).get(); const tagLimit = Number(tenantDoc.get('settings.limiteTags') || 0); if (tagLimit > 0) { const count = await adminDb.collection(`tenants/${tid}/tags`).count().get(); if (count.data().count >= tagLimit) return res.status(409).json({ ok: false, error: 'Limite de tags da empresa atingido.' }); }
-    const data = clean({ ...body, id: undefined, type: 'K_TAG', name, accessoryId, hashedAdvKey: body.hashedAdvKey ? encrypt(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encrypt(tid, body.privateKey) : undefined, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now() });
+    const data = clean({ ...body, id: undefined, type: 'K_TAG', name, accessoryId, hashedAdvKey: body.hashedAdvKey ? encryptKtagSecret(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encryptKtagSecret(tid, body.privateKey) : undefined, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now() });
     await adminDb.doc(`tenants/${tid}/tags/${id}`).create(data); await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Tag', entityId: id, timestamp: FieldValue.serverTimestamp() });
     res.status(201).json({ ok: true, data: { id, ...body, type: 'K_TAG', name, accessoryId } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao criar tag.' }); }
@@ -37,7 +31,7 @@ tagsRouter.put('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'modera
     if (current.get('type') === 'XADTAG' || current.get('equipmentType') === 'XADTAG') return res.status(400).json({ ok: false, error: 'Use a integração XADTAG para este tipo.' });
     const body = req.body || {}; const accessoryId = String(body.accessoryId || current.get('accessoryId') || '').trim(); const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(2).get(); if (duplicate.docs.some(doc => doc.id !== ref.id)) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
     const manualBatteryStartedAt = Number(body.batteryStartedAt);
-    await ref.update(clean({ name: String(body.name || current.get('name') || '').trim(), accessoryId, powerType: body.powerType, batteryWarrantyYears: body.batteryWarrantyYears, ...(Number.isFinite(manualBatteryStartedAt) && manualBatteryStartedAt > 0 ? { batteryStartedAt: manualBatteryStartedAt, batteryStartSource: 'manual' } : {}), hashedAdvKey: body.hashedAdvKey ? encrypt(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encrypt(tid, body.privateKey) : undefined, updatedAt: Date.now() }));
+    await ref.update(clean({ name: String(body.name || current.get('name') || '').trim(), accessoryId, powerType: body.powerType, batteryWarrantyYears: body.batteryWarrantyYears, ...(Number.isFinite(manualBatteryStartedAt) && manualBatteryStartedAt > 0 ? { batteryStartedAt: manualBatteryStartedAt, batteryStartSource: 'manual' } : {}), hashedAdvKey: body.hashedAdvKey ? encryptKtagSecret(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encryptKtagSecret(tid, body.privateKey) : undefined, updatedAt: Date.now() }));
     await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Tag', entityId: ref.id, timestamp: FieldValue.serverTimestamp() }); res.json({ ok: true, data: { id: ref.id, ...body, accessoryId } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao atualizar tag.' }); }
 });

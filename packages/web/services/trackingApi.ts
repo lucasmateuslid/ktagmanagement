@@ -10,6 +10,7 @@ export interface FleetRefreshEntry {
   plate: string;
   model: string;
   tagId: string | null;
+  tagIdentifier: string | null;
   provider: 'ktag' | 'traccar' | null;
   status: 'updated' | 'unchanged' | 'no_tag' | 'no_position' | 'error';
   address: string | null;
@@ -62,5 +63,6 @@ export const trackingApi = {
   liveMap: () => request<LiveMapTrackedAsset[]>('/api/livemap'), adminStatus: () => request<any>('/api/admin/integrations/traccar/status'),
   refreshFleet: () => request<FleetRefreshReport>('/api/livemap/refresh', { method: 'POST', body: '{}' }),
   adminTestWebSocket: () => request<any>('/api/admin/integrations/traccar/test-websocket', { method: 'POST', body: '{}' }),
+  latestFleetRefresh: () => request<FleetRefreshReport>('/api/livemap/refresh/latest'),
   websocket: async () => { const token = await auth?.currentUser?.getIdToken(); if (!token) throw new Error('Autenticação necessária.'); return new WebSocket(trackingWebSocketUrl(activeTenant.id), [`firebase.${token}`]); },
 };

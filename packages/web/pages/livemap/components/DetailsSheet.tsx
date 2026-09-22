@@ -36,7 +36,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
     const [timeAgo, setTimeAgo] = useState<string>('');
     const tagIdentifier = tag?.type === 'XADTAG'
         ? (tag.identifierOriginal || tag.accessoryId || selectedTagId)
-        : selectedTagId;
+        : (tag?.accessoryId || tag?.name || selectedTagId);
 
     const updateTimeAgo = () => {
         if (lastLoc?.timestamp) {
@@ -179,7 +179,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
                             </div>
                             <div className="min-w-0">
                                 <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">
-                                    {tag?.type === 'XADTAG' ? 'XADTAG (Identificador)' : 'K-TAG (ID da tag)'}
+                                    {tag?.type === 'XADTAG' ? 'XADTAG (Identificador)' : 'K-TAG (Serial Number)'}
                                 </span>
                                 <span className="text-xs font-mono font-bold text-zinc-900 dark:text-white break-all block">{tagIdentifier}</span>
                             </div>
