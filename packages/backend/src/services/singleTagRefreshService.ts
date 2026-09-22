@@ -52,13 +52,12 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
 
   const vehicle = await linkedVehicle(tenantId, tag.id); const previous = tag.get('lastPosition');
   const reusableAddress = samePosition(previous, normalized.lat, normalized.lon) ? String(previous?.address || '') : '';
-  const freshAddress = await resolveServerAddress(normalized.lat, normalized.lon, reusableAddress || null);
-  const address = freshAddress.address || reusableAddress || null;
+  const address = reusableAddress || null;
   const id = ktagHistoryPointId(tag.id, normalized);
   const point: SingleTagLocation = {
     ...normalized, id, tagId: tag.id, ...(vehicle ? { vehicleId: vehicle.id } : {}), provider: 'ktag',
-    battery: battery(normalized.status), address, addressResolutionStatus: address ? 'resolved' : 'failed',
-    addressResolutionProvider: freshAddress.provider, addressResolvedAt: Date.now(),
+    battery: battery(normalized.status), address, addressResolutionStatus: address ? 'resolved' : 'pending',
+    addressResolutionProvider: address ? 'existing' : null, addressResolvedAt: address ? Date.now() : null,
   };
   const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${id}`);
   await adminDb.runTransaction(async tx => {
@@ -66,7 +65,7 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
       tx.get(tag.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
     ]);
     if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
-    else if (address) tx.set(historyRef, { address, addressResolutionStatus: 'resolved', addressResolutionProvider: freshAddress.provider, addressResolvedAt: Date.now() }, { merge: true });
+    else if (address) tx.set(historyRef, { address, addressResolutionStatus: 'resolved', addressResolutionProvider: 'existing', addressResolvedAt: Date.now() }, { merge: true });
     if (freshVehicle && normalized.timestamp >= Number(freshVehicle.get('lastPosition.timestamp') || 0)) {
       tx.update(freshVehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now(), ktagHistoryCapturedThrough: Math.max(Number(freshVehicle.get('ktagHistoryCapturedThrough') || 0), normalized.timestamp) });
     }
@@ -76,6 +75,18 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
     if (normalized.timestamp >= Number(freshTag.get('lastPosition.timestamp') || 0)) Object.assign(tagUpdate, { lastPosition: point, lastBattery: point.battery?.level });
     tx.update(tag.ref, tagUpdate);
   });
+  if (!address) void resolveServerAddress(normalized.lat, normalized.lon).then(async resolved => {
+    if (!resolved.address) return;
+    await adminDb.runTransaction(async tx => {
+      const [freshTag, freshHistory, freshVehicle] = await Promise.all([
+        tx.get(tag.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
+      ]);
+      const addressUpdate = { address: resolved.address, addressResolutionStatus: 'resolved', addressResolutionProvider: resolved.provider, addressResolvedAt: Date.now() };
+      if (freshHistory.exists) tx.set(historyRef, addressUpdate, { merge: true });
+      if (freshTag.get('lastPosition.id') === id) tx.update(tag.ref, Object.fromEntries(Object.entries(addressUpdate).map(([key, value]) => [`lastPosition.${key}`, value])));
+      if (freshVehicle?.get('lastPosition.id') === id) tx.update(freshVehicle.ref, Object.fromEntries(Object.entries(addressUpdate).map(([key, value]) => [`lastPosition.${key}`, value])));
+    });
+  }).catch(error => console.warn(JSON.stringify({ event: 'tag.refresh.address_failed', tenantId, tagId: tag.id, error: (error as Error).message })));
   return point;
 }
 

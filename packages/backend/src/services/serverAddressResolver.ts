@@ -10,7 +10,11 @@ type CacheEntry = { expiresAt: number; result: ServerAddressResult };
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = Number(process.env.SERVER_ADDRESS_CACHE_TTL_MS) || 24 * 60 * 60_000;
 const FAILURE_CACHE_TTL_MS = Number(process.env.SERVER_ADDRESS_FAILURE_CACHE_TTL_MS) || 5 * 60_000;
+const CIRCUIT_FAILURE_LIMIT = Number(process.env.SERVER_ADDRESS_CIRCUIT_FAILURE_LIMIT) || 3;
+const CIRCUIT_OPEN_MS = Number(process.env.SERVER_ADDRESS_CIRCUIT_OPEN_MS) || 5 * 60_000;
 const USER_AGENT = process.env.GEOCODING_USER_AGENT || 'KTagManagerPro/5.1 ServerWorker';
+let consecutiveFailures = 0;
+let circuitOpenUntil = 0;
 
 const key = (lat: number, lon: number) => `${lat.toFixed(5)},${lon.toFixed(5)}`;
 const validCoordinates = (lat: number, lon: number) => Number.isFinite(lat) && Number.isFinite(lon)
@@ -33,13 +37,14 @@ export async function resolveServerAddress(lat: number, lon: number, existing?: 
   if (!validCoordinates(lat, lon)) return { address: null, provider: null, attempts: 0 };
   const cacheKey = key(lat, lon); const cached = cache.get(cacheKey);
   if (!force && cached && cached.expiresAt > Date.now()) return cached.result;
+  if (Date.now() < circuitOpenUntil) return { address: null, provider: null, attempts: 0 };
 
   let attempts = 0;
   if (traccarClient.safeConfig.configured) {
     attempts++;
     try {
       const address = await traccarClient.reverseGeocode(lat, lon);
-      if (address) return remember(cacheKey, { address, provider: 'traccar', attempts });
+      if (address) { consecutiveFailures = 0; return remember(cacheKey, { address, provider: 'traccar', attempts }); }
     } catch { /* tenta provedores públicos */ }
   }
 
@@ -49,18 +54,21 @@ export async function resolveServerAddress(lat: number, lon: number, existing?: 
     const feature = data?.features?.[0]; const properties = feature?.properties || {};
     const address = [properties.name, properties.street, properties.housenumber, properties.district, properties.city, properties.state, properties.country]
       .filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(', ');
-    if (address) return remember(cacheKey, { address, provider: 'photon', attempts });
+    if (address) { consecutiveFailures = 0; return remember(cacheKey, { address, provider: 'photon', attempts }); }
   } catch { /* tenta OSM */ }
 
   attempts++;
   try {
     const data = await fetchJson(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&addressdetails=1`);
     if (typeof data?.display_name === 'string' && data.display_name.trim()) {
+      consecutiveFailures = 0;
       return remember(cacheKey, { address: data.display_name.trim(), provider: 'openstreetmap', attempts });
     }
   } catch { /* endereço permanece pendente */ }
 
-  console.warn(JSON.stringify({ event: 'fleet.address.unavailable', lat: Number(lat.toFixed(4)), lon: Number(lon.toFixed(4)), attempts }));
+  consecutiveFailures++;
+  if (consecutiveFailures >= CIRCUIT_FAILURE_LIMIT) circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+  console.warn(JSON.stringify({ event: 'fleet.address.unavailable', lat: Number(lat.toFixed(4)), lon: Number(lon.toFixed(4)), attempts, circuitOpen: circuitOpenUntil > Date.now() }));
   return remember(cacheKey, { address: null, provider: null, attempts });
 }
 
