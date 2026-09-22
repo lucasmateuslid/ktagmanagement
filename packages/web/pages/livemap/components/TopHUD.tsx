@@ -10,8 +10,6 @@ interface TopHUDProps {
     setSearchTerm: (s: string) => void;
     isFocused: boolean;
     setIsFocused: (b: boolean) => void;
-    loading: boolean;
-    onRefresh: () => void;
     searchPlaceholder: string;
     filteredList: any[];
     fleetLocations: any[];
@@ -30,7 +28,7 @@ interface TopHUDProps {
 }
 
 export const TopHUD: React.FC<TopHUDProps> = ({ 
-    searchTerm, setSearchTerm, isFocused, setIsFocused, loading, onRefresh, searchPlaceholder,
+    searchTerm, setSearchTerm, isFocused, setIsFocused, searchPlaceholder,
     filteredList, fleetLocations, clients, categories, userRole, onSelect,
     stats, filter, setFilter, displayLimit, setDisplayLimit,
     showPlates, setShowPlates, onOpenUpdateModal
@@ -95,23 +93,6 @@ export const TopHUD: React.FC<TopHUDProps> = ({
                           </button>
                       )}
                       
-                      {!isFocused && (
-                          <>
-                              <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
-                              <button 
-                                  onClick={onRefresh} 
-                                  className={`
-                                      p-2 rounded-full transition-all active:scale-90
-                                      ${loading 
-                                          ? 'bg-primary-500/10 text-primary-500 rotate-180' 
-                                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-primary-500'}
-                                  `}
-                                  title="Atualizar Localizações"
-                              >
-                                  <RefreshCw size={16} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
-                              </button>
-                          </>
-                      )}
                   </div>
                 </div>
 

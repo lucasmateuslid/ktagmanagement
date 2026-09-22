@@ -44,8 +44,9 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
 
   const refreshTag = useCallback(async (tagId: string) => {
     if (!tags.some(tag => tag.id === tagId)) return;
-    await fetchUpdate();
-  }, [fetchUpdate, tags]);
+    const location = await trackingApi.refreshTag(tagId) as LocationHistory;
+    if (hasValidCoordinates(location)) setFleetLocations(previous => mergeFleetLocations(previous, [location]));
+  }, [tags]);
 
   const injectLocations = useCallback((locations: LocationHistory[]) => {
     setFleetLocations(previous => mergeFleetLocations(previous, locations.filter(hasValidCoordinates)));

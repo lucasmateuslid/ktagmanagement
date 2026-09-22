@@ -8,6 +8,7 @@ import { xadTagService } from '../services/xadtagService.js';
 import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { HistoryRequestError, trackingHistoryService } from '../services/trackingHistoryService.js';
 import { latestTenantFleetRefresh, refreshTenantFleet } from '../services/fleetRefreshService.js';
+import { refreshSingleTag } from '../services/singleTagRefreshService.js';
 
 export const xadTagsRouter = Router();
 xadTagsRouter.use(requireAuth);
@@ -112,13 +113,28 @@ export const liveMapRouter = Router();
 liveMapRouter.use(requireAuth);
 liveMapRouter.post('/refresh', requireInternalUser, async (req, res) => {
   try {
-    const report = await refreshTenantFleet(tenant(req), 'manual');
-    res.status(report.busy ? 202 : 200).json({ ok: true, data: report });
+    const tid = tenant(req); const current = await latestTenantFleetRefresh(tid);
+    if (!current.busy) void refreshTenantFleet(tid, 'manual').catch(error => {
+      console.error(JSON.stringify({ event: 'fleet.refresh.manual_failed', tenantId: tid, error: (error as Error).message }));
+    });
+    res.status(202).json({ ok: true, data: { ...current, trigger: 'manual', busy: true } });
   } catch (error) { fail(res, error); }
 });
 liveMapRouter.get('/refresh/latest', requireInternalUser, async (req, res) => {
   try { res.json({ ok: true, data: await latestTenantFleetRefresh(tenant(req)) }); }
   catch (error) { fail(res, error); }
+});
+liveMapRouter.post('/tags/:id/refresh', async (req, res) => {
+  try {
+    const tid = tenant(req); const tagId = String(req.params.id);
+    if (req.authUser?.role === 'client') {
+      const vehicle = await adminDb.collection(`tenants/${tid}/vehicles`).where('tagId', '==', tagId).where('clientId', '==', req.authUser.clientId).limit(1).get();
+      if (vehicle.empty) return res.status(404).json({ ok: false, error: 'Tag não encontrada.' });
+    }
+    res.json({ ok: true, data: await refreshSingleTag(tid, tagId) });
+  } catch (error: any) {
+    res.status(error?.status || 502).json({ ok: false, error: error?.message || 'Falha ao atualizar a tag.', errorCode: 'TAG_REFRESH_FAILED' });
+  }
 });
 liveMapRouter.get('/', async (req, res) => { try { const ids = await clientVehicleIds(req); const items = await xadTagRepository.list(tenant(req)); const authorized = ids ? items.filter(item => item.linkedEntityId && ids.has(item.linkedEntityId)) : items; const data = authorized.map(item => xadTagService.toLiveMap(item)).filter(Boolean); res.json({ ok: true, data }); } catch (error) { fail(res, error); } });
 liveMapRouter.get('/tags/:id/history', async (req, res) => {

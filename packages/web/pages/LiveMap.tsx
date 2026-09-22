@@ -47,6 +47,7 @@ export const LiveMap = () => {
   const [replayIndex, setReplayIndex] = useState(0);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [replaySpeed, setReplaySpeed] = useState<1 | 2 | 4>(1);
+  const [selectionFocusVersion, setSelectionFocusVersion] = useState(0);
   const autoHistoryOpenedRef = useRef('');
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export const LiveMap = () => {
   const { tags, vehicles, categories, clients } = useFleetData(user);
 
   // 2. Tracking Layer
-  const { fleetLocations, loading, manualRefresh, refreshTag, injectLocations } = useFleetTracking(tags, vehicles);
+  const { fleetLocations, refreshTag, injectLocations } = useFleetTracking(tags, vehicles);
 
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
@@ -89,6 +90,7 @@ export const LiveMap = () => {
 
   const handleSelection = React.useCallback((tagId: string) => {
     setSelectedTagId(tagId); setIsSheetExpanded(true); setShowHistoryList(false);
+    setSelectionFocusVersion(version => version + 1);
     setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null);
     setTagSearchTerm(''); setIsSearchFocused(false);
   }, [setShowHistoryList]);
@@ -152,8 +154,6 @@ export const LiveMap = () => {
         setSearchTerm={setTagSearchTerm}
         isFocused={isSearchFocused}
         setIsFocused={setIsSearchFocused}
-        loading={loading}
-        onRefresh={manualRefresh}
         searchPlaceholder={getSearchPlaceholder()}
         filteredList={filteredList}
         fleetLocations={fleetLocations}
@@ -179,6 +179,7 @@ export const LiveMap = () => {
             tags={tags}
             categories={categories}
             highlightedTagId={selectedTagId} 
+            selectionFocusKey={selectionFocusVersion}
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
             mapProvider={mapProvider}

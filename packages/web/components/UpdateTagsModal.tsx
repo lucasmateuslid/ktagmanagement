@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RefreshCw, CheckCircle2, AlertCircle, MinusCircle } from 'lucide-react';
 import type { Vehicle, LocationHistory } from '../types';
@@ -17,14 +17,38 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
   const [isUpdating, setIsUpdating] = useState(false);
   const [report, setReport] = useState<FleetRefreshReport | null>(null);
   const [error, setError] = useState('');
+  const [startedAt, setStartedAt] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if ((!isUpdating && !report?.busy) || !startedAt) return;
+    const updateElapsed = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    updateElapsed(); const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [isUpdating, report?.busy, startedAt]);
+
+  useEffect(() => {
+    if (!isOpen || !report?.busy || isUpdating) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const next = await trackingApi.latestFleetRefresh(); setReport(next);
+        if (!next.busy) onLocationsUpdated?.(next.locations as LocationHistory[]);
+      } catch { /* mantém o último estado e tenta novamente */ }
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, report, isUpdating, onLocationsUpdated]);
+
+  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
 
   const handleUpdate = async () => {
     if (isUpdating || vehicles.length === 0) return;
+    const checkingExisting = Boolean(report?.busy);
+    if (!checkingExisting) { setStartedAt(Date.now()); setElapsedSeconds(0); }
     setIsUpdating(true); setReport(null); setError('');
     try {
-      const next = report?.busy ? await trackingApi.latestFleetRefresh() : await trackingApi.refreshFleet();
+      const next = checkingExisting ? await trackingApi.latestFleetRefresh() : await trackingApi.refreshFleet();
       setReport(next);
-      onLocationsUpdated?.(next.locations as LocationHistory[]);
+      if (!next.busy) onLocationsUpdated?.(next.locations as LocationHistory[]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a frota.');
     } finally { setIsUpdating(false); }
@@ -42,6 +66,7 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-zinc-100 bg-zinc-50 p-5 text-center dark:border-zinc-800 dark:bg-zinc-950">
             <RefreshCw size={32} className={`text-primary-500 ${isUpdating ? 'animate-spin' : ''}`} />
             <p className="max-w-lg text-sm font-bold text-zinc-600 dark:text-zinc-400">{isUpdating ? 'Atualizando posições e endereços…' : report?.busy ? 'Atualização em andamento.' : report ? 'Atualização concluída.' : 'Atualize agora as posições e os endereços da frota.'}</p>
+            {(isUpdating || report?.busy) && <div className="w-full"><div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"><motion.div className="h-full w-1/3 rounded-full bg-primary-500" animate={{ x: ['-100%', '300%'] }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }} /></div><p className="mt-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">Tempo decorrido {elapsedLabel}</p></div>}
             <button onClick={handleUpdate} disabled={isUpdating || vehicles.length === 0} className="h-12 w-full rounded-xl bg-zinc-900 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-primary-500 hover:text-zinc-900 disabled:opacity-50 dark:bg-white dark:text-zinc-900">{isUpdating ? 'Atualizando…' : report?.busy ? 'Verificar novamente' : report ? 'Atualizar novamente' : 'Atualizar agora'}</button>
             {error && <p className="text-xs font-bold text-red-500">{error}</p>}
           </div>

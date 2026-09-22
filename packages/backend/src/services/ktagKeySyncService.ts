@@ -3,7 +3,7 @@ import { normalizeKtagSerial } from './ktagFleetUtils.js';
 import { decryptKtagSecret, encryptKtagSecret } from './ktagSecrets.js';
 
 export type KtagRefreshItem = {
-  doc: FirebaseFirestore.QueryDocumentSnapshot;
+  doc: FirebaseFirestore.DocumentSnapshot;
   accessoryId: string;
   hashedAdvKey: string;
   privateKey: string;
@@ -57,7 +57,7 @@ export async function syncKtagKeysForTenant(tenantId: string, items: KtagRefresh
   return summary;
 }
 
-export function makeKtagRefreshItem(tenantId: string, doc: FirebaseFirestore.QueryDocumentSnapshot): KtagRefreshItem {
+export function makeKtagRefreshItem(tenantId: string, doc: FirebaseFirestore.DocumentSnapshot): KtagRefreshItem {
   return {
     doc,
     accessoryId: normalizeKtagSerial(doc.get('accessoryId')),

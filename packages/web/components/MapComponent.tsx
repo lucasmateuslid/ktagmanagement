@@ -201,6 +201,7 @@ interface MapProps {
   tags?: Tag[];
   categories?: VehicleCategory[];
   highlightedTagId?: string;
+  selectionFocusKey?: number;
   showPlates?: boolean; // Nova prop
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
@@ -235,6 +236,7 @@ export const MapComponent: React.FC<MapProps> = ({
   tags = [],
   categories = [],
   highlightedTagId, 
+  selectionFocusKey = 0,
   showPlates = false, // Default false
   onMarkerClick,
   mapProvider = 'osm', focusLocation = null, replayLocation = null, replayTrail = [],
@@ -387,7 +389,7 @@ export const MapComponent: React.FC<MapProps> = ({
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
           {isFleetMode && !highlightedLoc && <FitFleetBounds locations={safeLocations} />}
           {!isFleetMode && <FitHistoryBounds locations={routeLocations} />}
-          {highlightedLoc && <FocusMapOnce lat={highlightedLoc.lat} lon={highlightedLoc.lon} focusKey={`vehicle:${highlightedTagId}`} zoom={18} />}
+          {highlightedLoc && <FocusMapOnce lat={highlightedLoc.lat} lon={highlightedLoc.lon} focusKey={`vehicle:${highlightedTagId}:${selectionFocusKey}`} zoom={18} />}
           {safeFocusLocation && <FocusMapOnce lat={safeFocusLocation.lat} lon={safeFocusLocation.lon} focusKey={`history:${safeFocusLocation.id}`} zoom={18} />}
 
           {isFleetMode ? (
