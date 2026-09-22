@@ -409,7 +409,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars=NODE_ENV=production,TRACCAR_REALTIME_ENABLED="$TRACCAR_REALTIME_ENABLED" \
+            --update-env-vars=NODE_ENV=production,TRACCAR_REALTIME_ENABLED="$TRACCAR_REALTIME_ENABLED" \
             --quiet
 
       - name: Imprimir URL
