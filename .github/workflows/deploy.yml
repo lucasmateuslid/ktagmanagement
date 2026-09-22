@@ -206,6 +206,22 @@ jobs:
           echo "::error::A VPS não respondeu via IPv4/SSH. Confira se VPS_HOST é o IPv4 público (ou DNS sem proxy), se VPS_SSH_PORT é a porta externa correta e se o firewall permite conexões dos runners do GitHub Actions."
           exit 1
 
+      - name: Validar pré-requisitos da VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
+        run: |
+          ssh -4 -o BatchMode=yes -o ConnectTimeout=30 -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
+            "mkdir -p '$VPS_APP_PATH/deploy/vps' && \
+             test -f '$VPS_APP_PATH/deploy/vps/.env.vps' && \
+             test -f '$VPS_APP_PATH/deploy/vps/secrets/firebase-service-account.json' && \
+             command -v docker >/dev/null && docker compose version >/dev/null" || {
+            echo "::error::Pré-requisitos ausentes. Confirme .env.vps, secrets/firebase-service-account.json, Docker/Compose e permissão de escrita em VPS_APP_PATH/deploy/vps."
+            exit 1
+          }
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -235,13 +251,23 @@ jobs:
             VITE_FIREBASE_APP_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
             VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app
 
-      - name: Implantar imagem imutável na VPS
+      - name: Autenticar a VPS no GHCR
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -4 -o BatchMode=yes -o ConnectTimeout=30 -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+      - name: Enviar manifestos para a VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
-          IMAGE: ${{ steps.image.outputs.name }}
           KTAG_API_USER: ${{ secrets.KTAG_API_USER }}
           KTAG_API_PASS: ${{ secrets.KTAG_API_PASS }}
         run: |
@@ -254,6 +280,15 @@ jobs:
             deploy/vps/rollback.sh \
             .env.ktag \
             "$VPS_USER@$VPS_HOST:$VPS_APP_PATH/deploy/vps/"
+
+      - name: Implantar imagem imutável na VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
           ssh -4 -o BatchMode=yes -o ConnectTimeout=30 -o ConnectionAttempts=3 -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
             "cd '$VPS_APP_PATH' && chmod 750 deploy/vps/deploy-image.sh deploy/vps/rollback.sh && ./deploy/vps/deploy-image.sh '$IMAGE' '${{ github.sha }}'"
 
@@ -432,13 +467,19 @@ jobs:
       - name: Instalar Firebase CLI
         run: npm install -g firebase-tools@latest
 
+      - name: Selecionar Functions ativas
+        id: active-functions
+        run: |
+          TARGETS="$(node -e 'const fs=require("node:fs"); const source=fs.readFileSync("functions/index.js", "utf8"); const names=[...source.matchAll(/^exports\.([A-Za-z0-9_]+)\s*=/gm)].map(match=>match[1]); if(!names.length) process.exit(1); process.stdout.write(names.map(name=>`functions:${name}`).join(","));')"
+          echo "Functions selecionadas: $(printf '%s' "$TARGETS" | tr ',' '\n' | wc -l)"
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+
       - name: firebase deploy --only functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-        # Esses três schedulers foram migrados para o worker da VPS. Enquanto
-        # a conta WIF não tiver permissão para removê-los do Cloud Scheduler,
-        # não deixe a tentativa de exclusão bloquear o deploy das demais funções.
-        run: firebase deploy --only functions --except functions:dailyBillingEnforcement,functions:scheduledTagUpdate,functions:cleanupOldHistory --project "$PROJECT_ID" --non-interactive --force
+        # Deploy filtrado: atualiza todas as exports atuais sem solicitar a
+        # exclusão dos três schedulers legados já migrados para a VPS.
+        run: firebase deploy --only "${{ steps.active-functions.outputs.targets }}" --project "$PROJECT_ID" --non-interactive --force
 
   # ── Firestore rules + indexes ─────────────────────────────────────────────
   deploy-firestore:
