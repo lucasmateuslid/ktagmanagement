@@ -15,7 +15,7 @@ export const processExportData = async (
 
     for (let i = 0; i < total; i++) {
         const item = historyItems[i];
-        const key = `${item.lat.toFixed(4)},${item.lon.toFixed(4)}`;
+        const key = `${item.lat.toFixed(6)},${item.lon.toFixed(6)}`;
         let address = item.address || currentAddresses[key];
 
         if (!address) {

@@ -50,7 +50,7 @@ const dateLabel = (timestamp: number) => {
 };
 
 const pointAddress = (item: LocationHistory, resolvedAddresses: Record<string, string>) => (
-    item.address || resolvedAddresses[`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`]
+    item.address || resolvedAddresses[`${item.lat.toFixed(6)},${item.lon.toFixed(6)}`]
 );
 
 export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({

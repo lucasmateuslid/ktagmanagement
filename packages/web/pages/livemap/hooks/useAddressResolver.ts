@@ -6,7 +6,7 @@ import { LocationHistory } from '../../../types';
 // Chave baseada em coordenadas — garante que mudar lat/lon força nova geocodificação,
 // mesmo que o tagId (item.id) permaneça o mesmo.
 export const coordKey = (item: Pick<LocationHistory, 'lat' | 'lon'>) =>
-  `${item.lat.toFixed(4)},${item.lon.toFixed(4)}`;
+  `${item.lat.toFixed(6)},${item.lon.toFixed(6)}`;
 
 export const useAddressResolver = () => {
   const [resolvedAddresses, setResolvedAddresses] = useState<Record<string, string>>({});

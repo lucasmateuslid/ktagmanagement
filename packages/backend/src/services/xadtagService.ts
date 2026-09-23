@@ -161,7 +161,7 @@ export class XadTagService {
   }
   toLiveMap(item: XadTag): LiveMapTrackedAsset | null {
     if (!item.lastPosition || !Number.isInteger(item.traccarDeviceId)) return null;
-    return { ...item.lastPosition, id: `xadtag_${item.identifierNormalized}`, source: 'traccar', equipmentType: 'XADTAG', tenantId: item.tenantId,
+    return { ...item.lastPosition, id: `xadtag_${item.identifierNormalized}`, equipmentId: item.id, source: 'traccar', equipmentType: 'XADTAG', tenantId: item.tenantId,
       imei: item.imei || '', uniqueId: item.traccarUniqueId, traccarDeviceId: item.traccarDeviceId!,
       linkedEntityId: item.linkedEntityId, linkedEntityName: item.linkedEntityName, status: item.traccarStatus, lastUpdate: item.lastPosition.serverTime };
   }

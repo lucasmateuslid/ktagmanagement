@@ -67,7 +67,7 @@ export const LiveMap = () => {
 
   const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
   const seedHistoryAddresses = React.useCallback((items: any[]) => {
-      items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(4)},${item.lon.toFixed(4)}`, item.address); });
+      items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(6)},${item.lon.toFixed(6)}`, item.address); });
   }, [addResolvedAddress]);
 
   // 4. History Layer
@@ -123,6 +123,10 @@ export const LiveMap = () => {
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
 
+  useEffect(() => {
+    if (lastLoc && !lastLoc.address) void resolveAddress(lastLoc);
+  }, [lastLoc, resolveAddress]);
+
   const handleExport = async (type: 'pdf' | 'excel') => {
     setExporting(true);
     try {
@@ -130,7 +134,7 @@ export const LiveMap = () => {
         const data = await processExportData(historyItems, resolvedAddresses, setExportProgress);
         
         data.forEach((d: any, idx: number) => {
-             if (historyItems[idx]) addResolvedAddress(`${historyItems[idx].lat.toFixed(4)},${historyItems[idx].lon.toFixed(4)}`, d.endereco);
+             if (historyItems[idx]) addResolvedAddress(`${historyItems[idx].lat.toFixed(6)},${historyItems[idx].lon.toFixed(6)}`, d.endereco);
         });
 
         if (type === 'pdf') await generatePDF(label, data);
@@ -198,7 +202,7 @@ export const LiveMap = () => {
         category={activeCategory}
         client={activeClient}
         lastLoc={lastLoc}
-        resolvedAddress={lastLoc ? (lastLoc.address || resolvedAddresses[`${lastLoc.lat.toFixed(4)},${lastLoc.lon.toFixed(4)}`]) : undefined}
+        resolvedAddress={lastLoc ? (lastLoc.address || resolvedAddresses[`${lastLoc.lat.toFixed(6)},${lastLoc.lon.toFixed(6)}`]) : undefined}
         userRole={user?.role}
         onFetchHistory={fetchHistory}
         onRefreshTag={refreshTag}

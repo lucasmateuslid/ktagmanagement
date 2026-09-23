@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { LiveMapTrackedAsset } from '@ktag/shared';
 import type { Tag, Vehicle, LocationHistory } from '../../../types';
+import { activeTenant } from '../../../services/activeTenant';
+import { traccarAssetLocation } from '../utils/traccarAsset';
 import { trackingApi } from '../../../services/trackingApi';
 import { hasValidCoordinates } from '../utils/livemapFilters';
-import { mergeFleetLocations } from '../utils/livemapLocations';
+import { mergeFleetLocations, persistedFleetLocations } from '../utils/livemapLocations';
 
 export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
@@ -13,22 +15,21 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
   useEffect(() => {
     let disposed = false; let socket: WebSocket | null = null;
     const mergeAsset = (asset: LiveMapTrackedAsset) => {
-      const tag = tags.find(item => item.identifierNormalized === asset.uniqueId);
-      const tagId = tag?.id || asset.id.replace('xadtag_', '');
-      const location = { id: tagId, tagId, lat: asset.latitude, lon: asset.longitude, timestamp: Date.parse(asset.fixTime || asset.serverTime || '') || Date.now(), isodatetime: asset.fixTime || asset.serverTime || new Date().toISOString(), conf: asset.valid ? 100 : 0, status: asset.status === 'online' ? 1 : 0, address: asset.address || undefined, battery: { level: 0, label: asset.status, color: asset.status === 'online' ? '#10b981' : '#71717a' } } as LocationHistory;
-      if (!tagId || !hasValidCoordinates(location)) return;
+      if (disposed) return;
+      const location = traccarAssetLocation(asset, tags, activeTenant.id);
+      if (!location || !hasValidCoordinates(location)) return;
       setFleetLocations(previous => mergeFleetLocations(previous, [location]));
     };
     void trackingApi.liveMap().then(items => { if (!disposed) items.forEach(mergeAsset); }).catch(() => undefined);
     void trackingApi.websocket().then(ws => {
       if (disposed) return ws.close(); socket = ws;
-      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (message.type === 'remove') setFleetLocations(previous => previous.filter(item => `xadtag_${tags.find(tag => tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
+      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (!disposed && message.type === 'remove') setFleetLocations(previous => previous.filter(item => item.provider !== 'traccar' || `xadtag_${tags.find(tag => tag.type === 'XADTAG' && tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
     }).catch(() => undefined);
     return () => { disposed = true; socket?.close(); };
   }, [tags]);
 
   useEffect(() => {
-    const persisted = vehicles.filter(vehicle => vehicle.lastPosition && vehicle.tagId && hasValidCoordinates(vehicle.lastPosition)).map(vehicle => ({ ...vehicle.lastPosition!, tagId: vehicle.tagId!, id: vehicle.tagId! }));
+    const persisted = persistedFleetLocations(vehicles).filter(hasValidCoordinates);
     if (persisted.length) setFleetLocations(previous => mergeFleetLocations(previous, persisted));
   }, [vehicles]);
 

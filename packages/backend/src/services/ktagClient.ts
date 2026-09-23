@@ -16,6 +16,11 @@ export { decryptKtagSecret } from './ktagSecrets.js';
 export class KtagClient {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
+  async getLatest(entries: Array<{ hashedKey: string; privateKey: string }>): Promise<KtagHistoryResult | null> {
+    const points = await this.getHistory(entries);
+    return points.reduce<KtagHistoryResult | null>((latest, point) => !latest || point.timestamp > latest.timestamp ? point : latest, null);
+  }
+
   async getHistory(entries: Array<{ hashedKey: string; privateKey: string }>): Promise<KtagHistoryResult[]> {
     const url = process.env.KTAG_API_URL; const username = process.env.KTAG_API_USER; const password = process.env.KTAG_API_PASS;
     if (!url || !username || !password) throw new KtagConfigurationError('Integração K-TAG não configurada.');

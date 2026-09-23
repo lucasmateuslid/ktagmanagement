@@ -1,7 +1,8 @@
 import { storage } from './storage';
 import { activeTenant } from './activeTenant';
+import { authenticatedFetch } from './authenticatedFetch';
 
-const cacheStorageKey = () => `ktag_${activeTenant.isReady() ? activeTenant.id : 'pretenant'}_geocode_cache`;
+const cacheStorageKey = () => `ktag_${activeTenant.isReady() ? activeTenant.id : 'pretenant'}_geocode_cache_v2`;
 const CACHE_EXPIRATION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 
@@ -103,7 +104,7 @@ export const geocodingService = {
    * Converts Lat/Lon to a human-readable address.
    */
   reverseGeocode: async (lat: number, lon: number): Promise<string> => {
-    const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    const cacheKey = `${lat.toFixed(6)},${lon.toFixed(6)}`;
     
     // 1. Check Cache
     const cachedAddress = getFromCache(cacheKey);
@@ -122,7 +123,7 @@ export const geocodingService = {
         const settings = await storage.getSettings();
         const geocoderPreferences = settings.geocoderPreferences;
 
-        const res = await fetch('/api/reverse-geocode', {
+        const res = await authenticatedFetch('/api/reverse-geocode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat, lng: lon, geocoderPreferences })
@@ -156,7 +157,7 @@ export const geocodingService = {
       const settings = await storage.getSettings();
       const geocoderPreferences = settings.geocoderPreferences;
 
-      const res = await fetch('/api/geocode', {
+      const res = await authenticatedFetch('/api/geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: query, geocoderPreferences })

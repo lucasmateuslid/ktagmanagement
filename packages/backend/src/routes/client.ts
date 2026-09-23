@@ -23,7 +23,7 @@ clientRouter.get('/fleet', async (req, res) => {
   const tagDocs = await Promise.all(tagIds.map(id => adminDb.doc(`tenants/${tenantId}/tags/${id}`).get()));
   const tags = tagDocs.filter(doc => doc.exists).map(doc => {
     const t = doc.data()!;
-    return { id: doc.id, name: t.name, type: t.type, equipmentType: t.equipmentType, accessoryId: t.identifierOriginal || t.accessoryId, identifierOriginal: t.identifierOriginal };
+    return { id: doc.id, name: t.name, type: t.type, equipmentType: t.equipmentType, accessoryId: t.identifierOriginal || t.accessoryId, identifierOriginal: t.identifierOriginal, identifierNormalized: t.identifierNormalized, traccarUniqueId: t.traccarUniqueId };
   });
   const categoryIds = [...new Set(vehicles.map(v => v.type).filter(Boolean))];
   const categoryDocs = await Promise.all(categoryIds.map(id => adminDb.doc(`tenants/${tenantId}/categories/${id}`).get()));

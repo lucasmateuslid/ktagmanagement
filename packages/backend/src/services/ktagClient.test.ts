@@ -32,3 +32,15 @@ test('expõe falhas HTTP do fornecedor', () => withConfig(async () => {
   const client = new KtagClient(async () => new Response('{}', { status: 401 }));
   await assert.rejects(() => client.getHistory([{ hashedKey: 'hash-1', privateKey: 'private-1' }]), (error: unknown) => error instanceof KtagHttpError && error.status === 401);
 }));
+
+test('atualização individual escolhe a posição mais recente e ignora chave desconhecida', () => withConfig(async () => {
+  const client = new KtagClient(async () => new Response(JSON.stringify({ results: [
+    { key: 'hash-1', timestamp: 1_700_000_000, lat: -8, lon: -35 },
+    { key: 'hash-1', timestamp: 1_700_000_200, lat: -9, lon: -36 },
+    { key: 'hash-1', timestamp: 1_700_000_100, lat: -8.5, lon: -35.5 },
+    { key: 'other', timestamp: 1_700_000_300, lat: -10, lon: -37 },
+  ] })));
+  const latest = await client.getLatest([{ hashedKey: 'hash-1', privateKey: 'private-1' }]);
+  assert.equal(latest?.timestamp, 1_700_000_200_000);
+  assert.equal(latest?.lat, -9);
+}));

@@ -384,6 +384,7 @@ export interface TrackingAssignment {
 
 export interface LiveMapTrackedAsset extends Omit<TrackedPosition, 'id'> {
   id: string;
+  equipmentId?: string;
   source: 'traccar' | 'ktag' | string;
   equipmentType: string;
   tenantId: string;

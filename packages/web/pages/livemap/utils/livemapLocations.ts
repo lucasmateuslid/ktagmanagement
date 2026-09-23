@@ -1,4 +1,4 @@
-import type { LocationHistory } from '../../../types';
+import type { LocationHistory, Vehicle } from '../../../types';
 
 const sameCoordinates = (left: LocationHistory, right: LocationHistory) =>
   Math.abs(left.lat - right.lat) < 0.00001 && Math.abs(left.lon - right.lon) < 0.00001;
@@ -23,3 +23,10 @@ export const mergeFleetLocations = (current: LocationHistory[], incoming: Locati
   incoming.forEach(item => { if (item.tagId) merged.set(item.tagId, preferFleetLocation(merged.get(item.tagId), item)); });
   return [...merged.values()];
 };
+
+/** Não atribui uma posição antiga à nova tag vinculada ao veículo. */
+export const persistedFleetLocations = (vehicles: Vehicle[]): LocationHistory[] => vehicles.flatMap(vehicle => {
+  const position = vehicle.lastPosition;
+  if (!vehicle.tagId || !position || position.tagId !== vehicle.tagId) return [];
+  return [{ ...position, tagId: vehicle.tagId, id: vehicle.tagId }];
+});

@@ -40,7 +40,7 @@ async function linkedVehicle(tenantId: string, tagId: string) {
 async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnapshot): Promise<SingleTagLocation> {
   const item = makeKtagRefreshItem(tenantId, tag);
   const load = async () => item.hashedAdvKey && item.privateKey
-    ? (await ktagClient.getHistory([{ hashedKey: item.hashedAdvKey, privateKey: item.privateKey }]))[0] || null
+    ? await ktagClient.getLatest([{ hashedKey: item.hashedAdvKey, privateKey: item.privateKey }])
     : null;
 
   let normalized = await load();
@@ -66,8 +66,9 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
     ]);
     if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
     else if (address) tx.set(historyRef, { address, addressResolutionStatus: 'resolved', addressResolutionProvider: 'existing', addressResolvedAt: Date.now() }, { merge: true });
-    if (freshVehicle && normalized.timestamp >= Number(freshVehicle.get('lastPosition.timestamp') || 0)) {
-      tx.update(freshVehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now(), ktagHistoryCapturedThrough: Math.max(Number(freshVehicle.get('ktagHistoryCapturedThrough') || 0), normalized.timestamp) });
+    const sameVehicleTag = freshVehicle?.get('lastPosition.tagId') === tag.id;
+    if (freshVehicle?.get('tagId') === tag.id && (!sameVehicleTag || normalized.timestamp >= Number(freshVehicle.get('lastPosition.timestamp') || 0))) {
+      tx.update(freshVehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now(), ktagHistoryCapturedThrough: Math.max(sameVehicleTag ? Number(freshVehicle.get('ktagHistoryCapturedThrough') || 0) : 0, normalized.timestamp) });
     }
     const tagUpdate: Record<string, unknown> = { updatedAt: Date.now(), lastRefreshAttemptAt: Date.now(), lastRefreshStatus: 'success' };
     if (!freshTag.get('firstCommunicationAt')) tagUpdate.firstCommunicationAt = normalized.timestamp;

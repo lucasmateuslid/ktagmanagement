@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import type { TraccarPosition } from '@ktag/shared';
 import { adminDb } from './firebaseAdmin.js';
 import { fetchKtagWithRetry, ktagHistoryPointId, normalizeKtagSnapshot } from './ktagHistoryCapture.js';
-import { pairKtagResults } from './ktagFleetUtils.js';
+import { duplicateKtagKeys, pairKtagResults } from './ktagFleetUtils.js';
 import { makeKtagRefreshItem, syncKtagKeysForTenant } from './ktagKeySyncService.js';
 import { resolveServerAddress, samePosition } from './serverAddressResolver.js';
 import { traccarClient } from './traccarClient.js';
@@ -99,7 +99,7 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
     const locationByTag = new Map<string, any>();
     const errorsByTag = new Map<string, string>();
     const updatedTags = new Set<string>();
-    vehicleSnap.docs.forEach(doc => { const tagId = String(doc.get('tagId') || ''); const position = doc.get('lastPosition'); if (tagId && position) locationByTag.set(tagId, { ...position, id: tagId, tagId, vehicleId: doc.id }); });
+    vehicleSnap.docs.forEach(doc => { const tagId = String(doc.get('tagId') || ''); const position = doc.get('lastPosition'); if (tagId && position?.tagId === tagId) locationByTag.set(tagId, { ...position, id: tagId, tagId, vehicleId: doc.id }); });
 
     const ktagItems = tagSnap.docs
       .filter(doc => String(doc.get('type') || doc.get('equipmentType')) === 'K_TAG')
@@ -112,7 +112,11 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
         console.warn(JSON.stringify({ event: 'fleet.ktag.keys_sync_failed', tenantId, error: (error as Error).message }));
       }
     }
-    const readyKtagItems = ktagItems.filter(item => item.hashedAdvKey && item.privateKey);
+    const duplicates = duplicateKtagKeys(ktagItems.filter(item => item.hashedAdvKey));
+    ktagItems.filter(item => duplicates.has(item.hashedAdvKey)).forEach(item => {
+      errorsByTag.set(item.doc.id, 'Chave de rastreamento vinculada a mais de uma K-TAG. Revise o serial e o cadastro.');
+    });
+    const readyKtagItems = ktagItems.filter(item => item.hashedAdvKey && item.privateKey && !duplicates.has(item.hashedAdvKey));
     ktagItems.filter(item => !item.hashedAdvKey || !item.privateKey).forEach(item => {
       errorsByTag.set(item.doc.id, item.accessoryId
         ? 'Chaves de rastreamento não encontradas para o serial desta K-TAG.'
@@ -147,10 +151,12 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
             const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${pointId}`);
             await adminDb.runTransaction(async tx => {
               const [freshTag, existing, freshVehicle] = await Promise.all([tx.get(item.doc.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null)]);
-              const currentTimestamp = Number(freshVehicle?.get('lastPosition.timestamp') || 0); const captured = Number(freshVehicle?.get('ktagHistoryCapturedThrough') || 0);
+              const sameTag = freshVehicle?.get('lastPosition.tagId') === item.doc.id;
+              const currentTimestamp = sameTag ? Number(freshVehicle?.get('lastPosition.timestamp') || 0) : 0;
+              const captured = sameTag ? Number(freshVehicle?.get('ktagHistoryCapturedThrough') || 0) : 0;
               if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
               else if (point.address) tx.set(historyRef, { address: point.address, addressResolutionStatus: point.addressResolutionStatus, addressResolutionProvider: point.addressResolutionProvider, addressResolvedAt: point.addressResolvedAt }, { merge: true });
-              if (freshVehicle) {
+              if (freshVehicle?.get('tagId') === item.doc.id) {
                 const vehicleUpdate: Record<string, unknown> = { ktagHistoryCapturedThrough: Math.max(captured, normalized.timestamp) };
                 if (normalized.timestamp >= currentTimestamp) Object.assign(vehicleUpdate, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
                 tx.update(freshVehicle.ref, vehicleUpdate);
