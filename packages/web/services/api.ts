@@ -22,6 +22,14 @@ export const ktagBatteryStatus = (status?: number): KTagBatteryInfo => {
   }
 };
 
+/** Escolhe o ponto mais recente sem depender da ordem retornada pelo provedor. */
+export const latestTagLocation = (locations: KTagLocationResult[]): KTagLocationResult | null =>
+  locations.reduce<KTagLocationResult | null>((latest, location) => {
+    const timestamp = Number(location.timestamp);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return latest;
+    return !latest || timestamp > Number(latest.timestamp) ? location : latest;
+  }, null);
+
 /**
  * Verifica se a tag mudou de posição além de um limiar (≈5m por padrão).
  * Usado para registrar histórico apenas quando há movimento real, evitando

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
 import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { fetchTagLocation } from '../../../services/api';
+import { fetchTagLocation, latestTagLocation } from '../../../services/api';
 import { storage } from '../../../services/storage';
 
 interface VehicleRowProps {
@@ -61,8 +61,9 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
     setUpdateSuccess(false);
     try {
       const results = await fetchTagLocation(tag);
-      if (results && results.length > 0) {
-        const location = { ...results[0], tagId: tag.id, id: tag.id };
+      const latest = latestTagLocation(results);
+      if (latest) {
+        const location = { ...latest, tagId: tag.id, id: tag.id };
         await storage.updateVehiclePosition(vehicle.id, location as any);
         setUpdateSuccess(true);
         setTimeout(() => setUpdateSuccess(false), 3000);

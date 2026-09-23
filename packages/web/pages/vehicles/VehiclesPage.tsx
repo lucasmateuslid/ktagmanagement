@@ -198,10 +198,11 @@ export const VehiclesPage = () => {
         setIsUpdating(true);
         setUpdateSuccess(false);
         try {
-          const { fetchTagLocation } = await import('../../services/api');
+          const { fetchTagLocation, latestTagLocation } = await import('../../services/api');
           const results = await fetchTagLocation(tag);
-          if (results && results.length > 0) {
-            const location = { ...results[0], tagId: tag.id, id: tag.id };
+          const latest = latestTagLocation(results);
+          if (latest) {
+            const location = { ...latest, tagId: tag.id, id: tag.id };
             await storage.updateVehiclePosition(vehicle.id, location as any);
             setUpdateSuccess(true);
             setTimeout(() => setUpdateSuccess(false), 3000);

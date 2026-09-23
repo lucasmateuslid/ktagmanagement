@@ -75,7 +75,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
             setTimeout(() => setUpdateSuccess(false), 3000);
         } catch (error) {
             console.error("Failed to update location", error);
-            addNotification('error', 'Erro', 'Falha ao atualizar localização.');
+            addNotification('error', 'Erro', error instanceof Error ? error.message : 'Falha ao atualizar localização.');
         } finally {
             setIsUpdating(false);
         }

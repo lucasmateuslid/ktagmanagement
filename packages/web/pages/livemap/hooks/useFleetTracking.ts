@@ -3,7 +3,9 @@ import type { LiveMapTrackedAsset } from '@ktag/shared';
 import type { Tag, Vehicle, LocationHistory } from '../../../types';
 import { activeTenant } from '../../../services/activeTenant';
 import { traccarAssetLocation } from '../utils/traccarAsset';
-import { trackingApi } from '../../../services/trackingApi';
+import { TrackingApiError, trackingApi } from '../../../services/trackingApi';
+import { fetchTagLocation, latestTagLocation } from '../../../services/api';
+import { storage } from '../../../services/storage';
 import { hasValidCoordinates } from '../utils/livemapFilters';
 import { mergeFleetLocations, persistedFleetLocations } from '../utils/livemapLocations';
 
@@ -44,10 +46,31 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
   }, []);
 
   const refreshTag = useCallback(async (tagId: string) => {
-    if (!tags.some(tag => tag.id === tagId)) return;
-    const location = await trackingApi.refreshTag(tagId) as LocationHistory;
+    const tag = tags.find(item => item.id === tagId);
+    if (!tag) return;
+    let location: LocationHistory;
+    try {
+      location = await trackingApi.refreshTag(tagId) as LocationHistory;
+    } catch (error) {
+      const mayUseKtagRelay = tag.type === 'K_TAG'
+        && error instanceof TrackingApiError
+        && error.errorCode === 'NETWORK_ERROR';
+      if (!mayUseKtagRelay) throw error;
+
+      const latest = latestTagLocation(await fetchTagLocation(tag));
+      if (!latest) throw new Error('A K-TAG não retornou uma posição válida.');
+      const vehicle = vehicles.find(item => item.tagId === tagId);
+      location = {
+        ...latest,
+        id: `${tagId}:${latest.timestamp}`,
+        tagId,
+        ...(vehicle ? { vehicleId: vehicle.id } : {}),
+        provider: 'ktag',
+      };
+      if (vehicle) void storage.updateVehiclePosition(vehicle.id, location).catch(() => undefined);
+    }
     if (hasValidCoordinates(location)) setFleetLocations(previous => mergeFleetLocations(previous, [location]));
-  }, [tags]);
+  }, [tags, vehicles]);
 
   const injectLocations = useCallback((locations: LocationHistory[]) => {
     setFleetLocations(previous => mergeFleetLocations(previous, locations.filter(hasValidCoordinates)));
