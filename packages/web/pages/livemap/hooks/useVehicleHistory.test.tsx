@@ -45,6 +45,18 @@ describe('useVehicleHistory', () => {
     vi.restoreAllMocks();
   });
 
+  it('ignora um evento de clique recebido no lugar do período', async () => {
+    vehicleHistory.mockResolvedValue(page('new', 'tag-2'));
+    const { result } = renderHook(() => useVehicleHistory('v2', 'tag-2', [], vi.fn()));
+
+    await act(async () => { await result.current.fetchHistory({ type: 'click' } as any); });
+
+    const [, from, to] = vehicleHistory.mock.calls[0];
+    expect(Number.isFinite(Date.parse(from))).toBe(true);
+    expect(Date.parse(to) - Date.parse(from)).toBe(HISTORY_WINDOW_MS);
+    expect(result.current.historyError).toBeNull();
+  });
+
   it('mantém o período escolhido ao carregar a próxima página', async () => {
     vehicleHistory.mockResolvedValueOnce({ ...page('new', 'tag-2'), nextCursor: 'cursor-1' }).mockResolvedValueOnce(page('old', 'tag-2'));
     const { result } = renderHook(() => useVehicleHistory('v2', 'tag-2', [], vi.fn()));

@@ -32,7 +32,8 @@ export const useVehicleHistory = (vehicleId: string, selectedTagId: string, curr
     setHistoryLoading(true); setShowHistoryList(true);
     try {
       const end = Date.now();
-      const range = period || (append ? periodRef.current : null) || { from: new Date(end - HISTORY_WINDOW_MS).toISOString(), to: new Date(end).toISOString() };
+      const validPeriod = period && typeof period.from === 'string' && typeof period.to === 'string' ? period : null;
+      const range = validPeriod || (append ? periodRef.current : null) || { from: new Date(end - HISTORY_WINDOW_MS).toISOString(), to: new Date(end).toISOString() };
       if (!append) { periodRef.current = range; setActivePeriod(range); }
       const response: TrackingHistoryPage = await trackingApi.vehicleHistory(vehicleId, range.from, range.to, cursor, controller.signal);
       const results = response.points.map(trackingPointToLocation);

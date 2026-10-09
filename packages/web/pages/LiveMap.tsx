@@ -230,7 +230,7 @@ export const LiveMap = () => {
         lastLoc={lastLoc}
         resolvedAddress={lastLoc ? (lastLoc.address || resolvedAddresses[`${lastLoc.lat.toFixed(6)},${lastLoc.lon.toFixed(6)}`]) : undefined}
         userRole={user?.role}
-        onFetchHistory={fetchHistory}
+        onFetchHistory={() => { void fetchHistory(); }}
         onRefreshTag={refreshTag}
         onClose={() => setSelectedTagId('')}
       />
