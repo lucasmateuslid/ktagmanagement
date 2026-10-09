@@ -11,19 +11,17 @@ import { useVehicleHistory } from './livemap/hooks/useVehicleHistory';
 import { useAddressResolver } from './livemap/hooks/useAddressResolver';
 
 // Utils - Relative Paths
-import { calculateFleetStats } from './livemap/utils/livemapStats';
-import { filterFleetList, filterLocationsToRender } from './livemap/utils/livemapFilters';
+import { fleetCounts, fleetStatus, indexFleetLocations, searchVehicles, visibleFleetLocations, type FleetStatus } from './livemap/utils/fleetView';
 import { processExportData, generatePDF, generateExcel } from './livemap/utils/exportUtils';
 
 // Components - Relative Paths
-import { TopHUD } from './livemap/components/TopHUD';
+import { FleetPanel } from './livemap/components/FleetPanel';
 import { DetailsSheet } from './livemap/components/DetailsSheet';
 import { HistoryOverlay } from './livemap/components/HistoryOverlay';
 import { UpdateTagsModal } from '../components/UpdateTagsModal';
-import { DisplayLimit } from '../types';
 import { storage } from '../services/storage';
 
-type FleetFilter = 'all' | 'online' | 'offline';
+const INITIAL_NOW = Date.now();
 
 export const LiveMap = () => {
   const { user } = useAuth();
@@ -32,9 +30,11 @@ export const LiveMap = () => {
   // UI State
   const [selectedTagId, setSelectedTagId] = useState<string>('');
   const [tagSearchTerm, setTagSearchTerm] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [filter, setFilter] = useState<FleetFilter>('all');
-  const [displayLimit, setDisplayLimit] = useState<DisplayLimit>(50);
+  const [filter, setFilter] = useState<FleetStatus>('all');
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<string[]>([]);
+  const [mapLimit, setMapLimit] = useState<number | 'all'>('all');
+  const [mapViewVersion, setMapViewVersion] = useState(0);
+  const [now, setNow] = useState(INITIAL_NOW);
   const [isSheetExpanded, setIsSheetExpanded] = useState(true);
   const [showPlates, setShowPlates] = useState(false); // Novo Estado
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
@@ -55,6 +55,11 @@ export const LiveMap = () => {
       setMapProvider(s.livemapMapProvider || s.geocodingProvider || 'osm');
     });
   }, []);
+  useEffect(() => {
+    const initial = window.setTimeout(() => setNow(Date.now()), 0);
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+  }, []);
 
   // 1. Data Layer
   const { tags, vehicles, categories, clients } = useFleetData(user);
@@ -65,7 +70,7 @@ export const LiveMap = () => {
   // 3. Address Layer
   const { resolvedAddresses, resolveAddress, addResolvedAddress } = useAddressResolver();
 
-  const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId), [vehicles, selectedTagId]);
+  const activeVehicle = useMemo(() => vehicles.find(v => v.tagId === selectedTagId || (v.trackerId && `tracker:${v.trackerId}` === selectedTagId)), [vehicles, selectedTagId]);
   const seedHistoryAddresses = React.useCallback((items: any[]) => {
       items.forEach(item => { if (item.address) addResolvedAddress(`${item.lat.toFixed(6)},${item.lon.toFixed(6)}`, item.address); });
   }, [addResolvedAddress]);
@@ -74,7 +79,7 @@ export const LiveMap = () => {
   const { 
       historyItems, historyLoading, showHistoryList, 
       fetchHistory, closeHistory, setShowHistoryList,
-      nextCursor, loadMoreHistory, historyPartial, historyWarnings,
+      nextCursor, loadMoreHistory, historyPartial, historyWarnings, historyError, activePeriod,
   } = useVehicleHistory(activeVehicle?.id || '', selectedTagId, fleetLocations, seedHistoryAddresses);
   const replayPoints = useMemo(() => [...historyItems].sort((a, b) => a.timestamp - b.timestamp), [historyItems]);
   const replayPoint = replayPoints[replayIndex] || null;
@@ -92,13 +97,14 @@ export const LiveMap = () => {
     setSelectedTagId(tagId); setIsSheetExpanded(true); setShowHistoryList(false);
     setSelectionFocusVersion(version => version + 1);
     setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null);
-    setTagSearchTerm(''); setIsSearchFocused(false);
   }, [setShowHistoryList]);
 
   useEffect(() => {
       const urlTagId = searchParams.get('tagId');
-      if (urlTagId) handleSelection(urlTagId);
-  }, [searchParams]);
+      if (!urlTagId) return;
+      const timer = window.setTimeout(() => handleSelection(urlTagId), 0);
+      return () => window.clearTimeout(timer);
+  }, [searchParams, handleSelection]);
 
   useEffect(() => {
       if (activeVehicle?.id && selectedTagId && searchParams.get('tagId') === selectedTagId && searchParams.get('history') === '1' && autoHistoryOpenedRef.current !== selectedTagId) {
@@ -106,22 +112,41 @@ export const LiveMap = () => {
       }
   }, [activeVehicle?.id, selectedTagId, searchParams, fetchHistory]);
 
-  const stats = useMemo(() => calculateFleetStats(vehicles, fleetLocations), [vehicles, fleetLocations]);
-  
-  const filteredList = useMemo(() => 
-      filterFleetList(tagSearchTerm, filter, vehicles, tags, clients, fleetLocations, user), 
-  [vehicles, fleetLocations, filter, tagSearchTerm, tags, clients, user]);
-
+  const trackedVehicles = useMemo(() => vehicles.filter(vehicle => vehicle.tagId || vehicle.trackerId), [vehicles]);
+  const locationIndex = useMemo(() => indexFleetLocations(fleetLocations), [fleetLocations]);
+  const communicationSeen = useMemo(() => new Set(tags.filter(tag => Number(tag.firstCommunicationAt || tag.communicationValidatedAt || 0) > 0).map(tag => tag.id)), [tags]);
+  const validSelectedVehicleIds = useMemo(() => {
+    const validIds = new Set(trackedVehicles.map(vehicle => vehicle.id));
+    return selectedVehicleIds.filter(id => validIds.has(id));
+  }, [selectedVehicleIds, trackedVehicles]);
+  const counts = useMemo(() => fleetCounts(trackedVehicles, fleetLocations, now, communicationSeen, locationIndex), [trackedVehicles, fleetLocations, now, communicationSeen, locationIndex]);
+  const filteredList = useMemo(() => searchVehicles(trackedVehicles, tagSearchTerm, clients, tags)
+    .filter(vehicle => filter === 'all' || fleetStatus(vehicle, fleetLocations, now, communicationSeen, locationIndex) === filter),
+  [trackedVehicles, tagSearchTerm, clients, tags, filter, fleetLocations, now, communicationSeen, locationIndex]);
   const locationsToRender = useMemo(() => {
-      const filtered = filterLocationsToRender(fleetLocations, selectedTagId, filter, displayLimit, vehicles);
-      console.log('Locations to render:', filtered.length, 'out of total:', fleetLocations.length);
-      return filtered;
-  }, [fleetLocations, selectedTagId, filter, displayLimit, vehicles]);
+    const visible = visibleFleetLocations(trackedVehicles, filteredList, validSelectedVehicleIds, fleetLocations, selectedTagId, locationIndex);
+    return mapLimit === 'all' || validSelectedVehicleIds.length || selectedTagId ? visible : visible.slice(0, mapLimit);
+  }, [fleetLocations, trackedVehicles, filteredList, validSelectedVehicleIds, selectedTagId, mapLimit, locationIndex]);
 
   const activeTag = useMemo(() => tags.find(t => t.id === selectedTagId), [tags, selectedTagId]);
   const activeCategory = useMemo(() => activeVehicle ? categories.find(c => c.id === activeVehicle.type) : undefined, [activeVehicle, categories]);
   const activeClient = useMemo(() => activeVehicle ? clients.find(c => c.id === activeVehicle.clientId) : undefined, [activeVehicle, clients]);
   const lastLoc = useMemo(() => fleetLocations.find(l => l.tagId === selectedTagId), [fleetLocations, selectedTagId]);
+
+  useEffect(() => {
+    if (!selectedTagId || activeTag?.type !== 'K_TAG' || showHistoryList) return;
+    let disposed = false;
+    let timer: number;
+    const poll = async () => {
+      if (!document.hidden) {
+        try { await refreshTag(selectedTagId); }
+        catch (error) { console.warn('Falha ao atualizar K-TAG selecionada:', error); }
+      }
+      if (!disposed) timer = window.setTimeout(poll, 120_000);
+    };
+    timer = window.setTimeout(poll, 120_000);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [selectedTagId, activeTag?.type, showHistoryList, refreshTag]);
 
   useEffect(() => {
     if (lastLoc && !lastLoc.address) void resolveAddress(lastLoc);
@@ -145,34 +170,32 @@ export const LiveMap = () => {
     }
   };
 
-  const getSearchPlaceholder = () => {
-      if (user?.role === 'client') return "Pesquisar por placa...";
-      return "Placa, Modelo, Equipamento ou Cliente...";
-  };
-
   return (
     <div className="relative h-full w-full flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 font-sans">
       
-      {!showHistoryList && <TopHUD
-        searchTerm={tagSearchTerm}
-        setSearchTerm={setTagSearchTerm}
-        isFocused={isSearchFocused}
-        setIsFocused={setIsSearchFocused}
-        searchPlaceholder={getSearchPlaceholder()}
-        filteredList={filteredList}
-        fleetLocations={fleetLocations}
+      {!showHistoryList && !selectedTagId && <FleetPanel
+        vehicles={trackedVehicles}
+        results={filteredList}
+        locations={fleetLocations}
         clients={clients}
         categories={categories}
+        search={tagSearchTerm}
+        onSearch={setTagSearchTerm}
+        status={filter}
+        onStatus={setFilter}
+        communicationSeen={communicationSeen}
+        locationIndex={locationIndex}
+        selectedIds={validSelectedVehicleIds}
+        onSelectedIds={setSelectedVehicleIds}
+        onOpenVehicle={handleSelection}
+        onViewMap={() => { setSelectedTagId(''); setMapViewVersion(value => value + 1); }}
+        onRefresh={() => setIsUpdateModalOpen(true)}
+        counts={counts}
+        mapLimit={mapLimit}
+        onMapLimit={setMapLimit}
+        showPlates={showPlates}
+        onShowPlates={setShowPlates}
         userRole={user?.role}
-        onSelect={handleSelection}
-        stats={stats}
-        filter={filter}
-        setFilter={setFilter}
-        displayLimit={displayLimit}
-        setDisplayLimit={setDisplayLimit}
-        showPlates={showPlates} // Pass
-        setShowPlates={setShowPlates} // Pass
-        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
       />}
 
       <div className="flex-1 relative z-0">
@@ -183,7 +206,8 @@ export const LiveMap = () => {
             tags={tags}
             categories={categories}
             highlightedTagId={selectedTagId} 
-            selectionFocusKey={selectionFocusVersion}
+            selectionFocusKey={selectionFocusVersion + mapViewVersion}
+            fleetFitVersion={mapViewVersion}
             onMarkerClick={handleSelection} 
             showPlates={showPlates} 
             mapProvider={mapProvider}
@@ -195,6 +219,8 @@ export const LiveMap = () => {
 
       <DetailsSheet 
         selectedTagId={showHistoryList ? '' : selectedTagId}
+        search={tagSearchTerm}
+        onSearch={setTagSearchTerm}
         isExpanded={isSheetExpanded}
         toggleExpanded={() => setIsSheetExpanded(!isSheetExpanded)}
         vehicle={activeVehicle}
@@ -224,6 +250,9 @@ export const LiveMap = () => {
         onLoadMore={loadMoreHistory}
         partial={historyPartial}
         warnings={historyWarnings}
+        historyError={historyError}
+        activePeriod={activePeriod}
+        onConsultPeriod={(period) => { setReplayPlaying(false); setReplayIndex(0); setFocusedHistoryPoint(null); void fetchHistory(period); }}
         onResolveAddress={resolveAddress}
         onViewPoint={(item) => { setReplayPlaying(false); setReplayIndex(Math.max(0, replayPoints.findIndex(point => point.id === item.id))); setFocusedHistoryPoint(item); }}
         replayIndex={replayIndex}

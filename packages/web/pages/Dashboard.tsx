@@ -7,7 +7,7 @@ import { ResponsiveContainer, AreaChart, Area, Tooltip, BarChart, Bar, XAxis, YA
 import { 
   Tag as TagIcon, CarFront, Plus, Activity, Truck, Bike, 
   Car, ShoppingCart, Map as MapIcon, RefreshCw,
-  TrendingUp, HandCoins, Calendar, Hourglass, Wrench, Users, Building2
+  TrendingUp, HandCoins, Calendar, Hourglass, Wrench, Users, Building2, CheckCircle2, ClipboardList, AlertTriangle
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -25,7 +25,10 @@ import {
   calculateStockStatus, 
   calculateStockPrediction, 
   calculateOwnershipStats, 
-  calculateCategoryStats 
+  calculateCategoryStats,
+  calculateRecentActivations,
+  calculateMonthlyServiceSummary,
+  oldestUncommunicativeVehicles,
 } from './dashboard/utils/dashboardCalculations';
 
 import { TechnicianDashboard } from './TechnicianDashboard';
@@ -34,6 +37,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { getChartTheme, getChartPalette, getTooltipStyle, getTooltipItemStyle } from '../lib/chartTheme';
 
 const CHART = getChartTheme();
+const INITIAL_NOW = Date.now();
 const COLORS = {
   primary: CHART.brand,
   darkBase: CHART.surface,
@@ -54,13 +58,14 @@ export const Dashboard = () => {
 
   // 1. Data Fetching via Hook
   const { 
-    tags, vehicles, companies, categories, settings, schedules, technicians, loading 
+    tags, vehicles, companies, categories, settings, schedules, technicians, clients, loading
   } = useDashboardData();
 
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(INITIAL_NOW);
   useEffect(() => {
+     const initial = setTimeout(() => setNow(Date.now()), 0);
      const iv = setInterval(() => setNow(Date.now()), 60000);
-     return () => clearInterval(iv);
+     return () => { clearTimeout(initial); clearInterval(iv); };
   }, []);
 
   // 2. Redirect Client
@@ -91,6 +96,9 @@ export const Dashboard = () => {
   const trendChartData = useMemo(() => calculateGrowthTrend(vehicles), [vehicles]);
   const ownershipData = useMemo(() => calculateOwnershipStats(vehicles), [vehicles]);
   const categoryStats = useMemo(() => calculateCategoryStats(vehicles, categories), [vehicles, categories]);
+  const activations = useMemo(() => calculateRecentActivations(tags, new Date(now)), [tags, now]);
+  const serviceSummary = useMemo(() => calculateMonthlyServiceSummary(schedules, new Date(now)), [schedules, now]);
+  const noCommunication = useMemo(() => oldestUncommunicativeVehicles(vehicles, now), [vehicles, now]);
 
   // Stock Intelligence
   const stockInfo = useMemo(() => calculateStockStatus(unlinkedCount, settings), [unlinkedCount, settings]);
@@ -121,7 +129,7 @@ export const Dashboard = () => {
   if (loading && tags.length === 0) return <div className="p-10 flex justify-center"><div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
-    <div className="space-y-10 pb-24 font-sans max-w-[1600px] mx-auto">
+    <div className="mx-auto max-w-[1600px] space-y-7 pb-24 font-sans">
       
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-2">
@@ -129,14 +137,14 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tighter">
             {t('overview')}
           </h1>
-          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-black uppercase tracking-[0.3em]">Control Center</p>
+          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] font-black uppercase tracking-[0.3em]">Console de operações</p>
         </div>
         <div className="flex items-center gap-3">
             <button 
                 onClick={() => setIsUpdateModalOpen(true)}
                 className="bg-primary-500 text-black hover:bg-primary-400 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 transition-all active:scale-95"
             >
-                <RefreshCw size={14} /> Atualizar Frota
+                <RefreshCw size={14} /> Atualizar veículos
             </button>
             {lastSync && (
             <div className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-2 bg-white dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 shadow-sm hidden sm:flex">
@@ -146,6 +154,18 @@ export const Dashboard = () => {
             )}
         </div>
       </div>
+
+      <section className="space-y-3" aria-label="Resumo operacional">
+        <div className="px-2"><p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary-500">Agora</p><h2 className="text-sm font-bold text-zinc-900 dark:text-white">Resumo operacional</h2></div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: 'Total de veículos', value: vehicles.length, hint: 'veículos cadastrados', icon: CarFront, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/20', to: '/vehicles' },
+            { label: 'Total de clientes', value: clients.length, hint: 'clientes cadastrados', icon: Users, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20', to: '/clients' },
+            { label: 'Serviços abertos', value: serviceSummary.open, hint: 'no mês atual', icon: ClipboardList, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', to: '/schedules' },
+            { label: 'Serviços concluídos', value: serviceSummary.completed, hint: 'no mês atual', icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20', to: '/schedules' },
+          ].map(card => <Link key={card.label} to={card.to} className="rounded-[20px] border border-zinc-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"><div className={`mb-4 flex h-8 w-8 items-center justify-center rounded-xl ${card.color}`}><card.icon size={16} /></div><strong className="block text-2xl font-black tracking-tight text-zinc-900 dark:text-white">{card.value}</strong><span className="block text-[9px] font-black uppercase tracking-wider text-zinc-600 dark:text-zinc-300">{card.label}</span><span className="block text-[9px] text-zinc-400">{card.hint}</span></Link>)}
+        </div>
+      </section>
 
       {/* --- ATALHOS --- */}
       <div className="space-y-4">
@@ -210,6 +230,12 @@ export const Dashboard = () => {
                   </div>
               </div>
 
+              <div className="flex h-[300px] flex-col rounded-[32px] border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Ativas x inativas</p><TagIcon size={16} className="text-zinc-400" /></div>
+                  <div className="min-h-0 flex-1"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{ name: 'Ativas', value: tags.filter(tag => tag.isActivated || tag.firstCommunicationAt).length }, { name: 'Inativas', value: tags.filter(tag => !tag.isActivated && !tag.firstCommunicationAt).length }]} dataKey="value" innerRadius={55} outerRadius={72} stroke="none"><Cell fill="#3195c7" /><Cell fill="#facc15" /></Pie><Tooltip contentStyle={getTooltipStyle()} /></PieChart></ResponsiveContainer></div>
+                  <div className="flex justify-center gap-4 text-[9px] font-semibold text-zinc-500"><span>🔵 Ativas</span><span>🟡 Inativas</span></div>
+              </div>
+
               {/* CARD 2: VEÍCULOS E CATEGORIAS (ALWAYS DARK) */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-8 flex flex-col shadow-lg shadow-zinc-900/20 h-[300px] relative overflow-hidden group">
                   <div className="flex justify-between items-start mb-6 relative z-10">
@@ -235,6 +261,14 @@ export const Dashboard = () => {
                           </div>
                       ))}
                   </div>
+              </div>
+
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="flex h-[300px] flex-col rounded-[32px] border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-2">
+                  <div className="flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Ativações (últimos 7 dias)</p><Activity size={16} className="text-zinc-400" /></div>
+                  <div className="min-h-0 flex-1 pt-5"><ResponsiveContainer width="100%" height="100%"><BarChart data={activations}><CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.15} /><XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={getTooltipStyle()} /><Bar dataKey="total" fill="#3195c7" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
               </div>
 
               {/* CARD 3: ESTOQUE (REESTILIZADO CONFORME PEDIDO) */}
@@ -343,6 +377,7 @@ export const Dashboard = () => {
               </div>
           </div>
 
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* CARD 6: VEÍCULOS POR REGIONAL (Bar Horizontal) */}
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors h-[300px] flex flex-col">
               <div className="flex justify-between items-center mb-6">
@@ -367,6 +402,11 @@ export const Dashboard = () => {
                       </BarChart>
                   </ResponsiveContainer>
               </div>
+          </div>
+          <div className="flex h-[300px] flex-col rounded-[32px] border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-4 flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Veículos sem comunicação (Top 5)</p><AlertTriangle size={16} className="text-amber-500" /></div>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">{noCommunication.length ? noCommunication.map(({ vehicle, timestamp }) => <Link key={vehicle.id} to={`/map?tagId=${encodeURIComponent(vehicle.tagId || `tracker:${vehicle.trackerId}`)}`} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50"><div className="min-w-0"><p className="text-xs font-bold text-zinc-900 dark:text-white">{vehicle.plate}</p><p className="truncate text-[9px] text-zinc-400">{vehicle.model}</p></div><span className="shrink-0 rounded-lg bg-red-50 px-2 py-1 text-[9px] font-bold text-red-600 dark:bg-red-900/20">{timestamp ? `${Math.floor((now - timestamp) / 86_400_000)} dias` : 'Sem posição'}</span></Link>) : <p className="py-12 text-center text-xs text-zinc-400">Nenhum veículo sem comunicação.</p>}</div>
+          </div>
           </div>
       </div>
 

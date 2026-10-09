@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { duplicateKtagKeys, normalizeKtagSerial, pairKtagResults } from './ktagFleetUtils.js';
+import { duplicateKtagKeys, normalizeKtagSerial, pairKtagResults, shouldSyncKtagKeys } from './ktagFleetUtils.js';
 
 const point = (key: string, timestamp: number, lat = -8) => ({ key, timestamp, lat, lon: -35 });
 
@@ -24,4 +24,11 @@ test('aceita resposta sem key somente em consulta unitária', () => {
 
 test('normalizeKtagSerial preserva zeros do serial original', () => {
   assert.equal(normalizeKtagSerial(' 00007260500014 '), '00007260500014');
+});
+
+test('sincroniza chaves ausentes ou vencidas sem repetir a consulta em cada coleta', () => {
+  const now = 2_000_000_000;
+  assert.equal(shouldSyncKtagKeys({ hashedAdvKey: '', privateKey: '' }, now), true);
+  assert.equal(shouldSyncKtagKeys({ hashedAdvKey: 'hash', privateKey: 'secret', syncedAt: now - 60_000 }, now), false);
+  assert.equal(shouldSyncKtagKeys({ hashedAdvKey: 'hash', privateKey: 'secret', syncedAt: now - 24 * 60 * 60_000 }, now), true);
 });

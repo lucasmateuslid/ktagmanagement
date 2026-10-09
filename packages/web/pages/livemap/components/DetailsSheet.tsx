@@ -1,15 +1,8 @@
-
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-    ChevronDown, ChevronUp, User, Tag as TagIcon,
-    BatteryCharging, MapPin, Navigation, History, X, Box, Clock, RefreshCw, Share2, CheckCircle2,
-    Bike as FaMotorcycle, Truck as FaTruck, Car as FaCar,
-} from 'lucide-react';
-import { Vehicle, Tag, VehicleCategory, Client, LocationHistory } from '../../../types';
+import React, { useEffect, useState } from 'react';
+import { BatteryCharging, CarFront, ChevronDown, ChevronLeft, ChevronUp, Clock3, History, MapPin, Navigation, RefreshCw, Search, Share2, X } from 'lucide-react';
+import type { Client, LocationHistory, Tag, Vehicle, VehicleCategory } from '../../../types';
 import { useNotification } from '../../../contexts/NotificationContext';
-
-const MotionDiv = motion.div as any;
+import { VehicleBlockingControls } from '../../../components/VehicleBlockingControls';
 
 interface DetailsSheetProps {
     selectedTagId: string;
@@ -22,237 +15,110 @@ interface DetailsSheetProps {
     lastLoc?: LocationHistory;
     resolvedAddress?: string;
     userRole?: string;
+    search: string;
+    onSearch: (value: string) => void;
     onFetchHistory: () => void;
-    onRefreshTag: (tagId: string) => Promise<void>;
+    onRefreshTag: (tagId: string) => Promise<{ status: string; ageMinutes?: number | null; provider?: string; error?: string }>;
     onClose: () => void;
 }
 
 export const DetailsSheet: React.FC<DetailsSheetProps> = ({
-    selectedTagId, isExpanded, toggleExpanded, vehicle, tag, category, client, lastLoc, resolvedAddress, userRole, onFetchHistory, onRefreshTag, onClose
+    selectedTagId, isExpanded, toggleExpanded, vehicle, tag, category, client, lastLoc, resolvedAddress, userRole,
+    search, onSearch, onFetchHistory, onRefreshTag, onClose,
 }) => {
     const { addNotification } = useNotification();
     const [isUpdating, setIsUpdating] = useState(false);
-    const [updateSuccess, setUpdateSuccess] = useState(false);
-    const [timeAgo, setTimeAgo] = useState<string>('');
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    if (!selectedTagId) return null;
     const tagIdentifier = tag?.type === 'XADTAG'
         ? (tag.identifierOriginal || tag.accessoryId || selectedTagId)
         : (tag?.accessoryId || tag?.name || selectedTagId);
+    const ageMinutes = lastLoc?.timestamp ? Math.max(0, Math.floor((now - lastLoc.timestamp) / 60_000)) : null;
+    const activeSignal = ageMinutes !== null && ageMinutes <= 5;
+    const statusText = ageMinutes === null ? 'Nunca comunicou' : activeSignal ? 'Online' : ageMinutes <= 12 * 60 ? 'Atualização atrasada' : 'Sem comunicação';
+    const ageText = ageMinutes === null ? '' : ageMinutes < 1 ? 'agora' : ageMinutes < 60 ? `há ${ageMinutes} min` : ageMinutes < 1440 ? `há ${Math.floor(ageMinutes / 60)} h` : `há ${Math.floor(ageMinutes / 1440)} d`;
 
-    const updateTimeAgo = () => {
-        if (lastLoc?.timestamp) {
-            const diff = Date.now() - lastLoc.timestamp;
-            const minutes = Math.floor(diff / 60000);
-            if (minutes < 1) setTimeAgo('agora mesmo');
-            else if (minutes < 60) setTimeAgo(`há ${minutes} min`);
-            else {
-                const hours = Math.floor(minutes / 60);
-                if (hours < 24) setTimeAgo(`há ${hours} h`);
-                else {
-                    const days = Math.floor(hours / 24);
-                    setTimeAgo(`há ${days} d`);
-                }
-            }
-        } else {
-            setTimeAgo('Sem localização');
-        }
-    };
-
-    useEffect(() => {
-        updateTimeAgo();
-        const interval = setInterval(updateTimeAgo, 60000);
-        return () => clearInterval(interval);
-    }, [lastLoc?.timestamp]);
-
-    const handleUpdateLocation = async (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const updateLocation = async () => {
         if (isUpdating) return;
-        
         setIsUpdating(true);
-        setUpdateSuccess(false);
         try {
-            await onRefreshTag(selectedTagId);
-            setUpdateSuccess(true);
-            setTimeout(() => setUpdateSuccess(false), 3000);
+            const result = await onRefreshTag(selectedTagId);
+            const age = result.ageMinutes === null || result.ageMinutes === undefined ? '' : ` Última posição há ${result.ageMinutes} min.`;
+            if (result.status === 'error') throw new Error(result.error || 'O equipamento não respondeu.');
+            addNotification(result.status === 'updated' ? 'success' : 'info',
+                result.status === 'updated' ? 'Posição atualizada' : 'Sem nova resposta',
+                `${result.error || (result.status === 'updated' ? 'Nova posição recebida.' : 'A posição não mudou.')}${age}`);
         } catch (error) {
-            console.error("Failed to update location", error);
-            addNotification('error', 'Erro', error instanceof Error ? error.message : 'Falha ao atualizar localização.');
+            addNotification('error', 'Falha ao atualizar', error instanceof Error ? error.message : 'Falha ao atualizar localização.');
         } finally {
             setIsUpdating(false);
         }
     };
-
-    const getModalIcon = (fipeType?: string) => {
-        switch (fipeType) {
-            case 'motos': return <FaMotorcycle size={24} className="md:w-[28px] md:h-[28px]" />;
-            case 'caminhoes': return <FaTruck size={24} className="md:w-[28px] md:h-[28px]" />;
-            default: return <FaCar size={24} className="md:w-[28px] md:h-[28px]" />;
-        }
-    };
-
-    const handleShare = async () => {
+    const openRoute = () => {
         if (!lastLoc) return;
-        const url = `https://www.google.com/maps/search/?api=1&query=${lastLoc.lat},${lastLoc.lon}`;
-        
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${lastLoc.lat},${lastLoc.lon}`, '_blank', 'noopener,noreferrer');
+    };
+    const shareLocation = async () => {
+        if (!lastLoc) return;
         try {
-            await navigator.clipboard.writeText(url);
-            addNotification('success', 'Sucesso', 'Localização copiada com sucesso!');
-        } catch (error) {
-            console.error('Erro ao copiar', error);
-            addNotification('error', 'Erro', 'Não foi possível copiar a localização.');
+            await navigator.clipboard.writeText(`https://www.google.com/maps/search/?api=1&query=${lastLoc.lat},${lastLoc.lon}`);
+            addNotification('success', 'Localização copiada', 'Link da localização copiado.');
+        } catch {
+            addNotification('error', 'Falha ao compartilhar', 'Não foi possível copiar a localização.');
         }
     };
 
-    return (
-        <AnimatePresence>
-            {selectedTagId && (
-              <MotionDiv initial={{ y: '100%' }} animate={{ y: isExpanded ? 0 : 'calc(100% - 90px)' }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 180 }}
-                className="absolute bottom-0 left-0 right-0 z-[1000] bg-white dark:bg-zinc-900 rounded-t-[32px] md:rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] border-t border-zinc-100 dark:border-zinc-800 flex flex-col md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:rounded-[40px] overflow-hidden max-h-[85vh] md:max-h-[calc(100vh-7.5rem)]"
-              >
-                <div className="h-[90px] px-6 md:px-8 flex items-center justify-between cursor-pointer group" onClick={toggleExpanded}>
-                  <div className="flex items-center gap-4 md:gap-5">
-                    <div className={`w-12 h-12 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shadow-xl transition-all ${lastLoc ? 'bg-primary-500 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
-                      {vehicle ? getModalIcon(category?.fipeType) : <Box size={24} className="md:w-[28px] md:h-[28px]"/>}
-                    </div>
-                    <div>
-                      <h2 className="text-xl md:text-2xl font-display font-black text-zinc-900 dark:text-white uppercase leading-none tracking-tighter">
-                          {vehicle ? vehicle.plate : (tag?.name || 'Tag Desconhecida')}
-                      </h2>
-                      <div className="flex items-center gap-1.5 mt-1 md:mt-1.5">
-                          <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${lastLoc ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                          <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest">
-                              {lastLoc ? 'Sinal Ativo Online' : 'Sem Resposta (Offline)'}
-                          </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-primary-500 transition-colors">
-                        {isExpanded ? <ChevronDown size={20} className="md:w-[22px] md:h-[22px]" /> : <ChevronUp size={20} className="md:w-[22px] md:h-[22px]" />}
-                    </div>
-                  </div>
+    return <aside aria-label="Ficha do veículo" className={`absolute bottom-0 left-0 right-0 z-[1000] flex max-h-[88dvh] flex-col overflow-hidden rounded-t-[22px] border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 sm:bottom-auto sm:left-4 sm:right-auto sm:top-4 sm:w-[min(390px,calc(100vw-32px))] sm:rounded-[20px] ${isExpanded ? 'sm:h-[min(84dvh,800px)]' : 'sm:h-auto'}`}>
+        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-900/30"><CarFront size={17} /></div>
+            <div className="min-w-0 flex-1"><h2 className="text-xs font-bold text-zinc-900 dark:text-white">Ficha do veículo</h2><p className="text-[10px] text-zinc-400">1 selecionado</p></div>
+            <button type="button" onClick={updateLocation} disabled={isUpdating} aria-label="Atualizar localização" className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800"><RefreshCw size={15} className={isUpdating ? 'animate-spin' : ''} /></button>
+            <button type="button" onClick={toggleExpanded} aria-label={isExpanded ? 'Recolher ficha' : 'Expandir ficha'} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">{isExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button>
+        </div>
+        {isExpanded && <>
+            <div className="shrink-0 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+                <div className="flex h-10 items-center gap-2 rounded-xl border border-zinc-200 px-3 focus-within:border-sky-500 dark:border-zinc-700"><Search size={15} className="text-zinc-400" /><input value={search} onChange={event => { onSearch(event.target.value); onClose(); }} placeholder="Placa, modelo, equipamento ou cliente..." aria-label="Pesquisar veículos" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-400 dark:text-white" /></div>
+            </div>
+            <div className="shrink-0 border-b border-zinc-100 px-3 py-3 dark:border-zinc-800">
+                <button type="button" onClick={onClose} className="mb-3 flex items-center gap-1 text-[10px] font-medium text-zinc-500 hover:text-sky-600"><ChevronLeft size={13} />Voltar aos veículos</button>
+                <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-sky-600 dark:bg-amber-900/20"><CarFront size={22} /></div>
+                    <div className="min-w-0"><h3 className="text-base font-bold leading-tight text-zinc-900 dark:text-white">{vehicle?.plate || tag?.name || 'Tag'}</h3><p className="truncate text-[10px] text-zinc-500">{vehicle?.model || category?.name || tagIdentifier}{vehicle?.year ? ` · ${vehicle.year}` : ''}</p><p className={`mt-1 flex items-center gap-1 text-[10px] font-semibold ${activeSignal ? 'text-emerald-600' : ageMinutes === null ? 'text-zinc-400' : 'text-amber-600'}`}><span className={`h-1.5 w-1.5 rounded-full ${activeSignal ? 'bg-emerald-500' : ageMinutes === null ? 'bg-zinc-400' : 'bg-amber-500'}`} />{statusText}{ageText ? ` · ${ageText}` : ''}</p></div>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-1.5">
+                    <button type="button" onClick={openRoute} disabled={!lastLoc} className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl bg-zinc-50 text-[10px] text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-300"><Navigation size={15} />Rota</button>
+                    <button type="button" onClick={onFetchHistory} className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl bg-zinc-50 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"><History size={15} />Histórico</button>
+                    <button type="button" onClick={shareLocation} disabled={!lastLoc} className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl bg-zinc-50 text-[10px] text-zinc-600 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-300"><Share2 size={15} />Compartilhar</button>
+                </div>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 py-2 custom-scrollbar">
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-3 dark:border-amber-900/30 dark:bg-amber-900/10">
+                    <button type="button" onClick={updateLocation} disabled={isUpdating} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 text-[11px] font-bold text-white disabled:opacity-50"><RefreshCw size={15} className={isUpdating ? 'animate-spin' : ''} />{isUpdating ? 'Atualizando...' : 'Atualizar localização'}</button>
+                    <p className="mt-2 text-center text-[9px] text-zinc-500">Última comunicação: {lastLoc?.timestamp ? new Date(lastLoc.timestamp).toLocaleString('pt-BR') : 'não registrada'}</p>
                 </div>
 
-                <div className="px-6 md:px-8 pb-28 md:pb-10 space-y-5 md:space-y-4 overflow-y-auto custom-scrollbar border-t border-zinc-50 dark:border-zinc-800/50 pt-6">
-                    
-                    {/* AÇÕES CLIENTE / ATUALIZAR */}
-                    <div className="flex flex-row items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
-                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5 font-medium">
-                            <Clock size={14} /> {timeAgo}
-                        </span>
-                        <button 
-                            onClick={handleUpdateLocation}
-                            disabled={isUpdating}
-                            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
-                                updateSuccess 
-                                    ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' 
-                                    : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'
-                            }`}
-                        >
-                            {isUpdating ? (
-                                <RefreshCw size={14} className="animate-spin" />
-                            ) : updateSuccess ? (
-                                <CheckCircle2 size={14} />
-                            ) : (
-                                <RefreshCw size={14} />
-                            )}
-                            {isUpdating ? 'Atualizando...' : updateSuccess ? 'Atualizado' : 'Atualizar Tag'}
-                        </button>
-                    </div>
-
-                    {/* Exibição do Cliente Responsável */}
-                    {vehicle && client && userRole !== 'client' && (
-                        <div className="flex items-center gap-3 p-3 md:p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
-                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shadow-sm shrink-0">
-                                <User size={16} className="md:w-[18px] md:h-[18px]" />
-                            </div>
-                            <div className="overflow-hidden">
-                                <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">Cliente Responsável</span>
-                                <span className="text-xs font-bold text-zinc-900 dark:text-white uppercase truncate block">{client.name}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {userRole !== 'client' && tagIdentifier && (
-                        <div className="flex items-center gap-3 p-3 md:p-4 bg-primary-500/10 rounded-[20px] border border-primary-500/30">
-                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-primary-500 text-black flex items-center justify-center shadow-sm shrink-0">
-                                <TagIcon size={16} className="md:w-[18px] md:h-[18px]" />
-                            </div>
-                            <div className="min-w-0">
-                                <span className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5">
-                                    {tag?.type === 'XADTAG' ? 'XADTAG (Identificador)' : 'K-TAG (Serial Number)'}
-                                </span>
-                                <span className="text-xs font-mono font-bold text-zinc-900 dark:text-white break-all block">{tagIdentifier}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {!vehicle && tag && (
-                        <div className="p-3 md:p-4 bg-amber-500/10 border border-amber-500/20 rounded-[20px] flex gap-3 items-center">
-                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center shadow-sm shrink-0 font-bold"><TagIcon size={16} className="md:w-[18px] md:h-[18px]"/></div>
-                            <div>
-                                <span className="text-[8px] md:text-[9px] font-black text-amber-600 uppercase tracking-widest block">Modo Estoque</span>
-                                <span className="text-xs font-bold text-zinc-900 dark:text-white">Serial: {tag.accessoryId}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Battery Status */}
-                    {lastLoc && lastLoc.battery && (
-                        <div className="flex items-center justify-between p-3 md:p-4 bg-zinc-50 dark:bg-zinc-950/50 rounded-[20px] border border-zinc-100 dark:border-zinc-800">
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center shadow-sm shrink-0" style={{ color: lastLoc.battery.color }}>
-                                    <BatteryCharging size={18} className="md:w-[20px] md:h-[20px]" />
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-[8px] md:text-[9px] font-black uppercase text-zinc-400 tracking-widest">Nível de Bateria</span>
-                                    <span className="text-xs font-bold uppercase" style={{ color: lastLoc.battery.color }}>
-                                        {lastLoc.battery.label} ({lastLoc.battery.level}%)
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="bg-zinc-50 dark:bg-zinc-950/60 p-5 md:p-6 rounded-2xl md:rounded-[32px] border border-zinc-100 dark:border-zinc-800/50 relative overflow-hidden group">
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2 text-primary-500">
-                                <MapPin size={14} className="md:w-[16px] md:h-[16px]" />
-                                <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest">Endereço de Localização</span>
-                            </div>
-                            {lastLoc && (
-                                <div className="flex items-center gap-1 px-1.5 py-0.5 md:px-2 md:py-1 bg-zinc-200 dark:bg-zinc-800 rounded-lg border border-zinc-300 dark:border-zinc-700">
-                                    <Clock size={8} className="md:w-[10px] md:h-[10px] text-zinc-400"/>
-                                    <span className="text-[8px] md:text-[10px] font-mono font-bold text-zinc-600 dark:text-zinc-300">
-                                        {new Date(lastLoc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                        <p className="text-[13px] md:text-[14px] font-bold text-zinc-900 dark:text-zinc-100 leading-relaxed pr-8">
-                            {lastLoc ? (resolvedAddress || 'Resolvendo endereço...') : 'Coordenadas não disponíveis no momento.'}
-                        </p>
-                        <div className="absolute top-0 right-0 w-20 h-20 -mt-8 -mr-8 bg-primary-500/5 rounded-full" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 md:gap-4">
-                        <button onClick={() => lastLoc && window.open(`https://www.google.com/maps/dir/?api=1&destination=${lastLoc.lat},${lastLoc.lon}`)} className="h-14 md:h-16 bg-zinc-950 dark:bg-zinc-800 text-white rounded-xl md:rounded-[24px] flex items-center justify-center gap-2 md:gap-3 font-black text-[10px] md:text-[11px] uppercase tracking-widest shadow-xl transition-all active:scale-95 border border-zinc-800">
-                            <Navigation size={18} className="md:w-[22px] md:h-[22px]"/> Rota
-                        </button>
-                        <button onClick={onFetchHistory} className="h-14 md:h-16 bg-primary-500 text-black rounded-xl md:rounded-[24px] flex items-center justify-center gap-2 md:gap-3 font-black text-[10px] md:text-[11px] uppercase tracking-widest shadow-xl transition-all active:scale-95">
-                            <History size={18} className="md:w-[22px] md:h-[22px]"/> Histórico
-                        </button>
-                    </div>
-
-                    <button onClick={handleShare} className="w-full h-14 md:h-16 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-xl md:rounded-[24px] flex items-center justify-center gap-2 md:gap-3 font-black text-[10px] md:text-[11px] uppercase tracking-widest shadow-sm transition-all active:scale-95 border border-zinc-200 dark:border-zinc-700">
-                        <Share2 size={18} className="md:w-[22px] md:h-[22px]"/> Compartilhar Localização
-                    </button>
-
-                    <button onClick={onClose} className="w-full py-2 text-[9px] md:text-[10px] font-black text-zinc-300 hover:text-red-500 uppercase tracking-widest transition-colors flex items-center justify-center gap-2 opacity-60 hover:opacity-100">
-                        <X size={14} className="md:w-[16px] md:h-[16px]" /> Fechar Detalhes
-                    </button>
-                </div>
-              </MotionDiv>
-            )}
-        </AnimatePresence>
-    );
+                {vehicle && <section className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700">
+                    <h4 className="mb-3 text-[9px] font-bold uppercase tracking-wider text-zinc-400">Dados do veículo</h4>
+                    {client && userRole !== 'client' && <div className="mb-3"><p className="text-[9px] text-zinc-400">Proprietário / cliente</p><p className="text-[10px] font-bold text-amber-600">{client.name}</p></div>}
+                    <div className="mb-3"><p className="text-[9px] text-zinc-400">Modelo</p><p className="text-[10px] font-semibold text-zinc-800 dark:text-zinc-200">{vehicle.model}{vehicle.year ? ` · ${vehicle.year}` : ''}</p></div>
+                    <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800"><span className="text-[9px] text-zinc-400">Situação</span><span className="rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">{vehicle.status === 'stolen' ? 'Alerta' : vehicle.status === 'maintenance' ? 'Manutenção' : 'Ativo'}</span></div>
+                    {tag && userRole !== 'client' && <div className="flex items-center justify-between gap-2 pt-3"><span className="text-[9px] text-zinc-400">{tag.type === 'XADTAG' ? 'XADTAG' : 'K-TAG'}</span><span className="truncate text-[10px] font-semibold text-zinc-700 dark:text-zinc-200">{tagIdentifier}</span></div>}
+                </section>}
+                {vehicle?.trackerId && <VehicleBlockingControls vehicleId={vehicle.id} />}
+                <section className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700"><h4 className="mb-2 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400"><MapPin size={12} />Última localização</h4><p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{lastLoc ? (resolvedAddress || 'Endereço ainda não disponível') : 'Sem posição registrada'}</p></section>
+                {lastLoc && <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-zinc-200 text-center dark:border-zinc-700">
+                    <div className="border-b border-r border-zinc-200 p-3 dark:border-zinc-700"><Clock3 size={15} className="mx-auto mb-1 text-zinc-400" /><p className="text-[9px] text-zinc-400">Comunicação</p><p className="text-[10px] font-medium">{new Date(lastLoc.timestamp).toLocaleString('pt-BR')}</p></div>
+                    <div className="border-b border-zinc-200 p-3 dark:border-zinc-700"><BatteryCharging size={15} className="mx-auto mb-1 text-zinc-400" /><p className="text-[9px] text-zinc-400">Bateria</p><p className="text-[10px] font-medium">{lastLoc.battery ? `${lastLoc.battery.label} (${lastLoc.battery.level}%)` : 'Não informada'}</p></div>
+                    <div className="border-r border-zinc-200 p-3 dark:border-zinc-700"><MapPin size={15} className="mx-auto mb-1 text-zinc-400" /><p className="text-[9px] text-zinc-400">Latitude</p><p className="text-[10px] font-medium">{lastLoc.lat.toFixed(6)}</p></div>
+                    <div className="p-3"><MapPin size={15} className="mx-auto mb-1 text-zinc-400" /><p className="text-[9px] text-zinc-400">Longitude</p><p className="text-[10px] font-medium">{lastLoc.lon.toFixed(6)}</p></div>
+                </div>}
+            </div>
+        </>}
+    </aside>;
 };

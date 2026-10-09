@@ -7,6 +7,7 @@ import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin.js';
 import { decryptKtagSecret, KtagConfigurationError, KtagHttpError, ktagClient, type KtagClient } from './ktagClient.js';
 import { TraccarHttpError, traccarClient } from './traccarClient.js';
+import { displayAddressAt } from './serverAddressResolver.js';
 
 const DAY = 86_400_000;
 const TRACCAR_CHUNK_MS = 6 * 3_600_000;
@@ -98,7 +99,7 @@ export function normalizeFirestorePosition(data: FirebaseFirestore.DocumentData,
   return {
     id: pointId('ktag', tagId, sourceId, timestamp, latitude, longitude), tagId,
     vehicleId: data.vehicleIdAtCapture ? String(data.vehicleIdAtCapture) : null,
-    provider: 'ktag', timestamp, latitude, longitude, address: data.address ?? null,
+    provider: 'ktag', timestamp, latitude, longitude, address: displayAddressAt(data),
     altitude: Number.isFinite(data.altitude) ? data.altitude : undefined,
     speed: Number.isFinite(data.speed) ? data.speed : undefined,
     course: Number.isFinite(data.course) ? data.course : undefined,
@@ -228,7 +229,14 @@ export class TrackingHistoryService {
     if (!tag.exists) throw new HistoryRequestError('Tag não encontrada.', 404, 'TAG_NOT_FOUND');
     const type = tagType(tag); let points: TrackingHistoryPoint[];
     if (type === 'XADTAG') points = await this.traccar.load({ tenantId, tagId, vehicleId: tag.get('linkedEntityId') || null, deviceId: tag.get('traccarDeviceId'), from: range.from, to: range.to, range });
-    else if (type === 'K_TAG') points = await this.ktag.load({ tenantId, tagId, vehicleId: null, from: range.from, to: range.to, range });
+    else if (type === 'K_TAG') {
+      const deviceId = tag.get('traccarDeviceId');
+      if (tag.get('integrationStatus') === 'registered' && Number.isInteger(deviceId)) {
+        try { points = await this.traccar.load({ tenantId, tagId, vehicleId: null, deviceId, from: range.from, to: range.to, range }); }
+        catch { points = []; }
+        if (!points.length) points = await this.ktag.load({ tenantId, tagId, vehicleId: null, from: range.from, to: range.to, range });
+      } else points = await this.ktag.load({ tenantId, tagId, vehicleId: null, from: range.from, to: range.to, range });
+    }
     else throw new HistoryRequestError('Tipo de dispositivo incompatível com histórico.', 422, 'UNKNOWN_DEVICE_TYPE');
     return page(requestId, 'tag', tagId, range, points, []);
   }
@@ -238,18 +246,37 @@ export class TrackingHistoryService {
     const vehicle = await adminDb.doc(`tenants/${tenantId}/vehicles/${vehicleId}`).get();
     if (!vehicle.exists) throw new HistoryRequestError('Veículo não encontrado.', 404, 'VEHICLE_NOT_FOUND');
     const assignmentSnap = await adminDb.collection(`tenants/${tenantId}/tracking_assignments`).where('vehicleId', '==', vehicleId).get();
+    const trackerAssignmentsSnap = await adminDb.collection(`tenants/${tenantId}/tracker_assignments`).where('vehicleId', '==', vehicleId).get();
     let assignments = assignmentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TrackingAssignment)).filter(item => item.startedAt <= range.to && (item.endedAt === null || item.endedAt >= range.from));
     if (!assignments.length && vehicle.get('tagId')) assignments = [{ id: 'legacy-current', tenantId, vehicleId, tagId: String(vehicle.get('tagId')), startedAt: range.from, endedAt: null, startedBy: null, endedBy: null, endReason: null, startEstimated: true }];
     const points: TrackingHistoryPoint[] = [];
-    if (!assignments.length) throw new HistoryRequestError('Veículo sem dispositivo vinculado no período.', 409, 'DEVICE_NOT_LINKED');
+    const trackerAssignments = trackerAssignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as { id: string; trackerId: string; traccarDeviceId: number | null; startedAt: number; endedAt: number | null }))
+      .filter(item => item.startedAt <= range.to && (item.endedAt === null || item.endedAt >= range.from));
+    if (!trackerAssignments.length && vehicle.get('trackerId')) {
+      const tracker = await adminDb.doc(`tenants/${tenantId}/trackers/${vehicle.get('trackerId')}`).get();
+      if (tracker.exists) trackerAssignments.push({ id: 'legacy-current', trackerId: tracker.id, traccarDeviceId: tracker.get('traccarDeviceId') || null, startedAt: range.from, endedAt: null });
+    }
+    if (!assignments.length && !trackerAssignments.length) throw new HistoryRequestError('Veículo sem dispositivo vinculado no período.', 409, 'DEVICE_NOT_LINKED');
     for (const assignment of assignments) {
       const tag = await adminDb.doc(`tenants/${tenantId}/tags/${assignment.tagId}`).get();
       if (!tag.exists) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'TAG_NOT_FOUND', message: 'Uma tag vinculada ao período não foi encontrada.' }); continue; }
       const type = tagType(tag);
-      const provider = type === 'K_TAG' ? this.ktag : type === 'XADTAG' ? this.traccar : null;
+      const traccarKtag = type === 'K_TAG' && tag.get('integrationStatus') === 'registered' && Number.isInteger(tag.get('traccarDeviceId'));
+      const provider = traccarKtag || type === 'XADTAG' ? this.traccar : type === 'K_TAG' ? this.ktag : null;
       if (!provider) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'UNKNOWN_DEVICE_TYPE', message: 'Uma tag possui tipo incompatível com histórico.' }); continue; }
-      try { points.push(...await provider.load({ tenantId, tagId: assignment.tagId, vehicleId, deviceId: tag.get('traccarDeviceId'), from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range })); }
-      catch (error) { const mapped = mapProviderError(error); warnings.push({ provider: provider.provider, tagId: assignment.tagId, code: mapped.code, message: mapped.message }); }
+      const input = { tenantId, tagId: assignment.tagId, vehicleId, deviceId: tag.get('traccarDeviceId'), from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range };
+      try {
+        let loaded = await provider.load(input);
+        if (traccarKtag && !loaded.length) loaded = await this.ktag.load(input);
+        points.push(...loaded);
+      } catch (error) {
+        if (traccarKtag) try { points.push(...await this.ktag.load(input)); continue; } catch { /* report original provider failure */ }
+        const mapped = mapProviderError(error); warnings.push({ provider: provider.provider, tagId: assignment.tagId, code: mapped.code, message: mapped.message });
+      }
+    }
+    for (const assignment of trackerAssignments) {
+      try { points.push(...await this.traccar.load({ tenantId, tagId: `tracker:${assignment.trackerId}`, vehicleId, deviceId: assignment.traccarDeviceId || undefined, from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range })); }
+      catch (error) { const mapped = mapProviderError(error); warnings.push({ provider: 'traccar', tagId: `tracker:${assignment.trackerId}`, code: mapped.code, message: mapped.message }); }
     }
     if (!points.length && warnings.length) { const warning = warnings[0]; const status = warning.code === 'DEVICE_NOT_LINKED' ? 409 : warning.code === 'UNKNOWN_DEVICE_TYPE' ? 422 : warning.code === 'TAG_NOT_FOUND' ? 404 : 502; throw new HistoryRequestError(warning.message, status, warning.code as HistoryErrorCode); }
     return page(requestId, 'vehicle', vehicleId, range, points, warnings);

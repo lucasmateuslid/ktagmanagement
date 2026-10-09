@@ -7,6 +7,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrazilianDocumentInput } from '../../../components/ui/brazilian-document-input';
 import { BrazilianPhoneInput } from '../../../components/ui/brazilian-phone-input';
+import type { ManagedTracker } from '@ktag/shared';
 
 interface VehicleModalProps {
   onClose: () => void;
@@ -18,6 +19,10 @@ interface VehicleModalProps {
   companies: Company[];
   categories: VehicleCategory[];
   tags: Tag[];
+  trackers: ManagedTracker[];
+  canLinkTrackers: boolean;
+  trackersLoading: boolean;
+  trackersError: string;
   allVehicles: Vehicle[]; // Nova dependência para validar vínculos
   tagSearch: string;
   setTagSearch: (s: string) => void;
@@ -33,7 +38,7 @@ interface VehicleModalProps {
 
 export const VehicleModal: React.FC<VehicleModalProps> = ({
   onClose, onSubmit, formData, setFormData, clientData, setClientData,
-  companies, categories, tags, allVehicles, tagSearch, setTagSearch,
+  companies, categories, tags, trackers, canLinkTrackers, trackersLoading, trackersError, allVehicles, tagSearch, setTagSearch,
   onHinovaLookup, hinovaStatus, onCheckClient, onFipeOpen,
   isTagListOpen, setIsTagListOpen, isPlateValid, isSaving = false
 }) => {
@@ -85,6 +90,10 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   }, [tags, tagSearch]);
 
   const selectedTag = tags.find(t => t.id === formData.tagId);
+  const installationLabel = formData.trackerId
+    ? (formData.tagId ? 'Tag e rastreador' : 'Somente rastreador')
+    : (formData.tagId ? 'Somente tag' : 'Nenhum equipamento vinculado');
+  const selectableTrackers = trackers.filter(tracker => !tracker.vehicleId || tracker.vehicleId === formData.id || tracker.id === formData.trackerId);
 
   return (
     <div className="modal-shell" role="dialog" aria-modal="true" aria-labelledby="vehicle-modal-title">
@@ -116,13 +125,10 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                         ))}
                     </div>
 
-                    {/* Installation Type */}
+                    {/* Tipo derivado dos equipamentos vinculados */}
                     <div className="space-y-2">
                          <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">INSTALAÇÃO DO EQUIPAMENTO</label>
-                         <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                            <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_only'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_only' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>SÓ TAG</button>
-                            <button type="button" onClick={() => setFormData({...formData, installationType: 'tag_tracker'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${formData.installationType === 'tag_tracker' ? 'bg-[#f59e0b] text-black' : 'text-zinc-500'}`}>TAG C/ RASTREADOR</button>
-                         </div>
+                         <div className="rounded-xl border border-zinc-200 bg-zinc-100 px-4 py-3 text-xs font-bold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">{installationLabel}</div>
                     </div>
 
                     {/* Ownership Status */}
@@ -290,7 +296,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                     <div className="grid grid-cols-1 gap-4">
                         {/* Tag Linking com UI Visual e Pesquisa */}
                         <div className="space-y-2 relative">
-                            <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TAG VINCULADA</label>
+                            <div className="flex items-center justify-between"><label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">TAG VINCULADA</label>{formData.tagId && <button type="button" className="text-[9px] font-bold text-red-500" onClick={() => setFormData(current => ({ ...current, tagId: undefined }))}>Desvincular tag</button>}</div>
                             <div 
                                 className="flex items-center justify-between px-4 h-12 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all"
                                 onClick={() => setIsTagListOpen(!isTagListOpen)}
@@ -385,6 +391,17 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
                                 )}
                             </AnimatePresence>
                         </div>
+                        {canLinkTrackers && <div className="space-y-2">
+                            <label htmlFor="vehicle-tracker" className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">RASTREADOR VINCULADO</label>
+                            <select id="vehicle-tracker" value={formData.trackerId || ''} disabled={trackersLoading || Boolean(trackersError)} onChange={event => setFormData(current => ({ ...current, trackerId: event.target.value || undefined }))} className="w-full h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-xs font-bold dark:border-zinc-800 dark:bg-zinc-900 dark:text-white disabled:opacity-50">
+                                <option value="">Sem rastreador</option>
+                                {formData.trackerId && !selectableTrackers.some(tracker => tracker.id === formData.trackerId) && <option value={formData.trackerId}>Rastreador atual · {formData.trackerId}</option>}
+                                {selectableTrackers.map(tracker => <option key={tracker.id} value={tracker.id}>{tracker.manufacturer} {tracker.modelName} · {tracker.imei}{tracker.integrationStatus !== 'registered' ? ' · sincronização pendente' : ''}</option>)}
+                            </select>
+                            {trackersLoading && <p className="text-[10px] text-zinc-500">Carregando rastreadores...</p>}
+                            {trackersError && <p role="alert" className="text-[10px] text-red-500">{trackersError}</p>}
+                            {!trackersLoading && !trackersError && selectableTrackers.length === 0 && <p className="text-[10px] text-zinc-500">Cadastre um rastreador no estoque para vinculá-lo.</p>}
+                        </div>}
                     </div>
                 </div>
 

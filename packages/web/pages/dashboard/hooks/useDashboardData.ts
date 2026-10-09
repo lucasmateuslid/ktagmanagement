@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { Tag, Vehicle, Company, VehicleCategory, AppSettings, Schedule, Technician } from '../../../types';
+import { Tag, Vehicle, Company, VehicleCategory, AppSettings, Schedule, Technician, Client } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useAuth } from '../../../contexts/AuthContext';
 
@@ -15,6 +15,7 @@ export const useDashboardData = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -45,13 +46,15 @@ export const useDashboardData = () => {
           loadedVehicles, 
           loadedCompanies, 
           loadedCategories, 
-          loadedSettings
+          loadedSettings,
+          loadedClients
         ] = await Promise.all([
           storage.getTags(),
           storage.getVehicles(),
           storage.getCompanies(),
           storage.getCategories(),
-          storage.getSettings()
+          storage.getSettings(),
+          storage.getClients()
         ]);
 
         setTags(loadedTags);
@@ -60,6 +63,7 @@ export const useDashboardData = () => {
         setCategories(loadedCategories);
         setSettings(loadedSettings);
         setTechnicians(loadedTechs);
+        setClients(loadedClients);
       } catch (error) {
         console.error("Failed to load dashboard data", error);
       } finally {
@@ -82,6 +86,7 @@ export const useDashboardData = () => {
     settings,
     schedules,
     technicians,
+    clients,
     loading
   };
 };

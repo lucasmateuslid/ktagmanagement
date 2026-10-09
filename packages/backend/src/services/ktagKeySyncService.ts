@@ -42,7 +42,12 @@ export async function syncKtagKeysForTenant(tenantId: string, items: KtagRefresh
     if (!remote) { summary.notFound++; continue; }
     const hashedAdvKey = String(remote.hashedAdvKey || '').trim(); const privateKey = String(remote.privateKey || '').trim();
     if (!hashedAdvKey || !privateKey) { summary.invalid++; continue; }
-    if (item.hashedAdvKey === hashedAdvKey && item.privateKey === privateKey) { summary.unchanged++; continue; }
+    if (item.hashedAdvKey === hashedAdvKey && item.privateKey === privateKey) {
+      batch.update(item.doc.ref, { ktagKeysSyncedAt: Date.now() });
+      summary.unchanged++; pending++;
+      if (pending >= 400) { await batch.commit(); batch = adminDb.batch(); pending = 0; }
+      continue;
+    }
 
     item.hashedAdvKey = hashedAdvKey; item.privateKey = privateKey;
     batch.update(item.doc.ref, {

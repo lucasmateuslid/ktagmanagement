@@ -4,6 +4,8 @@ import { formatPhone, normalizePhone, type ManagedTracker, type TrackerModel } f
 import { requireAuth, requireInternalUser, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { isValidTrackerImei, normalizeTrackerImei } from '../domain/tracker.js';
+import { assertTrackerDevice, getBlockingProfile, releaseTrackerIdentifier, reserveTrackerIdentifier, syncManagedTracker } from '../services/managedTrackerService.js';
+import { traccarClient } from '../services/traccarClient.js';
 
 const DEFAULT_MODELS: TrackerModel[] = [
   ...[
@@ -95,16 +97,17 @@ async function createTracker(tid: string, body: any, userId: string): Promise<Ma
     createdAt: now, updatedAt: now,
   };
   if (!tracker.stockId) throw Object.assign(new Error('Estoque é obrigatório.'), { status: 400 });
-  await ref.create(Object.fromEntries(Object.entries(tracker).filter(([, value]) => value !== undefined)));
+  await reserveTrackerIdentifier(tid, imei);
+  try { await ref.create(Object.fromEntries(Object.entries({ ...tracker, blockingEnabled: false, integrationStatus: 'pending' }).filter(([, value]) => value !== undefined))); }
+  catch (error) { await releaseTrackerIdentifier(tid, imei); throw error; }
   if (simRef) await simRef.update({ trackerId: imei, status: 'reserved', updatedAt: now });
   await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId, tenantId: tid, event: 'tracker.created', action: 'CREATE', entity: 'Tracker', entityId: imei, timestamp: FieldValue.serverTimestamp() });
-  return tracker;
+  return syncManagedTracker(tid, imei);
 }
 
 trackersRouter.post('/', async (req, res) => {
   const tid = tenantId(req);
-  const imei = normalizeTrackerImei(req.body?.imei);
-  if (!isValidTrackerImei(imei)) return res.status(400).json({ ok: false, error: 'IMEI deve conter exatamente 15 dígitos.' });
+  if (!isValidTrackerImei(req.body?.imei)) return res.status(400).json({ ok: false, error: 'IMEI deve conter 15 dígitos e verificador válido.' });
   try { res.status(201).json({ ok: true, data: await createTracker(tid, req.body, req.authUser!.uid) }); }
   catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao cadastrar rastreador.' }); }
 });
@@ -121,6 +124,91 @@ trackersRouter.post('/batch', async (req, res) => {
   res.status(created.length ? 201 : 200).json({ ok: true, data: { created: created.length, errors } });
 });
 
+trackersRouter.post('/:id/sync', async (req, res) => {
+  try { res.json({ ok: true, data: await syncManagedTracker(tenantId(req), normalizeTrackerImei(req.params.id)) }); }
+  catch (error: any) { res.status(error.status || 502).json({ ok: false, error: error.message || 'Falha ao sincronizar.' }); }
+});
+
+trackersRouter.patch('/:id/blocking', requirePermission('ACTION_TRACKER_BLOCK', ['admin', 'moderator']), async (req, res) => {
+  try {
+    const tid = tenantId(req); const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'Informe enabled como booleano.' });
+    const tenant = await adminDb.doc(`tenants/${tid}`).get();
+    if (enabled && tenant.get('settings.blockingEnabled') !== true) return res.status(403).json({ ok: false, error: 'Bloqueio não liberado para esta empresa.' });
+    const ref = adminDb.doc(`tenants/${tid}/trackers/${req.params.id}`); const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, error: 'Rastreador não encontrado.' });
+    const tracker = { id: snap.id, ...snap.data() } as ManagedTracker;
+    if (!enabled) {
+      await ref.update({ blockingEnabled: false, blockingProfileId: null, updatedAt: Date.now() });
+      try {
+        const device = await assertTrackerDevice(tid, tracker);
+        await traccarClient.updateDevice(device.id, { ...device, attributes: { ...(device.attributes || {}), ktagBlockingEnabled: false } });
+      } catch (syncError) {
+        console.error('Bloqueio desativado localmente; falha ao sincronizar com o Traccar:', syncError);
+      }
+      await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, tenantId: tid, event: 'tracker.blocking.changed', entityId: tracker.id, enabled: false, timestamp: FieldValue.serverTimestamp() });
+      const updated = await ref.get();
+      return res.json({ ok: true, data: { id: updated.id, ...updated.data() } });
+    }
+    const profile = enabled ? await getBlockingProfile(tracker.modelId) : null;
+    if (enabled && !profile) return res.status(409).json({ ok: false, error: 'Modelo ainda não homologado para bloqueio.' });
+    const device = await assertTrackerDevice(tid, tracker);
+    if (enabled) {
+      const types = await traccarClient.getCommandTypes(device.id);
+      if (![profile!.block.type, profile!.unblock.type].every(type => types.includes(type))) return res.status(409).json({ ok: false, error: 'Protocolo do dispositivo não oferece os comandos homologados.' });
+    }
+    await traccarClient.updateDevice(device.id, { ...device, attributes: { ...(device.attributes || {}), ktagBlockingEnabled: enabled } });
+    await ref.update({ blockingEnabled: enabled, blockingProfileId: enabled ? tracker.modelId : null, updatedAt: Date.now() });
+    await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, tenantId: tid, event: 'tracker.blocking.changed', entityId: tracker.id, enabled, timestamp: FieldValue.serverTimestamp() });
+    const updated = await ref.get(); res.json({ ok: true, data: { id: updated.id, ...updated.data() } });
+  } catch (error: any) { res.status(error.status || 502).json({ ok: false, error: error.message || 'Falha ao alterar bloqueio.' }); }
+});
+
+trackersRouter.put('/:id/vehicle', async (req, res) => {
+  try {
+    const tid = tenantId(req); const trackerId = String(req.params.id); const vehicleId = String(req.body?.vehicleId || '');
+    if (!vehicleId) return res.status(400).json({ ok: false, error: 'Informe vehicleId.' });
+    const trackerRef = adminDb.doc(`tenants/${tid}/trackers/${trackerId}`);
+    const vehicleRef = adminDb.doc(`tenants/${tid}/vehicles/${vehicleId}`);
+    const assignmentRef = adminDb.collection(`tenants/${tid}/tracker_assignments`).doc();
+    const changed = await adminDb.runTransaction(async tx => {
+      const [tracker, vehicle] = await Promise.all([tx.get(trackerRef), tx.get(vehicleRef)]);
+      if (!tracker.exists || !vehicle.exists) throw Object.assign(new Error('Rastreador ou veículo não encontrado.'), { status: 404 });
+      if (tracker.get('vehicleId') && tracker.get('vehicleId') !== vehicleId) throw Object.assign(new Error('Rastreador já vinculado a outro veículo.'), { status: 409 });
+      if (vehicle.get('trackerId') && vehicle.get('trackerId') !== trackerId) throw Object.assign(new Error('Veículo já possui outro rastreador.'), { status: 409 });
+      if (tracker.get('vehicleId') === vehicleId && vehicle.get('trackerId') === trackerId) return false;
+      if (!tracker.get('vehicleId')) tx.create(assignmentRef, { trackerId, vehicleId, traccarDeviceId: tracker.get('traccarDeviceId') || null, startedAt: Date.now(), endedAt: null });
+      tx.update(trackerRef, { vehicleId, status: 'em_uso', activeTrackingAssignmentId: tracker.get('activeTrackingAssignmentId') || assignmentRef.id, updatedAt: Date.now() });
+      tx.update(vehicleRef, { trackerId, clientBlockingAllowed: false, installationType: vehicle.get('tagId') ? 'tag_tracker' : 'tracker_only' });
+      return true;
+    });
+    if (changed) await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, event: 'tracker.linked', entityId: trackerId, vehicleId, timestamp: FieldValue.serverTimestamp() });
+    res.json({ ok: true, data: { trackerId, vehicleId } });
+  } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao vincular rastreador.' }); }
+});
+
+trackersRouter.delete('/:id/vehicle', async (req, res) => {
+  try {
+    const tid = tenantId(req); const trackerRef = adminDb.doc(`tenants/${tid}/trackers/${req.params.id}`);
+    await adminDb.runTransaction(async tx => {
+      const tracker = await tx.get(trackerRef);
+      if (!tracker.exists) throw Object.assign(new Error('Rastreador não encontrado.'), { status: 404 });
+      const vehicleId = String(tracker.get('vehicleId') || '');
+      if (!vehicleId) return;
+      const vehicleRef = adminDb.doc(`tenants/${tid}/vehicles/${vehicleId}`);
+      const vehicle = await tx.get(vehicleRef);
+      const assignmentId = String(tracker.get('activeTrackingAssignmentId') || '');
+      const assignmentRef = assignmentId ? adminDb.doc(`tenants/${tid}/tracker_assignments/${assignmentId}`) : null;
+      const assignment = assignmentRef ? await tx.get(assignmentRef) : null;
+      if (vehicle.exists && vehicle.get('trackerId') === tracker.id) tx.update(vehicleRef, { trackerId: FieldValue.delete(), clientBlockingAllowed: false, installationType: 'tag_only' });
+      if (assignment?.exists && assignment.get('endedAt') === null) tx.update(assignment.ref, { endedAt: Date.now() });
+      tx.update(trackerRef, { vehicleId: FieldValue.delete(), activeTrackingAssignmentId: FieldValue.delete(), status: 'disponível', updatedAt: Date.now() });
+    });
+    await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, event: 'tracker.unlinked', entityId: req.params.id, timestamp: FieldValue.serverTimestamp() });
+    res.json({ ok: true });
+  } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao desvincular rastreador.' }); }
+});
+
 trackersRouter.patch('/:id', async (req, res) => {
   const tid = tenantId(req);
   const ref = adminDb.doc(`tenants/${tid}/trackers/${req.params.id}`);
@@ -133,6 +221,7 @@ trackersRouter.patch('/:id', async (req, res) => {
     const modelSnap = await adminDb.collection('tracker_models').doc(modelId).get();
     const model = modelSnap.exists ? ({ id: modelSnap.id, ...modelSnap.data() } as TrackerModel) : DEFAULT_MODELS.find(item => item.id === modelId);
     if (!model?.active) return res.status(400).json({ ok: false, error: 'Modelo global inválido ou inativo.' });
+    if (current.blockingEnabled && current.modelId !== model.id) return res.status(409).json({ ok: false, error: 'Desative o bloqueio antes de alterar o modelo.' });
 
     const minVoltage = req.body?.minBatteryVoltage === '' || req.body?.minBatteryVoltage == null ? undefined : Number(req.body.minBatteryVoltage);
     const maxVoltage = req.body?.maxBatteryVoltage === '' || req.body?.maxBatteryVoltage == null ? undefined : Number(req.body.maxBatteryVoltage);
@@ -182,13 +271,14 @@ trackersRouter.delete('/:id', async (req, res) => {
   const ref = adminDb.doc(`tenants/${tid}/trackers/${req.params.id}`);
   const snap = await ref.get();
   if (!snap.exists) return res.status(404).json({ ok: false, error: 'Rastreador não encontrado.' });
-  if (snap.get('vehicleId') || snap.get('status') === 'em_uso') return res.status(409).json({ ok: false, error: 'Desvincule o rastreador antes de excluí-lo.' });
+  if (snap.get('vehicleId') || snap.get('status') === 'em_uso' || snap.get('blockingEnabled') === true) return res.status(409).json({ ok: false, error: 'Desvincule e desative o bloqueio antes de excluir o rastreador.' });
   const simCardId = snap.get('simCardId');
   const now = Date.now();
   await adminDb.runTransaction(async transaction => {
     transaction.delete(ref);
     if (simCardId) transaction.update(adminDb.doc(`tenants/${tid}/sim_cards/${simCardId}`), { trackerId: FieldValue.delete(), status: 'in_stock', updatedAt: now });
   });
+  await releaseTrackerIdentifier(tid, req.params.id);
   await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, tenantId: tid, event: 'tracker.deleted', action: 'DELETE', entity: 'Tracker', entityId: req.params.id, timestamp: FieldValue.serverTimestamp() });
   res.json({ ok: true, data: { id: req.params.id } });
 });

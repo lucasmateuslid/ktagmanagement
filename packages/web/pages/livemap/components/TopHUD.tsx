@@ -4,6 +4,7 @@ import { Search, RefreshCw, X } from 'lucide-react';
 import { SearchDropdown } from './SearchDropdown';
 import { FleetStatusChips } from './FleetStatusChips';
 import { DisplayLimit } from '../../../types';
+import type { EquipmentFilter } from '../utils/vehicleTracking';
 
 interface TopHUDProps {
     searchTerm: string;
@@ -20,6 +21,8 @@ interface TopHUDProps {
     stats: any;
     filter: any;
     setFilter: any;
+    equipmentFilter: EquipmentFilter;
+    setEquipmentFilter: (value: EquipmentFilter) => void;
     displayLimit: DisplayLimit;
     setDisplayLimit: (v: DisplayLimit) => void;
     showPlates?: boolean; // New prop
@@ -30,7 +33,7 @@ interface TopHUDProps {
 export const TopHUD: React.FC<TopHUDProps> = ({ 
     searchTerm, setSearchTerm, isFocused, setIsFocused, searchPlaceholder,
     filteredList, fleetLocations, clients, categories, userRole, onSelect,
-    stats, filter, setFilter, displayLimit, setDisplayLimit,
+    stats, filter, setFilter, equipmentFilter, setEquipmentFilter, displayLimit, setDisplayLimit,
     showPlates, setShowPlates, onOpenUpdateModal
 }) => {
     
@@ -118,6 +121,10 @@ export const TopHUD: React.FC<TopHUDProps> = ({
                 userRole={userRole}
                 onSelect={(id) => { onSelect(id); setIsFocused(false); }}
               />
+            </div>
+
+            <div className="pointer-events-auto flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-zinc-200 bg-white/95 p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900/95">
+                {([['all', 'Todos'], ['tag', 'Só tag'], ['tracker', 'Só rastreador'], ['both', 'Tag + rastreador']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={equipmentFilter === value} onClick={() => setEquipmentFilter(value)} className={`shrink-0 rounded-xl px-2.5 py-1.5 text-[10px] font-bold transition-colors ${equipmentFilter === value ? 'bg-primary-500 text-black' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{label}</button>)}
             </div>
 
             {/* CHIPS FLUTUANTES */}

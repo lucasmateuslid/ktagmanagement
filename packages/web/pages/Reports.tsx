@@ -165,8 +165,9 @@ export const Reports = () => {
 
         const doc = new jsPDF();
         const total = filteredVehicles.length;
-        const soTag = filteredVehicles.filter(v => v.installationType !== 'tag_tracker').length;
-        const tagTracker = total - soTag;
+        const soTag = filteredVehicles.filter(v => v.installationType === 'tag_only').length;
+        const soRastreador = filteredVehicles.filter(v => v.installationType === 'tracker_only').length;
+        const tagTracker = filteredVehicles.filter(v => v.installationType === 'tag_tracker').length;
         
         const leased = filteredVehicles.filter(v => v.ownershipStatus !== 'purchased').length;
         const purchased = filteredVehicles.filter(v => v.ownershipStatus === 'purchased').length;
@@ -190,7 +191,7 @@ export const Reports = () => {
         // --- DASHBOARD CARDS ---
         // Total
         doc.setFillColor(24, 24, 27);
-        doc.roundedRect(14, 45, 58, 30, 4, 4, "F");
+        doc.roundedRect(14, 45, 44, 30, 4, 4, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(8);
         doc.text("TOTAL ATIVAÇÕES", 19, 53);
@@ -199,23 +200,31 @@ export const Reports = () => {
 
         // Só Tag
         doc.setFillColor(245, 158, 11);
-        doc.roundedRect(76, 45, 58, 30, 4, 4, "F");
+        doc.roundedRect(60, 45, 44, 30, 4, 4, "F");
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(8);
-        doc.text("SÓ TAG", 81, 53);
+        doc.text("SÓ TAG", 65, 53);
         doc.setFontSize(18);
         const soTagPerc = total > 0 ? ((soTag / total) * 100).toFixed(1) : "0";
-        doc.text(`${soTag} (${soTagPerc}%)`, 81, 68);
+        doc.text(`${soTag} (${soTagPerc}%)`, 65, 68);
+
+        doc.setFillColor(2, 132, 199);
+        doc.roundedRect(106, 45, 44, 30, 4, 4, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text("SÓ RASTREADOR", 111, 53);
+        doc.setFontSize(18);
+        doc.text(`${soRastreador} (${total > 0 ? ((soRastreador / total) * 100).toFixed(1) : '0'}%)`, 111, 68);
 
         // Tag + Tracker
         doc.setFillColor(244, 244, 245);
-        doc.roundedRect(138, 45, 58, 30, 4, 4, "F");
+        doc.roundedRect(152, 45, 44, 30, 4, 4, "F");
         doc.setTextColor(24, 24, 27);
         doc.setFontSize(8);
-        doc.text("TAG + RASTREADOR", 143, 53);
+        doc.text("TAG + RAST", 157, 53);
         doc.setFontSize(18);
         const tagTrackerPerc = total > 0 ? ((tagTracker / total) * 100).toFixed(1) : "0";
-        doc.text(`${tagTracker} (${tagTrackerPerc}%)`, 143, 68);
+        doc.text(`${tagTracker} (${tagTrackerPerc}%)`, 157, 68);
 
         // --- SECTION: Propriedade ---
         doc.setFont("helvetica", "bold");
@@ -258,7 +267,7 @@ export const Reports = () => {
           v.plate,
           v.model,
           categories.find(c => c.id === v.type)?.name || '-',
-          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
+          v.installationType === 'tag_tracker' ? 'Tag + Tracker' : v.installationType === 'tracker_only' ? 'Só Rastreador' : 'Só Tag',
           v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
         ]);
 
@@ -317,7 +326,7 @@ export const Reports = () => {
                 placa: v.plate,
                 modelo: v.model,
                 categoria: categories.find(c => c.id === v.type)?.name || '-',
-                instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag',
+                instalacao: v.installationType === 'tag_tracker' ? 'Tag + Tracker' : v.installationType === 'tracker_only' ? 'Só Rastreador' : 'Só Tag',
                 contrato: v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'
             });
         });
@@ -536,7 +545,7 @@ export const Reports = () => {
                                 <td className="px-10 py-5 text-zinc-500 font-mono text-xs">{v.createdAt ? new Date(v.createdAt).toLocaleDateString() : '-'}</td>
                                 <td className="px-10 py-5 font-black text-zinc-900 dark:text-white uppercase">{v.plate}</td>
                                 <td className="px-10 py-5 font-bold text-zinc-600 dark:text-zinc-300">{v.model}</td>
-                                <td className="px-10 py-5 text-right"><span className="inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border border-primary-500/20 bg-primary-500/5 text-primary-500">{v.installationType === 'tag_tracker' ? 'Tag + Tracker' : 'Só Tag'}</span></td>
+                                <td className="px-10 py-5 text-right"><span className="inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border border-primary-500/20 bg-primary-500/5 text-primary-500">{v.installationType === 'tag_tracker' ? 'Tag + Tracker' : v.installationType === 'tracker_only' ? 'Só Rastreador' : 'Só Tag'}</span></td>
                                 <td className="px-10 py-5 text-right">
                                     <span className={`inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase border ${v.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
                                         {v.ownershipStatus === 'purchased' ? 'Adquirido' : 'Comodato'}

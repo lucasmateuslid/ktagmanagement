@@ -15,6 +15,8 @@ export interface FleetRefreshEntry {
   status: 'updated' | 'unchanged' | 'no_tag' | 'no_position' | 'error';
   address: string | null;
   timestamp: number | null;
+  ageMinutes?: number | null;
+  attemptedAt?: number;
   error?: string;
 }
 export interface FleetRefreshReport {
@@ -24,6 +26,7 @@ export interface FleetRefreshReport {
   startedAt: number;
   completedAt: number;
   busy: boolean;
+  error?: string;
   summary: { totalVehicles: number; linkedVehicles: number; positionsUpdated: number; addressesResolved: number; addressesReused: number; addressesFailed: number; withoutPosition: number; errors: number };
   vehicles: FleetRefreshEntry[];
   locations: any[];
@@ -62,7 +65,7 @@ export const trackingApi = {
   importCommit: (rows: unknown[]) => request<{ total: number; created: number; existing: number; invalid: number; unavailable: number }>('/api/xadtags/import/commit', { method: 'POST', body: JSON.stringify({ rows }) }),
   liveMap: () => request<LiveMapTrackedAsset[]>('/api/livemap'), adminStatus: () => request<any>('/api/admin/integrations/traccar/status'),
   refreshFleet: () => request<FleetRefreshReport>('/api/livemap/refresh', { method: 'POST', body: '{}' }),
-  refreshTag: (tagId: string) => request<any>(`/api/livemap/tags/${encodeURIComponent(tagId)}/refresh`, { method: 'POST', body: '{}' }),
+  refreshTag: (tagId: string) => request<{ position: any | null; status: 'updated' | 'unchanged' | 'no_position' | 'error'; attemptedAt: number; ageMinutes: number | null; provider: 'ktag' | 'traccar'; error?: string }>(`/api/livemap/tags/${encodeURIComponent(tagId)}/refresh`, { method: 'POST', body: '{}' }),
   adminTestWebSocket: () => request<any>('/api/admin/integrations/traccar/test-websocket', { method: 'POST', body: '{}' }),
   latestFleetRefresh: () => request<FleetRefreshReport>('/api/livemap/refresh/latest'),
   websocket: async () => { const token = await auth?.currentUser?.getIdToken(); if (!token) throw new Error('Autenticação necessária.'); return new WebSocket(trackingWebSocketUrl(activeTenant.id), [`firebase.${token}`]); },

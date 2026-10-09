@@ -7,6 +7,7 @@ import L from 'leaflet';
 import { LocationHistory, Vehicle, VehicleCategory, Tag } from '../types';
 import { Car as FaCar, Bike as FaMotorcycle, Truck as FaTruck, HelpCircle as FaQuestion, Package as FaBox, BatteryCharging, Check, Layers } from 'lucide-react';
 import { hasValidCoordinates } from '../pages/livemap/utils/livemapFilters';
+import { vehicleEquipmentKind } from '../pages/livemap/utils/vehicleTracking';
 
 const RN_CENTER = { lat: -5.791008, lon: -35.208888 };
 const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character);
@@ -33,7 +34,8 @@ const createVehicleIcon = (
     color = '#f59e0b', 
     isUnlinked = false,
     showPlates = false,
-    plateText = ''
+    plateText = '',
+    equipmentKind: 'tag' | 'tracker' | 'both' | 'none' = 'none'
 ) => {
   const size = isSelected ? 20 : 16;
   
@@ -47,6 +49,8 @@ const createVehicleIcon = (
   // Se for unlinked, muda a cor do pin
   const bg = isUnlinked ? (isSelected ? '#eab308' : '#ca8a04') : (isSelected ? color : '#ffffff');
   const textColor = isUnlinked ? '#ffffff' : (isSelected ? '#000000' : '#18181b');
+  const sourceBadge = equipmentKind === 'both' ? 'T+R' : equipmentKind === 'tracker' ? 'R' : equipmentKind === 'tag' ? 'T' : '';
+  const sourceColor = equipmentKind === 'both' ? '#7c3aed' : equipmentKind === 'tracker' ? '#0284c7' : '#d97706';
 
   // Badge HTML (condicional)
   const badgeLines = [showPlates && plateText && !isUnlinked ? escapeHtml(plateText) : ''].filter(Boolean);
@@ -109,6 +113,7 @@ const createVehicleIcon = (
           ">
               ${iconHtml}
           </div>
+          ${sourceBadge ? `<div style="position:absolute;left:${isSelected ? '11px' : '7px'};top:${isSelected ? '8px' : '6px'};background:${sourceColor};color:#fff;border:2px solid #fff;border-radius:6px;padding:1px 3px;font-size:8px;font-weight:900;line-height:1;white-space:nowrap;box-shadow:0 2px 4px #0004">${sourceBadge}</div>` : ''}
       </div>
     `,
     iconSize: [0, 0],
@@ -125,33 +130,49 @@ const createClusterCustomIcon = function (cluster: any) {
   });
 };
 
-const FocusMapOnce = ({ lat, lon, focusKey, zoom }: { lat: number; lon: number; focusKey: string; zoom?: number }) => {
+const FocusMapOnce = ({ lat, lon, focusKey, zoom, offsetForPanel = false }: { lat: number; lon: number; focusKey: string; zoom?: number; offsetForPanel?: boolean }) => {
   const map = useMap();
   const lastFocusKey = useRef('');
   useEffect(() => {
     if (!focusKey || lastFocusKey.current === focusKey) return;
     lastFocusKey.current = focusKey;
-    map.setView([lat, lon], zoom || map.getZoom(), { animate: true, duration: 1.5 });
-  }, [focusKey, lat, lon, map, zoom]);
+    map.setView([lat, lon], zoom || map.getZoom(), { animate: false });
+    // Deixa o marcador na área livre à direita da ficha, como no mapa de referência.
+    const width = map.getContainer().clientWidth;
+    if (offsetForPanel && width >= 900) map.panBy([-Math.min(360, width * 0.23), 0], { animate: true, duration: 0.5 });
+  }, [focusKey, lat, lon, map, offsetForPanel, zoom]);
   return null;
 };
 
 // Centraliza o mapa na maior concentração de veículos do tenant na primeira carga.
 // Usa fitBounds para escolher zoom automaticamente. Não dispara novamente após a
 // primeira vez (hasFitted ref), então o usuário pode navegar livremente depois.
-const FitFleetBounds = ({ locations }: { locations: LocationHistory[] }) => {
+const FitFleetBounds = ({ locations, enabled, fitVersion }: { locations: LocationHistory[]; enabled: boolean; fitVersion: number }) => {
   const map = useMap();
   const hasFitted = useRef(false);
+  const lastVersion = useRef(fitVersion);
   useEffect(() => {
-    if (hasFitted.current || locations.length === 0) return;
+    if (lastVersion.current !== fitVersion) { lastVersion.current = fitVersion; hasFitted.current = false; }
+    if (!enabled || hasFitted.current || locations.length === 0) return;
     hasFitted.current = true;
-    const lls = locations.map(l => [l.lat, l.lon] as [number, number]);
-    if (lls.length === 1) {
-      map.setView(lls[0], 15, { animate: true });
-    } else {
-      map.fitBounds(L.latLngBounds(lls), { padding: [60, 60], maxZoom: 14, animate: true });
+    // A frota pode ter veículos espalhados pelo país. Abre na região com maior
+    // concentração, mantendo os outros acessíveis por pan e zoom.
+    let focus = locations;
+    if (locations.length > 2) {
+      let best: LocationHistory[] = [];
+      for (const candidate of locations.slice(0, 200)) {
+        const nearby = locations.filter(point => Math.abs(point.lat - candidate.lat) <= 0.16 && Math.abs(point.lon - candidate.lon) <= 0.16);
+        if (nearby.length > best.length) best = nearby;
+      }
+      if (best.length > 1) focus = best;
     }
-  }, [locations.length, map]);
+    const lls = focus.map(l => [l.lat, l.lon] as [number, number]);
+    if (lls.length === 1) {
+      map.setView(lls[0], 14, { animate: true });
+    } else {
+      map.fitBounds(L.latLngBounds(lls), { paddingTopLeft: [45, 45], paddingBottomRight: [45, 45], maxZoom: 12, animate: true });
+    }
+  }, [enabled, fitVersion, locations, map]);
   return null;
 };
 
@@ -202,6 +223,7 @@ interface MapProps {
   categories?: VehicleCategory[];
   highlightedTagId?: string;
   selectionFocusKey?: number;
+  fleetFitVersion?: number;
   showPlates?: boolean; // Nova prop
   onMarkerClick?: (tagId: string) => void;
   mapProvider?: 'osm' | 'google';
@@ -237,6 +259,7 @@ export const MapComponent: React.FC<MapProps> = ({
   categories = [],
   highlightedTagId, 
   selectionFocusKey = 0,
+  fleetFitVersion = 0,
   showPlates = false, // Default false
   onMarkerClick,
   mapProvider = 'osm', focusLocation = null, replayLocation = null, replayTrail = [],
@@ -276,20 +299,18 @@ export const MapComponent: React.FC<MapProps> = ({
   const safeFocusLocation = hasValidCoordinates(focusLocation) ? focusLocation : null;
   const safeReplayLocation = hasValidCoordinates(replayLocation) ? replayLocation : null;
   const safeReplayTrail = replayTrail.filter(hasValidCoordinates);
-  const displayLocations = highlightedTagId
-    ? safeLocations.filter(l => l.tagId === highlightedTagId)
-    : safeLocations;
+  const highlightedLoc = highlightedTagId ? safeLocations.find(l => l.tagId === highlightedTagId) : null;
+  const displayLocations = highlightedLoc ? safeLocations.filter(l => l.tagId === highlightedTagId) : safeLocations;
   const routeLocations = isFleetMode
     ? safeLocations
     : [...safeLocations].sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
 
-  const highlightedLoc = highlightedTagId ? safeLocations.find(l => l.tagId === highlightedTagId) : null;
-
   const renderMarkers = (locs: LocationHistory[]) => {
     return locs.map((loc) => {
         const isSelected = highlightedTagId === loc.tagId;
-        const vehicle = vehicles.find(v => v.tagId === loc.tagId);
+        const vehicle = vehicles.find(v => v.tagId === loc.tagId || (v.trackerId && `tracker:${v.trackerId}` === loc.tagId));
         const tag = tags.find(t => t.id === loc.tagId);
+        const equipmentKind = vehicle ? vehicleEquipmentKind(vehicle) : 'tag';
         
         const isUnlinked = !vehicle;
         const category = vehicle ? categories.find(c => c.id === vehicle.type) : undefined;
@@ -301,9 +322,9 @@ export const MapComponent: React.FC<MapProps> = ({
             const diffMin = (now - loc.timestamp) / 60000;
             const diffHours = diffMin / 60;
 
-            if (diffMin <= 30) return '#10b981'; // Verde Claro
-            if (diffHours <= 3) return '#f59e0b'; // Amarelo
-            if (diffHours <= 12) return '#f97316'; // Laranja
+            if (diffMin >= 0 && diffMin <= 5) return '#10b981';
+            if (diffMin <= 30) return '#f59e0b';
+            if (diffHours <= 3) return '#f97316';
             return '#ef4444'; // Vermelho
         };
 
@@ -315,16 +336,17 @@ export const MapComponent: React.FC<MapProps> = ({
               position={[loc.lat, loc.lon]} 
               icon={createVehicleIcon(
                   isSelected, 
-                  category?.fipeType, 
+                  category?.fipeType || vehicle?.type,
                   category?.name, 
                   statusColor, 
                   isUnlinked, 
                   showPlates, // Passa estado
-                  vehicle?.plate
+                  vehicle?.plate,
+                  equipmentKind
               )}
               eventHandlers={{ click: () => onMarkerClick?.(loc.tagId) }}
           >
-              <Popup closeButton={false} className="custom-popup" offset={[0, -20]}>
+              {!isFleetMode && <Popup closeButton={false} className="custom-popup" offset={[0, -20]}>
                   <div className="min-w-[180px] p-1 font-sans">
                       <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">
@@ -333,6 +355,10 @@ export const MapComponent: React.FC<MapProps> = ({
                           <span className={`text-[8px] font-black text-white px-1.5 py-0.5 rounded uppercase tracking-widest ${isUnlinked ? 'bg-amber-500' : (vehicle?.status === 'stolen' ? 'bg-red-600' : vehicle?.status === 'maintenance' ? 'bg-amber-500' : 'bg-emerald-500')}`}>
                               {isUnlinked ? 'ESTOQUE' : (vehicle?.status === 'stolen' ? 'ROUBO' : vehicle?.status === 'maintenance' ? 'MANUT' : 'ATIVO')}
                           </span>
+                      </div>
+                      <div className="mb-2 flex items-center gap-2 text-[9px] font-bold uppercase text-zinc-600">
+                        <span className="rounded bg-zinc-100 px-2 py-1">{equipmentKind === 'both' ? 'Tag + rastreador' : equipmentKind === 'tracker' ? 'Rastreador' : 'Tag'}</span>
+                        <span>Posição: {loc.tagId.startsWith('tracker:') ? 'rastreador' : 'tag'}</span>
                       </div>
 
                       <div className="flex items-center gap-2 mb-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
@@ -364,7 +390,7 @@ export const MapComponent: React.FC<MapProps> = ({
                           <span>{new Date(loc.timestamp).toLocaleDateString()}</span>
                       </div>
                   </div>
-              </Popup>
+              </Popup>}
           </Marker>
         )
     });
@@ -387,9 +413,9 @@ export const MapComponent: React.FC<MapProps> = ({
           <ResponsiveMapSize />
           
           {/* Centraliza na frota do tenant na primeira carga (por-tenant, sem hardcode) */}
-          {isFleetMode && !highlightedLoc && <FitFleetBounds locations={safeLocations} />}
+          {isFleetMode && <FitFleetBounds locations={safeLocations} enabled={!highlightedTagId} fitVersion={fleetFitVersion} />}
           {!isFleetMode && <FitHistoryBounds locations={routeLocations} />}
-          {highlightedLoc && <FocusMapOnce lat={highlightedLoc.lat} lon={highlightedLoc.lon} focusKey={`vehicle:${highlightedTagId}:${selectionFocusKey}`} zoom={18} />}
+          {highlightedLoc && <FocusMapOnce lat={highlightedLoc.lat} lon={highlightedLoc.lon} focusKey={`vehicle:${highlightedTagId}:${selectionFocusKey}`} zoom={17} offsetForPanel />}
           {safeFocusLocation && <FocusMapOnce lat={safeFocusLocation.lat} lon={safeFocusLocation.lon} focusKey={`history:${safeFocusLocation.id}`} zoom={18} />}
 
           {isFleetMode ? (
@@ -456,23 +482,19 @@ export const MapComponent: React.FC<MapProps> = ({
               </>
           )}
         </MapContainer>
-        <div className={`absolute left-3 z-[700] md:left-4 ${isFleetMode ? 'top-[176px] md:top-4' : 'top-3 md:top-4'}`}>
-          <button type="button" onClick={() => setIsLayerMenuOpen(open => !open)} aria-expanded={isLayerMenuOpen} aria-label="Escolher estilo do mapa" className="flex min-h-11 items-center gap-3 rounded-2xl border border-white/70 bg-white/95 px-3 text-left text-zinc-700 shadow-xl backdrop-blur transition-transform active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200">
-            <Layers size={18} className="shrink-0 text-sky-500" />
-            <span>
-              <span className="block text-[8px] font-black uppercase tracking-[0.18em] text-zinc-400">Estilo do mapa</span>
-              <span className="block text-[11px] font-black">{MAP_LAYERS.find(option => option.id === layer)?.label}</span>
-            </span>
+        <div className={`absolute z-[700] ${isFleetMode ? 'right-3 top-[176px] sm:top-4' : 'right-3 top-3 md:right-4 md:top-4'}`}>
+          <button type="button" onClick={() => setIsLayerMenuOpen(open => !open)} aria-expanded={isLayerMenuOpen} aria-label="Escolher estilo do mapa" className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-sky-600 shadow-lg transition-transform active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-900 dark:text-sky-400">
+            <Layers size={18} />
           </button>
           {isLayerMenuOpen && (
-            <div className="absolute left-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
+            <div className="absolute right-0 top-[calc(100%+8px)] w-48 overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 p-2 shadow-2xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95" role="group" aria-label="Estilo do mapa">
               {MAP_LAYERS.map(option => (
-                <button key={option.id} type="button" onClick={() => selectLayer(option.id)} className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left transition-colors ${layer === option.id ? 'bg-brand-500/10 text-amber-700 dark:text-brand-400' : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}>
+                <button key={option.id} type="button" onClick={() => selectLayer(option.id)} className={`flex min-h-10 w-full items-center justify-between rounded-xl px-3 text-left transition-colors ${layer === option.id ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'}`}>
                   <span>
                     <span className="block text-[11px] font-black">{option.label}</span>
                     <span className="block text-[9px] font-medium text-zinc-400">{option.description}</span>
                   </span>
-                  {layer === option.id && <Check size={16} className="text-brand-500" strokeWidth={3} />}
+                  {layer === option.id && <Check size={16} className="text-amber-600" strokeWidth={3} />}
                 </button>
               ))}
             </div>

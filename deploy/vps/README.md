@@ -2,8 +2,10 @@
 
 Este stack adiciona somente o backend KTag à rede Docker já usada pelo Traccar. Ele não recria, remove ou altera os containers do Traccar e PostgreSQL.
 
-Os workflows do GitHub Actions são exclusivamente manuais. Um `git push` nunca
-implanta automaticamente na VPS, Cloud Run, Functions ou Firestore.
+O workflow `Validate` executa tipos, testes e build em cada push para `master`.
+O workflow `Deploy` continua exclusivamente manual: um `git push` nunca
+implanta automaticamente na VPS, Cloud Run, Functions ou Firestore. No alvo
+`all`, as regras e índices do Firestore são publicados antes dos serviços.
 
 ## Pré-requisitos
 
@@ -72,6 +74,13 @@ Preencha também `KTAG_API_URL`, `KTAG_API_USER`, `KTAG_API_PASS`,
 `VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY` no `.env.vps`; o serviço `worker` usa
 essas credenciais para coletar posições e notificar suspensões sem expor
 segredos ao frontend.
+
+Para o rastreamento em escala, mantenha `SERVER_ADDRESS_PUBLIC_PHOTON=false` e
+configure a geocodificação reversa do Traccar para a taxa real de pontos novos.
+Antes de executar `Deploy`, rode a auditoria somente de leitura por tenant
+(`npm run audit:tracking -- --tenant=TENANT`) e confira as ocorrências de
+`DUPLICATE_TRACCAR_DEVICE` e `LEGACY_ADDRESS_REVIEW`. Se o provedor de
+endereços não responder, o mapa exibirá endereço pendente.
 
 O fluxo recomendado é executar manualmente `Deploy` no GitHub Actions com
 `target=all` e `environment=production`. O mesmo CI valida o projeto, implanta

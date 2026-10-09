@@ -33,6 +33,7 @@ export class TraccarClient {
         headers: { Accept: 'application/json, text/plain', ...(auth ? { Authorization: auth } : {}), ...(options.headers || {}) },
       });
       const text = response.status === 204 ? '' : await response.text();
+      if (operation === 'sendCommand' && response.status === 202) throw new Error('Traccar enfileirou o comando apesar da proibição de fila; intervenção operacional necessária.');
       if (!response.ok) throw new TraccarHttpError(response.status, operation, `Traccar respondeu HTTP ${response.status}.`);
       console.info(JSON.stringify({ event: 'traccar.rest.success', operation, statusCode: response.status, latencyMs: Date.now() - started }));
       if (!text) return undefined as T;
@@ -65,6 +66,15 @@ export class TraccarClient {
   createDevice(input: Omit<TraccarDevice, 'id' | 'status'>) { return this.request<TraccarDevice>('/devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), operation: 'createDevice' }); }
   updateDevice(id: number, input: Partial<TraccarDevice>) { return this.request<TraccarDevice>(`/devices/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), operation: 'updateDevice' }); }
   deleteDevice(id: number) { return this.request<void>(`/devices/${id}`, { method: 'DELETE', operation: 'deleteDevice' }); }
+  getCommandTypes(deviceId: number) {
+    return this.request<Array<{ type: string }>>(`/commands/types?deviceId=${deviceId}&textChannel=false`, { operation: 'getCommandTypes' }).then(values => values.map(value => value.type));
+  }
+  sendCommand(deviceId: number, type: string, attributes: Record<string, unknown> = {}) {
+    return this.request<unknown>('/commands/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, type, textChannel: false, attributes: { ...attributes, noQueue: true } }), operation: 'sendCommand',
+    });
+  }
   async getPositionById(id: number) { const values = await this.request<TraccarPosition[]>(`/positions?id=${id}`, { operation: 'getPositionById' }); return values[0] ?? null; }
   getLatestPositions() { return this.request<TraccarPosition[]>('/positions', { operation: 'getLatestPositions' }); }
   async getLatestPositionForDevice(deviceId: number) { const values = await this.request<TraccarPosition[]>(`/positions?deviceId=${deviceId}`, { operation: 'getLatestPositionForDevice' }); return values[0] ?? null; }

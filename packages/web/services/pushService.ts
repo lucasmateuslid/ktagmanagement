@@ -22,6 +22,10 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export const pushService = {
   register: async (userId: string, tenantId: string) => {
+    // Os emuladores não oferecem um serviço Web Push; evitar inscrições reais
+    // e erros de console durante os testes locais.
+    if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') return;
+
     if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('⚠️ Web Push ignorado: Ambiente não seguro ou navegador incompatível.');
       return;

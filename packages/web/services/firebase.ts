@@ -3,13 +3,15 @@ import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipl
 import { getAuth, Auth, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
 import { getFunctions, Functions, connectFunctionsEmulator } from 'firebase/functions';
 
+const useEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
+const localProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-ktag-local';
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || (useEmulators ? 'local-emulator-key' : undefined),
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || (useEmulators ? `${localProjectId}.firebaseapp.com` : undefined),
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || (useEmulators ? localProjectId : undefined),
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || (useEmulators ? `${localProjectId}.firebasestorage.app` : undefined),
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || (useEmulators ? '1234567890' : undefined),
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || (useEmulators ? '1:1234567890:web:local-emulator' : undefined),
 };
 
 let app: FirebaseApp | null = null;
@@ -27,7 +29,6 @@ try {
   });
 
   auth = getAuth(app);
-  const useEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
   if (useEmulators) {
     const emulatorHost = import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1';
     const firestorePort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080);

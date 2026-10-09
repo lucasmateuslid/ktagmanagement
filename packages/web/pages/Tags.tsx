@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
-import { ktagBatteryStatus, fetchTagsLocationBatch } from '../services/api';
+import { ktagBatteryStatus } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
 import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
 import { authenticatedFetch, readApiResponse } from '../services/authenticatedFetch';
@@ -283,14 +283,18 @@ export const Tags = () => {
 
       try {
           const tagsToReport = tags.filter(t => selectedTags.has(t.id));
-          const locationsResult = await fetchTagsLocationBatch(tagsToReport, 1, (index, total, currentTag) => {
-              setReportProgress({
-                  current: index,
-                  total,
-                  percentage: Math.round((index / total) * 100),
-                  currentTag: displayTagSerial(currentTag) || "Desconhecido"
-              });
+          let refresh = await trackingApi.refreshFleet();
+          for (let attempt = 0; refresh.busy && attempt < 100; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              refresh = await trackingApi.latestFleetRefresh();
+          }
+          if (refresh.busy) throw new Error('A atualização ainda está em andamento. Tente gerar o relatório em instantes.');
+          if (refresh.error) throw new Error(refresh.error);
+          const locationsResult = tagsToReport.flatMap(tag => {
+              const item = refresh.locations.find((point: any) => point.tagId === tag.id);
+              return item ? [{ ...item, tagId: tag.id, battery: item.battery || ktagBatteryStatus(item.provider === 'ktag' ? item.status : undefined) }] : [];
           });
+          setReportProgress({ current: tagsToReport.length, total: tagsToReport.length, percentage: 100, currentTag: 'Posições consultadas no servidor' });
           
           setReportProgress(prev => prev ? { ...prev, currentTag: 'Processando Endereços / APIs de Mapas...' } : null);
           const reportData = await Promise.all(tagsToReport.map(async (t) => {
@@ -298,7 +302,7 @@ export const Tags = () => {
               let address = 'Sem localização / Off';
               if (loc && loc.lat && loc.lon) {
                   try {
-                      address = await geocodingService.reverseGeocode(loc.lat, loc.lon);
+                      address = loc.address || await geocodingService.reverseGeocode(loc.lat, loc.lon);
                   } catch (e) {
                       address = `${loc.lat}, ${loc.lon}`;
                   }
@@ -554,23 +558,12 @@ export const Tags = () => {
           return;
       }
 
-      // K-TAG Legacy Ping
+      // Consulta única pelo backend, com a mesma validação usada pelo worker.
       setTesting(true);
       addLog({ type: 'info', method: 'INFO', url: 'Ping K-TAG', responseBody: { sn: tag.accessoryId } });
       try {
-          const settings = await storage.getSettings();
-          // Credenciais K-TAG centralizadas: o relay injeta o Basic Auth server-side.
-          const res = await fetch(settings.customProxyUrl || '/api/proxy', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  injectAuth: 'ktag',
-                  method: 'POST',
-                  body: { accessoryId: tag.accessoryId, hashed_keys: [tag.hashedAdvKey], priv_keys: [tag.privateKey] }
-              })
-          });
-          const json = await res.json();
-          addLog({ type: res.ok ? 'success' : 'error', status: res.status, responseBody: json });
+          const result = await trackingApi.refreshTag(tag.id);
+          addLog({ type: result.status === 'error' ? 'error' : 'success', status: 200, responseBody: result });
       } catch (e: any) {
           addLog({ type: 'error', responseBody: e.message });
       } finally {
@@ -1331,10 +1324,15 @@ export const Tags = () => {
 
                     {formData.type === 'K_TAG' ? (
                         <>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Serial Number (SN) <span className="text-red-500">*</span></label>
-                                <input type="text" required value={formData.accessoryId || ''} onChange={e => setFormData({...formData, accessoryId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: KTAG-12345" />
-                            </div>
+            <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Serial Number (SN) <span className="text-red-500">*</span></label>
+                <input type="text" required value={formData.accessoryId || ''} onChange={e => setFormData({...formData, accessoryId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: KTAG-12345" />
+            </div>
+            <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI GT06 da K-TAG</label>
+                <input type="text" inputMode="numeric" pattern="[0-9]{15}" maxLength={15} value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value.replace(/\D/g, '').slice(0, 15)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="15 dígitos; separado do serial Feibao" />
+                <p className="text-[10px] text-zinc-500">Sem IMEI, esta tag continua usando a Feibao. Confirme o identificador transmitido no login GT06.</p>
+            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Chave Pública (Hashed)</label>

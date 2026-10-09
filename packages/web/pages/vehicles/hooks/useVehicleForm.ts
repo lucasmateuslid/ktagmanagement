@@ -123,6 +123,8 @@ export const useVehicleForm = (
 
       const previousTagId = vehicles.find(vehicle => vehicle.id === vehicleId)?.tagId;
       const requestedTagId = formData.tagId;
+      const previousTrackerId = vehicles.find(vehicle => vehicle.id === vehicleId)?.trackerId;
+      const requestedTrackerId = formData.trackerId;
       const vehicleToSave: Vehicle = {
           ...formData as Vehicle,
           id: vehicleId,
@@ -133,6 +135,7 @@ export const useVehicleForm = (
           createdBy: formData.createdBy || currentUser?.id,
           createdByName: formData.createdByName || currentUser?.name,
           ownershipStatus: formData.ownershipStatus || 'leased',
+          installationType: previousTrackerId ? (previousTagId ? 'tag_tracker' : 'tracker_only') : 'tag_only',
           tagId: previousTagId,
       };
       // Fixa os ids no estado antes do write: se o write falhar e o usuário
@@ -152,6 +155,20 @@ export const useVehicleForm = (
       } else if (!requestedTagId && previousTagId) {
         const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(vehicleId)}/tag`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Desvínculo solicitado na edição do veículo' }) });
         const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Veículo salvo, mas não foi possível desvincular a tag.');
+      }
+      if (requestedTrackerId !== previousTrackerId) {
+        if (previousTrackerId) {
+          const response = await authenticatedFetch(`/api/trackers/${encodeURIComponent(previousTrackerId)}/vehicle`, { method: 'DELETE' });
+          const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Veículo salvo, mas não foi possível desvincular o rastreador anterior.');
+        }
+        if (requestedTrackerId) {
+          const response = await authenticatedFetch(`/api/trackers/${encodeURIComponent(requestedTrackerId)}/vehicle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicleId }) });
+          const payload = await response.json();
+          if (!response.ok) {
+            if (previousTrackerId) await authenticatedFetch(`/api/trackers/${encodeURIComponent(previousTrackerId)}/vehicle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicleId }) }).catch(() => undefined);
+            throw new Error(payload.error || 'Veículo salvo, mas não foi possível vincular o rastreador.');
+          }
+        }
       }
 
       addNotification('success', 'Sucesso', 'Veículo gravado no sistema.');

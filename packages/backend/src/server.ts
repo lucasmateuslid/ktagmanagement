@@ -21,11 +21,13 @@ import { xadTagsRouter, liveMapRouter } from "./routes/xadtags.js";
 import { adminTraccarRouter } from "./routes/adminTraccar.js";
 import { clientRouter } from "./routes/client.js";
 import { trackersRouter } from "./routes/trackers.js";
+import { blockingRouter } from "./routes/blocking.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { tagsRouter } from "./routes/tags.js";
 import { traccarRealtimeService } from "./services/traccarRealtimeService.js";
 import { getTraccarConfig, validateTraccarConfig } from "./config/traccar.js";
 import { setAddressFallback } from "./services/addressResolver.js";
+import { resolveServerAddress } from "./services/serverAddressResolver.js";
 import { getEnabledTenantModules, requireAuth, requireGlobalAdmin, requireInternalUser, requirePermission, requireRoles, requireTenantModule } from "./middleware/auth.js";
 import { adminDb } from "./services/firebaseAdmin.js";
 import { BUSINESS_MODULE_IDS } from '@ktag/shared';
@@ -428,7 +430,7 @@ function resolveTenant(req: express.Request, res: express.Response, next: expres
 async function startServer() {
   const app = express();
   setAddressFallback(async (lat, lng) => {
-    try { const result = await performReverseGeocoding(lat, lng, DEFAULT_GEOCODER_PREFS); return typeof result?.address === 'string' ? result.address : null; }
+    try { return (await resolveServerAddress(lat, lng)).address; }
     catch { return null; }
   });
   // Cloud Run injeta PORT via env (padrão 8080). Em dev local fallback 4000.
@@ -596,6 +598,12 @@ async function startServer() {
         adminUpdates['settings.features'] = features;
         updateMasks.push('settings.features');
       }
+      if (req.body?.blockingEnabled !== undefined) {
+        if (typeof req.body.blockingEnabled !== 'boolean') return res.status(400).json({ error: 'Permissão de bloqueio inválida.' });
+        settingsFields.blockingEnabled = { booleanValue: req.body.blockingEnabled };
+        adminUpdates['settings.blockingEnabled'] = req.body.blockingEnabled;
+        updateMasks.push('settings.blockingEnabled');
+      }
       updateMasks.push('updatedAt'); adminUpdates.updatedAt = Date.now();
       // Na VPS/Cloud Run a credencial Admin já carrega o projectId. Este é o
       // caminho principal e evita exigir VITE_FIREBASE_PROJECT_ID no runtime.
@@ -638,6 +646,7 @@ async function startServer() {
   app.use('/api/internal/traccar', internalTraccarRouter);
   app.use('/api/client', clientRouter);
   app.use('/api/trackers', requireAuth, requireTenantModule('trackers'), trackersRouter);
+  app.use('/api/blocking', blockingRouter);
   app.use('/api/vehicles', vehiclesRouter);
   app.use('/api/tags', tagsRouter);
   app.use('/api/livemap/vehicles', vehiclesRouter);
@@ -657,11 +666,11 @@ async function startServer() {
 
   app.post("/api/reverse-geocode", async (req, res) => {
     try {
-      const { lat, lng, geocoderPreferences } = req.body;
-      if (lat === undefined || lng === undefined) return res.status(400).json({ error: "Missing lat/lng" });
-
-      const result = await performReverseGeocoding(lat, lng, geocoderPreferences);
-      res.json(result);
+      const lat = Number(req.body?.lat); const lng = Number(req.body?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0))
+        return res.status(400).json({ error: "Coordenadas inválidas." });
+      const result = await resolveServerAddress(lat, lng);
+      res.set('Cache-Control', 'no-store').json({ result: { address: result.address, lat, lng }, provider_used: result.provider });
     } catch (error: any) {
       console.error("Reverse Geocoding Error:", error.message);
       res.status(500).json({ error: error.message });

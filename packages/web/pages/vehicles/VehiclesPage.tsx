@@ -23,6 +23,10 @@ import { VehicleModal } from './components/VehicleModal';
 import { FipeModal } from './components/FipeModal';
 import { VehicleKPIModal } from './components/VehicleKPIModal';
 import { Vehicle, LocationHistory } from '../../types';
+import type { ManagedTracker } from '@ktag/shared';
+import { useTenant } from '../../contexts/TenantContext';
+import { useNotification } from '../../contexts/NotificationContext';
+import { trackingApi } from '../../services/trackingApi';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { authenticatedFetch } from '../../services/authenticatedFetch';
@@ -35,7 +39,12 @@ export const VehiclesPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user: currentUser, customRoles } = useAuth();
+  const { enabledModules } = useTenant();
   const canManageVehicles = hasPermission(currentUser, customRoles, PERMISSIONS.VEHICLES_MANAGE);
+  const canLinkTrackers = enabledModules.includes('trackers') && hasPermission(currentUser, customRoles, PERMISSIONS.ASSETS);
+  const [availableTrackers, setAvailableTrackers] = useState<ManagedTracker[]>([]);
+  const [trackersLoading, setTrackersLoading] = useState(false);
+  const [trackersError, setTrackersError] = useState('');
   
   // 1. Filters are sent to the backend; only one database page is kept in memory.
   const { 
@@ -92,6 +101,19 @@ export const VehiclesPage = () => {
     tagSearch, setTagSearch,
     handleSave, checkExistingClient, openNew, openEdit
   } = useVehicleForm(vehicles, clients, currentUser, reload);
+
+  React.useEffect(() => {
+    if (!isModalOpen || !canLinkTrackers) return;
+    let active = true;
+    setTrackersLoading(true); setTrackersError('');
+    void authenticatedFetch('/api/trackers').then(async response => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Falha ao carregar rastreadores.');
+      if (active) setAvailableTrackers(payload.data || []);
+    }).catch((error: Error) => { if (active) setTrackersError(error.message || 'Falha ao carregar rastreadores.'); })
+      .finally(() => { if (active) setTrackersLoading(false); });
+    return () => { active = false; };
+  }, [isModalOpen, canLinkTrackers]);
 
   // 6. External Services
   const { status: hinovaStatus, lookupPlate } = useHinovaLookup(setFormData, setClientData, clients);
@@ -156,6 +178,7 @@ export const VehiclesPage = () => {
   );
 
   const ClientVehicleCard: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
+      const { addNotification } = useNotification();
       const category = categories.find(c => c.id === vehicle.type);
       const isMoto = category?.fipeType === 'motos' || vehicle.model.toLowerCase().includes('moto');
       const tag = tags.find((t: any) => t.id === vehicle.tagId);
@@ -193,23 +216,24 @@ export const VehiclesPage = () => {
 
       const handleUpdateLocation = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!tag || isUpdating) return;
+        if ((!tag && !vehicle.trackerId) || isUpdating) return;
         
         setIsUpdating(true);
         setUpdateSuccess(false);
         try {
-          const { fetchTagLocation, latestTagLocation } = await import('../../services/api');
-          const results = await fetchTagLocation(tag);
-          const latest = latestTagLocation(results);
-          if (latest) {
-            const location = { ...latest, tagId: tag.id, id: tag.id };
-            await storage.updateVehiclePosition(vehicle.id, location as any);
-            setUpdateSuccess(true);
-            setTimeout(() => setUpdateSuccess(false), 3000);
-            reload(); // Reload vehicles to get updated position
-          }
+          const result = tag ? await trackingApi.refreshTag(tag.id) : await trackingApi.vehiclePosition(vehicle.id);
+          const status = 'status' in result ? result.status : result.degraded ? 'error' : 'unchanged';
+          const point = 'position' in result ? result.position : result;
+          const age = point?.timestamp ? ` Última posição há ${Math.max(0, Math.floor((Date.now() - point.timestamp) / 60_000))} min.` : '';
+          addNotification(status === 'error' ? 'error' : status === 'updated' ? 'success' : 'info',
+            status === 'updated' ? 'Posição atualizada' : status === 'error' ? 'Sem resposta' : 'Sem nova posição',
+            `${result.error || (status === 'updated' ? 'Nova posição recebida.' : 'A posição não mudou.')}${age}`);
+          setUpdateSuccess(status === 'updated');
+          setTimeout(() => setUpdateSuccess(false), 3000);
+          reload();
         } catch (error) {
           console.error("Failed to update location", error);
+          addNotification('error', 'Falha na atualização', error instanceof Error ? error.message : 'Não foi possível consultar o equipamento.');
         } finally {
           setIsUpdating(false);
         }
@@ -525,6 +549,10 @@ export const VehiclesPage = () => {
             companies={companies}
             categories={categories}
             tags={tags}
+            trackers={availableTrackers}
+            canLinkTrackers={canLinkTrackers}
+            trackersLoading={trackersLoading}
+            trackersError={trackersError}
             allVehicles={vehicles} // Passa todos os veículos para verificar vínculos de tags
             tagSearch={tagSearch}
             setTagSearch={setTagSearch}

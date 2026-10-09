@@ -1,10 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, BatteryCharging, CalendarDays, ChevronDown, ChevronUp,
     FileSpreadsheet, FileText, Loader2, MapPinned, Navigation, Pause, Play,
 } from 'lucide-react';
 import { LocationHistory, Vehicle, Tag } from '../../../types';
+import type { HistoryPeriod } from '../hooks/useVehicleHistory';
+
+const localDateTime = (date: Date) => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 16);
+};
 
 const MotionDiv = motion.div as any;
 
@@ -32,6 +38,9 @@ interface HistoryOverlayProps {
     onReplayToggle: () => void;
     onReplaySeek: (index: number) => void;
     onReplaySpeedChange: (speed: 1 | 2 | 4) => void;
+    onConsultPeriod: (period: HistoryPeriod) => void;
+    historyError: string | null;
+    activePeriod: HistoryPeriod | null;
 }
 
 const dateKey = (timestamp: number) => {
@@ -58,9 +67,41 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
     historyItems, historyLoading, resolvedAddresses,
     exporting, exportProgress, onExport,
     hasMore, onLoadMore, partial, warnings, onResolveAddress, onViewPoint,
-    replayIndex, replayPlaying, replaySpeed, replayPoint, onReplayToggle, onReplaySeek, onReplaySpeedChange,
+    replayIndex, replayPlaying, replaySpeed, replayPoint, onReplayToggle, onReplaySeek, onReplaySpeedChange, onConsultPeriod, historyError, activePeriod,
 }) => {
     const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+    const [from, setFrom] = useState(() => localDateTime(new Date(Date.now() - 24 * 60 * 60_000)));
+    const [to, setTo] = useState(() => localDateTime(new Date()));
+    const [periodError, setPeriodError] = useState('');
+    const [preset, setPreset] = useState<1 | 3 | 7 | null>(1);
+
+    useEffect(() => {
+        if (!activePeriod) return;
+        const timer = window.setTimeout(() => {
+            setFrom(localDateTime(new Date(activePeriod.from)));
+            setTo(localDateTime(new Date(activePeriod.to)));
+            setPeriodError('');
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [activePeriod]);
+
+    const selectPreset = (days: 1 | 3 | 7) => {
+        const end = new Date();
+        setFrom(localDateTime(new Date(end.getTime() - days * 24 * 60 * 60_000)));
+        setTo(localDateTime(end));
+        setPreset(days);
+        setPeriodError('');
+    };
+    const consultPeriod = () => {
+        const start = new Date(from).getTime();
+        const end = new Date(to).getTime();
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || end > Date.now() + 60_000 || end - start > 30 * 24 * 60 * 60_000) {
+            setPeriodError('Informe um intervalo válido de até 30 dias, sem datas futuras.');
+            return;
+        }
+        setPeriodError('');
+        onConsultPeriod({ from: new Date(start).toISOString(), to: new Date(end).toISOString() });
+    };
 
     const groups = useMemo(() => {
         const grouped: Array<{ key: string; label: string; items: Array<{ item: LocationHistory; index: number }> }> = [];
@@ -76,8 +117,6 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
         return grouped;
     }, [historyItems]);
 
-    const oldestPoint = historyItems[historyItems.length - 1];
-    const newestPoint = historyItems[0];
     const viewPoint = (item: LocationHistory) => {
         setIsMobileExpanded(false);
         onViewPoint(item);
@@ -90,13 +129,13 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
     return (
         <AnimatePresence>
             {isVisible && (
-                <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2100] flex items-end justify-end pointer-events-none md:items-center">
+                <MotionDiv initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[2100] flex items-end justify-end pointer-events-none md:items-start md:p-4">
                     <MotionDiv
                         initial={{ y: '100%' }}
                         animate={{ y: 0 }}
                         exit={{ y: '100%' }}
                         transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-                        className={`${isMobileExpanded ? 'h-[82dvh]' : 'h-[52dvh]'} relative flex min-h-[360px] max-h-[720px] w-full flex-col overflow-hidden rounded-t-[28px] border-t border-zinc-200 bg-white shadow-2xl pointer-events-auto dark:border-zinc-800 dark:bg-zinc-900 md:h-full md:min-h-0 md:max-h-none md:w-[480px] md:rounded-none md:border-l md:border-t-0`}
+                        className={`${isMobileExpanded ? 'h-[82dvh]' : 'h-[52dvh]'} relative flex min-h-[360px] max-h-[720px] w-full flex-col overflow-hidden rounded-t-[28px] border-t border-zinc-200 bg-white shadow-2xl pointer-events-auto dark:border-zinc-800 dark:bg-zinc-900 md:h-[min(84dvh,800px)] md:min-h-0 md:max-h-none md:w-[410px] md:rounded-[22px] md:border md:border-zinc-200`}
                     >
                         <AnimatePresence>
                             {exporting && (
@@ -112,7 +151,7 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                             )}
                         </AnimatePresence>
 
-                        <div className="shrink-0 border-b border-zinc-100 px-4 pb-3 pt-2 dark:border-zinc-800 md:p-7">
+                        <div className="shrink-0 border-b border-zinc-100 px-4 pb-3 pt-2 dark:border-zinc-800 md:p-4">
                             <button
                                 type="button"
                                 onClick={() => setIsMobileExpanded(value => !value)}
@@ -123,45 +162,48 @@ export const HistoryOverlay: React.FC<HistoryOverlayProps> = ({
                             </button>
 
                             <div className="flex items-center gap-3">
-                                <button onClick={closePanel} aria-label="Fechar histórico" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 shadow-sm transition-colors hover:text-primary-500 dark:bg-zinc-800 md:h-12 md:w-12 md:rounded-2xl">
+                                <button onClick={closePanel} aria-label="Voltar à ficha do veículo" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 shadow-sm transition-colors hover:text-primary-500 dark:bg-zinc-800">
                                     <ArrowLeft size={20} />
                                 </button>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
-                                        <h2 className="truncate text-lg font-black uppercase tracking-tight text-zinc-900 dark:text-white md:text-2xl">Histórico da rota</h2>
+                                        <h2 className="truncate text-sm font-bold text-zinc-900 dark:text-white md:text-base">Histórico de rastreamento</h2>
                                         <button type="button" onClick={() => setIsMobileExpanded(value => !value)} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 md:hidden" aria-label={isMobileExpanded ? 'Recolher histórico' : 'Expandir histórico'}>
                                             {isMobileExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
                                         </button>
                                     </div>
-                                    <div className="mt-0.5 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-zinc-400">
-                                        <span className="truncate text-primary-600 dark:text-primary-400">{activeVehicle ? activeVehicle.plate : (activeTag?.name || 'TAG')}</span>
-                                        <span>•</span>
+                                    <div className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-amber-600">
+                                        <span className="truncate">{activeVehicle ? activeVehicle.plate : (activeTag?.name || 'TAG')}</span>
+                                        <span>·</span>
                                         <span>{historyItems.length} {historyItems.length === 1 ? 'ponto' : 'pontos'}</span>
-                                        <span className="hidden sm:inline">• últimas 48 horas</span>
                                     </div>
                                 </div>
-                                <div className="flex shrink-0 gap-1.5">
-                                    <button onClick={() => onExport('pdf')} disabled={exporting || historyItems.length === 0} title="Exportar PDF" className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-500 transition-colors hover:bg-red-500 hover:text-white disabled:opacity-40 md:h-11 md:w-11"><FileText size={18} /></button>
-                                    <button onClick={() => onExport('excel')} disabled={exporting || historyItems.length === 0} title="Exportar Excel" className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500 hover:text-white disabled:opacity-40 md:h-11 md:w-11"><FileSpreadsheet size={18} /></button>
-                                </div>
+                                <button type="button" onClick={closePanel} className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-[10px] font-bold text-white"><MapPinned size={13} className="mr-1 inline" />Mapa</button>
                             </div>
 
-                            {oldestPoint && newestPoint && (
-                                <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-2.5 text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:bg-zinc-950/60 md:mt-5 md:p-3">
-                                    <div><span className="block text-[8px] text-zinc-400">Início exibido</span><span className="mt-0.5 block text-zinc-700 dark:text-zinc-200">{new Date(oldestPoint.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                    <div><span className="block text-[8px] text-zinc-400">Última posição</span><span className="mt-0.5 block text-zinc-700 dark:text-zinc-200">{new Date(newestPoint.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                </div>
-                            )}
+                            <div className="mt-3 space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                                <div className="grid grid-cols-3 gap-1.5">{([1, 3, 7] as const).map(days => <button key={days} type="button" onClick={() => selectPreset(days)} aria-pressed={preset === days} className={`rounded-lg border px-2 py-2 text-[10px] font-bold ${preset === days ? 'border-sky-500 bg-sky-50 text-sky-700 dark:bg-sky-900/30' : 'border-zinc-200 text-zinc-500 dark:border-zinc-700'}`}>{days === 1 ? '24 horas' : `${days} dias`}</button>)}</div>
+                                <div className="grid grid-cols-2 gap-2"><label className="text-[9px] font-bold text-zinc-500">De<input type="datetime-local" value={from} onChange={event => { setFrom(event.target.value); setPreset(null); }} className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white p-2 text-[10px] text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white" /></label><label className="text-[9px] font-bold text-zinc-500">Até<input type="datetime-local" value={to} onChange={event => { setTo(event.target.value); setPreset(null); }} className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white p-2 text-[10px] text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white" /></label></div>
+                                {periodError && <p role="alert" className="text-[10px] text-red-600">{periodError}</p>}
+                                <button type="button" onClick={consultPeriod} disabled={historyLoading} className="w-full rounded-lg bg-zinc-900 py-2 text-[10px] font-bold text-white disabled:opacity-50 dark:bg-zinc-700">{historyLoading ? 'Consultando...' : 'Consultar período'}</button>
+                            </div>
+                            <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                                <button type="button" onClick={onReplayToggle} disabled={historyItems.length < 2} className="rounded-lg bg-sky-600 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-40">{replayPlaying ? <Pause size={12} className="mr-1 inline" /> : <Play size={12} className="mr-1 inline" />}{replayPlaying ? 'Pausar' : 'Reproduzir'}</button>
+                                <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-500">Ponto {historyItems.length ? Math.min(replayIndex + 1, historyItems.length) : 0} de {historyItems.length}</span>
+                                <button onClick={() => onExport('pdf')} disabled={exporting || historyItems.length === 0} title="Exportar PDF" aria-label="Exportar PDF" className="rounded-lg p-2 text-red-500 disabled:opacity-40"><FileText size={16} /></button>
+                                <button onClick={() => onExport('excel')} disabled={exporting || historyItems.length === 0} title="Exportar Excel" aria-label="Exportar Excel" className="rounded-lg p-2 text-emerald-600 disabled:opacity-40"><FileSpreadsheet size={16} /></button>
+                            </div>
                         </div>
 
-                        <div className="custom-scrollbar flex-1 overflow-y-auto px-4 py-3 md:px-7 md:py-5">
+                        <div className="custom-scrollbar flex-1 overflow-y-auto px-4 py-3 md:px-4 md:py-3">
+                            {historyError && <div role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">{historyError}</div>}
                             {partial && <div className="mb-3 rounded-xl bg-amber-500/10 p-3 text-xs font-bold text-amber-700 dark:text-amber-400">Histórico parcial. {warnings.join(' ')}</div>}
                             {historyLoading && historyItems.length === 0 ? (
                                 <div className="flex h-full flex-col items-center justify-center gap-4 text-zinc-400">
                                     <Loader2 className="animate-spin text-primary-500" size={36} />
                                     <span className="text-[10px] font-black uppercase tracking-[0.25em]">Organizando trajeto...</span>
                                 </div>
-                            ) : historyItems.length === 0 ? (
+                            ) : historyItems.length === 0 && !historyError ? (
                                 <div className="flex h-full flex-col items-center justify-center gap-4 text-zinc-300 dark:text-zinc-700">
                                     <CalendarDays size={52} />
                                     <span className="text-center text-[10px] font-black uppercase">Nenhum ponto registrado no período</span>

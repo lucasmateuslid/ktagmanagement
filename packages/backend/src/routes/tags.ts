@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
@@ -6,6 +7,7 @@ import { encryptKtagSecret } from '../services/ktagSecrets.js';
 import { traccarClient, TraccarHttpError } from '../services/traccarClient.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { traccarRealtimeService } from '../services/traccarRealtimeService.js';
+import { normalizeKtagImei, reconcileKtagTraccar } from '../services/ktagTraccarService.js';
 
 export const tagsRouter = Router();
 tagsRouter.use(requireAuth);
@@ -19,9 +21,29 @@ tagsRouter.post('/', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderato
     if (!name || !accessoryId) return res.status(400).json({ ok: false, error: 'Nome e Serial Number são obrigatórios.' });
     const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(1).get(); if (!duplicate.empty) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
     const tenantDoc = await adminDb.doc(`tenants/${tid}`).get(); const tagLimit = Number(tenantDoc.get('settings.limiteTags') || 0); if (tagLimit > 0) { const count = await adminDb.collection(`tenants/${tid}/tags`).count().get(); if (count.data().count >= tagLimit) return res.status(409).json({ ok: false, error: 'Limite de tags da empresa atingido.' }); }
-    const data = clean({ ...body, id: undefined, type: 'K_TAG', name, accessoryId, hashedAdvKey: body.hashedAdvKey ? encryptKtagSecret(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encryptKtagSecret(tid, body.privateKey) : undefined, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now() });
-    await adminDb.doc(`tenants/${tid}/tags/${id}`).create(data); await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Tag', entityId: id, timestamp: FieldValue.serverTimestamp() });
-    res.status(201).json({ ok: true, data: { id, ...body, type: 'K_TAG', name, accessoryId } });
+    const imei = body.imei ? normalizeKtagImei(String(body.imei)) : undefined;
+    if (imei && (await adminDb.doc(`traccar_ktag_identifiers/${imei}`).get()).exists) return res.status(409).json({ ok: false, error: 'IMEI já cadastrado.' });
+    const data = clean({ type: 'K_TAG', name, accessoryId, imei, traccarUniqueId: imei, integrationStatus: imei ? 'pending' : undefined,
+      powerType: body.powerType, batteryWarrantyYears: body.batteryWarrantyYears, batteryStartedAt: body.batteryStartedAt,
+      batteryStartSource: body.batteryStartedAt ? 'manual' : undefined,
+      hashedAdvKey: body.hashedAdvKey ? encryptKtagSecret(tid, body.hashedAdvKey) : undefined,
+      privateKey: body.privateKey ? encryptKtagSecret(tid, body.privateKey) : undefined,
+      createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now() });
+    const tagRef = adminDb.doc(`tenants/${tid}/tags/${id}`);
+    await adminDb.runTransaction(async tx => {
+      const ownerRef = imei ? adminDb.doc(`traccar_ktag_identifiers/${imei}`) : null;
+      const xadRef = imei ? adminDb.doc(`xadtag_identifiers/${createHash('sha256').update(imei).digest('hex')}`) : null;
+      const trackerRef = imei ? adminDb.doc(`traccar_tracker_identifiers/${imei}`) : null;
+      const [existing, owner, xad, tracker] = await Promise.all([tx.get(tagRef), ownerRef ? tx.get(ownerRef) : null, xadRef ? tx.get(xadRef) : null, trackerRef ? tx.get(trackerRef) : null]);
+      if (existing.exists) throw Object.assign(new Error('Tag já cadastrada.'), { status: 409 });
+      if (owner?.exists || xad?.exists || tracker?.exists) throw Object.assign(new Error('IMEI já reservado por outro equipamento.'), { status: 409 });
+      tx.create(tagRef, data);
+      if (ownerRef) tx.create(ownerRef, { tenantId: tid, tagId: id, imei, updatedAt: Date.now() });
+    });
+    await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Tag', entityId: id, timestamp: FieldValue.serverTimestamp() });
+    const integration = imei ? await reconcileKtagTraccar(tid, id, imei) : null;
+    if (integration?.status === 'registered') await traccarRealtimeService.refreshMapping();
+    res.status(integration?.status === 'pending' ? 202 : 201).json({ ok: true, data: { id, type: 'K_TAG', name, accessoryId, imei, integrationStatus: integration?.status } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao criar tag.' }); }
 });
 
@@ -31,8 +53,12 @@ tagsRouter.put('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'modera
     if (current.get('type') === 'XADTAG' || current.get('equipmentType') === 'XADTAG') return res.status(400).json({ ok: false, error: 'Use a integração XADTAG para este tipo.' });
     const body = req.body || {}; const accessoryId = String(body.accessoryId || current.get('accessoryId') || '').trim(); const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(2).get(); if (duplicate.docs.some(doc => doc.id !== ref.id)) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
     const manualBatteryStartedAt = Number(body.batteryStartedAt);
+    const imei = body.imei ? normalizeKtagImei(String(body.imei)) : undefined;
+    if (imei && current.get('imei') && imei !== current.get('imei')) return res.status(409).json({ ok: false, error: 'Para alterar o IMEI de uma K-TAG integrada, revise o vínculo antes.' });
     await ref.update(clean({ name: String(body.name || current.get('name') || '').trim(), accessoryId, powerType: body.powerType, batteryWarrantyYears: body.batteryWarrantyYears, ...(Number.isFinite(manualBatteryStartedAt) && manualBatteryStartedAt > 0 ? { batteryStartedAt: manualBatteryStartedAt, batteryStartSource: 'manual' } : {}), hashedAdvKey: body.hashedAdvKey ? encryptKtagSecret(tid, body.hashedAdvKey) : undefined, privateKey: body.privateKey ? encryptKtagSecret(tid, body.privateKey) : undefined, updatedAt: Date.now() }));
-    await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Tag', entityId: ref.id, timestamp: FieldValue.serverTimestamp() }); res.json({ ok: true, data: { id: ref.id, ...body, accessoryId } });
+    const integration = imei ? await reconcileKtagTraccar(tid, ref.id, imei) : null;
+    if (integration?.status === 'registered') await traccarRealtimeService.refreshMapping();
+    await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Tag', entityId: ref.id, timestamp: FieldValue.serverTimestamp() }); res.json({ ok: true, data: { id: ref.id, name: String(body.name || current.get('name') || '').trim(), accessoryId, imei: imei || current.get('imei'), integrationStatus: integration?.status || current.get('integrationStatus') } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao atualizar tag.' }); }
 });
 
@@ -40,7 +66,7 @@ tagsRouter.delete('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'mod
   try {
     const tid = tenant(req); const ref = adminDb.doc(`tenants/${tid}/tags/${req.params.id}`); const snap = await ref.get(); if (!snap.exists) return res.status(404).json({ ok: false, error: 'Tag não encontrada.' }); const data = snap.data() || {}; const now = Date.now();
     await ref.update({ deletionStatus: 'pending', deletionRequestedAt: now, deletionRequestedBy: req.authUser!.uid });
-    if ((data.type === 'XADTAG' || data.equipmentType === 'XADTAG') && Number.isInteger(data.traccarDeviceId)) {
+    if (Number.isInteger(data.traccarDeviceId)) {
       try { await traccarClient.deleteDevice(data.traccarDeviceId); } catch (error) {
         if (!(error instanceof TraccarHttpError && error.status === 404)) {
           await ref.update({ deletionStatus: 'error', deletionError: (error as Error).message, deletionLastAttemptAt: Date.now(), updatedAt: Date.now() });
@@ -54,7 +80,14 @@ tagsRouter.delete('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'mod
       if (vehicle) { const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || data.activeTrackingAssignmentId || ''); if (assignmentId) { const assignmentRef = adminDb.doc(`tenants/${tid}/tracking_assignments/${assignmentId}`); const assignment = await tx.get(assignmentRef); if (assignment.exists && assignment.get('endedAt') === null) tx.update(assignmentRef, { endedAt: now, endedBy: req.authUser!.uid, endReason: 'tag_deleted' }); } tx.update(vehicle.ref, { tagId: FieldValue.delete(), activeTrackingAssignmentId: null, lastPosition: FieldValue.delete(), updatedAt: now }); }
       tx.set(adminDb.collection(`tenants/${tid}/audit_logs`).doc(), { userId: req.authUser!.uid, action: 'DELETE', entity: 'Tag', entityId: ref.id, providerDeviceDeleted: Boolean(data.traccarDeviceId), timestamp: FieldValue.serverTimestamp() });
     });
-    if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: ref.id, ...data } as any); else await ref.delete();
+    if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: ref.id, ...data } as any); else {
+      await ref.delete();
+      if (data.imei) {
+        const ownerRef = adminDb.doc(`traccar_ktag_identifiers/${data.imei}`);
+        const owner = await ownerRef.get();
+        if (owner.get('tenantId') === tid && owner.get('tagId') === ref.id) await ownerRef.delete();
+      }
+    }
     await traccarRealtimeService.refreshMapping(); res.json({ ok: true, data: { id: ref.id } });
   } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao excluir tag.' }); }
 });

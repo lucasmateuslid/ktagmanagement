@@ -28,7 +28,8 @@ async function readWithUserToken(path: string, authorization: string): Promise<R
   return firestoreRestFields(await response.json());
 }
 
-const useLocalUserCredential = () => !process.env.K_SERVICE && !process.env.FUNCTION_TARGET && !process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const useLocalUserCredential = () => process.env.LOCAL_FIREBASE_EMULATORS !== 'true'
+  && !process.env.K_SERVICE && !process.env.FUNCTION_TARGET && !process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization || '';

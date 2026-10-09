@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Vehicle, Tag, VehicleCategory, Client } from '../../../types';
 import { Edit2, Trash2, Truck, Bike, Car, Calendar, CheckSquare, Square, RefreshCw, CheckCircle2, Clock, BatteryCharging, Wifi, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { fetchTagLocation, latestTagLocation } from '../../../services/api';
-import { storage } from '../../../services/storage';
+import { trackingApi } from '../../../services/trackingApi';
+import { useNotification } from '../../../contexts/NotificationContext';
 
 interface VehicleRowProps {
   vehicle: Vehicle;
@@ -20,7 +20,9 @@ interface VehicleRowProps {
 
 export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEdit, onDelete, isReadOnly, isSelected, toggleSelect }: VehicleRowProps) => {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
   const tag = tags.find((t: any) => t.id === vehicle.tagId);
+  const trackingId = tag?.id || (vehicle.trackerId ? `tracker:${vehicle.trackerId}` : '');
   const client = clients.find((c: any) => c.id === vehicle.clientId);
   const cat = categories.find((c: any) => c.id === vehicle.type);
   
@@ -55,21 +57,23 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
 
   const handleUpdateLocation = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!tag || isUpdating) return;
+    if ((!tag && !vehicle.trackerId) || isUpdating) return;
     
     setIsUpdating(true);
     setUpdateSuccess(false);
     try {
-      const results = await fetchTagLocation(tag);
-      const latest = latestTagLocation(results);
-      if (latest) {
-        const location = { ...latest, tagId: tag.id, id: tag.id };
-        await storage.updateVehiclePosition(vehicle.id, location as any);
-        setUpdateSuccess(true);
-        setTimeout(() => setUpdateSuccess(false), 3000);
-      }
+      const result = tag ? await trackingApi.refreshTag(tag.id) : await trackingApi.vehiclePosition(vehicle.id);
+      const status = 'status' in result ? result.status : result.degraded ? 'error' : 'unchanged';
+      const point = 'position' in result ? result.position : result;
+      const age = point?.timestamp ? ` Última posição há ${Math.max(0, Math.floor((Date.now() - Number(point.timestamp)) / 60_000))} min.` : '';
+      addNotification(status === 'error' ? 'error' : status === 'updated' ? 'success' : 'info',
+        status === 'updated' ? 'Posição atualizada' : status === 'error' ? 'Sem resposta' : 'Sem nova posição',
+        `${result.error || (status === 'updated' ? 'Nova posição recebida.' : 'A posição não mudou.')}${age}`);
+      setUpdateSuccess(status === 'updated');
+      setTimeout(() => setUpdateSuccess(false), 3000);
     } catch (error) {
       console.error("Failed to update location", error);
+      addNotification('error', 'Falha na atualização', error instanceof Error ? error.message : 'Não foi possível consultar o equipamento.');
     } finally {
       setIsUpdating(false);
     }
@@ -104,6 +108,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                             TAG: {tag.accessoryId || tag.imei || tag.name}
                         </div>
                     )}
+                    {vehicle.trackerId && <div className="text-[9px] font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-100 dark:border-sky-900" title={`Rastreador ${vehicle.trackerId}`}>RASTREADOR</div>}
                 </div>
                 <div className="flex gap-1">
                     <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
@@ -120,9 +125,9 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
         {/* Mobile Actions - Ocultar se readonly */}
         {!isReadOnly && (
             <div className="flex md:hidden gap-1">
-                {tag && <button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500"><History size={16}/></button>}
-                <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
-                <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
+                {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500"><History size={16}/></button>}
+                <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
+                <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
             </div>
         )}
       </div>
@@ -183,12 +188,11 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
             <div className="flex items-center gap-2 md:hidden mb-1">
                 <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dispositivo:</span>
             </div>
-            {tag ? (
+            {tag || vehicle.trackerId ? (
                 <>
-                    <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
-                        TAG: {tag.accessoryId || tag.imei || tag.name}
-                    </p>
-                    {vehicle.lastPosition?.battery && (
+                    {tag && <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">TAG: {tag.accessoryId || tag.imei || tag.name}</p>}
+                    {vehicle.trackerId && <p className="text-xs md:text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase truncate">RASTREADOR: {vehicle.trackerId}</p>}
+                    {tag && vehicle.lastPosition?.battery && (
                         <div className="flex items-center gap-1 mt-0.5">
                             <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Bateria:</span>
                             <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
@@ -218,9 +222,9 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
           <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {tag && <button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-cyan-500 transition-colors" title="Histórico"><History size={14}/></button>}
-            <button onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+            {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-cyan-500 transition-colors" title="Histórico"><History size={14}/></button>}
+            <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
+            <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
           </div>
       )}
 
@@ -230,8 +234,8 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 font-medium">
                  <Clock size={12} /> {timeAgo}
              </span>
-             {tag && (
-                 <div className="flex gap-2"><button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-zinc-100 dark:bg-zinc-800 text-zinc-500"><History size={12}/> Histórico</button><button
+             {trackingId && (
+                 <div className="flex gap-2"><button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-zinc-100 dark:bg-zinc-800 text-zinc-500"><History size={12}/> Histórico</button>{tag && <button
                      onClick={handleUpdateLocation}
                      disabled={isUpdating}
                      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
@@ -248,7 +252,7 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
                          <RefreshCw size={12} />
                      )}
                      {isUpdating ? 'Atualizando...' : updateSuccess ? 'Atualizado' : 'Atualizar Tag'}
-                 </button></div>
+                 </button>}</div>
              )}
           </div>
       )}

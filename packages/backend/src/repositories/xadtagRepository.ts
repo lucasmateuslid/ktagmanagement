@@ -14,6 +14,8 @@ export class XadTagRepository {
   async assertAvailable(tenantId: string, identifier: string): Promise<void> {
     const ownership = await uniqueRef(identifier).get();
     if (ownership.exists && String(ownership.get('tenantId')) !== tenantId) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
+    if ((await adminDb.doc(`traccar_tracker_identifiers/${identifier}`).get()).exists) throw new XadTagConflictError('Identificador já reservado por um rastreador.');
+    if ((await adminDb.doc(`traccar_ktag_identifiers/${identifier}`).get()).exists) throw new XadTagConflictError('Identificador já reservado por uma K-TAG.');
   }
   async get(tenantId: string, id: string): Promise<XadTag | null> {
     const snap = await adminDb.doc(`${collectionPath(tenantId)}/${id}`).get();
@@ -37,7 +39,8 @@ export class XadTagRepository {
     return adminDb.runTransaction(async transaction => {
       const globalRef = uniqueRef(input.traccarUniqueId);
       const identifierRef = localIdentifierRef(input.tenantId, input.identifierKind, input.identifierNormalized);
-      const [global, identifier] = await Promise.all([transaction.get(globalRef), transaction.get(identifierRef)]);
+      const [global, identifier, tracker, ktag] = await Promise.all([transaction.get(globalRef), transaction.get(identifierRef), transaction.get(adminDb.doc(`traccar_tracker_identifiers/${input.traccarUniqueId}`)), transaction.get(adminDb.doc(`traccar_ktag_identifiers/${input.traccarUniqueId}`))]);
+      if (tracker.exists || ktag.exists) throw new XadTagConflictError('Identificador já reservado por outro equipamento.');
       const existingId = global.exists ? String(global.get('equipmentId') || '') : identifier.exists ? String(identifier.get('equipmentId') || '') : '';
       if (global.exists && String(global.get('tenantId')) !== input.tenantId) throw new XadTagConflictError('Este uniqueId já pertence a outra empresa.');
       if (existingId) {
@@ -58,6 +61,9 @@ export class XadTagRepository {
     const docRef = adminDb.collection(collectionPath(input.tenantId)).doc();
     return adminDb.runTransaction(async transaction => {
       const ownership = await transaction.get(uniqueRef(input.traccarUniqueId));
+      const tracker = await transaction.get(adminDb.doc(`traccar_tracker_identifiers/${input.traccarUniqueId}`));
+      const ktag = await transaction.get(adminDb.doc(`traccar_ktag_identifiers/${input.traccarUniqueId}`));
+      if (tracker.exists || ktag.exists) throw new XadTagConflictError('Identificador já reservado por outro equipamento.');
       if (ownership.exists) {
         const ownerTenantId = String(ownership.get('tenantId'));
         const equipmentId = String(ownership.get('equipmentId'));
@@ -97,6 +103,9 @@ export class XadTagRepository {
         transaction.get(tagRef), transaction.get(nextGlobalRef), transaction.get(nextLocalRef),
         transaction.get(oldGlobalRef), transaction.get(oldLocalRef),
       ]);
+      const tracker = await transaction.get(adminDb.doc(`traccar_tracker_identifiers/${data.traccarUniqueId}`));
+      const ktag = await transaction.get(adminDb.doc(`traccar_ktag_identifiers/${data.traccarUniqueId}`));
+      if (tracker.exists || ktag.exists) throw new XadTagConflictError('Identificador já reservado por outro equipamento.');
       if (!tag.exists) throw new Error('XADTAG não encontrada.');
       if (nextGlobal.exists && (String(nextGlobal.get('tenantId')) !== item.tenantId || String(nextGlobal.get('equipmentId')) !== item.id)) {
         throw new XadTagConflictError('O uniqueId correto já pertence a outra XADTAG.');

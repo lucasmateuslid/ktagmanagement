@@ -3,6 +3,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tag as TagIcon, Car, Search, ChevronRight, Bike, Truck } from 'lucide-react';
 import { Vehicle, VehicleCategory } from '../../../types';
+import { vehicleDisplayTagId, vehicleEquipmentKind } from '../utils/vehicleTracking';
 
 const MotionDiv = motion.div as any;
 
@@ -38,13 +39,13 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
         const diffMin = diffMs / 60000;
         const diffHours = diffMin / 60;
 
-        if (diffMin <= 30) {
+        if (diffMin <= 5) {
             // Verde Claro (Online recente)
             return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-        } else if (diffHours <= 3) {
+        } else if (diffMin <= 30) {
             // Amarelo (30min a 3h)
             return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
-        } else if (diffHours <= 12) {
+        } else if (diffHours <= 3) {
             // Laranja (3h a 12h)
             return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
         } else {
@@ -76,9 +77,9 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                      // Lógica de Renderização Mista (Veículo vs Tag)
                      if (item.isTag) {
                          // Renderização de TAG SOLTA
-                         const loc = fleetLocations.find(l => l.tagId === item.id);
+                         const loc = fleetLocations.find(l => l.tagId === item.tagId);
                          return (
-                            <button key={item.id} onClick={() => onSelect(item.id)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left border-l-4 border-transparent hover:border-primary-500">
+                            <button key={item.id} onClick={() => onSelect(item.tagId)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left border-l-4 border-transparent hover:border-primary-500">
                                 <div className="flex items-center gap-4 min-w-0">
                                     <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700">
                                         <TagIcon size={20} />
@@ -97,17 +98,20 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({ isVisible, items
                          // Renderização de VEÍCULO
                          const v = item as Vehicle;
                          const cliName = clients.find(c => c.id === v.clientId)?.name;
-                         const loc = fleetLocations.find(l => l.tagId === v.tagId);
+                         const selectedId = vehicleDisplayTagId(v, fleetLocations);
+                         const loc = fleetLocations.find(l => l.tagId === selectedId);
+                         const equipment = vehicleEquipmentKind(v);
+                         const equipmentLabel = equipment === 'both' ? 'TAG + RASTREADOR' : equipment === 'tracker' ? 'RASTREADOR' : 'TAG';
                          return (
-                            <button key={v.id} onClick={() => onSelect(v.tagId!)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
+                            <button key={v.id} onClick={() => onSelect(selectedId)} className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 rounded-2xl transition-all group text-left">
                                 <div className="flex items-center gap-4 min-w-0">
-                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${getStatusColor(v.tagId!)}`}>
+                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${getStatusColor(selectedId)}`}>
                                         {getVehicleIcon(v.type)}
                                     </div>
                                     <div className="min-w-0">
-                                        <div className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none mb-1">{v.plate}</div>
+                                        <div className="mb-1 flex flex-wrap items-center gap-2"><span className="text-sm font-black text-zinc-900 dark:text-white uppercase leading-none">{v.plate}</span><span className={`rounded px-1.5 py-0.5 text-[8px] font-black tracking-wide ${equipment === 'tag' ? 'bg-amber-500/10 text-amber-600' : equipment === 'tracker' ? 'bg-sky-500/10 text-sky-600' : 'bg-violet-500/10 text-violet-600'}`}>{equipmentLabel}</span></div>
                                         <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest truncate">
-                                            {v.model} {cliName && userRole !== 'client' ? `• ${cliName}` : ''} • Atualizado: {getTimeAgoText(loc?.timestamp)}
+                                            {v.model} {cliName && userRole !== 'client' ? `• ${cliName}` : ''} • Posição por {selectedId.startsWith('tracker:') ? 'rastreador' : 'tag'} • {getTimeAgoText(loc?.timestamp)}
                                         </div>
                                     </div>
                                 </div>

@@ -4,11 +4,13 @@ import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRep
 import { adminDb } from '../services/firebaseAdmin.js';
 import { broadcastTenant } from '../services/positionBroadcast.js';
 import { traccarRealtimeService } from '../services/traccarRealtimeService.js';
+import { traccarClient } from '../services/traccarClient.js';
 import { xadTagService } from '../services/xadtagService.js';
 import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
 import { HistoryRequestError, trackingHistoryService } from '../services/trackingHistoryService.js';
 import { latestTenantFleetRefresh, refreshTenantFleet } from '../services/fleetRefreshService.js';
-import { refreshSingleTag } from '../services/singleTagRefreshService.js';
+import { refreshSingleTagResult } from '../services/singleTagRefreshService.js';
+import { afterVehicleLink } from '../services/currentPosition.js';
 
 export const xadTagsRouter = Router();
 xadTagsRouter.use(requireAuth);
@@ -114,14 +116,18 @@ liveMapRouter.use(requireAuth);
 liveMapRouter.post('/refresh', requireInternalUser, async (req, res) => {
   try {
     const tid = tenant(req); const current = await latestTenantFleetRefresh(tid);
-    if (!current.busy) void refreshTenantFleet(tid, 'manual').catch(error => {
+    if (current.busy) return res.status(202).json({ ok: true, data: current });
+    const queued = { ...current, id: crypto.randomUUID(), trigger: 'manual' as const,
+      startedAt: Date.now(), completedAt: 0, busy: true, error: null, vehicles: [], locations: [] };
+    await adminDb.doc(`tenants/${tid}/job_reports/fleet_refresh_latest`).set(queued);
+    void refreshTenantFleet(tid, 'manual').catch(error => {
       console.error(JSON.stringify({ event: 'fleet.refresh.manual_failed', tenantId: tid, error: (error as Error).message }));
     });
-    res.status(202).json({ ok: true, data: { ...current, trigger: 'manual', busy: true } });
+    res.status(202).json({ ok: true, data: queued });
   } catch (error) { fail(res, error); }
 });
 liveMapRouter.get('/refresh/latest', requireInternalUser, async (req, res) => {
-  try { res.json({ ok: true, data: await latestTenantFleetRefresh(tenant(req)) }); }
+  try { res.set('Cache-Control', 'no-store').json({ ok: true, data: await latestTenantFleetRefresh(tenant(req)) }); }
   catch (error) { fail(res, error); }
 });
 liveMapRouter.post('/tags/:id/refresh', async (req, res) => {
@@ -131,12 +137,58 @@ liveMapRouter.post('/tags/:id/refresh', async (req, res) => {
       const vehicle = await adminDb.collection(`tenants/${tid}/vehicles`).where('tagId', '==', tagId).where('clientId', '==', req.authUser.clientId).limit(1).get();
       if (vehicle.empty) return res.status(404).json({ ok: false, error: 'Tag não encontrada.' });
     }
-    res.json({ ok: true, data: await refreshSingleTag(tid, tagId) });
+    res.set('Cache-Control', 'no-store').json({ ok: true, data: await refreshSingleTagResult(tid, tagId) });
   } catch (error: any) {
     res.status(error?.status || 502).json({ ok: false, error: error?.message || 'Falha ao atualizar a tag.', errorCode: 'TAG_REFRESH_FAILED' });
   }
 });
-liveMapRouter.get('/', async (req, res) => { try { const ids = await clientVehicleIds(req); const items = await xadTagRepository.list(tenant(req)); const authorized = ids ? items.filter(item => item.linkedEntityId && ids.has(item.linkedEntityId)) : items; const data = authorized.map(item => xadTagService.toLiveMap(item)).filter(Boolean); res.json({ ok: true, data }); } catch (error) { fail(res, error); } });
+liveMapRouter.get('/', async (req, res) => { try {
+  const tid = tenant(req); const ids = await clientVehicleIds(req);
+  const vehicles = await adminDb.collection(`tenants/${tid}/vehicles`).get();
+  const linkedTagVehicles = new Map(vehicles.docs.filter(doc => doc.get('tagId') && (!ids || ids.has(doc.id))).map(doc => [String(doc.get('tagId')), doc]));
+  const tagCounts = new Map<string, number>();
+  vehicles.docs.forEach(doc => { const tagId = String(doc.get('tagId') || ''); if (tagId) tagCounts.set(tagId, (tagCounts.get(tagId) || 0) + 1); });
+  tagCounts.forEach((count, tagId) => { if (count > 1) linkedTagVehicles.delete(tagId); });
+  const linkedTrackerVehicles = new Map(vehicles.docs.filter(doc => doc.get('trackerId') && (!ids || ids.has(doc.id))).map(doc => [String(doc.get('trackerId')), doc]));
+  const items = await xadTagRepository.list(tid);
+  const authorized = items.filter(item => linkedTagVehicles.has(item.id)
+    && item.lastPosition && afterVehicleLink(Date.parse(item.lastPosition.fixTime || item.lastPosition.deviceTime || item.lastPosition.serverTime || ''), linkedTagVehicles.get(item.id)?.get('trackingLinkedAt')));
+  const data: any[] = authorized.map(item => {
+    const asset = xadTagService.toLiveMap(item);
+    return asset ? { ...asset, linkedEntityId: linkedTagVehicles.get(item.id)!.id } : null;
+  }).filter(Boolean);
+  const ktagSnap = await adminDb.collection(`tenants/${tid}/tags`).where('type', '==', 'K_TAG').get();
+  for (const tag of ktagSnap.docs) {
+    const vehicle = linkedTagVehicles.get(tag.id); const point = tag.get('lastPosition');
+    if (!vehicle || !point || point.tagId !== tag.id || !Number.isFinite(point.timestamp)
+      || !afterVehicleLink(point.timestamp, vehicle.get('trackingLinkedAt'))) continue;
+    data.push({ id: `ktag_${tag.id}`, equipmentId: tag.id, equipmentType: 'K_TAG', source: point.provider || 'ktag',
+      tenantId: tid, uniqueId: String(tag.get('traccarUniqueId') || tag.get('accessoryId') || ''),
+      traccarDeviceId: tag.get('traccarDeviceId') || null, linkedEntityId: vehicle.id,
+      latitude: point.lat, longitude: point.lon, valid: true, fixTime: new Date(point.timestamp).toISOString(),
+      address: point.address || null, speed: point.speed, course: point.course, altitude: point.altitude,
+      status: Date.now() - point.timestamp <= 300_000 ? 'online' : 'delayed', attributes: {} });
+  }
+  const trackers = await adminDb.collection(`tenants/${tid}/trackers`).get();
+  const linked = trackers.docs.filter(doc => linkedTrackerVehicles.get(doc.id)?.id === doc.get('vehicleId') && Number.isInteger(doc.get('traccarDeviceId')));
+  if (linked.length) {
+    const positions = await traccarClient.getLatestPositions().catch(error => {
+      console.error('Falha ao consultar posições de rastreadores no Traccar:', error);
+      return [];
+    });
+    const byDevice = new Map(positions.map(position => [position.deviceId, position]));
+    for (const tracker of linked) {
+      const raw = byDevice.get(tracker.get('traccarDeviceId'));
+      if (!raw) continue;
+      data.push({ id: `tracker_${tracker.id}`, equipmentId: tracker.id, equipmentType: 'TRACKER', source: 'traccar', tenantId: tid,
+        imei: tracker.id, uniqueId: tracker.id, traccarDeviceId: raw.deviceId, linkedEntityId: tracker.get('vehicleId'),
+        status: Date.now() - Date.parse(raw.fixTime || raw.serverTime || '') <= 300_000 ? 'online' : 'delayed', latitude: raw.latitude, longitude: raw.longitude, altitude: raw.altitude, speed: raw.speed,
+        course: raw.course, valid: raw.valid, deviceTime: raw.deviceTime, fixTime: raw.fixTime, serverTime: raw.serverTime,
+        attributes: raw.attributes || {} });
+    }
+  }
+  res.set('Cache-Control', 'no-store').json({ ok: true, data });
+} catch (error) { fail(res, error); } });
 liveMapRouter.get('/tags/:id/history', async (req, res) => {
   const requestId = crypto.randomUUID(); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId);
   try {

@@ -94,7 +94,7 @@ export const adminApi = {
   getTenantUsage: (slug: string) =>
     call<{ slug: string }, { slug: string; usage: TenantUsage }>('getTenantUsage')({ slug }).then(r => r.data),
 
-  updateTenantLimits: async (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number; features?: string[] | null }) => {
+  updateTenantLimits: async (slug: string, limits: { limiteTags?: number; limiteVeiculos?: number; maxUsers?: number; features?: string[] | null; blockingEnabled?: boolean }) => {
     const response = await authenticatedFetch(`/api/admin/tenants/${encodeURIComponent(slug)}/limits`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(limits),
     });

@@ -236,16 +236,22 @@ service cloud.firestore {
       // Metadados do provider externo são escritos apenas pelo backend (Admin SDK).
       allow create: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
                     && request.resource.data.type != 'XADTAG'
-                    && !request.resource.data.keys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
+                    && !request.resource.data.keys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition', 'imei', 'traccarUniqueId', 'traccarDeviceId', 'integrationStatus', 'communicationValidatedAt']);
       allow update, delete: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
                             && resource.data.type != 'XADTAG'
                             && request.resource.data.type != 'XADTAG'
-                            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition']);
+                            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition', 'imei', 'traccarUniqueId', 'traccarDeviceId', 'integrationStatus', 'communicationValidatedAt']);
     }
     match /tenants/{tenantId}/trackers/{docId} {
       allow read: if isInternalMember(tenantId);
       // Escrita somente pela API validada (Admin SDK).
       allow write: if false;
+    }
+    match /tenants/{tenantId}/tracker_assignments/{docId} {
+      allow read, write: if false;
+    }
+    match /tenants/{tenantId}/blocking_operations/{docId} {
+      allow read, write: if false;
     }
     match /tenants/{tenantId}/sim_cards/{docId} {
       allow read, write: if isInternalMember(tenantId) && tenantModuleEnabled(tenantId, 'trackers');
@@ -265,10 +271,15 @@ service cloud.firestore {
                     || (isTenantClient(tenantId)
                         && resource.data.clientId == memberClientId(tenantId));
       // O vínculo é alterado somente pela API transacional (Admin SDK).
-      allow create: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE') && !request.resource.data.keys().hasAny(['tagId']);
+      allow create: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE') && !request.resource.data.keys().hasAny(['tagId', 'trackerId', 'clientBlockingAllowed', 'trackingLinkedAt', 'lastPosition']);
       allow update: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE')
                     && request.resource.data.get('tagId', null) == resource.data.get('tagId', null)
-                    && request.resource.data.get('activeTrackingAssignmentId', null) == resource.data.get('activeTrackingAssignmentId', null);
+                    && request.resource.data.get('trackerId', null) == resource.data.get('trackerId', null)
+                    && request.resource.data.get('clientBlockingAllowed', null) == resource.data.get('clientBlockingAllowed', null)
+                    && (request.resource.data.get('clientId', null) == resource.data.get('clientId', null) || resource.data.get('clientBlockingAllowed', false) != true)
+                    && request.resource.data.get('activeTrackingAssignmentId', null) == resource.data.get('activeTrackingAssignmentId', null)
+                    && request.resource.data.get('trackingLinkedAt', null) == resource.data.get('trackingLinkedAt', null)
+                    && request.resource.data.get('lastPosition', null) == resource.data.get('lastPosition', null);
       allow delete: if hasTenantPermission(tenantId, 'ACTION_VEHICLES_MANAGE') && resource.data.get('tagId', null) == null;
       match /history/{histId} {
         allow read: if isInternalMember(tenantId);
@@ -364,6 +375,15 @@ service cloud.firestore {
       // Catálogo global é consumido pela API; manutenção somente superadmin.
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
+    }
+    match /tracker_blocking_profiles/{docId} {
+      allow read, write: if false;
+    }
+    match /traccar_tracker_identifiers/{docId} {
+      allow read, write: if false;
+    }
+    match /traccar_ktag_identifiers/{docId} {
+      allow read, write: if false;
     }
 
     // Push subscriptions flat (Functions varre cross-tenant). Cada doc tem userId.

@@ -82,6 +82,17 @@ npm run dev
 npm run build
 ```
 
+### Teste local com emuladores
+
+Execute `npm run dev:local` na raiz. Esse comando inicia os emuladores Firebase, a API, o worker e o frontend, além de criar dados de demonstração.
+
+| Área | Endereço | Conta de teste |
+| --- | --- | --- |
+| Dashboard e LiveMap da Empresa A | `http://empresa-a.localhost:3005/` | `admin.a@local.test` |
+| Painel Super Admin | `http://localhost:3005/` | `superadmin@local.test` |
+
+A senha das duas contas é `Local123!`. O LiveMap da Empresa A inclui o veículo `AAA0A00` com uma posição **demonstrativa** identificada na ficha. A atualização real de K-TAG depende das credenciais da integração e de uma tag vinculada. Acesse o mapa em `http://empresa-a.localhost:3005/#/map`.
+
 ### Variáveis de Ambiente (.env)
 Crie um arquivo `.env` na raiz:
 ```env

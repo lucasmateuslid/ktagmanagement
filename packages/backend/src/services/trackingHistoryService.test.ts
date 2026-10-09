@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { TrackingHistoryPoint } from '@ktag/shared';
-import { HistoryRequestError, mapProviderError, normalizeHistoryPoints, normalizeTraccarPosition, parseHistoryRange } from './trackingHistoryService.js';
+import { HistoryRequestError, mapProviderError, normalizeFirestorePosition, normalizeHistoryPoints, normalizeTraccarPosition, parseHistoryRange } from './trackingHistoryService.js';
 import { TraccarHttpError } from './traccarClient.js';
 
 const point = (id: string, timestamp: number): TrackingHistoryPoint => ({ id, tagId: 'tag-1', vehicleId: 'vehicle-1', provider: 'ktag', timestamp, latitude: -8, longitude: -35 });
@@ -42,4 +42,11 @@ test('deduplica pela chave lógica mesmo com IDs diferentes', () => {
 test('mapeia falhas conhecidas do provedor', () => {
   assert.equal(mapProviderError(new TraccarHttpError(429, 'route', 'rate')).code, 'PROVIDER_RATE_LIMITED');
   assert.equal(mapProviderError(new Error('Tempo limite excedido ao consultar o Traccar.')).status, 504);
+});
+
+test('não apresenta endereço antigo sem validação no histórico K-TAG', () => {
+  const stored = { tagId: 'tag-1', timestamp: Date.now(), lat: -5.7, lon: -35.2,
+    address: 'Rua possivelmente errada', addressResolutionProvider: 'openstreetmap' };
+  assert.equal(normalizeFirestorePosition(stored, 'p1')?.address, null);
+  assert.equal(normalizeFirestorePosition({ ...stored, address: 'Rua do Traccar', addressResolutionProvider: 'traccar' }, 'p1')?.address, 'Rua do Traccar');
 });

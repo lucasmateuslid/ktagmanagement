@@ -693,6 +693,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
   const [limiteVeiculos, setLimiteVeiculos] = useState<number>(tenant.settings?.limiteVeiculos ?? 0);
   const [maxUsers, setMaxUsers] = useState<number>(tenant.settings?.maxUsers ?? 0);
   const [features, setFeatures] = useState<string[]>(tenant.settings?.features ?? []);
+  const [blockingEnabled, setBlockingEnabled] = useState(tenant.settings?.blockingEnabled === true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -700,7 +701,7 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
     setError('');
     setSubmitting(true);
     try {
-      await adminApi.updateTenantLimits(tenant.slug, { limiteTags, limiteVeiculos, maxUsers, features });
+      await adminApi.updateTenantLimits(tenant.slug, { limiteTags, limiteVeiculos, maxUsers, features, blockingEnabled });
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Falha ao salvar.');
@@ -755,6 +756,10 @@ const EditLimitsModal = ({ tenant, onClose }: { tenant: Tenant; onClose: () => v
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-amber-700 dark:text-amber-500/80">O administrador da empresa só poderá distribuir aos cargos os módulos marcados aqui.</p>
           </section>
+          <label className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <input type="checkbox" checked={blockingEnabled} onChange={event => setBlockingEnabled(event.target.checked)} className="mt-1 h-4 w-4 accent-amber-500" />
+            <span><strong className="block text-xs">Autorizar bloqueio remoto</strong><span className="text-[10px] text-zinc-500">A empresa ainda precisará habilitar cada rastreador homologado e autorizar cada veículo do cliente.</span></span>
+          </label>
         </div>
 
         <div className="modal-card-footer flex gap-3 border-t border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-white/10 dark:bg-black/20 sm:justify-end sm:px-6">

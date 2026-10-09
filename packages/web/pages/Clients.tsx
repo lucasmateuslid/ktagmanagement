@@ -39,6 +39,7 @@ export const Clients = () => {
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<Partial<Client>>({});
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(new Set());
+  const [blockingVehicleIds, setBlockingVehicleIds] = useState<Set<string>>(new Set());
   
   // Selection State
   const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
@@ -153,9 +154,11 @@ export const Clients = () => {
         .filter(v => v.clientId === client.id)
         .map(v => v.id);
       setSelectedVehicleIds(new Set(linkedIds));
+      setBlockingVehicleIds(new Set(allVehicles.filter(v => v.clientId === client.id && v.clientBlockingAllowed).map(v => v.id)));
     } else {
       setSelectedClient({ hasAccess: false });
       setSelectedVehicleIds(new Set());
+      setBlockingVehicleIds(new Set());
     }
     setVehicleSearchTerm('');
     setIsModalOpen(true);
@@ -260,11 +263,18 @@ export const Clients = () => {
       const updatePromises = allVehicles.map(async (v) => {
         const isSelected = selectedVehicleIds.has(v.id);
         const wasMine = v.clientId === clientId;
-        if (isSelected && !wasMine) await storage.saveVehicle({ ...v, clientId });
-        else if (!isSelected && wasMine) await storage.saveVehicle({ ...v, clientId: undefined });
+        if (isSelected === wasMine) return;
+        const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(v.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: isSelected ? clientId : '' }) });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Falha ao vincular veículo.');
       });
 
       await Promise.all(updatePromises);
+      for (const vehicle of allVehicles.filter(v => selectedVehicleIds.has(v.id))) {
+        const allowed = blockingVehicleIds.has(vehicle.id) && clientData.hasAccess === true;
+        if (allowed === Boolean(vehicle.clientBlockingAllowed) && vehicle.clientId === clientId) continue;
+        const response = await authenticatedFetch(`/api/blocking/clients/${encodeURIComponent(clientId)}/vehicles/${encodeURIComponent(vehicle.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allowed }) });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Falha ao salvar autorização de bloqueio.');
+      }
       const reindexResponse = await authenticatedFetch(`/api/vehicles/reindex-client/${encodeURIComponent(clientId)}`, { method: 'POST' });
       const reindexPayload = await reindexResponse.json();
       if (!reindexResponse.ok) throw new Error(reindexPayload.error || 'Falha ao atualizar o índice de pesquisa da frota.');
@@ -280,18 +290,20 @@ export const Clients = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const c = clients.find(client => client.id === id);
-    const linkedVehicles = allVehicles.filter(v => v.clientId === id);
-    const unlinkPromises = linkedVehicles.map(v => storage.saveVehicle({ ...v, clientId: undefined }));
-    await Promise.all(unlinkPromises);
-    await storage.deleteClient(id);
-    
-    if (currentUser && c) {
-        storage.logAction(currentUser, 'DELETE', 'Client', `Removeu cliente: ${c.name}`, id);
+    try {
+      const c = clients.find(client => client.id === id);
+      const linkedVehicles = allVehicles.filter(v => v.clientId === id);
+      await Promise.all(linkedVehicles.map(async vehicle => {
+        const response = await authenticatedFetch(`/api/vehicles/${encodeURIComponent(vehicle.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: '' }) });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Falha ao desvincular veículo.');
+      }));
+      await storage.deleteClient(id);
+      if (currentUser && c) storage.logAction(currentUser, 'DELETE', 'Client', `Removeu cliente: ${c.name}`, id);
+      addNotification('info', 'Cliente Removido', 'Cadastro excluído e frota desvinculada.');
+      loadData();
+    } catch (error: any) {
+      addNotification('error', 'Erro', error.message || 'Não foi possível excluir o cliente.');
     }
-
-    addNotification('info', 'Cliente Removido', 'Cadastro excluído e frota desvinculada.');
-    loadData();
   };
 
   return (
@@ -579,7 +591,7 @@ export const Clients = () => {
                                   const isSelected = selectedVehicleIds.has(v.id);
                                   const belongsToOther = v.clientId && v.clientId !== selectedClient.id;
                                   return (
-                                    <button key={v.id} type="button" onClick={() => toggleVehicleSelection(v.id)} className={`w-full p-4 rounded-2xl text-left transition-all border flex items-center justify-between group ${isSelected ? 'bg-primary-500 border-primary-600 shadow-md' : 'bg-transparent border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-zinc-100 dark:hover:bg-zinc-800'}`}>
+                                    <div key={v.id} className="flex items-center gap-2"><button type="button" onClick={() => toggleVehicleSelection(v.id)} className={`min-w-0 flex-1 p-4 rounded-2xl text-left transition-all border flex items-center justify-between group ${isSelected ? 'bg-primary-500 border-primary-600 shadow-md' : 'bg-transparent border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-zinc-100 dark:hover:bg-zinc-800'}`}>
                                       <div className="flex items-center gap-4">
                                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isSelected ? 'bg-black/10 text-black' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-primary-500'}`}><Car size={18} /></div>
                                          <div className="flex flex-col">
@@ -588,7 +600,7 @@ export const Clients = () => {
                                          </div>
                                       </div>
                                       <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all ${isSelected ? 'bg-black border-black text-primary-500' : 'border-zinc-200 dark:border-zinc-800 text-transparent'}`}><Check size={14} strokeWidth={4} /></div>
-                                    </button>
+                                    </button><label className="flex shrink-0 items-center gap-1 text-[10px] font-bold text-zinc-600 dark:text-zinc-300"><input type="checkbox" disabled={!isSelected || !selectedClient.hasAccess} checked={isSelected && blockingVehicleIds.has(v.id)} onChange={event => setBlockingVehicleIds(current => { const next = new Set(current); if (event.target.checked) next.add(v.id); else next.delete(v.id); return next; })} />Bloqueio</label></div>
                                   );
                                 })
                               )}

@@ -8,6 +8,7 @@ import { adminDb } from './services/firebaseAdmin.js';
 import { traccarClient, TraccarHttpError } from './services/traccarClient.js';
 import { xadTagRepository } from './repositories/xadtagRepository.js';
 import { refreshAllActiveTenants } from './services/fleetRefreshService.js';
+import { reconcileKtagTraccar } from './services/ktagTraccarService.js';
 
 dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env.local'), override: false });
@@ -15,7 +16,7 @@ dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../
 const positive = (name: string, fallback: number) => { const value = Number(process.env[name] ?? fallback); return Number.isFinite(value) && value > 0 ? value : fallback; };
 const RETENTION_DAYS = positive('KTAG_HISTORY_RETENTION_DAYS', 30);
 const RETENTION_MS = RETENTION_DAYS * 86_400_000;
-const POLL_MS = positive('KTAG_POLL_INTERVAL_MS', 30 * 60_000);
+const POLL_MS = positive('KTAG_POLL_INTERVAL_MS', 5 * 60_000);
 async function deleteSnapshotInChunks(docs: FirebaseFirestore.QueryDocumentSnapshot[]) {
   for (let offset = 0; offset < docs.length; offset += 450) {
     const batch = adminDb.batch();
@@ -105,16 +106,50 @@ async function retryPendingDeletions() {
       const data = doc.data(); try {
         if (Number.isInteger(data.traccarDeviceId)) { try { await traccarClient.deleteDevice(data.traccarDeviceId); } catch (error) { if (!(error instanceof TraccarHttpError && error.status === 404)) throw error; } }
         const vehicles = await tenant.ref.collection('vehicles').where('tagId', '==', doc.id).get(); const batch = adminDb.batch(); vehicles.docs.forEach(vehicle => { const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || data.activeTrackingAssignmentId || ''); if (assignmentId) batch.update(tenant.ref.collection('tracking_assignments').doc(assignmentId), { endedAt: Date.now(), endedBy: 'vps-worker', endReason: 'tag_deleted_retry' }); batch.update(vehicle.ref, { tagId: FieldValue.delete(), activeTrackingAssignmentId: null, lastPosition: FieldValue.delete(), updatedAt: Date.now() }); }); await batch.commit();
-        if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: doc.id, ...data } as any); else await doc.ref.delete();
+        if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: doc.id, ...data } as any); else {
+          await doc.ref.delete();
+          if (data.imei) {
+            const ownerRef = adminDb.doc(`traccar_ktag_identifiers/${data.imei}`);
+            const owner = await ownerRef.get();
+            if (owner.get('tenantId') === tenant.id && owner.get('tagId') === doc.id) await ownerRef.delete();
+          }
+        }
         await tenant.ref.collection('audit_logs').add({ userId: 'vps-worker', action: 'DELETE', entity: 'Tag', entityId: doc.id, result: 'retry_success', timestamp: FieldValue.serverTimestamp() });
       } catch (error) { await doc.ref.update({ deletionStatus: 'error', deletionError: (error as Error).message, deletionLastAttemptAt: Date.now() }); }
     }
   }
 }
+async function retryPendingKtagRegistrations() {
+  const tenants = await adminDb.collection('tenants').where('active', '==', true).get();
+  for (const tenant of tenants.docs) {
+    const pending = await tenant.ref.collection('tags').where('integrationStatus', '==', 'pending').get();
+    for (const tag of pending.docs) {
+      if (tag.get('type') !== 'K_TAG' || !tag.get('imei')) continue;
+      try { await reconcileKtagTraccar(tenant.id, tag.id, String(tag.get('imei'))); }
+      catch (error) { console.warn(JSON.stringify({ event: 'ktag.traccar.retry_failed', tenantId: tenant.id, tagId: tag.id, error: (error as Error).message })); }
+    }
+  }
+}
 
 console.info(JSON.stringify({ event: 'fleet.worker.started', pollMinutes: POLL_MS / 60_000, retentionDays: RETENTION_DAYS, billingTimeZone: 'America/Sao_Paulo' }));
-void refreshAllActiveTenants(); void cleanup(); void retryPendingDeletions(); void enforceBilling();
-setInterval(() => { void refreshAllActiveTenants(); void retryPendingDeletions(); }, POLL_MS);
-setInterval(() => void cleanup(), 24 * 3_600_000);
-setInterval(() => void enforceBilling(), 15 * 60_000);
-process.on('SIGTERM', () => process.exit(0)); process.on('SIGINT', () => process.exit(0));
+let stopping = false;
+const running = new Map<string, Promise<void>>();
+const run = (name: string, task: () => Promise<unknown>) => {
+  if (stopping || running.has(name)) return;
+  const promise = Promise.resolve().then(task).catch(error => {
+    console.error(JSON.stringify({ event: 'fleet.worker.task_failed', task: name, error: (error as Error).message }));
+  }).then(() => { running.delete(name); });
+  running.set(name, promise);
+};
+const cycle = () => { run('fleet', refreshAllActiveTenants); run('deletions', retryPendingDeletions); run('ktag_registration', retryPendingKtagRegistrations); };
+cycle(); run('cleanup', cleanup); run('billing', enforceBilling);
+const timers = [setInterval(cycle, POLL_MS), setInterval(() => run('cleanup', cleanup), 24 * 3_600_000),
+  setInterval(() => run('billing', enforceBilling), 15 * 60_000)];
+const shutdown = (signal: string) => {
+  if (stopping) return;
+  stopping = true; timers.forEach(clearInterval);
+  console.info(JSON.stringify({ event: 'fleet.worker.stopping', signal, running: [...running.keys()] }));
+  const timeout = setTimeout(() => process.exit(1), 25_000);
+  void Promise.allSettled([...running.values()]).then(() => { clearTimeout(timeout); process.exit(0); });
+};
+process.once('SIGTERM', () => shutdown('SIGTERM')); process.once('SIGINT', () => shutdown('SIGINT'));

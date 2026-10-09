@@ -311,6 +311,9 @@ export interface TrackedPosition {
   address?: string | null;
   addressResolutionStatus?: 'resolved' | 'failed' | 'pending';
   addressResolutionAttempts?: number;
+  addressResolutionProvider?: string | null;
+  addressResolvedAt?: number | null;
+  addressVerifiedAt?: number | null;
   deviceTime?: string;
   fixTime?: string;
   serverTime?: string;
@@ -480,6 +483,12 @@ export interface ManagedTracker {
   manufacturer: string;
   status: 'disponível' | 'enviado' | 'em_uso' | 'manutencao';
   vehicleId?: string;
+  activeTrackingAssignmentId?: string;
+  traccarDeviceId?: number;
+  integrationStatus?: 'pending' | 'registered' | 'error';
+  integrationError?: string;
+  blockingEnabled?: boolean;
+  blockingProfileId?: string;
   simCardId?: string;
   invertedLockOutput?: boolean;
   password?: string;

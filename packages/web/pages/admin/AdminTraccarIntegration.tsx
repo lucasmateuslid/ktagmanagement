@@ -10,6 +10,7 @@ import {
 import { trackingApi } from '../../services/trackingApi';
 import { db, functions } from '../../services/firebase';
 import { AiConfigModule } from '../../components/settings/AiConfigModule';
+import { authenticatedFetch } from '../../services/authenticatedFetch';
 
 type State = 'online' | 'warning' | 'offline' | 'loading';
 interface TraccarStatus {
@@ -55,6 +56,10 @@ export const AdminTraccarIntegration = () => {
   const [asaas, setAsaas] = useState<{ config?: AsaasConfig; connection?: AsaasConnection }>({});
   const [ktag, setKtag] = useState<{ proxy: boolean }>({ proxy: false });
   const [errors, setErrors] = useState<string[]>([]);
+  const [profiles, setProfiles] = useState<Array<{ modelId: string; approved: boolean; block: { type: string }; unblock: { type: string } }>>([]);
+  const [profileForm, setProfileForm] = useState({ modelId: '', blockType: 'engineStop', unblockType: 'engineResume', blockAttributes: '{}', unblockAttributes: '{}', approved: false });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setErrors([]);
@@ -70,8 +75,21 @@ export const AdminTraccarIntegration = () => {
     if (platformResult.status === 'fulfilled') setKtag({ proxy: Boolean(platformResult.value.data()?.proxyUrl) });
     const failed = [traccarResult, asaasConfigResult, asaasTestResult, platformResult].filter(result => result.status === 'rejected');
     if (failed.length) setErrors(failed.map(result => result.status === 'rejected' ? result.reason?.message || 'Diagnóstico indisponível' : ''));
+    const profilesResponse = await authenticatedFetch('/api/admin/integrations/traccar/blocking-profiles').catch(() => null);
+    if (profilesResponse?.ok) setProfiles((await profilesResponse.json()).data || []);
     setLoading(false);
   }, []);
+
+  const saveProfile = async () => {
+    setProfileSaving(true); setProfileError('');
+    try {
+      const body = { approved: profileForm.approved, block: { type: profileForm.blockType, attributes: JSON.parse(profileForm.blockAttributes) }, unblock: { type: profileForm.unblockType, attributes: JSON.parse(profileForm.unblockAttributes) } };
+      const response = await authenticatedFetch(`/api/admin/integrations/traccar/blocking-profiles/${encodeURIComponent(profileForm.modelId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Falha ao salvar perfil.');
+      await load();
+    } catch (error: any) { setProfileError(error.message || 'Perfil inválido.'); }
+    finally { setProfileSaving(false); }
+  };
 
   // Diagnóstico inicial é uma sincronização deliberada com quatro sistemas externos.
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -86,6 +104,12 @@ export const AdminTraccarIntegration = () => {
     </header>
 
     {errors.length > 0 && <div className="rounded-2xl border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-xs text-amber-300">Alguns diagnósticos não responderam. Os demais serviços continuam independentes.</div>}
+
+    <section className="space-y-3 rounded-3xl border border-white/10 p-5"><h2 className="font-bold">Perfis de bloqueio homologados</h2><p className="text-xs text-zinc-500">Aprovar somente após testar bloquear e desbloquear no equipamento físico instalado. O ID do modelo deve coincidir com o catálogo de rastreadores.</p>
+      <div className="grid gap-2 md:grid-cols-3"><input className="rounded-xl bg-zinc-900 p-3 text-sm" placeholder="ID do modelo" value={profileForm.modelId} onChange={e => setProfileForm(v => ({ ...v, modelId: e.target.value }))}/><input className="rounded-xl bg-zinc-900 p-3 text-sm" placeholder="Comando de bloqueio" value={profileForm.blockType} onChange={e => setProfileForm(v => ({ ...v, blockType: e.target.value }))}/><input className="rounded-xl bg-zinc-900 p-3 text-sm" placeholder="Comando de desbloqueio" value={profileForm.unblockType} onChange={e => setProfileForm(v => ({ ...v, unblockType: e.target.value }))}/><input className="rounded-xl bg-zinc-900 p-3 font-mono text-xs" aria-label="Atributos do bloqueio em JSON" value={profileForm.blockAttributes} onChange={e => setProfileForm(v => ({ ...v, blockAttributes: e.target.value }))}/><input className="rounded-xl bg-zinc-900 p-3 font-mono text-xs" aria-label="Atributos do desbloqueio em JSON" value={profileForm.unblockAttributes} onChange={e => setProfileForm(v => ({ ...v, unblockAttributes: e.target.value }))}/><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={profileForm.approved} onChange={e => setProfileForm(v => ({ ...v, approved: e.target.checked }))}/>Teste físico concluído</label></div>
+      {profileError && <p className="text-xs text-red-400">{profileError}</p>}<button type="button" disabled={profileSaving || !profileForm.modelId} onClick={() => void saveProfile()} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-black disabled:opacity-40">Salvar perfil</button>
+      <div className="flex flex-wrap gap-2">{profiles.map(profile => <button type="button" key={profile.modelId} className="rounded-xl border border-white/10 px-3 py-2 text-left text-xs" onClick={() => setProfileForm({ modelId: profile.modelId, blockType: profile.block.type, unblockType: profile.unblock.type, blockAttributes: JSON.stringify((profile.block as any).attributes || {}), unblockAttributes: JSON.stringify((profile.unblock as any).attributes || {}), approved: profile.approved })}>{profile.modelId} · {profile.approved ? 'homologado' : 'desativado'}</button>)}</div>
+    </section>
 
     <div className="grid gap-4 xl:grid-cols-2">
       <IntegrationCard icon={<Radio size={20} />} title="Traccar / XADTAG" description="REST, GT06 e posições em tempo real" state={loading && !traccar ? 'loading' : traccarOnline ? 'online' : 'offline'} status={loading && !traccar ? 'Verificando' : traccarOnline ? 'Operacional' : 'Indisponível'} details={[["API REST", traccarOnline ? 'Conectada' : 'Desconectada'], ["Autenticação", traccar?.authenticated ? 'Válida' : 'Inválida'], ["Realtime", traccar?.realtime?.status || '—'], ["Latência", `${traccar?.rest?.latencyMs ?? 0} ms`]]} action={traccar?.webUrl ? <a href={traccar.webUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-zinc-300 hover:text-white">Abrir Traccar <ExternalLink size={13} /></a> : undefined} />

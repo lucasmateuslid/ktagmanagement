@@ -71,6 +71,36 @@ export const calculateTagHistory = (tagsList: Tag[]) => {
   return data;
 };
 
+export const calculateRecentActivations = (tags: Tag[], now = new Date()) => {
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
+    const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+    return {
+      name: day.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      total: tags.filter(tag => tag.firstCommunicationAt && tag.firstCommunicationAt >= day.getTime() && tag.firstCommunicationAt < nextDay.getTime()).length,
+    };
+  });
+};
+
+export const calculateMonthlyServiceSummary = (schedules: Schedule[], now = new Date()) => {
+  const month = schedules.filter(schedule => {
+    const date = new Date(`${schedule.confirmedDate || schedule.preferredDate}T12:00:00`);
+    const effective = Number.isNaN(date.getTime()) ? new Date(schedule.createdAt) : date;
+    return effective.getMonth() === now.getMonth() && effective.getFullYear() === now.getFullYear();
+  });
+  return {
+    open: month.filter(schedule => !['Concluída', 'Cancelada', 'Frustrada'].includes(schedule.status)).length,
+    completed: month.filter(schedule => schedule.status === 'Concluída').length,
+  };
+};
+
+export const oldestUncommunicativeVehicles = (vehicles: Vehicle[], now = Date.now()) => vehicles
+  .filter(vehicle => vehicle.tagId || vehicle.trackerId)
+  .map(vehicle => ({ vehicle, timestamp: vehicle.lastPosition?.timestamp || 0 }))
+  .filter(item => !item.timestamp || now - item.timestamp > 12 * 60 * 60_000)
+  .sort((a, b) => a.timestamp - b.timestamp)
+  .slice(0, 5);
+
 export const calculateCompanyDistribution = (vehiclesList: Vehicle[], companiesList: Company[]) => {
   const counts: Record<string, number> = {};
   const activeVehicles = vehiclesList.filter(v => v.status === 'active');

@@ -33,7 +33,7 @@ describe('useVehicleHistory', () => {
     expect(result.current.historyItems).toHaveLength(1);
   });
 
-  it('consulta sempre as últimas 48 horas', async () => {
+  it('consulta as últimas 24 horas por padrão', async () => {
     vehicleHistory.mockResolvedValue(page('new', 'tag-2'));
     const now = new Date('2026-09-02T12:00:00.000Z').getTime();
     vi.spyOn(Date, 'now').mockReturnValue(now);
@@ -43,5 +43,15 @@ describe('useVehicleHistory', () => {
 
     expect(Date.parse(vehicleHistory.mock.calls[0][2]) - Date.parse(vehicleHistory.mock.calls[0][1])).toBe(HISTORY_WINDOW_MS);
     vi.restoreAllMocks();
+  });
+
+  it('mantém o período escolhido ao carregar a próxima página', async () => {
+    vehicleHistory.mockResolvedValueOnce({ ...page('new', 'tag-2'), nextCursor: 'cursor-1' }).mockResolvedValueOnce(page('old', 'tag-2'));
+    const { result } = renderHook(() => useVehicleHistory('v2', 'tag-2', [], vi.fn()));
+    const period = { from: '2026-10-01T00:00:00.000Z', to: '2026-10-04T00:00:00.000Z' };
+    await act(async () => { await result.current.fetchHistory(period); });
+    await act(async () => { result.current.loadMoreHistory(); await Promise.resolve(); });
+    expect(vehicleHistory.mock.calls[0].slice(1, 3)).toEqual([period.from, period.to]);
+    expect(vehicleHistory.mock.calls[1].slice(1, 4)).toEqual([period.from, period.to, 'cursor-1']);
   });
 });

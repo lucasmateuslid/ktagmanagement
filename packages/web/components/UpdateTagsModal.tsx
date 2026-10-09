@@ -65,21 +65,21 @@ export const UpdateTagsModal: React.FC<UpdateTagsModalProps> = ({ isOpen, onClos
         <div className="flex flex-1 flex-col gap-5 overflow-hidden p-6">
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-zinc-100 bg-zinc-50 p-5 text-center dark:border-zinc-800 dark:bg-zinc-950">
             <RefreshCw size={32} className={`text-primary-500 ${isUpdating ? 'animate-spin' : ''}`} />
-            <p className="max-w-lg text-sm font-bold text-zinc-600 dark:text-zinc-400">{isUpdating ? 'Atualizando posições e endereços…' : report?.busy ? 'Atualização em andamento.' : report ? 'Atualização concluída.' : 'Atualize agora as posições e os endereços da frota.'}</p>
+            <p className="max-w-lg text-sm font-bold text-zinc-600 dark:text-zinc-400">{isUpdating ? 'Solicitando atualização…' : report?.busy ? 'Atualização em andamento no servidor.' : report ? 'Consulta concluída. Confira o resultado de cada veículo abaixo.' : 'Atualize agora as posições da frota.'}</p>
             {(isUpdating || report?.busy) && <div className="w-full"><div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"><motion.div className="h-full w-1/3 rounded-full bg-primary-500" animate={{ x: ['-100%', '300%'] }} transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }} /></div><p className="mt-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">Tempo decorrido {elapsedLabel}</p></div>}
             <button onClick={handleUpdate} disabled={isUpdating || vehicles.length === 0} className="h-12 w-full rounded-xl bg-zinc-900 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-primary-500 hover:text-zinc-900 disabled:opacity-50 dark:bg-white dark:text-zinc-900">{isUpdating ? 'Atualizando…' : report?.busy ? 'Verificar novamente' : report ? 'Atualizar novamente' : 'Atualizar agora'}</button>
-            {error && <p className="text-xs font-bold text-red-500">{error}</p>}
+            {(error || report?.error) && <p className="text-xs font-bold text-red-500">{error || report?.error}</p>}
           </div>
           {report && !report.busy && <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {[['Veículos', report.summary.totalVehicles], ['Posições', report.summary.positionsUpdated], ['Endereços', report.summary.addressesResolved], ['Erros', report.summary.errors]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-zinc-100 p-3 dark:border-zinc-800"><div className="text-lg font-black text-zinc-900 dark:text-white">{value}</div><div className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{label}</div></div>)}
+              {[['Veículos', report.summary.totalVehicles], ['Posições', report.summary.positionsUpdated], ['Endereços reutilizados', report.summary.addressesReused], ['Erros', report.summary.errors]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-zinc-100 p-3 dark:border-zinc-800"><div className="text-lg font-black text-zinc-900 dark:text-white">{value}</div><div className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{label}</div></div>)}
             </div>
             <div className="min-h-[180px] flex-1 space-y-1 overflow-y-auto rounded-2xl border border-zinc-100 p-2 dark:border-zinc-800">
               {report.vehicles.map(item => {
                 const success = item.status === 'updated'; const failed = item.status === 'error';
                 return <div key={item.vehicleId} className="flex items-start gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/60">
                   {success ? <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-500" /> : failed ? <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-500" /> : <MinusCircle size={18} className="mt-0.5 shrink-0 text-zinc-400" />}
-                  <div className="min-w-0"><div className="truncate text-xs font-black text-zinc-800 dark:text-zinc-200">{item.plate} {item.model && `· ${item.model}`}</div><div className="truncate text-[10px] text-zinc-500">{item.address || item.error || (item.tagIdentifier ? `Tag ${item.tagIdentifier}` : 'Veículo sem tag vinculada')}</div></div>
+                  <div className="min-w-0"><div className="truncate text-xs font-black text-zinc-800 dark:text-zinc-200">{item.plate} {item.model && `· ${item.model}`}</div><div className="truncate text-[10px] text-zinc-500">{item.error || item.address || (item.tagIdentifier ? `Equipamento ${item.tagIdentifier}` : 'Veículo sem equipamento vinculado')}</div><div className="text-[10px] text-zinc-500">{item.timestamp ? `Última posição há ${item.ageMinutes ?? Math.max(0, Math.floor((Date.now() - item.timestamp) / 60000))} min · ${item.provider === 'traccar' ? 'Traccar' : 'Feibao'}` : 'Nenhuma posição recebida'}</div></div>
                   <span className={`ml-auto shrink-0 text-[9px] font-black uppercase tracking-widest ${success ? 'text-emerald-500' : failed ? 'text-red-500' : 'text-zinc-400'}`}>{statusLabel[item.status]}</span>
                 </div>;
               })}

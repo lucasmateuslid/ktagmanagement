@@ -4,6 +4,9 @@ export type KtagKeyedItem = { hashedAdvKey: string };
 
 export const normalizeKtagSerial = (value: unknown) => String(value || '').trim();
 
+export const shouldSyncKtagKeys = (item: { hashedAdvKey: string; privateKey: string; syncedAt?: number }, now = Date.now()) =>
+  !item.hashedAdvKey || !item.privateKey || !item.syncedAt || now - item.syncedAt >= 24 * 60 * 60_000;
+
 /** Chaves duplicadas não identificam um equipamento de forma inequívoca. */
 export function duplicateKtagKeys(items: KtagKeyedItem[]) {
   const seen = new Set<string>(); const duplicates = new Set<string>();

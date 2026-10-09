@@ -19,7 +19,8 @@ export const toTrackedPosition = (position: TraccarPosition, address?: string | 
   id: position.id, deviceId: position.deviceId, latitude: position.latitude, longitude: position.longitude,
   altitude: position.altitude, speed: position.speed, course: position.course,
   accuracy: typeof position.attributes?.accuracy === 'number' ? position.attributes.accuracy : undefined,
-  valid: position.valid, address: address ?? position.address ?? null, deviceTime: position.deviceTime,
+  valid: position.valid, address: address ?? position.address ?? null,
+  addressResolutionProvider: position.address ? 'traccar' : null, deviceTime: position.deviceTime,
   fixTime: position.fixTime, serverTime: position.serverTime, attributes: position.attributes,
 });
 

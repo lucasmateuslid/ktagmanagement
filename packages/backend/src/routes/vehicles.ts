@@ -5,6 +5,7 @@ import { createHmac } from 'node:crypto';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { traccarClient } from '../services/traccarClient.js';
+import { canPromoteVehiclePosition, validPosition } from '../services/currentPosition.js';
 import { xadTagService } from '../services/xadtagService.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { HistoryRequestError, trackingHistoryService } from '../services/trackingHistoryService.js';
@@ -22,7 +23,7 @@ const tenantId = (req: any) => {
   return value;
 };
 const normalizeSearch = normalizeVehicleSearch;
-const defined = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+const defined = <T extends Record<string, unknown>>(value: T): T => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 const vehicleDto = (tenant: string, doc: FirebaseFirestore.DocumentSnapshot) => {
   const value = doc.data() || {};
   return { id: doc.id, ...value, plate: decryptTenantValue(tenant, value.plate), chassis: value.chassis ? decryptTenantValue(tenant, value.chassis) : undefined };
@@ -215,7 +216,7 @@ vehiclesRouter.post('/', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', '
     const ref = adminDb.doc(`tenants/${tid}/vehicles/${id}`); if ((await ref.get()).exists) return res.status(409).json({ ok: false, error: 'Veículo já cadastrado.' });
     const client = await adminDb.doc(`tenants/${tid}/clients/${clientId}`).get();
     const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
-    const data = defined({ ...body, id: undefined, tagId: undefined, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : undefined, searchNgrams, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now(), updatedBy: req.authUser!.uid });
+    const data = defined({ ...body, id: undefined, tagId: undefined, trackerId: undefined, clientBlockingAllowed: undefined, activeTrackingAssignmentId: undefined, trackingLinkedAt: undefined, lastPosition: undefined, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : undefined, searchNgrams, createdAt: Number(body.createdAt) || Date.now(), updatedAt: Date.now(), updatedBy: req.authUser!.uid });
     await ref.create(data); await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'CREATE', entity: 'Vehicle', entityId: id, timestamp: FieldValue.serverTimestamp() });
     invalidateVehicleCache(tid);
     res.status(201).json({ ok: true, data: vehicleDto(tid, await ref.get()) });
@@ -226,11 +227,11 @@ vehiclesRouter.put('/:vehicleId', requirePermission('ACTION_VEHICLES_MANAGE', ['
   try {
     const tid = tenantId(req); const ref = adminDb.doc(`tenants/${tid}/vehicles/${req.params.vehicleId}`); const current = await ref.get();
     if (!current.exists) return res.status(404).json({ ok: false, error: 'Veículo não encontrado.' });
-    const body = req.body || {}; const plate = String(body.plate || decryptTenantValue(tid, current.get('plate'))).trim().toUpperCase(); const model = String(body.model || current.get('model') || '').trim(); const clientId = String(body.clientId || current.get('clientId') || '');
+    const body = req.body || {}; const plate = String(body.plate || decryptTenantValue(tid, current.get('plate'))).trim().toUpperCase(); const model = String(body.model || current.get('model') || '').trim(); const clientId = body.clientId !== undefined ? String(body.clientId || '') : String(current.get('clientId') || '');
     const client = await adminDb.doc(`tenants/${tid}/clients/${clientId}`).get();
     const searchNgrams = buildVehicleSearchNgrams(tid, [plate, model, client.exists ? decryptTenantValue(tid, client.get('name')) : '']);
-    const protectedFields = new Set(['id', 'tagId', 'activeTrackingAssignmentId', 'lastPosition', 'createdAt']); const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => !protectedFields.has(key) && value !== undefined));
-    await ref.update(defined({ ...changes, plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : body.chassis === '' ? FieldValue.delete() : undefined, searchNgrams, updatedAt: Date.now(), updatedBy: req.authUser!.uid }));
+    const protectedFields = new Set(['id', 'tagId', 'trackerId', 'clientBlockingAllowed', 'activeTrackingAssignmentId', 'trackingLinkedAt', 'lastPosition', 'createdAt']); const changes = Object.fromEntries(Object.entries(body).filter(([key, value]) => !protectedFields.has(key) && value !== undefined));
+    await ref.update(defined({ ...changes, clientId: clientId || FieldValue.delete(), ...(clientId !== String(current.get('clientId') || '') ? { clientBlockingAllowed: false } : {}), plate: encryptTenantValue(tid, plate), chassis: body.chassis ? encryptTenantValue(tid, body.chassis) : body.chassis === '' ? FieldValue.delete() : undefined, searchNgrams, updatedAt: Date.now(), updatedBy: req.authUser!.uid }));
     invalidateVehicleCache(tid);
     await adminDb.collection(`tenants/${tid}/audit_logs`).add({ userId: req.authUser!.uid, action: 'UPDATE', entity: 'Vehicle', entityId: ref.id, timestamp: FieldValue.serverTimestamp() });
     res.json({ ok: true, data: vehicleDto(tid, await ref.get()) });
@@ -242,6 +243,7 @@ vehiclesRouter.delete('/:vehicleId', requirePermission('ACTION_VEHICLES_MANAGE',
     const tid = tenantId(req); const vehicleRef = adminDb.doc(`tenants/${tid}/vehicles/${req.params.vehicleId}`); const now = Date.now();
     await adminDb.runTransaction(async tx => {
       const vehicle = await tx.get(vehicleRef); if (!vehicle.exists) throw Object.assign(new Error('Veículo não encontrado.'), { status: 404 });
+      if (vehicle.get('trackerId')) throw Object.assign(new Error('Desvincule o rastreador antes de excluir o veículo.'), { status: 409 });
       const tagId = String(vehicle.get('tagId') || ''); const tagRef = tagId ? adminDb.doc(`tenants/${tid}/tags/${tagId}`) : null; const tag = tagRef ? await tx.get(tagRef) : null;
       const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || tag?.get('activeTrackingAssignmentId') || ''); const assignmentRef = assignmentId ? adminDb.doc(`tenants/${tid}/tracking_assignments/${assignmentId}`) : null; const assignment = assignmentRef ? await tx.get(assignmentRef) : null;
       if (assignment?.exists && assignment.get('endedAt') === null) tx.update(assignment.ref, { endedAt: now, endedBy: req.authUser!.uid, endReason: 'vehicle_deleted' });
@@ -274,8 +276,8 @@ vehiclesRouter.put('/:vehicleId/tag', requirePermission('ACTION_VEHICLES_MANAGE'
       if (previousTag?.exists) tx.update(previousTag.ref, { status: 'disponível', linkedEntityType: null, linkedEntityId: null, linkedEntityName: null, linkedAt: null, linkedBy: null, activeTrackingAssignmentId: null, updatedAt: now });
       const assignmentRef = adminDb.collection(`tenants/${tid}/tracking_assignments`).doc();
       tx.set(assignmentRef, { tenantId: tid, tagId, vehicleId, startedAt: now, endedAt: null, startedBy: req.authUser!.uid, endedBy: null, endReason: null, startEstimated: false });
-      const newPosition = tag.get('lastPosition');
-      tx.update(vehicleRef, { tagId, activeTrackingAssignmentId: assignmentRef.id, updatedAt: now, updatedBy: req.authUser!.uid, ...(newPosition ? { lastPosition: { ...newPosition, tagId } } : { lastPosition: FieldValue.delete() }) });
+      tx.update(vehicleRef, { tagId, installationType: vehicle.get('trackerId') ? 'tag_tracker' : 'tag_only', activeTrackingAssignmentId: assignmentRef.id,
+        trackingLinkedAt: now, lastPosition: FieldValue.delete(), updatedAt: now, updatedBy: req.authUser!.uid });
       tx.update(tagRef, { status: 'em_uso', linkedEntityType: 'vehicle', linkedEntityId: vehicleId, linkedEntityName: plate, linkedAt: now, linkedBy: req.authUser!.uid, activeTrackingAssignmentId: assignmentRef.id, updatedAt: now });
       tx.set(auditRef, { userId: req.authUser!.uid, tenantId: tid, action: 'LINK', entity: 'VehicleTag', entityId: vehicleId, tagId, previousTagId: previousTagId || null, timestamp: FieldValue.serverTimestamp() });
     });
@@ -293,7 +295,7 @@ vehiclesRouter.delete('/:vehicleId/tag', requirePermission('ACTION_VEHICLES_MANA
       const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || tag?.get('activeTrackingAssignmentId') || '');
       const assignment = assignmentId ? await tx.get(adminDb.doc(`tenants/${tid}/tracking_assignments/${assignmentId}`)) : null;
       if (assignment?.exists && assignment.get('endedAt') === null) tx.update(assignment.ref, { endedAt: now, endedBy: req.authUser!.uid, endReason: reason });
-      tx.update(vehicleRef, { tagId: FieldValue.delete(), activeTrackingAssignmentId: null, lastPosition: FieldValue.delete(), updatedAt: now, updatedBy: req.authUser!.uid });
+      tx.update(vehicleRef, { tagId: FieldValue.delete(), installationType: vehicle.get('trackerId') ? 'tracker_only' : 'tag_only', activeTrackingAssignmentId: null, trackingLinkedAt: FieldValue.delete(), lastPosition: FieldValue.delete(), updatedAt: now, updatedBy: req.authUser!.uid });
       if (tag?.exists) tx.update(tag.ref, { status: 'disponível', linkedEntityType: null, linkedEntityId: null, linkedEntityName: null, linkedAt: null, linkedBy: null, activeTrackingAssignmentId: null, updatedAt: now });
       tx.set(auditRef, { userId: req.authUser!.uid, tenantId: tid, action: 'UNLINK', entity: 'VehicleTag', entityId: req.params.vehicleId, tagId: tagId || null, reason, timestamp: FieldValue.serverTimestamp() });
     });
@@ -327,14 +329,53 @@ const historyLimiter = rateLimit({
 
 vehiclesRouter.get('/:vehicleId/position', async (req, res) => {
   try {
-    const { tid, doc } = await authorizedVehicle(req); const tagId = String(doc.get('tagId') || ''); if (!tagId) return res.status(409).json({ ok: false, error: 'Veículo sem tag vinculada.' });
+    const { tid, doc } = await authorizedVehicle(req);
+    const trackerId = String(doc.get('trackerId') || '');
+    if (trackerId) {
+      const tracker = await adminDb.doc(`tenants/${tid}/trackers/${trackerId}`).get();
+      const deviceId = tracker.get('traccarDeviceId');
+      if (tracker.exists && tracker.get('vehicleId') === doc.id && Number.isInteger(deviceId)) {
+        try {
+          const raw = await traccarClient.getLatestPositionForDevice(deviceId);
+          if (raw && raw.deviceId === deviceId && raw.valid !== false) {
+            const point = defined(toLocation(doc.id, `tracker:${trackerId}`, 'traccar', raw));
+            if (validPosition(point as any)) {
+              const updated = await adminDb.runTransaction(async tx => {
+                const [freshTracker, freshVehicle] = await Promise.all([tx.get(tracker.ref), tx.get(doc.ref)]);
+                if (freshTracker.get('traccarDeviceId') !== deviceId || freshTracker.get('vehicleId') !== doc.id || freshVehicle.get('trackerId') !== trackerId
+                  || Number(point.timestamp) <= Number(freshTracker.get('lastPosition.timestamp') || 0)) return false;
+                tx.update(tracker.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
+                if (canPromoteVehiclePosition(freshVehicle.get('tagId'), freshVehicle.get('trackerId'), point as any, freshVehicle.get('lastPosition')))
+                  tx.update(doc.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
+                return true;
+              });
+              const previous = tracker.get('lastPosition');
+              const current = !updated && previous?.tagId === `tracker:${trackerId}` && previous?.vehicleId === doc.id
+                && validPosition(previous) && previous.timestamp > point.timestamp ? previous : point;
+              return res.set('Cache-Control', 'no-store').json({ ok: true, data: { ...current, status: updated ? 'updated' : 'unchanged', degraded: false } });
+            }
+          }
+          const previous = tracker.get('lastPosition');
+          if (previous?.tagId === `tracker:${trackerId}` && previous?.vehicleId === doc.id && validPosition(previous))
+            return res.set('Cache-Control', 'no-store').json({ ok: true, data: { ...previous, status: 'no_response', degraded: true, error: 'Rastreador sem nova resposta; exibindo a última posição conhecida.' } });
+          return res.status(404).json({ ok: false, error: 'Rastreador sem posição válida no Traccar.', errorCode: 'POSITION_NOT_FOUND' });
+        } catch (error) {
+          const previous = tracker.get('lastPosition');
+          if (previous?.tagId === `tracker:${trackerId}` && previous?.vehicleId === doc.id && validPosition(previous))
+            return res.set('Cache-Control', 'no-store').json({ ok: true, data: { ...previous, status: 'error', degraded: true, error: 'Traccar indisponível; exibindo a última posição conhecida.' } });
+          throw error;
+        }
+      }
+    }
+    const tagId = String(doc.get('tagId') || ''); if (!tagId) return res.status(409).json({ ok: false, error: 'Veículo sem equipamento com posição.' });
     const tag = await adminDb.doc(`tenants/${tid}/tags/${tagId}`).get(); if (!tag.exists || tag.get('type') !== 'XADTAG') return res.status(422).json({ ok: false, error: 'A tag vinculada não é XADTAG.' });
     const deviceId = tag.get('traccarDeviceId'); if (!Number.isInteger(deviceId)) return res.status(409).json({ ok: false, error: 'XADTAG sem traccarDeviceId válido.' });
     try {
-      const tracked = await coalescedPosition(`${tid}:${deviceId}`, async () => { const raw = await traccarClient.getLatestPositionForDevice(deviceId); if (!raw) throw new Error('POSITION_NOT_FOUND'); return xadTagService.resolvePosition(raw); });
-      const point = toLocation(doc.id, tagId, 'traccar', tracked);
+      const tracked = await coalescedPosition(`${tid}:${deviceId}`, async () => { const raw = await traccarClient.getLatestPositionForDevice(deviceId); if (!raw || raw.deviceId !== deviceId || raw.valid === false) throw new Error('POSITION_NOT_FOUND'); return xadTagService.resolvePosition(raw); });
+      const point = defined(toLocation(doc.id, tagId, 'traccar', tracked));
       await xadTagRepository.persistPosition({ id: tag.id, ...tag.data() } as any, tracked);
-      await adminDb.runTransaction(async tx => { const current = await tx.get(doc.ref); if (point.timestamp > Number(current.get('lastPosition.timestamp') || 0)) tx.update(doc.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() }); });
+      if (!validPosition(point)) throw new Error('Traccar retornou posição inválida.');
+      await adminDb.runTransaction(async tx => { const current = await tx.get(doc.ref); if (canPromoteVehiclePosition(current.get('tagId'), current.get('trackerId'), point, current.get('lastPosition'))) tx.update(doc.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() }); });
       res.json({ ok: true, data: { ...point, degraded: false, errorCode: null } });
     } catch (error) {
       const fallback = doc.get('lastPosition'); if (fallback && fallback.tagId === tagId) return res.json({ ok: true, data: { ...fallback, degraded: true, provider: 'traccar', errorCode: 'TRACCAR_UNAVAILABLE' } });

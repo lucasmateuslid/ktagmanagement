@@ -68,6 +68,8 @@ async function main() {
   await seed('tenants/empresaA/tracking_assignments/assignmentA', { tagId: 't1', vehicleId: 'vehicleA', startedAt: Date.now() });
   await seed('tenants/empresaA/job_leases/history', { expiresAt: Date.now() + 60_000 });
   await seed('tenants/empresaA/trackers/860000000000001', { id: '860000000000001', imei: '860000000000001' });
+  await seed('tenants/empresaA/blocking_operations/vehicleA', { status: 'sent' });
+  await seed('tracker_blocking_profiles/suntech-st340u', { approved: true });
   await seed('tenants/empresaA/stolen_records/caseA', { vehicleId: 'vehicleA', trackingToken: 'SECRET_TOKEN' });
   await seed('tracker_models/suntech-st340u', { manufacturer: 'Suntech', name: 'ST340U', active: true });
   await seed('tenants/empresaB', { id: 'empresaB', name: 'Empresa B', active: true });
@@ -146,7 +148,7 @@ async function main() {
   await check('cliente NÃO lê veículo de outro cliente',
     assertFails(getDoc(doc(clientDb, 'tenants/empresaA/vehicles/vehicleB'))));
   await check('cliente lista somente veículos com clientId próprio quando filtra a query',
-    assertSucceeds(getDocs(query(collection(clientDb, 'tenants/empresaA/vehicles'), where('clientId', '==', 'clientA'))))));
+    assertSucceeds(getDocs(query(collection(clientDb, 'tenants/empresaA/vehicles'), where('clientId', '==', 'clientA')))));
   await check('cliente NÃO altera nem o próprio veículo',
     assertFails(updateDoc(doc(clientDb, 'tenants/empresaA/vehicles/vehicleA'), { plate: 'XXX9X99' })));
   await check('cliente NÃO lê cadastro de clientes',
@@ -157,6 +159,16 @@ async function main() {
     assertFails(getDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000001'))));
   await check('cliente NÃO grava rastreadores diretamente',
     assertFails(setDoc(doc(clientDb, 'tenants/empresaA/trackers/860000000000002'), { imei: '860000000000002' })));
+  await check('admin NÃO altera vínculo nem autorização de bloqueio pelo SDK',
+    Promise.all([
+      assertFails(updateDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/vehicles/vehicleA'), { trackerId: '860000000000001' })),
+      assertFails(updateDoc(doc(asUser('uidAdminA'), 'tenants/empresaA/vehicles/vehicleA'), { clientBlockingAllowed: true })),
+    ]));
+  await check('cliente NÃO lê operações de bloqueio e admin NÃO muda perfis diretamente',
+    Promise.all([
+      assertFails(getDoc(doc(clientDb, 'tenants/empresaA/blocking_operations/vehicleA'))),
+      assertFails(updateDoc(doc(asUser('uidAdminA'), 'tracker_blocking_profiles/suntech-st340u'), { approved: false })),
+    ]));
   await check('cliente NÃO lê histórico interno diretamente',
     assertFails(getDoc(doc(clientDb, 'tenants/empresaA/tag_history/pointA'))));
   await check('admin NÃO lê histórico interno diretamente',

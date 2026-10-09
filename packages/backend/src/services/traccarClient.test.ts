@@ -32,3 +32,13 @@ test('aplica timeout e mensagem sanitizada', async () => {
   const client = new TraccarClient({ ...config, requestTimeoutMs: 5 }, ((_input, init) => new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))) as typeof fetch);
   await assert.rejects(() => client.health(), /Tempo limite/);
 });
+test('envia comando somente pelo canal GPRS e proíbe fila offline', async () => {
+  let request: RequestInit | undefined;
+  const client = new TraccarClient(config, (async (_input, init) => { request = init; return new Response('{}', { headers: { 'content-type': 'application/json' } }); }) as typeof fetch);
+  await client.sendCommand(42, 'engineStop', { output: 1 });
+  assert.deepEqual(JSON.parse(String(request?.body)), { deviceId: 42, type: 'engineStop', textChannel: false, attributes: { output: 1, noQueue: true } });
+});
+test('recusa resposta de comando enfileirado', async () => {
+  const client = new TraccarClient(config, (async () => new Response('{}', { status: 202, headers: { 'content-type': 'application/json' } })) as typeof fetch);
+  await assert.rejects(() => client.sendCommand(42, 'engineStop'), /enfileirou/);
+});

@@ -26,6 +26,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
     const leased = vehicles.filter(v => v.ownershipStatus === 'leased').length;
     const purchased = vehicles.filter(v => v.ownershipStatus === 'purchased').length;
     const tagOnly = vehicles.filter(v => v.installationType === 'tag_only').length;
+    const trackerOnly = vehicles.filter(v => v.installationType === 'tracker_only').length;
     const tagTracker = vehicles.filter(v => v.installationType === 'tag_tracker').length;
 
     const byCompany = companies.map(company => {
@@ -37,6 +38,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         leased: companyVehicles.filter(v => v.ownershipStatus === 'leased').length,
         purchased: companyVehicles.filter(v => v.ownershipStatus === 'purchased').length,
         tagOnly: companyVehicles.filter(v => v.installationType === 'tag_only').length,
+        trackerOnly: companyVehicles.filter(v => v.installationType === 'tracker_only').length,
         tagTracker: companyVehicles.filter(v => v.installationType === 'tag_tracker').length,
       };
     }).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
@@ -48,11 +50,12 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         total: respVehicles.length,
         active: respVehicles.filter(v => v.status === 'active').length,
         tagOnly: respVehicles.filter(v => v.installationType === 'tag_only').length,
+        trackerOnly: respVehicles.filter(v => v.installationType === 'tracker_only').length,
         tagTracker: respVehicles.filter(v => v.installationType === 'tag_tracker').length,
       };
     }).sort((a, b) => b.total - a.total);
 
-    return { total, active, leased, purchased, tagOnly, tagTracker, byCompany, byResponsible };
+    return { total, active, leased, purchased, tagOnly, trackerOnly, tagTracker, byCompany, byResponsible };
   }, [vehicles, companies]);
 
   const handleExportPDF = () => {
@@ -74,6 +77,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         ['Em Comodato', stats.leased],
         ['Adquiridos', stats.purchased],
         ['Apenas Tag', stats.tagOnly],
+        ['Apenas Rastreador', stats.trackerOnly],
         ['Tag + Rastreador', stats.tagTracker],
       ],
       theme: 'striped',
@@ -86,9 +90,9 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Regional', 'Total', 'Ativos', 'Comodato', 'Adquirido', 'Tag', 'Tag+Rast']],
+      head: [['Regional', 'Total', 'Ativos', 'Comodato', 'Adquirido', 'Tag', 'Rast', 'Tag+Rast']],
       body: stats.byCompany.map(c => [
-        c.name, c.total, c.active, c.leased, c.purchased, c.tagOnly, c.tagTracker
+        c.name, c.total, c.active, c.leased, c.purchased, c.tagOnly, c.trackerOnly, c.tagTracker
       ]),
       theme: 'grid',
       headStyles: { fillColor: [0, 110, 130] }
@@ -100,9 +104,9 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Responsável', 'Total', 'Ativos', 'Tag', 'Tag+Rast']],
+      head: [['Responsável', 'Total', 'Ativos', 'Tag', 'Rast', 'Tag+Rast']],
       body: stats.byResponsible.map(r => [
-        r.name, r.total, r.active, r.tagOnly, r.tagTracker
+        r.name, r.total, r.active, r.tagOnly, r.trackerOnly, r.tagTracker
       ]),
       theme: 'grid',
       headStyles: { fillColor: [0, 110, 130] }
@@ -124,18 +128,19 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
       ['Em Comodato', stats.leased],
       ['Adquiridos', stats.purchased],
       ['Apenas Tag', stats.tagOnly],
+      ['Apenas Rastreador', stats.trackerOnly],
       ['Tag + Rastreador', stats.tagTracker],
       [],
       ['DISTRIBUIÇÃO POR RESPONSÁVEL (REGIONAL)'],
-      ['Regional', 'Total', 'Ativos', 'Comodato', 'Adquirido', 'Apenas Tag', 'Tag + Rastreador'],
+      ['Regional', 'Total', 'Ativos', 'Comodato', 'Adquirido', 'Apenas Tag', 'Apenas Rastreador', 'Tag + Rastreador'],
       ...stats.byCompany.map(c => [
-        c.name, c.total, c.active, c.leased, c.purchased, c.tagOnly, c.tagTracker
+        c.name, c.total, c.active, c.leased, c.purchased, c.tagOnly, c.trackerOnly, c.tagTracker
       ]),
       [],
       ['DISTRIBUIÇÃO POR RESPONSÁVEL (CADASTRO)'],
-      ['Responsável', 'Total', 'Ativos', 'Apenas Tag', 'Tag + Rastreador'],
+      ['Responsável', 'Total', 'Ativos', 'Apenas Tag', 'Apenas Rastreador', 'Tag + Rastreador'],
       ...stats.byResponsible.map(r => [
-        r.name, r.total, r.active, r.tagOnly, r.tagTracker
+        r.name, r.total, r.active, r.tagOnly, r.trackerOnly, r.tagTracker
       ])
     ];
 
@@ -196,12 +201,13 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         {/* Content */}
         <div className="modal-card-body p-4 md:p-6 space-y-6 custom-scrollbar">
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             <KPICard icon={<Car size={16}/>} label="Total" value={stats.total} color="zinc" />
             <KPICard icon={<ShieldCheck size={16}/>} label="Ativos" value={stats.active} color="emerald" />
             <KPICard icon={<CreditCard size={16}/>} label="Comodato" value={stats.leased} color="blue" />
             <KPICard icon={<Building2 size={16}/>} label="Adquiridos" value={stats.purchased} color="purple" />
             <KPICard icon={<TagIcon size={16}/>} label="Apenas Tag" value={stats.tagOnly} color="amber" />
+            <KPICard icon={<Activity size={16}/>} label="Só Rastreador" value={stats.trackerOnly} color="blue" />
             <KPICard icon={<Activity size={16}/>} label="Tag+Rast" value={stats.tagTracker} color="primary" />
           </div>
 
@@ -223,6 +229,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Comodato</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Adquirido</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag</th>
+                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Rast</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag+Rast</th>
                     </tr>
                   </thead>
@@ -235,6 +242,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-blue-500">{c.leased}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-purple-500">{c.purchased}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-amber-500">{c.tagOnly}</td>
+                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-sky-500">{c.trackerOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{c.tagTracker}</td>
                       </tr>
                     ))}
@@ -260,6 +268,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Total</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Ativos</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag</th>
+                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Rast</th>
                       <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag+Rast</th>
                     </tr>
                   </thead>
@@ -270,6 +279,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs">{r.total}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-emerald-500">{r.active}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-amber-500">{r.tagOnly}</td>
+                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-sky-500">{r.trackerOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{r.tagTracker}</td>
                       </tr>
                     ))}

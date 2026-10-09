@@ -53,7 +53,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ── Gate: type-check obrigatório antes de qualquer deploy ─────────────────
+  # ── Gate: validação obrigatória antes de qualquer deploy ───────────────────
   lint:
     name: Type-check
     runs-on: ubuntu-latest
@@ -70,6 +70,10 @@ jobs:
         run: npm run lint || true
       - name: Testes do backend
         run: npm test --workspace=@ktag/backend
+      - name: Testes do frontend
+        run: npm test --workspace=@ktag/web
+      - name: Build do frontend
+        run: npm run build
 
   # ── Pre-flight: valida os secrets do ambiente escolhido ──────────────────
   # NÃO emite job outputs com valores de secret: o GitHub redacta (zera) qualquer
@@ -166,8 +170,8 @@ jobs:
   # ── VPS: build → GHCR → deploy por SSH (somente produção) ────────────────
   deploy-vps:
     name: VPS
-    needs: resolve-env
-    if: ${{ inputs.environment == 'production' && (inputs.target == 'all' || inputs.target == 'vps') }}
+    needs: [resolve-env, deploy-firestore]
+    if: ${{ !cancelled() && needs.resolve-env.result == 'success' && (inputs.target != 'all' || needs.deploy-firestore.result == 'success') && inputs.environment == 'production' && (inputs.target == 'all' || inputs.target == 'vps') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -295,8 +299,8 @@ jobs:
   # ── Cloud Run: build → push → deploy ──────────────────────────────────────
   deploy-cloud-run:
     name: Cloud Run
-    needs: resolve-env
-    if: ${{ vars.KTAG_DEPLOY_CLOUD_RUN != 'false' && (inputs.target == 'all' || inputs.target == 'cloud-run') }}
+    needs: [resolve-env, deploy-firestore]
+    if: ${{ !cancelled() && needs.resolve-env.result == 'success' && (inputs.target != 'all' || needs.deploy-firestore.result == 'success') && vars.KTAG_DEPLOY_CLOUD_RUN != 'false' && (inputs.target == 'all' || inputs.target == 'cloud-run') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -418,8 +422,8 @@ jobs:
   # ── Firebase Functions ────────────────────────────────────────────────────
   deploy-functions:
     name: Firebase Functions
-    needs: resolve-env
-    if: ${{ inputs.target == 'all' || inputs.target == 'functions' }}
+    needs: [resolve-env, deploy-firestore]
+    if: ${{ !cancelled() && needs.resolve-env.result == 'success' && (inputs.target != 'all' || needs.deploy-firestore.result == 'success') && (inputs.target == 'all' || inputs.target == 'functions') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

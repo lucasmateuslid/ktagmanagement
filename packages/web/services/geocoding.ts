@@ -2,7 +2,7 @@ import { storage } from './storage';
 import { activeTenant } from './activeTenant';
 import { authenticatedFetch } from './authenticatedFetch';
 
-const cacheStorageKey = () => `ktag_${activeTenant.isReady() ? activeTenant.id : 'pretenant'}_geocode_cache_v2`;
+const cacheStorageKey = () => `ktag_${activeTenant.isReady() ? activeTenant.id : 'pretenant'}_geocode_cache_v3`;
 const CACHE_EXPIRATION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 

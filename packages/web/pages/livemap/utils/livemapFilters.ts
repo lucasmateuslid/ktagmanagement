@@ -1,6 +1,7 @@
 
 import { Vehicle, Tag, Client, LocationHistory, User } from '../../../types';
 import { normalizeDigits, normalizePhone } from '@ktag/shared';
+import { hasRecentVehiclePosition, vehicleDisplayTagId, vehicleEquipmentKind, type EquipmentFilter } from './vehicleTracking';
 
 type FleetFilter = 'all' | 'online' | 'offline';
 
@@ -29,9 +30,9 @@ export const filterFleetList = (
     if (!term) {
         // Se não tem busca, retorna apenas veículos (comportamento padrão)
         // Aplicando filtros de online/offline apenas em veículos
-        let base = vehicles.filter(v => v.tagId);
-        if (filter === 'online') base = base.filter(v => fleetLocations.some(l => l.tagId === v.tagId));
-        if (filter === 'offline') base = base.filter(v => !fleetLocations.some(l => l.tagId === v.tagId));
+        let base = vehicles.filter(v => v.tagId || v.trackerId);
+        if (filter === 'online') base = base.filter(v => hasRecentVehiclePosition(v, fleetLocations));
+        if (filter === 'offline') base = base.filter(v => !hasRecentVehiclePosition(v, fleetLocations));
         return base;
     }
 
@@ -39,7 +40,7 @@ export const filterFleetList = (
     
     // 1. Veículos
     const matchingVehicles = vehicles.filter(v => {
-        if (!v.tagId) return false;
+        if (!v.tagId && !v.trackerId) return false;
         
         if (user?.role === 'client') {
             return v.plate.toLowerCase().includes(term);
@@ -51,6 +52,7 @@ export const filterFleetList = (
         return (
             v.plate.toLowerCase().includes(term) ||
             v.model.toLowerCase().includes(term) ||
+            (v.trackerId && digitTerm.length > 0 && v.trackerId.includes(digitTerm)) ||
             (tag && (tag.name.toLowerCase().includes(term) || tag.accessoryId.toLowerCase().includes(term))) ||
             (client && (
                 client.name.toLowerCase().includes(term) ||
@@ -85,7 +87,8 @@ export const filterLocationsToRender = (
     selectedTagId: string,
     filter: FleetFilter,
     displayLimit: number | 'all', // Atualizado de limit50
-    vehicles: Vehicle[]
+    vehicles: Vehicle[],
+    equipmentFilter: EquipmentFilter = 'all'
 ) => {
     if (selectedTagId) {
         return fleetLocations.filter(l => l.tagId === selectedTagId && hasValidCoordinates(l));
@@ -94,10 +97,17 @@ export const filterLocationsToRender = (
     // Se não tem nada selecionado, mostra frota
     // Filtra para remover tags soltas que não estão selecionadas, a menos que sejam XADTAG (que podem ser usadas soltas)
     // Para simplificar, vamos mostrar todas as tags que têm localização ativa, já que não temos tantos.
-    const activeVehicleTagIds = new Set(vehicles.map(v => v.tagId));
-    
-    // Mostra todas as localizações que têm tagId
-    const base = fleetLocations.filter(l => l.tagId && hasValidCoordinates(l));
+    const preferredByVehicle = new Map(vehicles.map(vehicle => [vehicle.id, vehicleDisplayTagId(vehicle, fleetLocations)]));
+    const vehicleByEquipment = new Map(vehicles.flatMap(vehicle => [vehicle.tagId, vehicle.trackerId ? `tracker:${vehicle.trackerId}` : ''].filter(Boolean).map(id => [id, vehicle.id] as const)));
+    // Exibe a fonte mais recente por veículo; o histórico continua com ambas.
+    const base = fleetLocations.filter(location => {
+        if (!location.tagId || !hasValidCoordinates(location)) return false;
+        const vehicleId = location.vehicleId || vehicleByEquipment.get(location.tagId);
+        if (vehicleId && preferredByVehicle.get(vehicleId) !== location.tagId) return false;
+        if (equipmentFilter === 'all') return true;
+        const vehicle = vehicles.find(item => item.id === vehicleId);
+        return vehicle ? vehicleEquipmentKind(vehicle) === equipmentFilter : equipmentFilter === 'tag';
+    });
 
     // Se filter === 'online', já está implícito pois fleetLocations são os onlines
     

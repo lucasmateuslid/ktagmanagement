@@ -27,19 +27,48 @@ for (const account of accounts) {
 
 const batch = db.batch();
 const put = (path, data) => batch.set(db.doc(path), data, { merge: true });
+const seededAt = Date.now();
+const demoPosition = {
+  id: `demo-position-${seededAt}`,
+  tagId: 'ktag-demo-local',
+  vehicleId: 'veiculo-a',
+  provider: 'ktag',
+  timestamp: seededAt,
+  isodatetime: new Date(seededAt).toISOString(),
+  lat: -5.744865,
+  lon: -35.264398,
+  conf: 100,
+  status: 1,
+  address: 'Posição demonstrativa local — Avenida Cidade Praia, Natal, RN',
+};
 put('system_admins/superadmin-local', { uid: 'superadmin-local', email: 'superadmin@local.test' });
 put('tenants/empresa-a', { id: 'empresa-a', slug: 'empresa-a', name: 'Empresa A', active: true, settings: { features: ['trackers', 'scheduling', 'shipments'] } });
 put('tenants/empresa-b', { id: 'empresa-b', slug: 'empresa-b', name: 'Empresa B', active: true, settings: { features: [] } });
+put('tenants/empresa-a/public_settings/meta', { name: 'Empresa A', active: true, plan: 'basic' });
+put('tenants/empresa-b/public_settings/meta', { name: 'Empresa B', active: true, plan: 'basic' });
 for (const account of accounts.filter(item => item.tenantId)) {
   put(`tenants/${account.tenantId}/users/${account.uid}`, { id: account.uid, email: account.email, tenantId: account.tenantId, role: account.role, status: 'approved', clientId: account.clientId || null, customRoleId: account.customRoleId || null });
   put(`identities/${account.uid}`, { uid: account.uid, email: account.email, isGlobalAdmin: false });
   put(`identities/${account.uid}/memberships/${account.tenantId}`, { uid: account.uid, tenantId: account.tenantId, role: account.role, status: 'approved' });
 }
 put('tenants/empresa-a/custom_roles/operador-rastreadores', { name: 'Operador de rastreadores', permissions: ['ROUTE_ASSETS'] });
-put('tenants/empresa-a/clients/cliente-a', { id: 'cliente-a', name: 'Cliente A' });
-put('tenants/empresa-a/clients/cliente-b', { id: 'cliente-b', name: 'Cliente B' });
-put('tenants/empresa-a/vehicles/veiculo-a', { id: 'veiculo-a', clientId: 'cliente-a', plate: 'AAA0A00' });
-put('tenants/empresa-a/vehicles/veiculo-b', { id: 'veiculo-b', clientId: 'cliente-b', plate: 'BBB0B00' });
+put('tenants/empresa-a/clients/cliente-a', { id: 'cliente-a', name: 'Cliente A', cpf: '', phone: '' });
+put('tenants/empresa-a/clients/cliente-b', { id: 'cliente-b', name: 'Cliente B', cpf: '', phone: '' });
+put('tenants/empresa-a/tags/ktag-demo-local', {
+  id: 'ktag-demo-local', name: 'K-TAG DEMO LOCAL', type: 'K_TAG',
+  accessoryId: 'DEMO-LOCAL', status: 'em_uso', linkedEntityType: 'vehicle',
+  linkedEntityId: 'veiculo-a', linkedEntityName: 'AAA0A00', createdAt: seededAt,
+  lastPosition: demoPosition,
+});
+put('tenants/empresa-a/vehicles/veiculo-a', {
+  id: 'veiculo-a', clientId: 'cliente-a', plate: 'AAA0A00',
+  model: 'Veículo demonstrativo local', type: 'carros', status: 'active',
+  tagId: 'ktag-demo-local', createdAt: seededAt, lastPosition: demoPosition,
+});
+put('tenants/empresa-a/vehicles/veiculo-b', {
+  id: 'veiculo-b', clientId: 'cliente-b', plate: 'BBB0B00',
+  model: 'Veículo sem rastreador', type: 'carros', status: 'active', createdAt: seededAt,
+});
 put('tenants/empresa-a/sim_cards/chip-a', { id: 'chip-a', iccid: '8955000000000000001', phoneNumber: '81999990001', status: 'in_stock' });
 put('tenants/empresa-b/sim_cards/chip-b', { id: 'chip-b', iccid: '8955000000000000002', phoneNumber: '81999990002', status: 'in_stock' });
 await batch.commit();

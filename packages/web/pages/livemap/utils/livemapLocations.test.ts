@@ -1,26 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import type { LocationHistory, Vehicle } from '../../../types';
-import { preferFleetLocation, persistedFleetLocations } from './livemapLocations';
+import { persistedFleetLocations, preferFleetLocation, safeLocationAddress } from './livemapLocations';
+import type { LocationHistory } from '../../../types';
 
-const point = (overrides: Partial<LocationHistory> = {}): LocationHistory => ({ id: 'tag-1', tagId: 'tag-1', lat: -8, lon: -36, conf: 100, status: 1, timestamp: 100, isodatetime: new Date(100).toISOString(), ...overrides });
-
-describe('preferFleetLocation', () => {
-  it('mantém o ponto mais novo', () => expect(preferFleetLocation(point({ timestamp: 200 }), point({ timestamp: 100 }))).toMatchObject({ timestamp: 200 }));
-  it('promove o endereço resolvido mais recentemente no mesmo ponto', () => expect(preferFleetLocation(point({ address: 'Antigo', addressResolvedAt: 100 }), point({ address: 'Novo', addressResolvedAt: 200 }))).toMatchObject({ address: 'Novo' }));
-  it('não deixa uma resposta sem endereço apagar o endereço atual', () => expect(preferFleetLocation(point({ address: 'Atual', addressResolvedAt: 200 }), point())).toMatchObject({ address: 'Atual' }));
-  it('preserva endereço ao receber posição mais nova nas mesmas coordenadas', () => expect(preferFleetLocation(point({ address: 'Atual' }), point({ timestamp: 200 }))).toMatchObject({ timestamp: 200, address: 'Atual' }));
-  it('não reutiliza endereço em coordenadas diferentes', () => expect(preferFleetLocation(point({ address: 'Local antigo' }), point({ timestamp: 200, lat: -9 }))).not.toHaveProperty('address'));
+const point = (overrides: Partial<LocationHistory> = {}): LocationHistory => ({
+  id: 'p1', tagId: 'tag-1', lat: -5.742603, lon: -35.266183,
+  timestamp: 1_800_000_000_000, isodatetime: new Date(1_800_000_000_000).toISOString(),
+  conf: 100, status: 1, provider: 'traccar', ...overrides,
 });
 
-describe('persistedFleetLocations', () => {
-  it('não mostra endereço da tag anterior como localização da tag atual', () => {
-    const vehicles = [{ id: 'vehicle-1', tagId: 'tag-2', lastPosition: point({ tagId: 'tag-1', address: 'Endereço da tag anterior' }) }] as Vehicle[];
-    expect(persistedFleetLocations(vehicles)).toEqual([]);
+describe('endereço do Livemap', () => {
+  it('não mostra endereço público antigo sem validação de distância', () => {
+    expect(safeLocationAddress('Rua errada', 'openstreetmap')).toBeUndefined();
+    expect(safeLocationAddress('Rua validada', 'photon', 1_800_000_000_000)).toBe('Rua validada');
+    expect(safeLocationAddress('Rua do Traccar', 'traccar')).toBe('Rua do Traccar');
   });
-  it('não presume a origem de posições legadas sem tagId', () => {
-    expect(persistedFleetLocations([{ id: 'v', tagId: 'tag-2', lastPosition: point({ tagId: undefined }) }] as Vehicle[])).toEqual([]);
+
+  it('não carrega endereço anterior quando as coordenadas mudam', () => {
+    const old = point({ address: 'Rua A', addressResolutionProvider: 'traccar' });
+    const next = point({ id: 'p2', lat: -5.76, lon: -35.28, timestamp: old.timestamp + 60_000, address: undefined });
+    expect(preferFleetLocation(old, next).address).toBeUndefined();
+    expect(preferFleetLocation(point({ ...old, addressResolutionProvider: 'openstreetmap' }), point({ ...old, address: undefined })).address).toBeUndefined();
   });
-  it('mantém a posição identificada da tag atual', () => {
-    expect(persistedFleetLocations([{ id: 'v', tagId: 'tag-1', lastPosition: point({ address: 'Atual' }) }] as Vehicle[])).toMatchObject([{ tagId: 'tag-1', address: 'Atual' }]);
+
+  it('oculta endereço antigo sem origem em posição K-TAG persistida', () => {
+    const vehicle = { id: 'v1', tagId: 'tag-1', lastPosition: point({ provider: 'ktag', address: 'Endereço antigo' }) };
+    expect(persistedFleetLocations([vehicle as any])[0].address).toBeUndefined();
   });
 });

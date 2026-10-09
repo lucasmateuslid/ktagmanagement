@@ -8,7 +8,7 @@ clientRouter.use(requireAuth, requireRoles('client'));
 
 export const clientFleetVehicleDto = (tenantId: string, id: string, v: Record<string, any>) => ({
   id, type: v.type, plate: decryptTenantValue(tenantId, v.plate), model: v.model, year: v.year,
-  color: v.color, tagId: v.tagId, clientId: v.clientId, status: v.status,
+  color: v.color, tagId: v.tagId, trackerId: v.trackerId, clientId: v.clientId, status: v.status,
   installationType: v.installationType, createdAt: v.createdAt, lastPosition: v.lastPosition,
 });
 

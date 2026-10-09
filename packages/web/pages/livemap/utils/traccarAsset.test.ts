@@ -27,6 +27,16 @@ describe('identidade dos pontos Traccar no LiveMap', () => {
   it('usa o ID persistente do equipamento, inclusive para DTO do cliente', () => {
     expect(traccarAssetLocation(asset({ equipmentId: 'xad-1' }), [{ id: 'xad-1', type: 'XADTAG' }] as Tag[], 'tenant-a')).toMatchObject({ tagId: 'xad-1' });
   });
+  it('aceita rastreador vinculado com identidade e veículo explícitos', () => {
+    expect(traccarAssetLocation(asset({ equipmentType: 'TRACKER', equipmentId: '123456789012345', linkedEntityId: 'vehicle-1' }), [], 'tenant-a')).toMatchObject({ tagId: 'tracker:123456789012345', vehicleId: 'vehicle-1' });
+    expect(traccarAssetLocation(asset({ equipmentType: 'TRACKER', equipmentId: '123456789012345', linkedEntityId: null }), [], 'tenant-a')).toBeNull();
+  });
+  it('aceita K-TAG somente com ID conhecido e vínculo explícito', () => {
+    expect(traccarAssetLocation(asset({ equipmentType: 'K_TAG', equipmentId: 'ktag-1', linkedEntityId: 'vehicle-1' }), tags, 'tenant-a'))
+      .toMatchObject({ tagId: 'ktag-1', vehicleId: 'vehicle-1', provider: 'traccar' });
+    expect(traccarAssetLocation(asset({ equipmentType: 'K_TAG', equipmentId: 'unknown', linkedEntityId: 'vehicle-1' }), tags, 'tenant-a')).toBeNull();
+    expect(traccarAssetLocation(asset({ equipmentType: 'K_TAG', equipmentId: 'ktag-1', linkedEntityId: null }), tags, 'tenant-a')).toBeNull();
+  });
   it('rejeita outro tenant e identificação ambígua', () => {
     expect(traccarAssetLocation(asset({ tenantId: 'other' }), tags, 'tenant-a')).toBeNull();
     expect(traccarAssetLocation(asset(), [...tags, { ...tags[1], id: 'xad-2' }], 'tenant-a')).toBeNull();

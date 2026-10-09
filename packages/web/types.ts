@@ -52,6 +52,7 @@ export interface TenantSettings {
   maxUsers?: number;
   /** Override de módulos liberados por empresa (ids de MODULE_CATALOG). Quando definido, sobrescreve os módulos do plano; quando ausente, a empresa herda os módulos do plano. */
   features?: string[];
+  blockingEnabled?: boolean;
   integrations?: TenantIntegrationFlags;
   /** Limite máximo de tags que este tenant pode cadastrar. 0/undefined = ilimitado. */
   limiteTags?: number;
@@ -487,6 +488,7 @@ export interface LocationHistory {
   address?: string;
   addressResolvedAt?: number;
   addressResolutionProvider?: string | null;
+  addressVerifiedAt?: number | null;
   speed?: number;
   course?: number;
   altitude?: number;
@@ -501,11 +503,12 @@ export interface Vehicle {
   color?: string;
   tagId?: string;
   trackerId?: string;
+  clientBlockingAllowed?: boolean;
   simCardId?: string;
   companyId?: string;
   clientId?: string;
   status?: 'active' | 'stolen' | 'maintenance';
-  installationType?: 'tag_only' | 'tag_tracker';
+  installationType?: 'tag_only' | 'tracker_only' | 'tag_tracker';
   ownershipStatus?: 'leased' | 'purchased'; 
   createdAt: number;
   updatedBy?: string;
