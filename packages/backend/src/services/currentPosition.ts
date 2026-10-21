@@ -32,5 +32,32 @@ export const positionAgeMinutes = (timestamp: number | null | undefined, now = D
 export const afterVehicleLink = (positionTimestamp: number, linkedAt: unknown) =>
   !Number.isFinite(Number(linkedAt)) || Number(linkedAt) <= 0 || positionTimestamp >= Number(linkedAt);
 
+export const distanceBetweenPositionsMeters = (
+  first: Pick<CurrentPosition, 'lat' | 'lon'> | null | undefined,
+  second: Pick<CurrentPosition, 'lat' | 'lon'> | null | undefined,
+) => {
+  if (!first || !second) return Number.POSITIVE_INFINITY;
+  const radius = 6_371_000;
+  const lat1 = first.lat * Math.PI / 180;
+  const lat2 = second.lat * Math.PI / 180;
+  const deltaLat = (second.lat - first.lat) * Math.PI / 180;
+  const deltaLon = (second.lon - first.lon) * Math.PI / 180;
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+export const shouldPersistPosition = (
+  previous: CurrentPosition | null | undefined,
+  next: CurrentPosition,
+  lastPersistAt: number | undefined,
+  now = Date.now(),
+  intervalMs = 300_000,
+  distanceMeters = 30,
+) => !previous
+  || !lastPersistAt
+  || now - lastPersistAt >= intervalMs
+  || distanceBetweenPositionsMeters(previous, next) >= distanceMeters;
+
 export const withoutUndefined = <T extends Record<string, unknown>>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canPromotePosition, canPromoteVehiclePosition, positionAgeMinutes, validPosition } from './currentPosition.js';
+import { canPromotePosition, canPromoteVehiclePosition, distanceBetweenPositionsMeters, positionAgeMinutes, shouldPersistPosition, validPosition } from './currentPosition.js';
 
 const now = 1_800_000_000_000;
 const current = { id: 'p1', tagId: 'tag-a', timestamp: now - 60_000, lat: -8.05, lon: -34.9 };
@@ -25,4 +25,13 @@ test('keeps the newest position when a vehicle has both a tag and a tracker', ()
   assert.equal(canPromoteVehiclePosition('tag-a', 'tracker-a', trackerPoint, current, now), true);
   assert.equal(canPromoteVehiclePosition('tag-a', 'tracker-a', { ...current, tagId: 'tag-b' }, current, now), false);
   assert.equal(canPromoteVehiclePosition('tag-a', 'tracker-a', current, { ...current, tagId: 'old-tag', timestamp: now }, now), true);
+});
+
+test('persists only after the time or distance threshold is reached', () => {
+  const previous = { tagId: 'tag-1', timestamp: 1_000, lat: -8, lon: -35 };
+  const nearby = { ...previous, timestamp: 2_000, lat: -8.00001, lon: -35.00001 };
+  assert.equal(shouldPersistPosition(previous, nearby, 1_000, 2_000, 300_000, 30), false);
+  assert.equal(shouldPersistPosition(previous, nearby, 1_000, 301_000, 300_000, 30), true);
+  assert.ok(Math.abs(distanceBetweenPositionsMeters(previous, { ...previous, lat: -8.001, lon: -35 }) - 111) < 1);
+  assert.equal(shouldPersistPosition(previous, { ...previous, lat: -8.001 }, 1_000, 2_000, 300_000, 30), true);
 });

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { TraccarClient } from './traccarClient.js';
 import type { TraccarConfig } from '../config/traccar.js';
 
-const config: TraccarConfig = { apiUrl: 'https://traccar.test/api', webUrl: 'https://traccar.test', wsUrl: 'wss://traccar.test/api/socket', token: 'secret', requestTimeoutMs: 50, gt06Port: 5023, platformSource: 'KTagFinder', reconnectMinMs: 1, reconnectMaxMs: 10, restFallbackIntervalMs: 10, addressCacheTtlMs: 10, positionCacheTtlMs: 10, positionPersistIntervalMs: 300_000, writeTestEnabled: false };
+const config: TraccarConfig = { apiUrl: 'https://traccar.test/api', webUrl: 'https://traccar.test', wsUrl: 'wss://traccar.test/api/socket', token: 'secret', requestTimeoutMs: 50, gt06Port: 5023, platformSource: 'KTagFinder', reconnectMinMs: 1, reconnectMaxMs: 10, restFallbackIntervalMs: 10, addressCacheTtlMs: 10, positionCacheTtlMs: 10, positionPersistIntervalMs: 300_000, positionPersistDistanceMeters: 30, writeTestEnabled: false };
 test('busca por uniqueId e usa Bearer centralizado', async () => {
   let request: RequestInit | undefined; let url = '';
   const client = new TraccarClient(config, (async (input, init) => { url = String(input); request = init; return new Response(JSON.stringify([{ id: 7, uniqueId: '000007260412520' }]), { status: 200, headers: { 'content-type': 'application/json' } }); }) as typeof fetch);

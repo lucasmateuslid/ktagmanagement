@@ -8,33 +8,74 @@ import { hasValidCoordinates } from '../utils/livemapFilters';
 import { mergeFleetLocations, persistedFleetLocations } from '../utils/livemapLocations';
 
 export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
+  const tenantId = activeTenant.id;
   const [fleetLocations, setFleetLocations] = useState<LocationHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const refreshingRef = useRef(false);
+  const tagsRef = useRef(tags);
+  const vehiclesRef = useRef(vehicles);
 
   useEffect(() => {
-    let disposed = false; let socket: WebSocket | null = null;
+    tagsRef.current = tags;
+    vehiclesRef.current = vehicles;
+  }, [tags, vehicles]);
+
+  useEffect(() => {
+    let disposed = false; let socket: WebSocket | null = null; let fallbackTimer: number | undefined;
     const mergeAsset = (asset: LiveMapTrackedAsset) => {
       if (disposed) return;
-      const location = traccarAssetLocation(asset, tags, activeTenant.id);
+      const currentTags = tagsRef.current;
+      const currentVehicles = vehiclesRef.current;
+      const location = traccarAssetLocation(asset, currentTags, tenantId);
       if (!location || !hasValidCoordinates(location)) return;
-      const vehicle = vehicles.find(item => item.id === location.vehicleId);
+      const vehicle = currentVehicles.find(item => item.id === location.vehicleId);
       if (!vehicle || (location.tagId.startsWith('tracker:')
         ? `tracker:${vehicle.trackerId}` !== location.tagId : vehicle.tagId !== location.tagId)) return;
       setFleetLocations(previous => mergeFleetLocations(previous, [location]));
     };
-    const poll = () => void trackingApi.liveMap().then(items => { if (!disposed) items.forEach(mergeAsset); }).catch(() => undefined);
-    poll(); const interval = window.setInterval(poll, 15_000);
+    const poll = (force = false) => {
+      if (!force && socket?.readyState === WebSocket.OPEN) return;
+      void trackingApi.liveMap().then(items => { if (!disposed) items.forEach(mergeAsset); }).catch(() => undefined);
+    };
+    const startFallback = () => {
+      if (fallbackTimer !== undefined) return;
+      fallbackTimer = window.setInterval(() => poll(), 60_000);
+      poll(true);
+    };
+    const stopFallback = () => {
+      if (fallbackTimer === undefined) return;
+      window.clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    };
+    poll(true);
     void trackingApi.websocket().then(ws => {
       if (disposed) return ws.close(); socket = ws;
-      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (!disposed && message.type === 'remove') setFleetLocations(previous => previous.filter(item => item.provider !== 'traccar' || `xadtag_${tags.find(tag => tag.type === 'XADTAG' && tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
-    }).catch(() => undefined);
-    return () => { disposed = true; window.clearInterval(interval); socket?.close(); };
-  }, [tags, vehicles]);
+      ws.onopen = () => {
+        stopFallback();
+        poll(true);
+      };
+      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (!disposed && message.type === 'remove') setFleetLocations(previous => previous.filter(item => item.provider !== 'traccar' || `xadtag_${tagsRef.current.find(tag => tag.type === 'XADTAG' && tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
+      ws.onclose = () => { socket = null; if (!disposed) startFallback(); };
+      ws.onerror = () => { if (!disposed) startFallback(); };
+    }).catch(() => { if (!disposed) startFallback(); });
+    const connectionTimeout = window.setTimeout(() => {
+      if (!disposed && socket?.readyState !== WebSocket.OPEN) startFallback();
+    }, 60_000);
+    return () => {
+      disposed = true;
+      window.clearTimeout(connectionTimeout);
+      stopFallback();
+      socket?.close();
+    };
+  }, [tenantId]);
 
   useEffect(() => {
     const persisted = persistedFleetLocations(vehicles).filter(hasValidCoordinates);
-    if (persisted.length) setFleetLocations(previous => mergeFleetLocations(previous, persisted));
+    if (!persisted.length) return;
+    const timer = window.setTimeout(() => {
+      setFleetLocations(previous => mergeFleetLocations(previous, persisted));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [vehicles]);
 
   const fetchUpdate = useCallback(async () => {

@@ -6,7 +6,13 @@ import { broadcastPosition } from './positionBroadcast.js';
 import { traccarClient } from './traccarClient.js';
 import { toTrackedPosition, xadTagService } from './xadtagService.js';
 import { adminDb } from './firebaseAdmin.js';
-import { afterVehicleLink, canPromotePosition, canPromoteVehiclePosition, validPosition, withoutUndefined } from './currentPosition.js';
+import { afterVehicleLink, canPromotePosition, canPromoteVehiclePosition, shouldPersistPosition, validPosition, withoutUndefined } from './currentPosition.js';
+
+const positive = (name: string, fallback: number) => {
+  const value = Number(process.env[name] ?? fallback);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+const MAPPING_REFRESH_INTERVAL_MS = positive('TRACCAR_MAPPING_REFRESH_INTERVAL_MS', 5 * 60_000);
 
 export class TraccarRealtimeService {
   private socket: WebSocket | null = null;
@@ -20,16 +26,34 @@ export class TraccarRealtimeService {
   private devices = new Map<number, TraccarDevice>();
   private equipment = new Map<number, XadTag>();
   private lastPersistAt = new Map<number, number>();
+  private lastPersistedPosition = new Map<number, { timestamp: number; lat: number; lon: number; tagId: string }>();
+  private vehicleByEquipment = new Map<string, FirebaseFirestore.DocumentReference>();
+  private counters = { received: 0, discarded: 0, persisted: 0, broadcasted: 0 };
   status: TraccarRealtimeStatus = 'disconnected';
   lastMessageAt: string | null = null;
   lastSnapshotAt: string | null = null;
   reconnects = 0;
 
-  async start() { if (!this.stopped) return; this.stopped = false; await this.refreshMapping(); this.mappingTimer = setInterval(() => void this.refreshMapping().catch(error => console.warn(JSON.stringify({ event: 'traccar.mapping.refresh_failed', error: (error as Error).message }))), 60_000); await this.connect(); }
+  async start() { if (!this.stopped) return; this.stopped = false; await this.refreshMapping(); this.mappingTimer = setInterval(() => void this.refreshMapping().catch(error => console.warn(JSON.stringify({ event: 'traccar.mapping.refresh_failed', error: (error as Error).message }))), MAPPING_REFRESH_INTERVAL_MS); await this.connect(); }
   stop() { this.stopped = true; clearTimeout(this.reconnectTimer); clearInterval(this.fallbackTimer); clearInterval(this.mappingTimer); this.socket?.close(); this.socket = null; this.status = 'disconnected'; }
   async refreshMapping() {
     const xad = await xadTagRepository.buildDeviceMapping();
-    const ktag = await adminDb.collectionGroup('tags').where('type', '==', 'K_TAG').get();
+    const [ktag, taggedVehicles, trackedVehicles] = await Promise.all([
+      adminDb.collectionGroup('tags').where('type', '==', 'K_TAG').get(),
+      adminDb.collectionGroup('vehicles').where('tagId', '!=', null).get(),
+      adminDb.collectionGroup('vehicles').where('trackerId', '!=', null).get(),
+    ]);
+    const vehicles = new Map(taggedVehicles.docs.concat(trackedVehicles.docs).map(doc => [doc.ref.path, doc]));
+    this.vehicleByEquipment = new Map(
+      [...vehicles.values()]
+        .filter(doc => typeof doc.get('tagId') === 'string' || typeof doc.get('trackerId') === 'string')
+        .flatMap(doc => {
+          const tenantId = String(doc.ref.parent.parent?.id || '');
+          const ids = [doc.get('tagId'), doc.get('trackerId') ? `tracker:${doc.get('trackerId')}` : null]
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+          return ids.map(id => [`${tenantId}:${id}`, doc.ref] as const);
+        }),
+    );
     this.mapping = new Map<number, { tenantId: string; equipmentId: string; uniqueId: string; equipmentType: 'XADTAG' | 'K_TAG' }>([
       ...[...xad.entries()].map(([id, value]) => [id, { ...value, equipmentType: 'XADTAG' as const }] as const),
       ...ktag.docs.filter(doc => Number.isInteger(doc.get('traccarDeviceId')) && doc.get('integrationStatus') === 'registered')
@@ -38,7 +62,12 @@ export class TraccarRealtimeService {
     ]);
     this.equipment.clear();
   }
-  get diagnostics() { return { connected: this.status === 'connected', status: this.status, lastMessageAt: this.lastMessageAt, lastSnapshotAt: this.lastSnapshotAt, reconnects: this.reconnects }; }
+  get diagnostics() {
+    return {
+      connected: this.status === 'connected', status: this.status, lastMessageAt: this.lastMessageAt,
+      lastSnapshotAt: this.lastSnapshotAt, reconnects: this.reconnects, counters: { ...this.counters },
+    };
+  }
 
   private async connect() {
     if (this.stopped || this.socket) return;
@@ -68,12 +97,19 @@ export class TraccarRealtimeService {
   async handleMessage(raw: string) { let message: TraccarSocketMessage; try { message = JSON.parse(raw) as TraccarSocketMessage; } catch { return; } if (message.devices) for (const device of message.devices) this.devices.set(device.id, device); if (message.positions) await this.handlePositions(message.positions); }
   async handlePositions(positions: TraccarPosition[]) {
     for (const raw of positions) {
+      this.counters.received++;
       const mapping = this.mapping.get(raw.deviceId); if (!mapping) continue;
       const time = Date.parse(raw.fixTime || raw.deviceTime || raw.serverTime || '') || 0;
       if (!Number.isFinite(time) || time <= 0 || raw.valid === false || !Number.isFinite(raw.latitude) || !Number.isFinite(raw.longitude)
-        || Math.abs(raw.latitude) > 90 || Math.abs(raw.longitude) > 180 || (raw.latitude === 0 && raw.longitude === 0)) continue;
+        || Math.abs(raw.latitude) > 90 || Math.abs(raw.longitude) > 180 || (raw.latitude === 0 && raw.longitude === 0)) {
+        this.counters.discarded++;
+        continue;
+      }
       const previous = this.lastPosition.get(raw.deviceId);
-      if (previous && (raw.id === previous.id || (raw.id < previous.id && time <= previous.time))) continue;
+      if (previous && (raw.id === previous.id || (raw.id < previous.id && time <= previous.time))) {
+        this.counters.discarded++;
+        continue;
+      }
       if (mapping.equipmentType === 'K_TAG') {
         try {
           const point = withoutUndefined({ id: String(raw.id), tagId: mapping.equipmentId, provider: 'traccar', timestamp: time,
@@ -81,9 +117,15 @@ export class TraccarRealtimeService {
             speed: raw.speed, course: raw.course, altitude: raw.altitude });
           if (!validPosition(point)) continue;
           const tagRef = adminDb.doc(`tenants/${mapping.tenantId}/tags/${mapping.equipmentId}`);
-          const vehicles = await adminDb.collection(`tenants/${mapping.tenantId}/vehicles`).where('tagId', '==', mapping.equipmentId).limit(2).get();
-          if (vehicles.size > 1) { console.warn(JSON.stringify({ event: 'traccar.position.duplicate_assignment', tagId: mapping.equipmentId })); continue; }
-          const vehicleRef = vehicles.docs[0]?.ref;
+          const vehicleRef = this.vehicleByEquipment.get(`${mapping.tenantId}:${mapping.equipmentId}`);
+          const previousPersisted = this.lastPersistedPosition.get(raw.deviceId);
+          const shouldPersist = shouldPersistPosition(previousPersisted, point, this.lastPersistAt.get(raw.deviceId),
+            Date.now(), getTraccarConfig().positionPersistIntervalMs, getTraccarConfig().positionPersistDistanceMeters);
+          if (!shouldPersist) {
+            this.lastPosition.set(raw.deviceId, { id: raw.id, time });
+            if (vehicleRef) this.broadcastKtagPosition(mapping, raw, vehicleRef);
+            continue;
+          }
           const accepted = await adminDb.runTransaction(async tx => {
             const [tag, vehicle] = await Promise.all([tx.get(tagRef), vehicleRef ? tx.get(vehicleRef) : Promise.resolve(null)]);
             if (!tag.exists || tag.get('traccarDeviceId') !== raw.deviceId || tag.get('traccarUniqueId') !== mapping.uniqueId) return false;
@@ -93,25 +135,29 @@ export class TraccarRealtimeService {
           });
           if (!accepted) continue;
           this.lastPosition.set(raw.deviceId, { id: raw.id, time });
-          if (vehicleRef && afterVehicleLink(point.timestamp, vehicles.docs[0].get('trackingLinkedAt'))) broadcastPosition(mapping.tenantId, { id: `ktag_${mapping.equipmentId}`, equipmentId: mapping.equipmentId,
-            equipmentType: 'K_TAG', source: 'traccar', tenantId: mapping.tenantId, linkedEntityId: vehicleRef.id,
-            imei: mapping.uniqueId, uniqueId: mapping.uniqueId, traccarDeviceId: raw.deviceId, latitude: raw.latitude, longitude: raw.longitude,
-            valid: raw.valid, fixTime: raw.fixTime, deviceTime: raw.deviceTime, serverTime: raw.serverTime,
-            address: raw.address || null, status: 'online', attributes: raw.attributes || {} });
+          this.lastPersistAt.set(raw.deviceId, Date.now());
+          this.lastPersistedPosition.set(raw.deviceId, point);
+          this.counters.persisted++;
+          if (vehicleRef) this.broadcastKtagPosition(mapping, raw, vehicleRef);
         } catch (error) { console.error(JSON.stringify({ event: 'traccar.ktag.persist_failed', deviceId: raw.deviceId, error: (error as Error).message })); }
         continue;
       }
       let item = this.equipment.get(raw.deviceId);
       if (!item) { item = await xadTagRepository.get(mapping.tenantId, mapping.equipmentId) || undefined; if (!item) continue; this.equipment.set(raw.deviceId, item); }
-      const device = this.devices.get(raw.deviceId);
       const previousStatus = item.traccarStatus;
       // XADTAGs abrem uma conexão curta, enviam o lote e desconectam. A chegada
       // de uma posição válida é a evidência de atividade, independentemente do socket.
       item.traccarStatus = 'online';
       const now = Date.now();
-      const shouldPersist = !this.lastPersistAt.has(raw.deviceId)
-        || now - this.lastPersistAt.get(raw.deviceId)! >= getTraccarConfig().positionPersistIntervalMs
-        || previousStatus !== item.traccarStatus;
+      const candidate = { tagId: item.id, timestamp: time, lat: raw.latitude, lon: raw.longitude };
+      const shouldPersist = shouldPersistPosition(
+        this.lastPersistedPosition.get(raw.deviceId),
+        candidate,
+        this.lastPersistAt.get(raw.deviceId),
+        now,
+        getTraccarConfig().positionPersistIntervalMs,
+        getTraccarConfig().positionPersistDistanceMeters,
+      ) || previousStatus !== item.traccarStatus;
       const tracked = shouldPersist
         ? await xadTagService.resolvePosition(raw)
         : toTrackedPosition(raw, raw.address || null);
@@ -119,21 +165,38 @@ export class TraccarRealtimeService {
       if (shouldPersist) {
         try {
           await xadTagRepository.persistPosition(item, tracked);
-          const vehicles = await adminDb.collection(`tenants/${mapping.tenantId}/vehicles`).where('tagId', '==', item.id).limit(2).get();
-          if (vehicles.size === 1) {
-            const vehicleRef = vehicles.docs[0].ref;
-            const point = withoutUndefined({ id: String(raw.id), vehicleId: vehicles.docs[0].id, tagId: item.id, provider: 'traccar', timestamp: time, lat: raw.latitude, lon: raw.longitude, address: tracked.address || null, addressResolutionProvider: raw.address ? 'traccar' : null, speed: raw.speed, course: raw.course, altitude: raw.altitude });
+          const vehicleRef = this.vehicleByEquipment.get(`${mapping.tenantId}:${item.id}`);
+          if (vehicleRef) {
+            const point = withoutUndefined({ id: String(raw.id), vehicleId: vehicleRef.id, tagId: item.id, provider: 'traccar', timestamp: time, lat: raw.latitude, lon: raw.longitude, address: tracked.address || null, addressResolutionProvider: raw.address ? 'traccar' : null, speed: raw.speed, course: raw.course, altitude: raw.altitude });
             await adminDb.runTransaction(async transaction => { const current = await transaction.get(vehicleRef); if (afterVehicleLink(time, current.get('trackingLinkedAt')) && canPromoteVehiclePosition(current.get('tagId'), current.get('trackerId'), point, current.get('lastPosition'))) transaction.update(vehicleRef, { lastPosition: point, lastPositionUpdatedAt: now }); });
           }
           this.lastPersistAt.set(raw.deviceId, now);
+          this.lastPersistedPosition.set(raw.deviceId, { tagId: item.id, timestamp: time, lat: raw.latitude, lon: raw.longitude });
+          this.counters.persisted++;
         } catch (error) {
           // Uma posição inválida não pode encerrar o worker nem derrubar a API.
           console.error(JSON.stringify({ event: 'traccar.position.persist_failed', deviceId: raw.deviceId, error: (error as Error).message }));
         }
       }
-      const asset = xadTagService.toLiveMap(item); if (asset) broadcastPosition(mapping.tenantId, asset);
+      const asset = xadTagService.toLiveMap(item); if (asset) {
+        broadcastPosition(mapping.tenantId, asset);
+        this.counters.broadcasted++;
+      }
       this.lastPosition.set(raw.deviceId, { id: raw.id, time });
     }
+  }
+
+  private broadcastKtagPosition(
+      mapping: { tenantId: string; equipmentId: string; uniqueId: string },
+      raw: TraccarPosition,
+      vehicleRef: FirebaseFirestore.DocumentReference,
+    ) {
+      broadcastPosition(mapping.tenantId, { id: `ktag_${mapping.equipmentId}`, equipmentId: mapping.equipmentId,
+        equipmentType: 'K_TAG', source: 'traccar', tenantId: mapping.tenantId, linkedEntityId: vehicleRef.id,
+        imei: mapping.uniqueId, uniqueId: mapping.uniqueId, traccarDeviceId: raw.deviceId, latitude: raw.latitude, longitude: raw.longitude,
+        valid: raw.valid, fixTime: raw.fixTime, deviceTime: raw.deviceTime, serverTime: raw.serverTime,
+        address: raw.address || null, status: 'online', attributes: raw.attributes || {} });
+      this.counters.broadcasted++;
   }
 }
 export const traccarRealtimeService = new TraccarRealtimeService();

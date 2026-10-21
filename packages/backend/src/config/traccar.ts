@@ -14,6 +14,7 @@ export interface TraccarConfig {
   addressCacheTtlMs: number;
   positionCacheTtlMs: number;
   positionPersistIntervalMs: number;
+  positionPersistDistanceMeters: number;
   writeTestEnabled: boolean;
 }
 
@@ -48,6 +49,7 @@ export function getTraccarConfig(): TraccarConfig {
     addressCacheTtlMs: positive('TRACCAR_ADDRESS_CACHE_TTL_MS', 300_000),
     positionCacheTtlMs: positive('TRACCAR_POSITION_CACHE_TTL_MS', 15_000),
     positionPersistIntervalMs: positive('TRACCAR_POSITION_PERSIST_INTERVAL_MS', 300_000),
+    positionPersistDistanceMeters: positive('TRACCAR_POSITION_PERSIST_DISTANCE_METERS', 30),
     writeTestEnabled: process.env.TRACCAR_WRITE_TEST_ENABLED === 'true',
   };
 }
