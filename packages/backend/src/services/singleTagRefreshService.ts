@@ -10,6 +10,7 @@ import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { xadTagService } from './xadtagService.js';
 import { traccarClient } from './traccarClient.js';
 import { afterVehicleLink, canPromotePosition, canPromoteVehiclePosition, positionAgeMinutes, validPosition, withoutUndefined } from './currentPosition.js';
+import { tagHistoryMode, updateTagHistoryAddress, upsertTagHistory } from '../repositories/tagHistoryPostgres.js';
 
 const RETENTION_MS = (Number(process.env.KTAG_HISTORY_RETENTION_DAYS) || 30) * 86_400_000;
 const pending = new Map<string, Promise<SingleTagLocation>>();
@@ -103,12 +104,15 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
     addressVerifiedAt: address && previous?.addressResolutionProvider === 'photon' ? previous.addressVerifiedAt : null,
   });
   const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${id}`);
+  const historyMode = tagHistoryMode();
   await adminDb.runTransaction(async tx => {
     const [freshTag, existing, freshVehicle] = await Promise.all([
-      tx.get(tag.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
+      tx.get(tag.ref), historyMode === 'postgres' ? Promise.resolve(null) : tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
     ]);
-    if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
-    else if (address) tx.set(historyRef, { address, addressResolutionStatus: 'resolved', addressResolutionProvider: 'existing', addressResolvedAt: Date.now() }, { merge: true });
+    if (historyMode !== 'postgres') {
+      if (!existing?.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
+      else if (address) tx.set(historyRef, { address, addressResolutionStatus: 'resolved', addressResolutionProvider: 'existing', addressResolvedAt: Date.now() }, { merge: true });
+    }
     const sameVehicleTag = freshVehicle?.get('lastPosition.tagId') === tag.id;
     if (freshVehicle && afterVehicleLink(point.timestamp, freshVehicle.get('trackingLinkedAt')) && canPromoteVehiclePosition(freshVehicle.get('tagId'), freshVehicle.get('trackerId'), point, freshVehicle.get('lastPosition'))) {
       tx.update(freshVehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now(), ktagHistoryCapturedThrough: Math.max(sameVehicleTag ? Number(freshVehicle.get('ktagHistoryCapturedThrough') || 0) : 0, normalized.timestamp) });
@@ -119,20 +123,25 @@ async function refreshKtag(tenantId: string, tag: FirebaseFirestore.DocumentSnap
     if (canPromotePosition(tag.id, point, freshTag.get('lastPosition'))) Object.assign(tagUpdate, { lastPosition: point, lastBattery: point.battery?.level });
     tx.update(tag.ref, tagUpdate);
   });
+  if (historyMode !== 'firestore') await upsertTagHistory(tenantId, id, point);
   if (!address) void resolveServerAddress(normalized.lat, normalized.lon).then(async resolved => {
     if (!resolved.address) return;
     await adminDb.runTransaction(async tx => {
       const [freshTag, freshHistory, freshVehicle] = await Promise.all([
-        tx.get(tag.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
+        tx.get(tag.ref), historyMode === 'postgres' ? Promise.resolve(null) : tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null),
       ]);
       const addressUpdate = { address: resolved.address, addressResolutionStatus: 'resolved', addressResolutionProvider: resolved.provider,
         addressResolvedAt: Date.now(), addressVerifiedAt: resolved.provider === 'photon' ? Date.now() : null };
-      if (freshHistory.exists && samePosition(freshHistory.data(), normalized.lat, normalized.lon)) tx.set(historyRef, addressUpdate, { merge: true });
+      if (freshHistory?.exists && samePosition(freshHistory.data(), normalized.lat, normalized.lon)) tx.set(historyRef, addressUpdate, { merge: true });
       if (freshTag.get('lastPosition.id') === id && samePosition(freshTag.get('lastPosition'), normalized.lat, normalized.lon))
         tx.update(tag.ref, Object.fromEntries(Object.entries(addressUpdate).map(([key, value]) => [`lastPosition.${key}`, value])));
       if (freshVehicle?.get('tagId') === tag.id && freshVehicle.get('lastPosition.id') === id
         && samePosition(freshVehicle.get('lastPosition'), normalized.lat, normalized.lon))
         tx.update(freshVehicle.ref, Object.fromEntries(Object.entries(addressUpdate).map(([key, value]) => [`lastPosition.${key}`, value])));
+    });
+    if (historyMode !== 'firestore') await updateTagHistoryAddress(tenantId, id, normalized.lat, normalized.lon, {
+      address: resolved.address, addressResolutionStatus: 'resolved', addressResolutionProvider: resolved.provider,
+      addressResolvedAt: Date.now(), addressVerifiedAt: resolved.provider === 'photon' ? Date.now() : null,
     });
   }).catch(error => console.warn(JSON.stringify({ event: 'tag.refresh.address_failed', tenantId, tagId: tag.id, error: (error as Error).message })));
   return point;

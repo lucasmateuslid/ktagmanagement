@@ -19,6 +19,7 @@ import { activeTenant } from './activeTenant';
 import { encryption } from './encryption';
 import { securityService } from './security';
 import { authenticatedFetch } from './authenticatedFetch';
+import { cachedFirestoreRead, invalidateFirestoreReadCache } from '../lib/firestoreReadCache';
 import {
   formatCpfCnpj,
   formatCPF,
@@ -219,20 +220,29 @@ const normalizeSupplierContacts = (item: EquipmentSupplier): EquipmentSupplier =
   };
 };
 
+interface ScheduleSubscription {
+  callbacks: Set<(schedules: Schedule[]) => void>;
+  unsubscribe: () => void;
+}
+
+const scheduleSubscriptions = new Map<string, ScheduleSubscription>();
+
 // Fetch resiliente: tenta server, cai para cache do SDK em caso de erro/offline.
 const fetchResilient = async (col: CollectionReference) => {
   if (!db) return [];
-  try {
-    const snap = await getDocs(col);
-    return snap.docs.map(d => ({ ...d.data(), id: d.id }));
-  } catch (e) {
+  return cachedFirestoreRead(`collection:${col.path}`, async () => {
     try {
-      const snap = await getDocsFromCache(col);
+      const snap = await getDocs(col);
       return snap.docs.map(d => ({ ...d.data(), id: d.id }));
-    } catch (cacheErr) {
-      return [];
+    } catch (e) {
+      try {
+        const snap = await getDocsFromCache(col);
+        return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      } catch (cacheErr) {
+        return [];
+      }
     }
-  }
+  });
 };
 
 export const storage = {
@@ -249,7 +259,11 @@ export const storage = {
   getSessionUser: async (): Promise<User | null> => {
     if (!auth?.currentUser || !db) return null;
     try {
-      const snap = await getDoc(tenantDoc(COLLECTIONS.USERS, auth.currentUser.uid));
+      const currentUser = auth.currentUser;
+      const snap = await cachedFirestoreRead(
+        `doc:${tenantDoc(COLLECTIONS.USERS, currentUser.uid).path}`,
+        () => getDoc(tenantDoc(COLLECTIONS.USERS, currentUser.uid)),
+      );
       if (!snap.exists()) return null;
       const raw = { ...snap.data(), id: snap.id } as User;
       await encryption.waitReady();
@@ -697,7 +711,8 @@ export const storage = {
   getPlatformIntegrations: async (): Promise<PlatformIntegrations> => {
     if (db) {
       try {
-        const snap = await getDoc(systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC));
+        const ref = systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC);
+        const snap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
         if (snap.exists()) {
           const data = snap.data() as PlatformIntegrations;
           cache.set(PLATFORM_INTEGRATIONS_CACHE_KEY, data);
@@ -715,7 +730,9 @@ export const storage = {
   savePlatformIntegrations: async (p: PlatformIntegrations) => {
     if (!db) throw new Error('Firestore indisponível.');
     const payload: PlatformIntegrations = { ...p, updatedAt: Date.now() };
-    await setDoc(systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC), cleanData(payload as any), { merge: true });
+    const ref = systemDoc('ktag_settings_v3', PLATFORM_INTEGRATIONS_DOC);
+    await setDoc(ref, cleanData(payload as any), { merge: true });
+    invalidateFirestoreReadCache(`doc:${ref.path}`);
     cache.set(PLATFORM_INTEGRATIONS_CACHE_KEY, payload);
   },
 
@@ -727,7 +744,8 @@ export const storage = {
     let tenantSettings: AppSettings = {} as AppSettings;
     if (db) {
       try {
-        const snap = await getDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'));
+        const ref = tenantDoc(COLLECTIONS.SETTINGS, 'config');
+        const snap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
         if (snap.exists()) {
           tenantSettings = snap.data() as AppSettings;
           cache.set(COLLECTIONS.SETTINGS, tenantSettings);
@@ -780,7 +798,8 @@ export const storage = {
   getPublicSettings: async (): Promise<PublicSettings> => {
     if (db) {
       try {
-        const snap = await getDoc(tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC));
+        const ref = tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC);
+        const snap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
         if (snap.exists()) {
           const data = snap.data() as PublicSettings;
           cache.set(COLLECTIONS.PUBLIC_SETTINGS, data);
@@ -800,15 +819,19 @@ export const storage = {
     const { customProxyUrl: _p, ...tenantOnly } = normalizedSettings as any;
     const persisted = tenantOnly as AppSettings;
     if (db) {
-      await setDoc(tenantDoc(COLLECTIONS.SETTINGS, 'config'), cleanData(persisted));
+      const settingsRef = tenantDoc(COLLECTIONS.SETTINGS, 'config');
+      await setDoc(settingsRef, cleanData(persisted));
+      invalidateFirestoreReadCache(`doc:${settingsRef.path}`);
       // Espelha o subconjunto público — Login/WhitelabelStyles leem deste doc
       // sem precisar de auth. Se falhar (sem permissão de escrita no
       // espelho), seguimos — o doc privado já foi salvo.
       try {
+        const publicRef = tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC);
         await setDoc(
-          tenantDoc(COLLECTIONS.PUBLIC_SETTINGS, PUBLIC_SETTINGS_DOC),
+          publicRef,
           cleanData(pickPublicSettings(normalizedSettings) as any),
         );
+        invalidateFirestoreReadCache(`doc:${publicRef.path}`);
       } catch (e) {
         console.warn('Mirror de public_settings falhou:', e);
       }
@@ -930,10 +953,28 @@ export const storage = {
     } else {
       q = tenantCollection(COLLECTIONS.SCHEDULES);
     }
-    return onSnapshot(q, (snap) => {
-      const schedules = snap.docs.map(d => presentScheduleContacts(d.data() as Schedule));
-      onUpdate(schedules);
-    });
+    const key = `${activeTenant.id}:schedules:${role}:${userId}`;
+    let subscription = scheduleSubscriptions.get(key);
+    if (!subscription) {
+      const callbacks = new Set<(schedules: Schedule[]) => void>();
+      const unsubscribe = onSnapshot(q, (snap) => {
+        const schedules = snap.docs.map(d => presentScheduleContacts(d.data() as Schedule));
+        callbacks.forEach(callback => callback(schedules));
+      });
+      subscription = { callbacks, unsubscribe };
+      scheduleSubscriptions.set(key, subscription);
+    }
+    subscription.callbacks.add(onUpdate);
+
+    return () => {
+      const current = scheduleSubscriptions.get(key);
+      if (!current) return;
+      current.callbacks.delete(onUpdate);
+      if (current.callbacks.size === 0) {
+        current.unsubscribe();
+        scheduleSubscriptions.delete(key);
+      }
+    };
   },
 
   // --- FEEDBACK ---

@@ -31,6 +31,7 @@ services:
       - "127.0.0.1:${KTAG_BACKEND_PORT:-4000}:8080"
     networks:
       - traccar
+      - ktag-db
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --header='X-Origin-Secret: '$$CF_ORIGIN_SECRET http://127.0.0.1:8080/api/health >/dev/null || exit 1"]
       interval: 20s
@@ -69,6 +70,7 @@ services:
       - ${FIREBASE_SERVICE_ACCOUNT_PATH:-./secrets/firebase-service-account.json}:/run/secrets/firebase-service-account.json:ro
     networks:
       - traccar
+      - ktag-db
     deploy:
       resources:
         limits:
@@ -82,7 +84,43 @@ services:
         max-size: 20m
         max-file: "5"
 
+  # Banco exclusivo da aplicação principal. O profile impede que o deploy
+  # legado o inicie antes da migração e da configuração de backup externo.
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ktag
+      POSTGRES_USER: ktag
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    volumes:
+      - ktag_postgres_data:/var/lib/postgresql/data
+      - ${KTAG_POSTGRES_PASSWORD_FILE:-./secrets/postgres-password}:/run/secrets/postgres-password:ro
+    networks:
+      - ktag-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ktag -d ktag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
 networks:
   traccar:
     external: true
     name: ${TRACCAR_DOCKER_NETWORK:-traccar_default}
+  ktag-db:
+    internal: true
+
+volumes:
+  ktag_postgres_data:

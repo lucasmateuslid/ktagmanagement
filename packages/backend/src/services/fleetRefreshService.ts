@@ -10,6 +10,7 @@ import { traccarClient } from './traccarClient.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { toTrackedPosition } from './xadtagService.js';
 import { afterVehicleLink, canPromotePosition, canPromoteVehiclePosition, positionAgeMinutes, validPosition, withoutUndefined } from './currentPosition.js';
+import { tagHistoryMode, updateTagHistoryAddress, upsertTagHistory } from '../repositories/tagHistoryPostgres.js';
 
 const positive = (name: string, fallback: number) => { const value = Number(process.env[name] ?? fallback); return Number.isFinite(value) && value > 0 ? value : fallback; };
 const RETENTION_MS = positive('KTAG_HISTORY_RETENTION_DAYS', 30) * 86_400_000;
@@ -48,6 +49,7 @@ function queueAddressJob(job: () => Promise<void>) {
 }
 
 function resolveKtagAddressLater(
+  tenantId: string,
   tagRef: FirebaseFirestore.DocumentReference,
   vehicleRef: FirebaseFirestore.DocumentReference | null,
   historyRef: FirebaseFirestore.DocumentReference,
@@ -60,17 +62,19 @@ function resolveKtagAddressLater(
     try {
       const resolved = await resolveServerAddress(point.lat, point.lon);
       if (!resolved.address) return;
+      const historyMode = tagHistoryMode();
+      const address = { address: resolved.address, addressResolutionStatus: 'resolved', addressResolutionProvider: resolved.provider,
+        addressResolvedAt: Date.now(), addressVerifiedAt: resolved.provider === 'photon' ? Date.now() : null };
       await adminDb.runTransaction(async tx => {
-        const [tag, history, vehicle] = await Promise.all([tx.get(tagRef), tx.get(historyRef), vehicleRef ? tx.get(vehicleRef) : Promise.resolve(null)]);
-        const address = { address: resolved.address, addressResolutionStatus: 'resolved', addressResolutionProvider: resolved.provider,
-          addressResolvedAt: Date.now(), addressVerifiedAt: resolved.provider === 'photon' ? Date.now() : null };
-        if (history.exists && samePosition(history.data(), point.lat, point.lon)) tx.set(historyRef, address, { merge: true });
+        const [tag, history, vehicle] = await Promise.all([tx.get(tagRef), historyMode === 'postgres' ? Promise.resolve(null) : tx.get(historyRef), vehicleRef ? tx.get(vehicleRef) : Promise.resolve(null)]);
+        if (history?.exists && samePosition(history.data(), point.lat, point.lon)) tx.set(historyRef, address, { merge: true });
         if (tag.get('lastPosition.id') === point.id && samePosition(tag.get('lastPosition'), point.lat, point.lon))
           tx.update(tagRef, Object.fromEntries(Object.entries(address).map(([key, value]) => [`lastPosition.${key}`, value])));
         if (vehicleRef && vehicle?.get('tagId') === tagRef.id && vehicle?.get('lastPosition.id') === point.id
           && samePosition(vehicle.get('lastPosition'), point.lat, point.lon))
           tx.update(vehicleRef, Object.fromEntries(Object.entries(address).map(([key, value]) => [`lastPosition.${key}`, value])));
       });
+      if (historyMode !== 'firestore') await updateTagHistoryAddress(tenantId, point.id, point.lat, point.lon, address);
     } finally {
       pendingAddressIds.delete(taskId);
     }
@@ -274,6 +278,12 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
         speed: raw.speed, course: raw.course, altitude: raw.altitude });
       if (raw.valid === false || !validPosition(point)) { errorsByTag.set(tag.id, 'Traccar retornou posição inválida para esta K-TAG.'); return; }
       const vehicle = duplicateAssignments.has(tag.id) ? undefined : vehicleByTag.get(tag.id);
+      const previous = tag.get('lastPosition');
+      if (previous && timestamp <= positionTime(previous)) {
+        validTraccarKtagIds.add(tag.id);
+        locationByTag.set(tag.id, { ...previous, ...(vehicle ? { vehicleId: vehicle.id } : {}) });
+        return;
+      }
       const accepted = await adminDb.runTransaction(async tx => {
         const [freshTag, freshVehicle] = await Promise.all([tx.get(tag.ref), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null)]);
         if (Number(freshTag.get('traccarDeviceId')) !== raw.deviceId) return false;
@@ -283,7 +293,6 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
       });
       if (!accepted) { errorsByTag.set(tag.id, 'Cadastro da K-TAG mudou durante a atualização; tente novamente.'); return; }
       validTraccarKtagIds.add(tag.id);
-      const previous = tag.get('lastPosition');
       const selected = validPosition(previous) && previous.timestamp > point.timestamp ? previous : point;
       locationByTag.set(tag.id, { ...selected, ...(vehicle ? { vehicleId: vehicle.id } : {}) });
       if (!previous || point.timestamp > Number(previous.timestamp || 0)) { updatedTags.add(tag.id); summary.positionsUpdated++; }
@@ -346,13 +355,16 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
                 const point = { ...normalized, id: pointId, tagId: item.doc.id, ...(vehicle ? { vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id } : {}), provider: 'ktag', battery: battery(normalized.status), address: reusableAddress || null, addressResolutionStatus: reusableAddress ? 'resolved' : 'pending', addressResolutionProvider: reusableAddress ? (previous?.addressResolutionProvider || 'traccar') : null, addressResolvedAt: reusableAddress ? Date.now() : null,
                   addressVerifiedAt: reusableAddress && previous?.addressResolutionProvider === 'photon' ? previous.addressVerifiedAt : null };
                 const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${pointId}`);
+                const historyMode = tagHistoryMode();
                 await adminDb.runTransaction(async tx => {
-                  const [freshTag, existing, freshVehicle] = await Promise.all([tx.get(item.doc.ref), tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null)]);
+                  const [freshTag, existing, freshVehicle] = await Promise.all([tx.get(item.doc.ref), historyMode === 'postgres' ? Promise.resolve(null) : tx.get(historyRef), vehicle ? tx.get(vehicle.ref) : Promise.resolve(null)]);
                   const sameTag = freshVehicle?.get('lastPosition.tagId') === item.doc.id;
                   const currentTimestamp = sameTag ? Number(freshVehicle?.get('lastPosition.timestamp') || 0) : 0;
                   const captured = sameTag ? Number(freshVehicle?.get('ktagHistoryCapturedThrough') || 0) : 0;
-                  if (!existing.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
-                  else if (point.address) tx.set(historyRef, { address: point.address, addressResolutionStatus: point.addressResolutionStatus, addressResolutionProvider: point.addressResolutionProvider, addressResolvedAt: point.addressResolvedAt }, { merge: true });
+                  if (historyMode !== 'postgres') {
+                    if (!existing?.exists) tx.create(historyRef, { ...point, savedAt: Date.now(), expiresAt: Timestamp.fromMillis(Date.now() + RETENTION_MS) });
+                    else if (point.address) tx.set(historyRef, { address: point.address, addressResolutionStatus: point.addressResolutionStatus, addressResolutionProvider: point.addressResolutionProvider, addressResolvedAt: point.addressResolvedAt }, { merge: true });
+                  }
                   if (freshVehicle?.get('tagId') === item.doc.id) {
                     const vehicleUpdate: Record<string, unknown> = { ktagHistoryCapturedThrough: Math.max(captured, normalized.timestamp) };
                     if (afterVehicleLink(point.timestamp, freshVehicle.get('trackingLinkedAt')) && canPromoteVehiclePosition(freshVehicle.get('tagId'), freshVehicle.get('trackerId'), point, freshVehicle.get('lastPosition'))) Object.assign(vehicleUpdate, { lastPosition: point, lastPositionUpdatedAt: Date.now() });
@@ -362,9 +374,10 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
                   if (canPromotePosition(item.doc.id, point, freshTag.get('lastPosition'))) Object.assign(tagUpdate, { lastPosition: point, lastBattery: point.battery.level });
                   tx.update(item.doc.ref, tagUpdate);
                 });
+                if (historyMode !== 'firestore') await upsertTagHistory(tenantId, pointId, point);
                 const current = locationByTag.get(item.doc.id);
                 if (!current || point.timestamp > Number(current.timestamp || 0)) { locationByTag.set(item.doc.id, point); updatedTags.add(item.doc.id); summary.positionsUpdated++; }
-                if (!reusableAddress) resolveKtagAddressLater(item.doc.ref, vehicle?.ref || null, historyRef, point);
+                if (!reusableAddress) resolveKtagAddressLater(tenantId, item.doc.ref, vehicle?.ref || null, historyRef, point);
               } catch (error) {
                 errorsByTag.set(item.doc.id, (error as Error).message);
               }

@@ -8,6 +8,7 @@ import { adminDb } from './firebaseAdmin.js';
 import { decryptKtagSecret, KtagConfigurationError, KtagHttpError, ktagClient, type KtagClient } from './ktagClient.js';
 import { TraccarHttpError, traccarClient } from './traccarClient.js';
 import { displayAddressAt } from './serverAddressResolver.js';
+import { loadTagHistory, tagHistoryMode } from '../repositories/tagHistoryPostgres.js';
 
 const DAY = 86_400_000;
 const TRACCAR_CHUNK_MS = 6 * 3_600_000;
@@ -150,12 +151,17 @@ export class KtagHistoryProvider implements HistoryProvider {
     // dias). A API K-TAG é consultada apenas na primeira página para não
     // deixar o usuário esperar o próximo ciclo do worker pelo último ponto.
     const upperBound = Math.min(input.to, input.range.cursor?.timestamp ?? input.to);
-    let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${input.tenantId}/tag_history`)
-      .where('tagId', '==', input.tagId).where('timestamp', '>=', input.from).where('timestamp', '<=', upperBound)
-      .orderBy('timestamp', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(input.range.limit + 1);
-    if (input.range.cursor?.id.startsWith('ktag:')) query = query.startAfter(input.range.cursor.timestamp, input.range.cursor.id.slice(5));
-    const stored = (await query.get()).docs
-      .map(doc => normalizeFirestorePosition(doc.data(), doc.id))
+    const rows = tagHistoryMode() === 'postgres'
+      ? await loadTagHistory(input.tenantId, input.tagId, input.from, upperBound, input.range.limit + 1, input.range.cursor)
+      : await (async () => {
+        let query: FirebaseFirestore.Query = adminDb.collection(`tenants/${input.tenantId}/tag_history`)
+          .where('tagId', '==', input.tagId).where('timestamp', '>=', input.from).where('timestamp', '<=', upperBound)
+          .orderBy('timestamp', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(input.range.limit + 1);
+        if (input.range.cursor?.id.startsWith('ktag:')) query = query.startAfter(input.range.cursor.timestamp, input.range.cursor.id.slice(5));
+        return (await query.get()).docs.map(doc => ({ id: doc.id, data: doc.data() }));
+      })();
+    const stored = rows
+      .map(row => normalizeFirestorePosition(row.data, row.id))
       .filter((point): point is TrackingHistoryPoint => Boolean(point));
 
     if (input.range.cursor) return stored;

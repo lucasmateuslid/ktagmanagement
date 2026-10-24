@@ -102,11 +102,11 @@ const VAPID_PRIVATE_KEY = defineSecret("VAPID_PRIVATE_KEY");
 // A URL (não-secreta) vai por env: KTAG_API_URL
 const KTAG_API_USER = defineSecret("KTAG_API_USER");
 const KTAG_API_PASS = defineSecret("KTAG_API_PASS");
-// CORS: em produção, só aceita ktagfinder.app e seus subdomínios.
+// CORS: aceita os domínios antigo e novo durante a migração para a VPS.
 // Localhost continua liberado para dev. server-to-server (sem origin) também.
 // Override via ALLOWED_ORIGIN_OVERRIDE=true mantém compat com integrações
 // pontuais (ex.: testes manuais) — usar com cuidado.
-const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/;
+const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)?(?:monitora360\.online|ktagfinder\.app)$/;
 const corsOptions = {
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
@@ -672,6 +672,23 @@ exports.onVehicleUpdate = onDocumentUpdated(
     const { tenantId, vehicleId } = event.params;
 
     if (!newData || !previousData) return null;
+
+    const telemetryFields = new Set([
+      'lastPosition',
+      'lastPositionUpdatedAt',
+      'communicationValidatedAt',
+      'traccarPositionId',
+      'lastRefreshAttemptAt',
+      'lastRefreshStatus',
+      'updatedAt',
+    ]);
+    const changedFields = new Set([
+      ...Object.keys(previousData),
+      ...Object.keys(newData),
+    ].filter((field) => JSON.stringify(previousData[field]) !== JSON.stringify(newData[field])));
+    if (changedFields.size === 0 || [...changedFields].every((field) => telemetryFields.has(field))) {
+      return null;
+    }
 
     const updaterInfo = await getUserInfo(tenantId, newData.updatedBy);
     await logAudit(tenantId, 'UPDATE', 'Vehicle', `Veículo alterado: ${newData.plate} por ${updaterInfo.name}`, vehicleId, newData.updatedBy || 'SYSTEM');

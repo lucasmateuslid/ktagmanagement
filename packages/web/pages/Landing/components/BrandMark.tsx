@@ -1,5 +1,11 @@
-import { BRAND } from '../brand';
-
 export default function BrandMark() {
-  return <a href="#topo" className="marketing-brand" aria-label={`${BRAND.name}, início`}><img src="/brand/logo-mark.svg" alt="" /><span>MONITORA<i>360</i></span></a>;
+  return (
+    <a href="#topo" className="sales-brand" aria-label="Monitora 360, início">
+      <img src="/brand/logo-mark.svg" width="38" height="38" alt="" />
+      <span>
+        monitora<span>360</span>
+        <small>INTELIGÊNCIA EM MOVIMENTO</small>
+      </span>
+    </a>
+  );
 }

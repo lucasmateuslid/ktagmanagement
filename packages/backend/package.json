@@ -7,6 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "worker": "tsx src/worker.ts",
+    "db:migrate": "tsx src/cli/migrate.ts",
+    "db:import-firestore": "tsx src/cli/importFirestore.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/**/*.test.ts",
     "docker:build": "docker build -t ktag-backend:local .",
@@ -20,6 +22,7 @@
     "express-rate-limit": "^8.5.2",
     "firebase-admin": "^14.3.0",
     "helmet": "^8.1.0",
+    "pg": "^8.23.1",
     "tsx": "^4.22.0",
     "web-push": "^3.6.7",
     "ws": "^8.21.3"
@@ -28,6 +31,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "typescript": "^5.2.2"

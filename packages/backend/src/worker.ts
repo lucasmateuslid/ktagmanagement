@@ -9,6 +9,7 @@ import { traccarClient, TraccarHttpError } from './services/traccarClient.js';
 import { xadTagRepository } from './repositories/xadtagRepository.js';
 import { refreshAllActiveTenants } from './services/fleetRefreshService.js';
 import { reconcileKtagTraccar } from './services/ktagTraccarService.js';
+import { purgeTagHistory, tagHistoryMode } from './repositories/tagHistoryPostgres.js';
 
 dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env.local'), override: false });
@@ -27,10 +28,14 @@ async function deleteSnapshotInChunks(docs: FirebaseFirestore.QueryDocumentSnaps
 
 async function cleanup() {
   const cutoff = Date.now() - RETENTION_MS;
+  const historyMode = tagHistoryMode();
+  if (historyMode !== 'firestore') await purgeTagHistory(cutoff);
   const tenants = await adminDb.collection('tenants').where('active', '==', true).get();
   for (const tenant of tenants.docs) {
-    const expired = await tenant.ref.collection('tag_history').where('savedAt', '<', cutoff).get();
-    await deleteSnapshotInChunks(expired.docs);
+    if (historyMode !== 'postgres') {
+      const expired = await tenant.ref.collection('tag_history').where('savedAt', '<', cutoff).get();
+      await deleteSnapshotInChunks(expired.docs);
+    }
     // Compatibilidade até todos os registros antigos por veículo expirarem.
     const vehicles = await tenant.ref.collection('vehicles').get();
     for (const vehicle of vehicles.docs) {

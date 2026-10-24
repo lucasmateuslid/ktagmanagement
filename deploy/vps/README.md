@@ -1,5 +1,16 @@
 # Deploy KTag na VPS do Traccar
 
+Este stack hospeda o frontend e o backend em `ktagfinder.app` e seus
+subdomínios, além de atender `monitora360.online` e seus subdomínios pelo
+mesmo repositório. Os hosts `lock.ktagfinder.app` e
+`lock.monitora360.online` permanecem reservados para o sistema externo de lock
+e devem continuar apontando para o proxy/serviço reservado. O novo banco
+PostgreSQL começa desativado; a aplicação continua usando Firestore até uma
+migração explícita de dados.
+
+O roteiro da janela de 16/10/2026 está em
+[`EXECUCAO_NOTURNA_2026-10-16.md`](./EXECUCAO_NOTURNA_2026-10-16.md).
+
 Este stack adiciona somente o backend KTag à rede Docker já usada pelo Traccar. Ele não recria, remove ou altera os containers do Traccar e PostgreSQL.
 
 O workflow `Validate` executa tipos, testes e build em cada push para `master`.
@@ -15,9 +26,10 @@ implanta automaticamente na VPS, Cloud Run, Functions ou Firestore. No alvo
 - service account Firebase dedicada, com o menor conjunto de permissões necessário;
 - DNS do domínio da aplicação apontando para a VPS.
 
-Em produção, o frontend usa `VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app`
-para enviar HTTP e WebSocket de rastreamento ao backend dedicado da VPS. Em
-desenvolvimento e sandbox, a variável pode ficar vazia para usar same-origin.
+Em produção, frontend, API e WebSocket usam o mesmo domínio/subdomínio
+(`https://ktagfinder.app` ou `https://<tenant>.ktagfinder.app`). Portanto,
+`VITE_TRACKING_API_URL` deve ficar vazio no build da VPS para usar same-origin.
+Em desenvolvimento e sandbox, a variável também pode ficar vazia.
 
 Recomenda-se manter o proxy laranja do Cloudflare e ativar Authenticated Origin Pulls ou restringir no firewall/Nginx as conexões HTTPS às faixas do Cloudflare. O backend fica publicado apenas em `127.0.0.1`.
 
@@ -56,9 +68,10 @@ chmod 600 .env.vps
    `chown 1000:1000` para o processo `node` do container conseguir lê-la.
 7. Faça `docker login ghcr.io` usando um token GitHub com somente
    `read:packages`. Não grave esse token no `.env.vps`.
-8. Gere o arquivo Nginx a partir de `nginx-ktag.conf.template`, usando o domínio
-   `api-vps.ktagfinder.app`, certificado TLS e o mesmo `CF_ORIGIN_SECRET` do
-   `.env.vps`.
+8. Gere o arquivo Nginx a partir de `nginx-ktag.conf.template`, usando
+   certificado TLS wildcard para `ktagfinder.app`, `*.ktagfinder.app`,
+   `monitora360.online` e `*.monitora360.online`, além do mesmo
+   `CF_ORIGIN_SECRET` do `.env.vps`.
 9. Teste com `nginx -t` e recarregue o Nginx.
 
 Antes do primeiro deploy, valide a comunicação entre containers:
@@ -83,9 +96,10 @@ Antes de executar `Deploy`, rode a auditoria somente de leitura por tenant
 endereços não responder, o mapa exibirá endereço pendente.
 
 O fluxo recomendado é executar manualmente `Deploy` no GitHub Actions com
-`target=all` e `environment=production`. O mesmo CI valida o projeto, implanta
-Cloud Run, Functions e Firestore, publica `ghcr.io/<owner>/ktag-platform:<commit>`
-e faz a VPS baixar a imagem imutável.
+`target=all` e `environment=production`. O CI valida o projeto, publica
+`ghcr.io/<owner>/ktag-platform:<commit>` e faz a VPS baixar a imagem imutável.
+As Functions e as regras/índices do Firestore continuam sendo publicadas no
+Firebase; o frontend e o backend HTTP não dependem mais do Cloud Run.
 
 Na primeira implantação desta migração, o Firebase precisa remover os três jobs
 agendados antigos. Conceda temporariamente `roles/cloudscheduler.admin` à conta
@@ -142,7 +156,9 @@ Nunca deixe os dois workers realtime ativos ao mesmo tempo: isso duplica process
 - Logs: `docker compose --env-file .env.vps logs -f backend worker`.
 - Estado: `docker compose --env-file .env.vps ps`.
 - Health: `curl -H "X-Origin-Secret: $CF_ORIGIN_SECRET" http://127.0.0.1:4000/api/health`.
-- O mapa recebe todas as mensagens; o Firestore recebe checkpoints conforme `TRACCAR_POSITION_PERSIST_INTERVAL_MS`.
+- O mapa recebe todas as mensagens; o Firestore recebe checkpoints conforme
+  `TRACCAR_POSITION_PERSIST_INTERVAL_MS` ou quando a posição supera
+  `TRACCAR_POSITION_PERSIST_DISTANCE_METERS` (padrão: 30 m).
 - O worker da VPS é responsável por K-TAG, retenção de histórico e fiscalização diária de inadimplência.
 
 ## Permissões da service account

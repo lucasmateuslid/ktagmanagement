@@ -30,6 +30,8 @@ export const RESERVED_TENANT_SLUGS = [
   'lock',
 ];
 
+export const SUPPORTED_BASE_DOMAINS = ['ktagfinder.app', 'monitora360.online'] as const;
+
 export const DEFAULT_DEV_TENANT = 'dev-tenant';
 
 // Sentinel para indicar que o host é o apex (sem subdomínio).
@@ -48,6 +50,11 @@ export function isValidTenantSlug(slug: string): boolean {
 
 export function isReservedSlug(slug: string): boolean {
   return RESERVED_TENANT_SLUGS.includes(slug);
+}
+
+export function isSupportedBaseDomain(hostname: string): boolean {
+  const host = hostname.toLowerCase().split(':')[0];
+  return SUPPORTED_BASE_DOMAINS.some(domain => host === domain || host.endsWith(`.${domain}`));
 }
 
 function getDevTenant(): string {
@@ -115,8 +122,8 @@ export function buildTenantHref(slug: string): string {
     return `${protocol}//${hostname}${p}/?tenant=${encodeURIComponent(slug)}`;
   }
 
-  // Domínio registrável = últimos dois rótulos (ex.: ktagfinder.app).
-  const parts = hostname.split('.');
-  const baseDomain = parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+  const baseDomain = SUPPORTED_BASE_DOMAINS.find(domain =>
+    hostname === domain || hostname.endsWith(`.${domain}`)
+  ) || hostname.split('.').slice(-2).join('.');
   return `${protocol}//${slug}.${baseDomain}/`;
 }

@@ -17,6 +17,7 @@
 import { getDoc, getDocs } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { identityDoc, membershipCollection } from '../lib/firestore';
+import { cachedFirestoreRead } from '../lib/firestoreReadCache';
 
 export interface TenantMembership {
   tenantId: string;
@@ -55,7 +56,8 @@ export async function loadMyIdentity(fbUser: FirebaseUser): Promise<MyIdentity> 
   const memberships: TenantMembership[] = [];
   const pending: TenantMembership[] = [];
   try {
-    const snap = await getDocs(membershipCollection(uid));
+    const membershipsRef = membershipCollection(uid);
+    const snap = await cachedFirestoreRead(`collection:${membershipsRef.path}`, () => getDocs(membershipsRef));
     snap.forEach((d) => {
       const m = d.data() as TenantMembership;
       const entry: TenantMembership = {
@@ -72,7 +74,8 @@ export async function loadMyIdentity(fbUser: FirebaseUser): Promise<MyIdentity> 
 
   if (!isGlobalAdmin) {
     try {
-      const idSnap = await getDoc(identityDoc(uid));
+      const ref = identityDoc(uid);
+      const idSnap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
       if (idSnap.exists() && idSnap.data()?.isGlobalAdmin === true) isGlobalAdmin = true;
     } catch { /* ignore */ }
   }

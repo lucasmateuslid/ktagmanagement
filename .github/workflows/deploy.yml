@@ -253,7 +253,7 @@ jobs:
             VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.KTAGFINDER_PROD_FIREBASE_STORAGE_BUCKET }}
             VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_MESSAGING_SENDER_ID }}
             VITE_FIREBASE_APP_ID=${{ secrets.KTAGFINDER_PROD_FIREBASE_APP_ID }}
-            VITE_TRACKING_API_URL=https://api-vps.ktagfinder.app
+            VITE_TRACKING_API_URL=
 
       - name: Autenticar a VPS no GHCR
         env:
@@ -280,6 +280,7 @@ jobs:
             'https://api.gps308.com/feibao/' "$KTAG_API_USER" "$KTAG_API_PASS" > .env.ktag
           scp -4 -o BatchMode=yes -o ConnectTimeout=30 -o ConnectionAttempts=3 -P "${VPS_PORT:-22}" \
             deploy/vps/docker-compose.yml \
+            deploy/vps/nginx-ktag.conf.template \
             deploy/vps/deploy-image.sh \
             deploy/vps/rollback.sh \
             .env.ktag \
@@ -300,7 +301,7 @@ jobs:
   deploy-cloud-run:
     name: Cloud Run
     needs: [resolve-env, deploy-firestore]
-    if: ${{ !cancelled() && needs.resolve-env.result == 'success' && (inputs.target != 'all' || needs.deploy-firestore.result == 'success') && vars.KTAG_DEPLOY_CLOUD_RUN != 'false' && (inputs.target == 'all' || inputs.target == 'cloud-run') }}
+    if: ${{ !cancelled() && needs.resolve-env.result == 'success' && (inputs.target != 'all' || needs.deploy-firestore.result == 'success') && (inputs.target == 'cloud-run' || (inputs.target == 'all' && vars.KTAG_DEPLOY_CLOUD_RUN == 'true')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

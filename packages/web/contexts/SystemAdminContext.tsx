@@ -5,6 +5,7 @@ import { getDoc } from 'firebase/firestore';
 import { auth } from '../services/firebase';
 import { systemDoc } from '../lib/firestore';
 import { rateLimitService } from '../services/rateLimit';
+import { cachedFirestoreRead } from '../lib/firestoreReadCache';
 
 interface SystemAdmin {
   uid: string;
@@ -38,7 +39,8 @@ export const SystemAdminProvider = ({ children }: { children?: ReactNode }) => {
         hasSuperadminClaim: tokenResult.claims.superadmin === true,
         tokenIssuedAt: tokenResult.issuedAtTime,
       });
-      const snap = await getDoc(systemDoc('system_admins', fbUser.uid));
+      const ref = systemDoc('system_admins', fbUser.uid);
+      const snap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
       if (!snap.exists()) {
         console.warn('[SystemAdmin] No document at system_admins/' + fbUser.uid + '. Run seed-superadmin.ts to create one.');
         return null;

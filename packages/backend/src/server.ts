@@ -31,6 +31,8 @@ import { resolveServerAddress } from "./services/serverAddressResolver.js";
 import { getEnabledTenantModules, requireAuth, requireGlobalAdmin, requireInternalUser, requirePermission, requireRoles, requireTenantModule } from "./middleware/auth.js";
 import { adminDb } from "./services/firebaseAdmin.js";
 import { BUSINESS_MODULE_IDS } from '@ktag/shared';
+import { tagHistoryMode } from './repositories/tagHistoryPostgres.js';
+import { postgres } from './services/postgres.js';
 // vite é devDependency e não é instalada no estágio runtime do Docker.
 // Importação dinâmica abaixo, somente quando NODE_ENV !== 'production'.
 
@@ -565,8 +567,15 @@ async function startServer() {
     }
   });
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", tenantId: req.tenantId, realtime: process.env.TRACCAR_REALTIME_ENABLED === 'false' ? 'disabled' : traccarRealtimeService.status });
+  app.get("/api/health", async (req, res) => {
+    try {
+      const historyMode = tagHistoryMode();
+      if (historyMode !== 'firestore' || process.env.AUTHZ_STORE === 'postgres') await postgres().query('SELECT 1');
+      res.json({ status: "ok", tenantId: req.tenantId, realtime: process.env.TRACCAR_REALTIME_ENABLED === 'false' ? 'disabled' : traccarRealtimeService.status,
+        tagHistoryStore: historyMode });
+    } catch {
+      res.status(503).json({ status: 'unavailable' });
+    }
   });
 
   app.get('/api/tenant/modules', requireAuth, async (req, res) => {

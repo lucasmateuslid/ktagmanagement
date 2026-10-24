@@ -9,6 +9,7 @@ import { encryption } from '../services/encryption';
 import { activeTenantRootDoc, tenantPublicMetaDoc } from '../lib/firestore';
 import { getTenantFromHostname, isReservedSlug, APEX_TENANT } from '../utils/tenant';
 import { ApexPlaceholder } from '../components/ApexPlaceholder';
+import { cachedFirestoreRead } from '../lib/firestoreReadCache';
 
 interface TenantContextValue {
   tenantId: string;
@@ -79,7 +80,8 @@ export const TenantProvider = ({ children }: { children?: ReactNode }) => {
         // Lê apenas o espelho público (name/active/plan). O root doc carrega
         // dados sensíveis (billing.asaas*) e é protegido por regra que exige
         // auth — não pode ser lido aqui no boot pre-login.
-        const snap = await getDoc(tenantPublicMetaDoc(tenantId));
+        const ref = tenantPublicMetaDoc(tenantId);
+        const snap = await cachedFirestoreRead(`doc:${ref.path}`, () => getDoc(ref));
         if (!snap.exists()) {
           setError(`Empresa "${tenantId}" não encontrada.`);
           setLoading(false);

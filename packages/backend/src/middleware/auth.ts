@@ -1,6 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import { BUSINESS_MODULE_IDS, type BusinessModuleId } from '@ktag/shared';
 import { adminAuth, adminDb } from '../services/firebaseAdmin.js';
+import { postgres } from '../services/postgres.js';
+
+const authzStore = () => {
+  const mode = process.env.AUTHZ_STORE || 'firestore';
+  if (mode !== 'firestore' && mode !== 'postgres') throw new Error(`AUTHZ_STORE inválido: ${mode}`);
+  return mode;
+};
 
 export interface AuthUser { uid: string; role: string; globalAdmin: boolean; clientId: string | null; permissions: string[] | null }
 declare global { namespace Express { interface Request { authUser?: AuthUser } } }
@@ -43,12 +50,19 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     let permissions: string[] | null = null;
     if (tenantId && tenantId !== 'admin') {
       let memberData: Record<string, any> | null;
-      try {
-        if (useLocalUserCredential()) throw new Error('local-user-credential');
-        const member = await adminDb.doc(`tenants/${tenantId}/users/${token.uid}`).get();
-        memberData = member.exists ? member.data() || {} : null;
-      } catch {
-        memberData = await readWithUserToken(`tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(token.uid)}`, header);
+      if (authzStore() === 'postgres') {
+        const result = await postgres().query<{ payload: Record<string, any> }>(
+          'SELECT payload FROM tenant_users WHERE tenant_id = $1 AND uid = $2', [tenantId, token.uid],
+        );
+        memberData = result.rows[0]?.payload || null;
+      } else {
+        try {
+          if (useLocalUserCredential()) throw new Error('local-user-credential');
+          const member = await adminDb.doc(`tenants/${tenantId}/users/${token.uid}`).get();
+          memberData = member.exists ? member.data() || {} : null;
+        } catch {
+          memberData = await readWithUserToken(`tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(token.uid)}`, header);
+        }
       }
       if (!memberData || memberData.status !== 'approved') role = '';
       else {
@@ -56,13 +70,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         clientId = memberData.clientId ? String(memberData.clientId) : null;
         const customRoleId = memberData.customRoleId ? String(memberData.customRoleId) : '';
         if (customRoleId) {
-          try {
-            if (useLocalUserCredential()) throw new Error('local-user-credential');
-            const customRole = await adminDb.doc(`tenants/${tenantId}/custom_roles/${customRoleId}`).get();
-            permissions = customRole.exists && Array.isArray(customRole.get('permissions')) ? customRole.get('permissions') : [];
-          } catch {
-            const customRole = await readWithUserToken(`tenants/${encodeURIComponent(tenantId)}/custom_roles/${encodeURIComponent(customRoleId)}`, header);
-            permissions = Array.isArray(customRole?.permissions) ? customRole!.permissions.map(String) : [];
+          if (authzStore() === 'postgres') {
+            const result = await postgres().query<{ permissions: string[] }>(
+              'SELECT permissions FROM custom_roles WHERE tenant_id = $1 AND id = $2', [tenantId, customRoleId],
+            );
+            permissions = result.rows[0]?.permissions || [];
+          } else {
+            try {
+              if (useLocalUserCredential()) throw new Error('local-user-credential');
+              const customRole = await adminDb.doc(`tenants/${tenantId}/custom_roles/${customRoleId}`).get();
+              permissions = customRole.exists && Array.isArray(customRole.get('permissions')) ? customRole.get('permissions') : [];
+            } catch {
+              const customRole = await readWithUserToken(`tenants/${encodeURIComponent(tenantId)}/custom_roles/${encodeURIComponent(customRoleId)}`, header);
+              permissions = Array.isArray(customRole?.permissions) ? customRole!.permissions.map(String) : [];
+            }
           }
         }
       }
@@ -72,12 +93,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // system_admins já exista. Confirma o próprio registro via REST usando o
     // mesmo token do usuário (as Firestore Rules permitem somente essa leitura).
     if (!globalAdmin && tenantId === 'admin') {
-      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-      if (projectId) {
-        const adminCheck = await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/system_admins/${encodeURIComponent(token.uid)}`, {
-          headers: { Authorization: header },
-        });
-        globalAdmin = adminCheck.ok;
+      if (authzStore() === 'postgres') {
+        const result = await postgres().query('SELECT 1 FROM system_admins WHERE uid = $1', [token.uid]);
+        globalAdmin = (result.rowCount || 0) > 0;
+      } else {
+        const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+        if (projectId) {
+          const adminCheck = await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/system_admins/${encodeURIComponent(token.uid)}`, {
+            headers: { Authorization: header },
+          });
+          globalAdmin = adminCheck.ok;
+        }
       }
     }
     if (!role && !globalAdmin) return res.status(403).json({ ok: false, error: 'Usuário não pertence a esta empresa.' });
@@ -89,7 +115,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const credentialFailure = code.includes('app/invalid-credential')
       || code.includes('app/invalid-app-options')
       || String(error?.message || '').includes('default credentials');
-    console.error('firebase token verification failed', { code: code || 'unknown', message: error?.message || String(error) });
+    console.error('authentication or authorization failed', { code: code || 'unknown', message: error?.message || String(error) });
+    if (process.env.AUTHZ_STORE === 'postgres' && (!code || !code.startsWith('auth/'))) {
+      return res.status(503).json({ ok: false, error: 'Autorização temporariamente indisponível.' });
+    }
     if (credentialFailure) {
       return res.status(503).json({ ok: false, error: 'Backend local sem credencial do Firebase Admin.' });
     }
@@ -121,6 +150,12 @@ export { BUSINESS_MODULE_IDS };
 
 /** Licença do tenant. Esta checagem vem antes das permissões do cargo. */
 export async function getEnabledTenantModules(tenantId: string, authorization?: string): Promise<string[]> {
+  if (authzStore() === 'postgres') {
+    const result = await postgres().query<{ active: boolean; enabled_modules: string[] }>(
+      'SELECT active, enabled_modules FROM tenants WHERE id = $1', [tenantId],
+    );
+    return result.rows[0]?.active ? result.rows[0].enabled_modules : [];
+  }
   let data: Record<string, any> | null;
   try {
     if (authorization && useLocalUserCredential()) throw new Error('local-user-credential');

@@ -1,47 +1,79 @@
-import { useEffect } from 'react';
-import Navbar from './components/Navbar';
-import HeroSection from './components/HeroSection';
-import { AudienceSection, BenefitsSection, ComparisonSection, EditorialBreak, FAQSection, IntegrationsSection, InventorySection, MultiCompanySection, PlatformOverview, ProblemSection, SchedulingSection, TechnicianSection, TrackingSection, WorkflowSection } from './components/MarketingSections';
-import LeadForm from './components/LeadForm';
-import Footer from './components/Footer';
-import { OperationParallax } from '../../components/ui/parallax-scrolling';
-import './landing.css';
-import './motion.css';
-import './impact.css';
-
+import { useEffect, useState } from "react";
+import Navbar from "./components/Navbar";
+import HeroSection from "./components/HeroSection";
+import OperationPreview from "./components/OperationPreview";
+import {
+  GrowthSection,
+  ReferenceCompanies,
+  ImplementationSteps,
+  OperationModes,
+  SalesFAQ,
+} from "./components/SalesSections";
+import Pricing from "./components/Pricing";
+import UsageCalculator from "./components/UsageCalculator";
+import LeadForm from "./components/LeadForm";
+import Footer from "./components/Footer";
+import type { BillingPeriod, CommercialQuote, OperationMode } from "./pricing";
+import "./landing.css";
 export default function Landing() {
+  const [period, setPeriod] = useState<BillingPeriod>("monthly");
+  const [mode, setMode] = useState<OperationMode>("integrated");
+  const [quote, setQuote] = useState<CommercialQuote | null>(null);
   useEffect(() => {
     const previousTitle = document.title;
-    const description = 'Centralize veículos, rastreadores, chips, técnicos, estoque, agendamentos e clientes no Monitora360.';
-    document.title = 'Monitora360 — Sua operação de rastreamento em um só lugar';
-    let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
-    const previousDescription = meta?.content;
-    if (!meta) { meta = document.createElement('meta'); meta.name = 'description'; document.head.appendChild(meta); }
-    meta.content = description;
-    return () => { document.title = previousTitle; if (meta && previousDescription !== undefined) meta.content = previousDescription; };
+    document.title = "Monitora 360 — Proteja muito mais, gastando bem menos";
+    const existingMeta = document.querySelector<HTMLMetaElement>(
+      'meta[name="description"]',
+    );
+    const meta = existingMeta ?? document.createElement("meta");
+    const previousDescription = meta.content;
+    if (!existingMeta) {
+      meta.name = "description";
+      document.head.appendChild(meta);
+    }
+    meta.content =
+      "Localização, rastreamento, estoque, chips e ocorrências para empresas de rastreamento e proteção veicular. Integre sua operação, simule o uso e encontre seu plano Monitora 360.";
+    return () => {
+      document.title = previousTitle;
+      if (existingMeta) meta.content = previousDescription;
+      else meta.remove();
+    };
   }, []);
-
+  const changePeriod = (value: BillingPeriod) => {
+    setPeriod(value);
+    setQuote((current) => (current ? { ...current, period: value } : null));
+  };
+  const changeMode = (value: OperationMode) => {
+    setMode(value);
+    setQuote((current) => (current ? { ...current, mode: value } : null));
+  };
   return (
-    <div className="landing-root">
+    <div className="sales-landing">
+      <a className="sales-skip-link" href="#conteudo">
+        Pular para o conteúdo
+      </a>
       <Navbar />
-      <main>
+      <main id="conteudo">
         <HeroSection />
-        <ProblemSection />
-        <PlatformOverview />
-        <TrackingSection />
-        <InventorySection />
-        <TechnicianSection />
-        <SchedulingSection />
-        <MultiCompanySection />
-        <IntegrationsSection />
-        <ComparisonSection />
-        <AudienceSection />
-        <WorkflowSection />
-        <OperationParallax />
-        <EditorialBreak />
-        <BenefitsSection />
-        <FAQSection />
-        <LeadForm />
+        <ReferenceCompanies />
+        <OperationPreview />
+        <OperationModes mode={mode} onModeChange={changeMode} />
+        <GrowthSection />
+        <UsageCalculator
+          period={period}
+          onPeriodChange={changePeriod}
+          mode={mode}
+          onSelect={setQuote}
+        />
+        <Pricing
+          period={period}
+          onPeriodChange={changePeriod}
+          mode={mode}
+          onSelect={setQuote}
+        />
+        <ImplementationSteps />
+        <SalesFAQ />
+        <LeadForm quote={quote} mode={mode} />
       </main>
       <Footer />
     </div>

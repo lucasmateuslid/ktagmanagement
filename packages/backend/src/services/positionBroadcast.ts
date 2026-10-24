@@ -25,7 +25,7 @@ export function attachWebSocketServer(server: Server): WebSocketServer {
   wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     try {
       const origin = String(req.headers.origin || '');
-      if (process.env.NODE_ENV === 'production' && !/^https:\/\/([a-z0-9-]+\.)?ktagfinder\.app$/.test(origin)) {
+      if (process.env.NODE_ENV === 'production' && !/^https:\/\/([a-z0-9-]+\.)?(?:monitora360\.online|ktagfinder\.app)$/.test(origin)) {
         throw new Error('origin not allowed');
       }
       const protocols = String(req.headers['sec-websocket-protocol'] || '').split(',').map(value => value.trim());

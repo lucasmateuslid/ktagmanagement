@@ -1,6 +1,6 @@
 export const BRAND = {
-  name: 'Monitora360',
-  domain: 'monitora360.online',
+  name: 'KTagFinder',
+  domain: 'ktagfinder.app',
   whatsapp: '558440028922',
   primaryColor: '#f59e0b',
   primaryHover: '#fbbf24',
