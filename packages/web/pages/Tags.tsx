@@ -23,6 +23,7 @@ import { trackingApi } from '../services/trackingApi';
 import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
 import { HTAG_IMPORT_FILE, HTAG_IMPORT_SHEET, HTAG_IMPORT_TEMPLATE, parseHtagImportRows } from '../utils/htagImport';
 import { displayTagSerial, tagTypeLabel } from './tags/utils/tagForm';
+import { summarizeImport, rowStatusLabel, type ImportRowResult } from './tags/utils/importSummary';
 import { isTraccarTagModel } from '@ktag/shared';
 import { SegmentedControl, type SegmentedOption } from '../components/ui';
 import { authenticatedFetch, readApiResponse } from '../services/authenticatedFetch';
@@ -138,7 +139,8 @@ export const Tags = () => {
   const [importData, setImportData] = useState<any[]>([]);
   const [importConfig, setImportConfig] = useState<{ type: TagType, warranty: number, powerType: 'battery' | '12v' }>({ type: 'K_TAG', warranty: 1, powerType: 'battery' });
   const [importing, setImporting] = useState(false);
-  const [importStep, setImportStep] = useState<'upload' | 'validate' | 'processing'>('upload');
+  const [importStep, setImportStep] = useState<'upload' | 'validate' | 'processing' | 'result'>('upload');
+  const [importResults, setImportResults] = useState<Array<ImportRowResult & { name: string; imei: string }>>([]);
   const [validationSummary, setValidationSummary] = useState({ valid: 0, invalid: 0 });
   const [importProgress, setImportProgress] = useState(0);
 
@@ -639,6 +641,7 @@ export const Tags = () => {
     setImportProgress(0);
     setImporting(true);
     let successCount = 0;
+    let resultShown = false;
     
     const validRows = importData.filter(d => d._valid);
     const total = validRows.length;
@@ -647,10 +650,11 @@ export const Tags = () => {
       if (isTraccarTagModel(importConfig.type)) {
           const rows = validRows.map(row => ({ imei: row._serial, description: row['Identificacao'] || row.nome || row.name || '' }));
           const summary = await trackingApi.importCommit(rows, importConfig.type); successCount = summary.created; setImportProgress(100);
-          const failed = summary.invalid + summary.unavailable;
-          if (summary.existing || summary.pending || failed) {
-            addNotification('info', `Importação ${tagTypeLabel(importConfig.type)}`, `${summary.created} criadas, ${summary.existing} já existentes, ${summary.pending} pendentes no Traccar, ${failed} com erro.`);
-          }
+          const outcome = summarizeImport(summary, tagTypeLabel(importConfig.type) || 'tag');
+          setImportResults((summary.rows || []).map(r => ({ ...r, name: rows[r.index]?.description || '', imei: rows[r.index]?.imei || '' })));
+          storage.invalidateTagsCache();
+          addNotification(outcome.tone === 'success' ? 'success' : outcome.tone === 'error' ? 'error' : 'info', outcome.title, outcome.message);
+          resultShown = true;
       } else for (let i = 0; i < total; i++) {
           const row = validRows[i];
           const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
@@ -685,14 +689,16 @@ export const Tags = () => {
           await new Promise(r => setTimeout(r, 20));
       }
       
-      addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados.`);
-      setIsImportModalOpen(false);
+      if (!resultShown) {
+        addNotification('success', 'Importação Concluída', `${successCount} equipamentos importados.`);
+        setIsImportModalOpen(false);
+      }
       loadData();
     } catch (e) {
       addNotification('error', 'Erro Crítico', e instanceof Error && e.message ? e.message : 'Falha durante o processamento.');
     } finally {
       setImporting(false);
-      setImportStep('upload');
+      setImportStep(resultShown ? 'result' : 'upload');
     }
   };
 
@@ -1240,7 +1246,7 @@ export const Tags = () => {
                       <div>
                           <h2 className="text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Importação em Massa</h2>
                           <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
-                              {importStep === 'upload' ? 'Selecione o arquivo e tipo' : importStep === 'validate' ? 'Validação de Dados' : 'Processando...'}
+                              {importStep === 'upload' ? 'Selecione o arquivo e tipo' : importStep === 'validate' ? 'Validação de Dados' : importStep === 'result' ? 'Resultado da importação' : 'Processando...'}
                           </p>
                       </div>
                       <button type="button" aria-label="Fechar" onClick={() => setIsImportModalOpen(false)} disabled={importing} className="shrink-0 p-2 text-zinc-400 hover:text-zinc-600 disabled:opacity-50"><X size={20}/></button>
@@ -1295,6 +1301,24 @@ export const Tags = () => {
                           </div>
                       )}
 
+                      {importStep === 'result' && (
+                          <div className="max-h-80 overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+                              <table className="w-full text-left text-xs">
+                                  <thead className="bg-zinc-100 dark:bg-zinc-950 font-bold text-zinc-500 sticky top-0">
+                                      <tr><th className="p-3">Status</th><th className="p-3">Identificação</th><th className="p-3">IMEI / Motivo</th></tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                      {importResults.map(r => (
+                                          <tr key={r.index} className={r.status === 'invalid' || r.status === 'unavailable' ? 'bg-red-500/10' : r.status === 'pending' ? 'bg-primary-500/10' : ''}>
+                                              <td className="p-3 font-bold">{rowStatusLabel(r.status)}</td>
+                                              <td className="p-3 truncate max-w-[150px]">{r.name || '-'}</td>
+                                              <td className="p-3 font-mono text-zinc-500">{r.imei}{r.error && <span className="block font-sans text-red-500">{r.error}</span>}</td>
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                              </table>
+                          </div>
+                      )}
                       {(importStep === 'validate' || importStep === 'processing') && (
                           <div className="space-y-6">
                               <div className="flex gap-4">
@@ -1356,6 +1380,9 @@ export const Tags = () => {
                   </div>
 
                   <div className="modal-card-footer p-4 sm:p-6 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 flex justify-end gap-3">
+                      {importStep === 'result' && (
+                          <button onClick={() => { setIsImportModalOpen(false); setImportStep('upload'); setImportData([]); setImportResults([]); }} className="px-8 py-3 bg-primary-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest">Fechar</button>
+                      )}
                       {importStep === 'validate' && (
                           <>
                               <button onClick={() => { setImportStep('upload'); setImportData([]); }} className="px-6 py-3 rounded-xl font-bold text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors">Cancelar</button>

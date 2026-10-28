@@ -534,6 +534,7 @@ export const storage = {
   },
 
   // --- TAGS ---
+  invalidateTagsCache: () => invalidateFirestoreReadCache(`collection:${tenantCollection(COLLECTIONS.TAGS).path}`),
   getTags: async (): Promise<Tag[]> => {
     const raw = await fetchResilient(tenantCollection(COLLECTIONS.TAGS)) as Tag[];
     if (raw.length > 0) cache.set(COLLECTIONS.TAGS, raw);
