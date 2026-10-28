@@ -1,6 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { createHash } from 'node:crypto';
-import type { TrackedPosition, XadTag } from '@ktag/shared';
+import { TRACCAR_TAG_MODELS, type TraccarTagModel, type TrackedPosition, type XadTag } from '@ktag/shared';
 import { adminDb } from '../services/firebaseAdmin.js';
 
 const collectionPath = (tenantId: string) => `tenants/${tenantId}/tags`;
@@ -13,7 +13,7 @@ export class XadTagConflictError extends Error {}
 export class XadTagRepository {
   async assertAvailable(tenantId: string, identifier: string): Promise<void> {
     const ownership = await uniqueRef(identifier).get();
-    if (ownership.exists && String(ownership.get('tenantId')) !== tenantId) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
+    if (ownership.exists && String(ownership.get('tenantId')) !== tenantId) throw new XadTagConflictError('Este equipamento já está vinculado a outra empresa.');
     if ((await adminDb.doc(`traccar_tracker_identifiers/${identifier}`).get()).exists) throw new XadTagConflictError('Identificador já reservado por um rastreador.');
     if ((await adminDb.doc(`traccar_ktag_identifiers/${identifier}`).get()).exists) throw new XadTagConflictError('Identificador já reservado por uma K-TAG.');
   }
@@ -22,7 +22,7 @@ export class XadTagRepository {
     return snap.exists ? ({ id: snap.id, ...snap.data() } as XadTag) : null;
   }
   async list(tenantId: string): Promise<XadTag[]> {
-    const snap = await adminDb.collection(collectionPath(tenantId)).where('equipmentType', '==', 'XADTAG').get();
+    const snap = await adminDb.collection(collectionPath(tenantId)).where('equipmentType', 'in', [...TRACCAR_TAG_MODELS]).get();
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as XadTag));
   }
   async findByIdentifier(tenantId: string, identifier: string): Promise<XadTag | null> {
@@ -67,7 +67,7 @@ export class XadTagRepository {
       if (ownership.exists) {
         const ownerTenantId = String(ownership.get('tenantId'));
         const equipmentId = String(ownership.get('equipmentId'));
-        if (ownerTenantId !== input.tenantId) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
+        if (ownerTenantId !== input.tenantId) throw new XadTagConflictError('Este equipamento já está vinculado a outra empresa.');
         const existing = await transaction.get(adminDb.doc(`${collectionPath(ownerTenantId)}/${equipmentId}`));
         if (existing.exists) return { item: { id: existing.id, ...existing.data() } as XadTag, created: false };
       }
@@ -106,12 +106,12 @@ export class XadTagRepository {
       const tracker = await transaction.get(adminDb.doc(`traccar_tracker_identifiers/${data.traccarUniqueId}`));
       const ktag = await transaction.get(adminDb.doc(`traccar_ktag_identifiers/${data.traccarUniqueId}`));
       if (tracker.exists || ktag.exists) throw new XadTagConflictError('Identificador já reservado por outro equipamento.');
-      if (!tag.exists) throw new Error('XADTAG não encontrada.');
+      if (!tag.exists) throw new Error('Equipamento não encontrado.');
       if (nextGlobal.exists && (String(nextGlobal.get('tenantId')) !== item.tenantId || String(nextGlobal.get('equipmentId')) !== item.id)) {
-        throw new XadTagConflictError('O uniqueId correto já pertence a outra XADTAG.');
+        throw new XadTagConflictError('O uniqueId correto já pertence a outro equipamento.');
       }
       if (nextLocal.exists && String(nextLocal.get('equipmentId')) !== item.id) {
-        throw new XadTagConflictError('O identificador correto já pertence a outra XADTAG desta empresa.');
+        throw new XadTagConflictError('O identificador correto já pertence a outro equipamento desta empresa.');
       }
       const now = Date.now();
       transaction.set(nextGlobalRef, { tenantId: item.tenantId, equipmentId: item.id, traccarUniqueId: data.traccarUniqueId, traccarDeviceId: data.traccarDeviceId ?? item.traccarDeviceId, updatedAt: now });
@@ -145,14 +145,14 @@ export class XadTagRepository {
     await adminDb.collection(`tenants/${tenantId}/audit_logs`).add({ userId, tenantId, equipmentId, event, action: 'TRACKING', entity: 'XADTAG', result, timestamp: FieldValue.serverTimestamp() });
   }
   async buildDeviceMapping() {
-    const snap = await adminDb.collectionGroup('tags').where('equipmentType', '==', 'XADTAG').get();
-    return new Map(snap.docs.filter(doc => Number.isInteger(doc.get('traccarDeviceId'))).map(doc => [Number(doc.get('traccarDeviceId')), { tenantId: String(doc.get('tenantId')), equipmentId: doc.id, uniqueId: String(doc.get('traccarUniqueId') || '') }]));
+    const snap = await adminDb.collectionGroup('tags').where('equipmentType', 'in', [...TRACCAR_TAG_MODELS]).get();
+    return new Map(snap.docs.filter(doc => Number.isInteger(doc.get('traccarDeviceId'))).map(doc => [Number(doc.get('traccarDeviceId')), { tenantId: String(doc.get('tenantId')), equipmentId: doc.id, uniqueId: String(doc.get('traccarUniqueId') || ''), equipmentType: String(doc.get('equipmentType')) as TraccarTagModel }]));
   }
   async findMappingByDeviceId(deviceId: number) {
-    const snap = await adminDb.collectionGroup('tags').where('traccarDeviceId', '==', deviceId).where('equipmentType', '==', 'XADTAG').limit(1).get();
+    const snap = await adminDb.collectionGroup('tags').where('traccarDeviceId', '==', deviceId).where('equipmentType', 'in', [...TRACCAR_TAG_MODELS]).limit(1).get();
     if (snap.empty) return null;
     const doc = snap.docs[0];
-    return { tenantId: String(doc.get('tenantId')), equipmentId: doc.id, uniqueId: String(doc.get('traccarUniqueId') || '') };
+    return { tenantId: String(doc.get('tenantId')), equipmentId: doc.id, uniqueId: String(doc.get('traccarUniqueId') || ''), equipmentType: String(doc.get('equipmentType')) as TraccarTagModel };
   }
 }
 export const xadTagRepository = new XadTagRepository();

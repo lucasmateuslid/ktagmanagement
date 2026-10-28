@@ -65,7 +65,7 @@ export function IconTile({
     <div
       className={cn(
         'inline-flex items-center justify-center rounded-2xl p-3 shrink-0',
-        variant === 'neutral' && 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400',
+        variant === 'neutral' && 'bg-surface-2 text-fg-3',
         variant === 'dark' && 'bg-zinc-800 text-zinc-300',
         variant === 'accent' && 'bg-primary-500/5 border border-primary-500/30 text-primary-500',
         className,
@@ -111,5 +111,17 @@ export function StatusDot({
         className,
       )}
     />
+  );
+}
+
+/* ---- Detail: par rótulo (eyebrow) + valor, usado nas fichas ---- */
+export function Detail({
+  label, value, icon, className,
+}: { label: string; value: React.ReactNode; icon?: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <dt className="flex items-center gap-2 text-label-xs uppercase text-fg-3">{icon}{label}</dt>
+      <dd className="mt-1.5 break-words text-sm font-bold uppercase text-fg-1">{value}</dd>
+    </div>
   );
 }

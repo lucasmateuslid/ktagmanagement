@@ -135,7 +135,7 @@ export function TrackersPage() {
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800 md:hidden">{filtered.map(item=><TrackerCard key={item.id} item={item} onEdit={openEdit} onDelete={setDeletingTracker} onConfigure={openConfigure}/>)}</div>
       {!loading && !filtered.length && <div className="p-12 text-center text-sm text-zinc-500">Nenhum equipamento encontrado.</div>}
     </div>
-    <p className="text-xs text-content-muted">Modelos baseados no <a className="font-bold text-primary-500 hover:underline" href="https://www.traccar.org/devices/" target="_blank" rel="noreferrer">catálogo oficial de dispositivos do Traccar</a>.</p>
+    <p className="text-xs text-fg-2">Modelos baseados no <a className="font-bold text-primary-500 hover:underline" href="https://www.traccar.org/devices/" target="_blank" rel="noreferrer">catálogo oficial de dispositivos do Traccar</a>.</p>
 
     <TrackerFormModal open={modalOpen} onOpenChange={(open) => { setModalOpen(open); if (!open) setEditingTracker(null); }} title={editingTracker ? 'Editar equipamento' : 'Cadastrar equipamento'} form={form} setForm={setForm} models={models} simCards={simCards} suppliers={suppliers} saving={saving} onSave={save} editing={!!editingTracker}/>
     <Modal open={!!configuring} onOpenChange={open => { if (!open) setConfiguring(null); }} title="Integração e bloqueio" size="md">
@@ -167,7 +167,7 @@ function TrackerFormModal(props: { open:boolean; onOpenChange:(v:boolean)=>void;
 function TrackerFields({ form, setForm, models, simCards, suppliers, batchMode=false, editing=false }: { form:TrackerForm; setForm:React.Dispatch<React.SetStateAction<TrackerForm>>; models:TrackerModel[]; simCards:AvailableSim[]; suppliers:EquipmentSupplier[]; batchMode?:boolean; editing?: boolean; [key:string]:any }) {
   const set = (key:keyof TrackerForm, value:any) => setForm(previous=>({...previous,[key]:value}));
   return <div className="grid gap-4 md:grid-cols-2">
-    <label className="flex items-center gap-3 rounded-xl border border-border p-3 text-sm font-bold"><input type="checkbox" checked={form.invertedLockOutput} onChange={e=>set('invertedLockOutput',e.target.checked)} className="h-4 w-4 accent-primary-500"/> Saída de bloqueio invertida</label>
+    <label className="flex items-center gap-3 rounded-xl border border-line p-3 text-sm font-bold"><input type="checkbox" checked={form.invertedLockOutput} onChange={e=>set('invertedLockOutput',e.target.checked)} className="h-4 w-4 accent-primary-500"/> Saída de bloqueio invertida</label>
     <L label="Modelo *"><select className={fieldClass} value={form.modelId} onChange={e=>set('modelId',e.target.value)}><option value="">Selecione</option>{models.map(m=><option key={m.id} value={m.id}>{m.manufacturer} — {m.name} ({m.protocol})</option>)}</select></L>
     {!batchMode && <L label="IMEI *"><input className={`${fieldClass} disabled:cursor-not-allowed disabled:opacity-60`} disabled={editing} inputMode="numeric" maxLength={15} value={form.imei} onChange={e=>set('imei',e.target.value.replace(/\D/g,''))}/></L>}
     {!batchMode && <L label="Chip"><select className={fieldClass} value={form.simCardId} onChange={e=>set('simCardId',e.target.value)}><option value="">Sem chip</option>{form.simCardId && !simCards.some(s => s.id === form.simCardId) && <option value={form.simCardId}>Chip atual — {form.simCardId}</option>}{simCards.map(s=><option key={s.id} value={s.id}>{s.phoneNumber || 'Sem número'} — {s.iccid} ({s.provider || 'operadora'})</option>)}</select></L>}
@@ -181,7 +181,7 @@ function TrackerFields({ form, setForm, models, simCards, suppliers, batchMode=f
     <L label="Garantia (meses)"><input className={fieldClass} type="number" min="0" value={form.warrantyMonths} onChange={e=>set('warrantyMonths',e.target.value)}/></L>
     <L label="Estoque *"><input className={fieldClass} maxLength={80} value={form.stockId} onChange={e=>set('stockId',e.target.value)}/></L>
     <L label="Lote"><input className={fieldClass} maxLength={80} value={form.batch} onChange={e=>set('batch',e.target.value)}/></L>
-    <label className="md:col-span-2"><span className="mb-1.5 block text-xs font-black uppercase text-content-muted">Obs</span><textarea maxLength={500} className={`${fieldClass} min-h-24`} value={form.notes} onChange={e=>set('notes',e.target.value)}/></label>
+    <label className="md:col-span-2"><span className="mb-1.5 block text-xs font-black uppercase text-fg-2">Obs</span><textarea maxLength={500} className={`${fieldClass} min-h-24`} value={form.notes} onChange={e=>set('notes',e.target.value)}/></label>
   </div>;
 }
-const L=({label,children}:{label:string;children:React.ReactNode})=><label><span className="mb-1.5 block text-xs font-black uppercase text-content-muted">{label}</span>{children}</label>;
+const L=({label,children}:{label:string;children:React.ReactNode})=><label><span className="mb-1.5 block text-xs font-black uppercase text-fg-2">{label}</span>{children}</label>;

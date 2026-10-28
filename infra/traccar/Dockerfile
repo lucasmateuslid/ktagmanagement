@@ -21,6 +21,6 @@ COPY entrypoint.sh /opt/traccar/entrypoint.sh
 RUN chmod +x /opt/traccar/entrypoint.sh
 
 # Portas da API interna + protocolos GPS
-EXPOSE 8082 5001 5020 5023 5027 5055
+EXPOSE 8082 5001 5020 5023 5027 5055 5056
 
 ENTRYPOINT ["/opt/traccar/entrypoint.sh"]

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { cn } from '../../lib/utils';
 
-type Tone = 'neutral' | 'amber' | 'emerald' | 'red' | 'blue' | 'purple' | 'zinc';
+type Tone = 'neutral' | 'accent' | 'amber' | 'emerald' | 'red' | 'blue' | 'purple' | 'zinc';
 
 interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   tone?: Tone;
@@ -11,29 +11,36 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   icon?: React.ReactNode;
 }
 
+// `amber` é alias legado de `accent` (cor de marca, respeita whitelabel via primary-*).
+const ACCENT_SOFT = 'bg-primary-500/10 text-primary-700 dark:text-primary-400 border-primary-500/20';
+const ACCENT_OUTLINE = 'border-primary-500/40 text-primary-700 dark:text-primary-400';
+
 const TONE_SOFT: Record<Tone, string> = {
-  neutral: 'bg-white/[0.04] text-zinc-300 border-white/10',
-  amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  red: 'bg-red-500/10 text-red-400 border-red-500/20',
-  blue: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  purple: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-  zinc: 'bg-zinc-700/40 text-zinc-300 border-zinc-700',
+  neutral: 'bg-surface-2 text-fg-2 border-line',
+  accent: ACCENT_SOFT,
+  amber: ACCENT_SOFT,
+  emerald: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+  red: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
+  blue: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+  purple: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20',
+  zinc: 'bg-zinc-500/10 text-fg-2 border-line',
 };
 
 const TONE_OUTLINE: Record<Tone, string> = {
-  neutral: 'border-white/10 text-zinc-300',
-  amber: 'border-amber-500/40 text-amber-400',
-  emerald: 'border-emerald-500/40 text-emerald-400',
-  red: 'border-red-500/40 text-red-400',
-  blue: 'border-blue-500/40 text-blue-400',
-  purple: 'border-purple-500/40 text-purple-400',
-  zinc: 'border-zinc-700 text-zinc-300',
+  neutral: 'border-line text-fg-2',
+  accent: ACCENT_OUTLINE,
+  amber: ACCENT_OUTLINE,
+  emerald: 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
+  red: 'border-red-500/40 text-red-600 dark:text-red-400',
+  blue: 'border-blue-500/40 text-blue-700 dark:text-blue-400',
+  purple: 'border-purple-500/40 text-purple-700 dark:text-purple-400',
+  zinc: 'border-line text-fg-2',
 };
 
 const TONE_SOLID: Record<Tone, string> = {
   neutral: 'bg-zinc-800 text-white border-transparent',
-  amber: 'bg-amber-500 text-zinc-950 border-transparent',
+  accent: 'bg-accent text-fg-on-accent border-transparent',
+  amber: 'bg-accent text-fg-on-accent border-transparent',
   emerald: 'bg-emerald-500 text-white border-transparent',
   red: 'bg-red-500 text-white border-transparent',
   blue: 'bg-blue-500 text-white border-transparent',
@@ -59,8 +66,8 @@ export function Badge({
     <span
       className={cn(
         'inline-flex items-center gap-1.5 font-black uppercase tracking-widest border rounded-full',
-        size === 'xs' && 'text-[9px] px-2 py-0.5',
-        size === 'sm' && 'text-[10px] px-2.5 py-1',
+        size === 'xs' && 'text-2xs px-2 py-0.5',
+        size === 'sm' && 'text-2xs px-2.5 py-1',
         palette,
         className,
       )}

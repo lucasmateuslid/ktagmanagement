@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
-import type { TraccarPosition } from '@ktag/shared';
+import { isTraccarTagModel, type TraccarPosition } from '@ktag/shared';
 import { adminDb } from './firebaseAdmin.js';
 import { fetchKtagWithRetry, ktagHistoryPointId, normalizeKtagSnapshot } from './ktagHistoryCapture.js';
 import { duplicateKtagKeys, pairKtagResults, shouldSyncKtagKeys } from './ktagFleetUtils.js';
@@ -349,9 +349,14 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
                 const normalized = normalizeKtagSnapshot(raw);
                 if (!normalized) throw new Error('K-TAG retornou uma posição inválida.');
                 const previous = item.doc.get('lastPosition');
+                const vehicle = duplicateAssignments.has(item.doc.id) ? undefined : vehicleByTag.get(item.doc.id);
+                if (previous && normalized.timestamp <= positionTime(previous)) {
+                  locationByTag.set(item.doc.id, { ...previous, ...(vehicle ? { vehicleId: vehicle.id } : {}) });
+                  return;
+                }
                 const reusableAddress = reusableAddressAt(previous, normalized.lat, normalized.lon);
                 if (reusableAddress) summary.addressesReused++;
-                const vehicle = duplicateAssignments.has(item.doc.id) ? undefined : vehicleByTag.get(item.doc.id); const pointId = ktagHistoryPointId(item.doc.id, normalized);
+                const pointId = ktagHistoryPointId(item.doc.id, normalized);
                 const point = { ...normalized, id: pointId, tagId: item.doc.id, ...(vehicle ? { vehicleId: vehicle.id, vehicleIdAtCapture: vehicle.id } : {}), provider: 'ktag', battery: battery(normalized.status), address: reusableAddress || null, addressResolutionStatus: reusableAddress ? 'resolved' : 'pending', addressResolutionProvider: reusableAddress ? (previous?.addressResolutionProvider || 'traccar') : null, addressResolvedAt: reusableAddress ? Date.now() : null,
                   addressVerifiedAt: reusableAddress && previous?.addressResolutionProvider === 'photon' ? previous.addressVerifiedAt : null };
                 const historyRef = adminDb.doc(`tenants/${tenantId}/tag_history/${pointId}`);
@@ -390,7 +395,7 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
       }
     }
 
-    const xadItems = tagSnap.docs.filter(doc => String(doc.get('type') || doc.get('equipmentType')) === 'XADTAG');
+    const xadItems = tagSnap.docs.filter(doc => isTraccarTagModel(String(doc.get('type') || doc.get('equipmentType'))));
     await eachLimited(xadItems, POSITION_WRITE_CONCURRENCY, async item => {
       try {
       const deviceId = Number(item.get('traccarDeviceId')); const raw = Number.isInteger(deviceId) ? traccarPositions.get(deviceId) : undefined;
@@ -411,12 +416,14 @@ export async function refreshTenantFleet(tenantId: string, trigger: 'worker' | '
         ? { ...toTrackedPosition(raw, resolved.address), addressResolutionStatus: resolved.address ? 'resolved' as const : 'pending' as const, addressResolutionAttempts: resolved.attempts, addressResolutionProvider: resolved.provider, addressResolvedAt: resolved.address ? Date.now() : null,
           addressVerifiedAt: resolved.provider === 'photon' ? previous?.addressVerifiedAt || null : null }
         : { ...previous, address: resolved.address, addressResolutionStatus: resolved.address ? 'resolved' : 'pending', addressResolutionAttempts: resolved.attempts, addressResolutionProvider: resolved.provider, addressResolvedAt: resolved.address ? Date.now() : null };
-      await xadTagRepository.persistPosition({ id: item.id, tenantId, ...item.data() } as any, tracked);
       const timestamp = positionTime(raw || previous);
+      // Sem posição nova do Traccar não há o que gravar: evita 1 leitura + 1 escrita por tag a cada ciclo.
+      const hasNewPosition = !!raw && timestamp > positionTime(previous);
+      if (hasNewPosition) await xadTagRepository.persistPosition({ id: item.id, tenantId, ...item.data() } as any, tracked);
       if (!timestamp) { errorsByTag.set(item.id, 'Posição sem horário válido.'); return; }
       const point = Object.fromEntries(Object.entries({ id: String(raw?.id ?? previous?.id ?? `${timestamp}-${lat}-${lon}`), tagId: item.id, ...(vehicle ? { vehicleId: vehicle.id } : {}), provider: 'traccar', timestamp, lat, lon, isodatetime: new Date(timestamp).toISOString(), conf: raw?.valid === false ? 0 : 100, status: 1, address: resolved.address, addressResolvedAt: resolved.address ? Date.now() : null, addressResolutionProvider: resolved.provider,
         addressVerifiedAt: resolved.provider === 'photon' ? previous?.addressVerifiedAt || null : null, speed: raw?.speed ?? previous?.speed, course: raw?.course ?? previous?.course, altitude: raw?.altitude ?? previous?.altitude }).filter(([, value]) => value !== undefined));
-      if (vehicle) await adminDb.runTransaction(async tx => { const current = await tx.get(vehicle.ref); if (afterVehicleLink(timestamp, current.get('trackingLinkedAt')) && canPromoteVehiclePosition(current.get('tagId'), current.get('trackerId'), point as any, current.get('lastPosition'))) tx.update(vehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() }); });
+      if (vehicle && hasNewPosition) await adminDb.runTransaction(async tx => { const current = await tx.get(vehicle.ref); if (afterVehicleLink(timestamp, current.get('trackingLinkedAt')) && canPromoteVehiclePosition(current.get('tagId'), current.get('trackerId'), point as any, current.get('lastPosition'))) tx.update(vehicle.ref, { lastPosition: point, lastPositionUpdatedAt: Date.now() }); });
       if (!resolved.address) resolveXadAddressLater(item.ref, vehicle?.ref || null, point as any);
       const priorLocation = locationByTag.get(item.id);
       if (!priorLocation || timestamp > Number(priorLocation.timestamp || 0)) locationByTag.set(item.id, point);

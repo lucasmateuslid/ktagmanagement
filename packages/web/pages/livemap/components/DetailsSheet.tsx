@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BatteryCharging, CarFront, ChevronDown, ChevronLeft, ChevronUp, Clock3, History, MapPin, Navigation, RefreshCw, Search, Share2, X } from 'lucide-react';
 import type { Client, LocationHistory, Tag, Vehicle, VehicleCategory } from '../../../types';
+import { isTraccarTagModel } from '@ktag/shared';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { VehicleBlockingControls } from '../../../components/VehicleBlockingControls';
 
@@ -35,7 +36,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
     }, []);
 
     if (!selectedTagId) return null;
-    const tagIdentifier = tag?.type === 'XADTAG'
+    const tagIdentifier = isTraccarTagModel(tag?.type)
         ? (tag.identifierOriginal || tag.accessoryId || selectedTagId)
         : (tag?.accessoryId || tag?.name || selectedTagId);
     const ageMinutes = lastLoc?.timestamp ? Math.max(0, Math.floor((now - lastLoc.timestamp) / 60_000)) : null;
@@ -108,7 +109,7 @@ export const DetailsSheet: React.FC<DetailsSheetProps> = ({
                     {client && userRole !== 'client' && <div className="mb-3"><p className="text-[9px] text-zinc-400">Proprietário / cliente</p><p className="text-[10px] font-bold text-amber-600">{client.name}</p></div>}
                     <div className="mb-3"><p className="text-[9px] text-zinc-400">Modelo</p><p className="text-[10px] font-semibold text-zinc-800 dark:text-zinc-200">{vehicle.model}{vehicle.year ? ` · ${vehicle.year}` : ''}</p></div>
                     <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800"><span className="text-[9px] text-zinc-400">Situação</span><span className="rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">{vehicle.status === 'stolen' ? 'Alerta' : vehicle.status === 'maintenance' ? 'Manutenção' : 'Ativo'}</span></div>
-                    {tag && userRole !== 'client' && <div className="flex items-center justify-between gap-2 pt-3"><span className="text-[9px] text-zinc-400">{tag.type === 'XADTAG' ? 'XADTAG' : 'K-TAG'}</span><span className="truncate text-[10px] font-semibold text-zinc-700 dark:text-zinc-200">{tagIdentifier}</span></div>}
+                    {tag && userRole !== 'client' && <div className="flex items-center justify-between gap-2 pt-3"><span className="text-[9px] text-zinc-400">{tag.type === 'XADTAG' ? 'XADTAG' : tag.type === 'H_TAG' ? 'H-TAG' : 'K-TAG'}</span><span className="truncate text-[10px] font-semibold text-zinc-700 dark:text-zinc-200">{tagIdentifier}</span></div>}
                 </section>}
                 {vehicle?.trackerId && <VehicleBlockingControls vehicleId={vehicle.id} />}
                 <section className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700"><h4 className="mb-2 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400"><MapPin size={12} />Última localização</h4><p className="text-[11px] font-medium text-zinc-700 dark:text-zinc-200">{lastLoc ? (resolvedAddress || 'Endereço ainda não disponível') : 'Sem posição registrada'}</p></section>

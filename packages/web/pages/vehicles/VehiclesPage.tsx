@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/storage';
 import { Plus, Search, MapPin, CarFront, Bike, Clock, LayoutGrid, X, List, Circle, Activity, CheckCircle2 } from 'lucide-react';
@@ -12,39 +12,38 @@ import { useVehiclesData } from './hooks/useVehiclesData';
 import { useVehicleFilters } from './hooks/useVehicleFilters';
 import { useVehicleSelection } from './hooks/useVehicleSelection';
 import { useVehicleExport } from './hooks/useVehicleExport';
-import { useHinovaLookup } from './hooks/useHinovaLookup';
-import { useFipeSearch } from './hooks/useFipeSearch';
-import { useVehicleForm } from './hooks/useVehicleForm';
 
 // Components
 import { VehicleTable } from './components/VehicleTable';
 import { VehicleFiltersBar } from './components/VehicleFiltersBar';
-import { VehicleModal } from './components/VehicleModal';
-import { FipeModal } from './components/FipeModal';
 import { VehicleKPIModal } from './components/VehicleKPIModal';
 import { Vehicle, LocationHistory } from '../../types';
-import type { ManagedTracker } from '@ktag/shared';
-import { useTenant } from '../../contexts/TenantContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { trackingApi } from '../../services/trackingApi';
 
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { Button, ModuleHeader, Pagination } from '../../components/ui';
+import { FleetTagSummary } from './components/FleetTagSummary';
+import { useVehicleSummary } from './hooks/useVehicleSummary';
 import { authenticatedFetch } from '../../services/authenticatedFetch';
 import { hasPermission, PERMISSIONS } from '../../utils/permissions';
 
 const MotionDiv = motion.div as any;
 
+const subscribeToMobileViewport = (onChange: () => void) => {
+  const mediaQuery = window.matchMedia('(max-width: 767px)');
+  mediaQuery.addEventListener('change', onChange);
+  return () => mediaQuery.removeEventListener('change', onChange);
+};
+
+const getMobileViewportSnapshot = () => window.matchMedia('(max-width: 767px)').matches;
+const getMobileViewportServerSnapshot = () => false;
+
 export const VehiclesPage = () => {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { user: currentUser, customRoles } = useAuth();
-  const { enabledModules } = useTenant();
   const canManageVehicles = hasPermission(currentUser, customRoles, PERMISSIONS.VEHICLES_MANAGE);
-  const canLinkTrackers = enabledModules.includes('trackers') && hasPermission(currentUser, customRoles, PERMISSIONS.ASSETS);
-  const [availableTrackers, setAvailableTrackers] = useState<ManagedTracker[]>([]);
-  const [trackersLoading, setTrackersLoading] = useState(false);
-  const [trackersError, setTrackersError] = useState('');
   
   // 1. Filters are sent to the backend; only one database page is kept in memory.
   const { 
@@ -55,7 +54,7 @@ export const VehiclesPage = () => {
     installationFilter, setInstallationFilter,
     tagFilter, setTagFilter
   } = useVehicleFilters([], []);
-  const { vehicles, tags, companies, categories, clients, loading, searching, error: loadError, reload, removeVehicle, loadMore, hasMore } = useVehiclesData(currentUser, {
+  const { vehicles, tags, companies, categories, clients, loading, searching, error: loadError, reload, removeVehicle, page, pageSize, hasMore, nextPage, previousPage, firstPage } = useVehiclesData(currentUser, {
     search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
     installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
   });
@@ -78,6 +77,10 @@ export const VehiclesPage = () => {
     });
   }, [vehicles, clients, tags, searchTerm, statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter]);
 
+  const isFiltered = Boolean(searchTerm.trim()) || statusFilter !== 'all' || companyFilter !== 'all'
+    || ownershipFilter !== 'all' || installationFilter !== 'all' || tagFilter !== 'all';
+  const { summary: fleetSummary, untagged: untaggedVehicles, reload: reloadSummary } = useVehicleSummary(Boolean(currentUser) && currentUser?.role !== 'client');
+
   React.useEffect(() => {
      if (location.state?.searchTarget) {
         setSearchTerm(location.state.searchTarget);
@@ -93,41 +96,12 @@ export const VehiclesPage = () => {
     vehicles, filteredVehicles, selectedVehicles, tags, companies, categories, clients, clearSelection
   });
 
-  // 5. Form Logic
-  const { 
-    isModalOpen, setIsModalOpen, isSaving,
-    formData, setFormData,
-    clientData, setClientData,
-    tagSearch, setTagSearch,
-    handleSave, checkExistingClient, openNew, openEdit
-  } = useVehicleForm(vehicles, clients, currentUser, reload);
-
-  React.useEffect(() => {
-    if (!isModalOpen || !canLinkTrackers) return;
-    let active = true;
-    setTrackersLoading(true); setTrackersError('');
-    void authenticatedFetch('/api/trackers').then(async response => {
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Falha ao carregar rastreadores.');
-      if (active) setAvailableTrackers(payload.data || []);
-    }).catch((error: Error) => { if (active) setTrackersError(error.message || 'Falha ao carregar rastreadores.'); })
-      .finally(() => { if (active) setTrackersLoading(false); });
-    return () => { active = false; };
-  }, [isModalOpen, canLinkTrackers]);
-
-  // 6. External Services
-  const { status: hinovaStatus, lookupPlate } = useHinovaLookup(setFormData, setClientData, clients);
-  const { 
-    isOpen: isFipeOpen, setIsOpen: setIsFipeOpen, 
-    step, loading: fipeLoading, searchTerm: fipeSearchTerm, setSearchTerm: setFipeSearchTerm, 
-    currentType, selectedBrand, selectedModel, filteredList: fipeList, 
-    startSearch, handleSelection: handleFipeSelection, handleBack: handleFipeBack 
-  } = useFipeSearch(categories);
-
-  // 7. Auto Open Modal from URL
   const isClientView = currentUser?.role === 'client';
-  const isMobile = window.innerWidth < 768; 
-  const [isTagListOpen, setIsTagListOpen] = React.useState(false);
+  const isMobile = React.useSyncExternalStore(
+    subscribeToMobileViewport,
+    getMobileViewportSnapshot,
+    getMobileViewportServerSnapshot,
+  );
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState<string | null>(null);
   const [isKPIModalOpen, setIsKPIModalOpen] = useState(false);
@@ -135,17 +109,6 @@ export const VehiclesPage = () => {
   // UI State for Client Mobile
   const [showSearch, setShowSearch] = React.useState(false);
   const [isGridView, setIsGridView] = React.useState(true); // Toggle Grid/List
-
-  React.useEffect(() => {
-    if (searchParams.get('action') === 'new' && !isClientView) {
-        openNew();
-    }
-  }, [searchParams]);
-
-  // Derived state for plate validation visualization passed to modal
-  const isPlateValid = React.useMemo(() => {
-      return !!formData.plate && formData.plate.length >= 7; 
-  }, [formData.plate]);
 
   const handleDelete = async (id: string) => {
       const v = vehicles.find(v => v.id === id);
@@ -156,17 +119,18 @@ export const VehiclesPage = () => {
       // A confirmação já pode fechar; a reconciliação da frota e das coleções
       // auxiliares não deve manter o usuário preso no estado "Excluindo...".
       void reload();
+      void reloadSummary();
   };
 
   // --- CLIENT MOBILE VIEW COMPONENTS ---
 
   const ClientMobileHeader = () => (
-      <div className="bg-zinc-900 rounded-[32px] p-8 shadow-2xl border border-zinc-800 relative overflow-hidden mb-6">
+      <div className="bg-zinc-900 rounded-card-lg p-8 shadow-2xl border border-zinc-800 relative overflow-hidden mb-6">
           <div className="relative z-10">
               <h2 className="text-6xl font-display font-black text-primary-500 tracking-tighter leading-none">{vehicles.length}</h2>
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mt-2">Frota Monitorada</p>
+              <p className="text-2xs font-black text-fg-3 uppercase tracking-[0.2em] mt-2">Frota Monitorada</p>
               
-              <div className="flex items-center gap-2 mt-6 text-[10px] font-mono text-zinc-500 bg-black/20 w-fit px-3 py-1 rounded-full border border-white/5">
+              <div className="flex items-center gap-2 mt-6 text-2xs font-mono text-fg-2 bg-black/20 w-fit px-3 py-1 rounded-full border border-white/5">
                   <Activity size={10} className="text-emerald-500" />
                   <span>Sincronizado: {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
               </div>
@@ -262,18 +226,18 @@ export const VehiclesPage = () => {
       if (isGridView) {
           // LAYOUT EM GRADE (CARD PREMIUM)
           return (
-              <div className="bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800 mb-4 relative">
+              <div className="bg-surface rounded-card-lg overflow-hidden shadow-sm border border-line mb-4 relative">
                   <div className="p-6">
                       <div className="flex items-start justify-between mb-4">
-                          <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center shrink-0 text-zinc-400">
+                          <div className="w-14 h-14 bg-surface-2 rounded-2xl flex items-center justify-center shrink-0 text-fg-3">
                               {isMoto ? <Bike size={24} /> : <CarFront size={24} />}
                           </div>
                           {lastPos ? (
-                              <div className="px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1.5">
+                              <div className="px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-2xs font-black uppercase tracking-widest border border-emerald-500/20 flex items-center gap-1.5">
                                   <Circle size={6} fill="currentColor" /> Online
                               </div>
                           ) : (
-                              <div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 rounded-full text-[9px] font-black uppercase tracking-widest border border-zinc-200 dark:border-zinc-700">
+                              <div className="px-3 py-1 bg-surface-2 text-fg-3 rounded-full text-2xs font-black uppercase tracking-widest border border-line">
                                   Offline
                               </div>
                           )}
@@ -281,28 +245,28 @@ export const VehiclesPage = () => {
 
                       <div className="mb-6">
                           <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight leading-none">{vehicle.plate}</h3>
+                              <h3 className="text-2xl font-display font-black text-fg-1 uppercase tracking-tight leading-none">{vehicle.plate}</h3>
                               {tag && (
-                                  <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-1 rounded font-mono font-bold border border-zinc-200 dark:border-zinc-700">
+                                  <span className="text-2xs bg-surface-2 text-fg-2 px-2 py-1 rounded font-mono font-bold border border-line">
                                        TAG: {tag.accessoryId || tag.imei || tag.name}
                                   </span>
                               )}
                           </div>
-                          <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide leading-tight line-clamp-1">{vehicle.model}</p>
+                          <p className="text-xs font-bold text-fg-2 uppercase tracking-wide leading-tight line-clamp-1">{vehicle.model}</p>
                       </div>
 
-                      <div className="space-y-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                      <div className="space-y-3 pt-4 border-t border-line">
                           <div className="flex items-start gap-3">
                               <MapPin size={16} className="text-primary-500 shrink-0 mt-0.5" />
-                              <p className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 leading-tight line-clamp-2">
+                              <p className="text-xs font-medium text-fg-1 leading-tight line-clamp-2">
                                   {address}
                               </p>
                           </div>
                           
                           <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-zinc-400 pl-0.5">
+                              <div className="flex items-center gap-2 text-fg-3 pl-0.5">
                                   <Clock size={12} />
-                                  <span className="text-[10px] font-mono font-bold">
+                                  <span className="text-2xs font-mono font-bold">
                                       {timeAgo}
                                   </span>
                               </div>
@@ -314,7 +278,7 @@ export const VehiclesPage = () => {
                                       className={`p-2 rounded-xl transition-all flex items-center gap-2 ${
                                           updateSuccess 
                                               ? 'bg-emerald-500/10 text-emerald-500' 
-                                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 hover:bg-primary-500/10'
+                                              : 'bg-surface-2 text-fg-2 hover:text-primary-500 hover:bg-primary-500/10'
                                       }`}
                                       title="Atualizar Localização"
                                   >
@@ -323,7 +287,7 @@ export const VehiclesPage = () => {
                                       ) : (
                                           <RefreshCwIcon size={14} className={isUpdating ? 'animate-spin' : ''} />
                                       )}
-                                      <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline-block">
+                                      <span className="text-2xs font-bold uppercase tracking-wider hidden sm:inline-block">
                                           {updateSuccess ? 'Atualizado' : 'Atualizar'}
                                       </span>
                                   </button>
@@ -336,27 +300,27 @@ export const VehiclesPage = () => {
       } else {
           // LAYOUT EM LISTA (COMPACTO)
           return (
-              <div className="bg-white dark:bg-zinc-900 rounded-[20px] p-4 shadow-sm border border-zinc-200 dark:border-zinc-800 mb-3 flex items-center gap-4">
-                  <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-xl flex items-center justify-center shrink-0 text-zinc-400">
+              <div className="bg-surface rounded-2xl p-4 shadow-sm border border-line mb-3 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-surface-2 rounded-xl flex items-center justify-center shrink-0 text-fg-3">
                       {isMoto ? <Bike size={20} /> : <CarFront size={20} />}
                   </div>
                   <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
                           <div className="flex items-center gap-2">
-                              <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-tight">{vehicle.plate}</h3>
+                              <h3 className="text-sm font-black text-fg-1 uppercase tracking-tight">{vehicle.plate}</h3>
                               {tag && (
-                                  <span className="text-[8px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded font-mono font-bold">
+                                  <span className="text-2xs bg-surface-2 text-fg-2 px-1.5 py-0.5 rounded font-mono font-bold">
                                        TAG: {tag.accessoryId || tag.imei || tag.name}
                                   </span>
                               )}
                           </div>
                           <div className={`w-2 h-2 rounded-full ${lastPos ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
                       </div>
-                      <p className="text-[10px] text-zinc-500 font-medium truncate mb-1">{vehicle.model}</p>
+                      <p className="text-2xs text-fg-2 font-medium truncate mb-1">{vehicle.model}</p>
                       <div className="flex items-center justify-between">
-                          <p className="text-[9px] text-zinc-400 truncate flex items-center gap-1"><MapPin size={10}/> {address}</p>
+                          <p className="text-2xs text-fg-3 truncate flex items-center gap-1"><MapPin size={10}/> {address}</p>
                           <div className="flex items-center gap-2">
-                              <span className="text-[9px] text-zinc-400 font-mono">{timeAgo}</span>
+                              <span className="text-2xs text-fg-3 font-mono">{timeAgo}</span>
                               {tag && (
                                   <button
                                       onClick={handleUpdateLocation}
@@ -364,7 +328,7 @@ export const VehiclesPage = () => {
                                       className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${
                                           updateSuccess 
                                               ? 'bg-emerald-500/10 text-emerald-500' 
-                                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-primary-500 hover:bg-primary-500/10'
+                                              : 'bg-surface-2 text-fg-2 hover:text-primary-500 hover:bg-primary-500/10'
                                       }`}
                                       title="Atualizar Localização"
                                   >
@@ -401,23 +365,23 @@ export const VehiclesPage = () => {
               <ClientMobileHeader />
               
               {/* Toolbar */}
-              <div className="flex justify-between items-center px-1 mb-2 sticky top-0 bg-zinc-100/90 dark:bg-black/90 backdrop-blur-md py-2 z-20 transition-all">
+              <div className="flex justify-between items-center px-1 mb-2 sticky top-0 bg-app backdrop-blur-md py-2 z-20 transition-all">
                   <div onClick={() => setShowSearch(!showSearch)} className="flex items-center gap-3 cursor-pointer">
-                      <h2 className="text-lg font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">Meus veículos</h2>
-                      <div className="w-8 h-8 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-800 text-zinc-400">
+                      <h2 className="text-lg font-display font-black text-fg-1 uppercase tracking-tight">Meus veículos</h2>
+                      <div className="h-10 w-10 rounded-full bg-surface flex items-center justify-center shadow-sm border border-line text-fg-3">
                           {showSearch ? <X size={14}/> : <Search size={14}/>}
                       </div>
                   </div>
-                  <div className="flex bg-zinc-200 dark:bg-zinc-800 p-1 rounded-xl">
+                  <div className="flex bg-line p-1 rounded-xl">
                       <button 
                           onClick={() => setIsGridView(true)}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isGridView ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-zinc-400'}`}
+                          className={`h-10 w-10 rounded-lg flex items-center justify-center transition-all ${isGridView ? 'bg-surface text-fg-1 shadow-sm' : 'text-fg-3'}`}
                       >
                           <LayoutGrid size={16}/>
                       </button>
                       <button 
                           onClick={() => setIsGridView(false)}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${!isGridView ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-zinc-400'}`}
+                          className={`h-10 w-10 rounded-lg flex items-center justify-center transition-all ${!isGridView ? 'bg-surface text-fg-1 shadow-sm' : 'text-fg-3'}`}
                       >
                           <List size={16}/> 
                       </button>
@@ -433,7 +397,7 @@ export const VehiclesPage = () => {
                               placeholder="Buscar placa ou modelo..." 
                               value={searchTerm} 
                               onChange={e => setSearchTerm(e.target.value)} 
-                              className="w-full h-14 rounded-2xl bg-white dark:bg-zinc-900 px-6 font-bold text-sm outline-none border border-zinc-200 dark:border-zinc-800 shadow-sm text-zinc-900 dark:text-white focus:border-primary-500 transition-colors"
+                              className="w-full h-14 rounded-2xl bg-surface px-6 font-bold text-sm outline-none border border-line shadow-sm text-fg-1 focus-visible:border-primary-500 transition-colors"
                               autoFocus
                           />
                       </MotionDiv>
@@ -447,10 +411,10 @@ export const VehiclesPage = () => {
                   ))}
                   {filteredVehicles.length === 0 && (
                       <div className="py-20 text-center opacity-40 flex flex-col items-center justify-center gap-4">
-                          <div className="w-16 h-16 bg-zinc-200 dark:bg-zinc-800 rounded-full flex items-center justify-center">
-                             <CarFront size={32} className="text-zinc-400"/>
+                          <div className="w-16 h-16 bg-line rounded-full flex items-center justify-center">
+                             <CarFront size={32} className="text-fg-3"/>
                           </div>
-                          <p className="text-xs font-black uppercase text-zinc-500 tracking-widest">Nenhum veículo encontrado</p>
+                          <p className="text-xs font-black uppercase text-fg-2 tracking-widest">Nenhum veículo encontrado</p>
                       </div>
                   )}
               </div>
@@ -461,30 +425,23 @@ export const VehiclesPage = () => {
   // --- STANDARD VIEW (DESKTOP & NON-CLIENTS) ---
   return (
     <div className="space-y-6 pb-24">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-        <div>
-          <h1 className="text-2xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight">{isClientView ? 'Minha Frota' : 'Veículos'}</h1>
-          <p className="text-zinc-500 text-xs mt-1 font-medium">{isClientView ? 'Gestão dos seus veículos e equipamentos.' : 'Gestão operacional da frota.'}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {canManageVehicles && (
-            <>
-              <button
-                onClick={() => setIsKPIModalOpen(true)}
-                className="flex-1 md:flex-none bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
-              >
-                <Activity size={16} strokeWidth={3} /> RELATÓRIO KPI
-              </button>
-              <button
-                onClick={openNew}
-                className="flex-1 md:flex-none bg-primary-500 hover:bg-primary-400 text-black px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black uppercase text-[9px] tracking-widest shadow-xl transition-all"
-              >
-                <Plus size={16} strokeWidth={3} /> ADICIONAR VEÍCULO
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      <ModuleHeader
+        eyebrow="Módulo de operações"
+        title={isClientView ? 'Minha frota' : 'Veículos'}
+        subtitle={isClientView ? 'Seus veículos e equipamentos.' : 'Gestão operacional da frota.'}
+        actions={canManageVehicles ? (
+          <>
+            <Button type="button" variant="inverse" onClick={() => setIsKPIModalOpen(true)}>
+              <Activity size={14} aria-hidden /> Relatório KPI
+            </Button>
+            <Button type="button" size="pill" onClick={() => navigate('/vehicles/new')}>
+              <Plus size={16} strokeWidth={3} aria-hidden /> Adicionar veículo
+            </Button>
+          </>
+        ) : undefined}
+      />
+
+      {!isClientView && <FleetTagSummary summary={fleetSummary} untagged={untaggedVehicles} />}
 
       <VehicleFiltersBar 
         searchTerm={searchTerm}
@@ -517,15 +474,36 @@ export const VehiclesPage = () => {
         categories={categories}
         clients={clients}
         isReadOnly={!canManageVehicles}
+        filtered={isFiltered}
+        onCreate={() => navigate('/vehicles/new')}
         selectedVehicles={selectedVehicles}
         toggleSelect={toggleSelect}
-        onEdit={(v) => openEdit(v, tags)}
+        onEdit={(v) => navigate(`/vehicles/${encodeURIComponent(v.id)}/edit`)}
         onDelete={(id) => { setVehicleToDelete(id); setIsConfirmDeleteOpen(true); }}
+        footer={(page > 1 || hasMore) || filteredVehicles.length > 0 ? (
+          <Pagination
+            summary={(() => {
+              const start = (page - 1) * pageSize + 1;
+              const end = start + vehicles.length - 1;
+              const showTotal = !isFiltered && fleetSummary;
+              return vehicles.length === 0 ? 'Nenhum resultado' : `${start}–${end}${showTotal ? ` de ${fleetSummary.total}` : ''}`;
+            })()}
+            page={page}
+            pageCount={!isFiltered && fleetSummary ? Math.max(1, Math.ceil(fleetSummary.total / pageSize)) : undefined}
+            hasNext={hasMore}
+            loading={loading}
+            onFirst={firstPage}
+            onPrevious={previousPage}
+            onNext={nextPage}
+          />
+        ) : undefined}
       />
-      {loadError && <div role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm font-semibold text-danger">{loadError} <button type="button" onClick={() => void reload()} className="ml-2 underline">Tentar novamente</button></div>}
-      {hasMore && <div className="flex justify-center py-4">
-        <button type="button" disabled={loading} onClick={loadMore} className="min-w-48 rounded-xl border border-zinc-200 px-6 py-3 text-xs font-black uppercase tracking-wider disabled:opacity-40 dark:border-zinc-800">{loading ? 'Carregando...' : 'Carregar mais'}</button>
-      </div>}
+      {loadError && (
+        <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-danger bg-danger/10 px-4 py-3 text-sm text-danger">
+          <span>{loadError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void reload()}>Tentar novamente</Button>
+        </div>
+      )}
 
       {isKPIModalOpen && (
         <VehicleKPIModal 
@@ -536,53 +514,6 @@ export const VehiclesPage = () => {
           categories={categories}
           clients={clients}
         />
-      )}
-
-      {isModalOpen && (
-        <VehicleModal 
-            onClose={() => setIsModalOpen(false)}
-            onSubmit={handleSave}
-            formData={formData}
-            setFormData={setFormData}
-            clientData={clientData}
-            setClientData={setClientData}
-            companies={companies}
-            categories={categories}
-            tags={tags}
-            trackers={availableTrackers}
-            canLinkTrackers={canLinkTrackers}
-            trackersLoading={trackersLoading}
-            trackersError={trackersError}
-            allVehicles={vehicles} // Passa todos os veículos para verificar vínculos de tags
-            tagSearch={tagSearch}
-            setTagSearch={setTagSearch}
-            onHinovaLookup={() => lookupPlate(formData.plate || '')}
-            hinovaStatus={hinovaStatus}
-            onCheckClient={checkExistingClient}
-            onFipeOpen={() => startSearch(formData.type)}
-            isTagListOpen={isTagListOpen}
-            setIsTagListOpen={setIsTagListOpen}
-            isPlateValid={isPlateValid}
-            isSaving={isSaving}
-        />
-      )}
-
-      {isFipeOpen && (
-        <div className="fixed inset-0 z-[10000]">
-          <FipeModal 
-              onClose={() => setIsFipeOpen(false)}
-              step={step}
-              loading={fipeLoading}
-              searchTerm={fipeSearchTerm}
-              setSearchTerm={setFipeSearchTerm}
-              currentType={currentType}
-              selectedBrand={selectedBrand}
-              selectedModel={selectedModel}
-              filteredList={fipeList}
-              handleSelection={(item) => handleFipeSelection(item, (model, year, price) => setFormData(prev => ({...prev, model, year, fipeValue: price})))}
-              handleBack={handleFipeBack}
-          />
-        </div>
       )}
 
       <ConfirmModal 

@@ -536,6 +536,36 @@ async function startServer() {
     } catch (error) { console.error('audit write failed', error); res.status(500).json({ ok: false, error: 'Falha ao registrar auditoria.' }); }
   });
 
+  app.post('/api/telemetry/firestore', requireAuth, async (req, res) => {
+    const tenantId = String(req.tenantId || '');
+    const metrics = Array.isArray(req.body?.metrics) ? req.body.metrics : [];
+    if (!tenantId || tenantId === 'admin' || tenantId === '__apex__') {
+      return res.status(400).json({ ok: false, error: 'Empresa inválida.' });
+    }
+    if (metrics.length === 0 || metrics.length > 100) {
+      return res.status(400).json({ ok: false, error: 'Lote de métricas inválido.' });
+    }
+
+    const sanitized = metrics.map((metric: any) => ({
+      collection: String(metric?.collection || 'unknown').slice(0, 120),
+      source: String(metric?.source || 'unknown').slice(0, 120),
+      reads: Math.max(0, Math.min(Number(metric?.reads) || 0, 1_000_000)),
+    })).filter((metric: { reads: number }) => metric.reads > 0);
+
+    if (sanitized.length === 0) {
+      return res.status(400).json({ ok: false, error: 'Métricas vazias.' });
+    }
+
+    console.info(JSON.stringify({
+      type: 'firestore_usage',
+      tenantId,
+      uid: req.authUser?.uid || null,
+      metrics: sanitized,
+      recordedAt: new Date().toISOString(),
+    }));
+    return res.status(204).end();
+  });
+
   // APIs privadas: autenticação é validada no servidor em todas as chamadas.
   // CORS e o segredo da origem são defesa em profundidade, não autorização.
   app.use(['/api/geocode', '/api/reverse-geocode'], requireAuth);

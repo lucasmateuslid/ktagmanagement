@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import type { TraccarPosition } from '@ktag/shared';
+import { isTraccarTagModel, type TraccarPosition } from '@ktag/shared';
 import { adminDb } from './firebaseAdmin.js';
 import { KtagConfigurationError, ktagClient } from './ktagClient.js';
 import { ktagHistoryPointId } from './ktagHistoryCapture.js';
@@ -176,7 +176,7 @@ async function execute(tenantId: string, tagId: string) {
   const tag = await adminDb.doc(`tenants/${tenantId}/tags/${tagId}`).get();
   if (!tag.exists) throw Object.assign(new Error('Tag não encontrada.'), { status: 404 });
   const type = String(tag.get('type') || tag.get('equipmentType'));
-  if (type === 'XADTAG') return refreshXadtag(tenantId, tagId);
+  if (isTraccarTagModel(type)) return refreshXadtag(tenantId, tagId);
   if (type === 'K_TAG') return refreshKtag(tenantId, tag);
   throw Object.assign(new Error('Tipo de tag não suportado.'), { status: 422 });
 }

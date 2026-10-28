@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import type { TraccarDevice, TraccarPosition, TraccarRealtimeStatus, TraccarSocketMessage, XadTag } from '@ktag/shared';
+import type { TraccarDevice, TraccarPosition, TraccarRealtimeStatus, TraccarSocketMessage, TraccarTagModel, XadTag } from '@ktag/shared';
 import { getTraccarConfig } from '../config/traccar.js';
 import { xadTagRepository } from '../repositories/xadtagRepository.js';
 import { broadcastPosition } from './positionBroadcast.js';
@@ -12,7 +12,7 @@ const positive = (name: string, fallback: number) => {
   const value = Number(process.env[name] ?? fallback);
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
-const MAPPING_REFRESH_INTERVAL_MS = positive('TRACCAR_MAPPING_REFRESH_INTERVAL_MS', 5 * 60_000);
+const MAPPING_REFRESH_INTERVAL_MS = positive('TRACCAR_MAPPING_REFRESH_INTERVAL_MS', 60 * 60_000);
 
 export class TraccarRealtimeService {
   private socket: WebSocket | null = null;
@@ -21,7 +21,7 @@ export class TraccarRealtimeService {
   private mappingTimer?: NodeJS.Timeout;
   private attempt = 0;
   private stopped = true;
-  private mapping = new Map<number, { tenantId: string; equipmentId: string; uniqueId: string; equipmentType: 'XADTAG' | 'K_TAG' }>();
+  private mapping = new Map<number, { tenantId: string; equipmentId: string; uniqueId: string; equipmentType: TraccarTagModel | 'K_TAG' }>();
   private lastPosition = new Map<number, { id: number; time: number }>();
   private devices = new Map<number, TraccarDevice>();
   private equipment = new Map<number, XadTag>();
@@ -54,8 +54,8 @@ export class TraccarRealtimeService {
           return ids.map(id => [`${tenantId}:${id}`, doc.ref] as const);
         }),
     );
-    this.mapping = new Map<number, { tenantId: string; equipmentId: string; uniqueId: string; equipmentType: 'XADTAG' | 'K_TAG' }>([
-      ...[...xad.entries()].map(([id, value]) => [id, { ...value, equipmentType: 'XADTAG' as const }] as const),
+    this.mapping = new Map<number, { tenantId: string; equipmentId: string; uniqueId: string; equipmentType: TraccarTagModel | 'K_TAG' }>([
+      ...[...xad.entries()].map(([id, value]) => [id, value] as const),
       ...ktag.docs.filter(doc => Number.isInteger(doc.get('traccarDeviceId')) && doc.get('integrationStatus') === 'registered')
         .map(doc => [Number(doc.get('traccarDeviceId')), { tenantId: String(doc.ref.parent.parent?.id || ''), equipmentId: doc.id,
           uniqueId: String(doc.get('traccarUniqueId') || ''), equipmentType: 'K_TAG' as const }] as const),

@@ -18,8 +18,13 @@ import { isApexHost } from './utils/tenant';
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Tags = lazy(() => import('./pages/Tags').then(m => ({ default: m.Tags })));
+const TagFormPage = lazy(() => import('./pages/tags/TagFormPage').then(m => ({ default: m.TagFormPage })));
 const Vehicles = lazy(() => import('./pages/Vehicles').then(m => ({ default: m.Vehicles })));
 const Clients = lazy(() => import('./pages/Clients').then(m => ({ default: m.Clients })));
+const ClientFormPage = lazy(() => import('./pages/clients/ClientFormPage').then(m => ({ default: m.ClientFormPage })));
+const ClientDetails = lazy(() => import('./pages/ClientDetails').then(m => ({ default: m.ClientDetails })));
+const VehicleFormPage = lazy(() => import('./pages/vehicles/VehicleFormPage').then(m => ({ default: m.VehicleFormPage })));
+const VehicleDetails = lazy(() => import('./pages/VehicleDetails').then(m => ({ default: m.VehicleDetails })));
 const LiveMap = lazy(() => import('./pages/LiveMap').then(m => ({ default: m.LiveMap })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.Security })));
@@ -134,6 +139,9 @@ const TenantRoutes = () => (
       <Route path="/" element={<RoleProtectedRoute permission="ROUTE_DASHBOARD"><Dashboard /></RoleProtectedRoute>} />
       <Route path="/map" element={<RoleProtectedRoute permission="ROUTE_MAP"><LiveMap /></RoleProtectedRoute>} />
       <Route path="/vehicles" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><Vehicles /></RoleProtectedRoute>} />
+      <Route path="/vehicles/new" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><VehicleFormPage /></RoleProtectedRoute>} />
+      <Route path="/vehicles/:id/edit" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><VehicleFormPage /></RoleProtectedRoute>} />
+      <Route path="/vehicles/:id" element={<RoleProtectedRoute permission="ROUTE_VEHICLES"><VehicleDetails /></RoleProtectedRoute>} />
       <Route path="/security" element={<RoleProtectedRoute permission="ROUTE_SECURITY"><Security /></RoleProtectedRoute>} />
       {/* /settings é acessível por qualquer usuário autenticado — a tela
           interna gateia cards por hasPermission(). */}
@@ -157,7 +165,12 @@ const TenantRoutes = () => (
       <Route path="/feedback" element={<RoleProtectedRoute permission="ROUTE_FEEDBACK"><FeedbackPage /></RoleProtectedRoute>} />
 
       <Route path="/clients" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><Clients /></RoleProtectedRoute>} />
+      <Route path="/clients/new" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><ClientFormPage /></RoleProtectedRoute>} />
+      <Route path="/clients/:id/edit" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><ClientFormPage /></RoleProtectedRoute>} />
+      <Route path="/clients/:id" element={<RoleProtectedRoute permission="ROUTE_CLIENTS"><ClientDetails /></RoleProtectedRoute>} />
       <Route path="/tags" element={<RoleProtectedRoute permission="ROUTE_TAGS"><Tags /></RoleProtectedRoute>} />
+      <Route path="/tags/new" element={<RoleProtectedRoute permission="ROUTE_TAGS"><TagFormPage /></RoleProtectedRoute>} />
+      <Route path="/tags/:id/edit" element={<RoleProtectedRoute permission="ROUTE_TAGS"><TagFormPage /></RoleProtectedRoute>} />
       <Route path="/reports" element={<RoleProtectedRoute permission="ROUTE_REPORTS"><Reports /></RoleProtectedRoute>} />
       <Route path="/audit" element={<RoleProtectedRoute permission="ROUTE_AUDIT"><AuditLogs /></RoleProtectedRoute>} />
       <Route path="/billing" element={<RoleProtectedRoute permission="ROUTE_BILLING"><Billing /></RoleProtectedRoute>} />

@@ -1,4 +1,4 @@
-import type { LiveMapTrackedAsset, TrackedPosition, TrackingHistoryPage, TrackingHistoryPoint, TrackingHistoryWarning, XadTag, XadTagCommunicationStatus } from '@ktag/shared';
+import type { LiveMapTrackedAsset, TraccarTagModel, TrackedPosition, TrackingHistoryPage, TrackingHistoryPoint, TrackingHistoryWarning, XadTag, XadTagCommunicationStatus } from '@ktag/shared';
 import { auth } from './firebase';
 import { activeTenant } from './activeTenant';
 import { trackingHttpUrl, trackingWebSocketUrl } from './trackingEndpoint';
@@ -41,10 +41,10 @@ const friendlyHistoryError = (code: string) => ({
 } as Record<string, string>)[code] || 'Não foi possível recuperar o histórico agora.';
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> { const token = await auth?.currentUser?.getIdToken(); if (!token) throw new Error('Autenticação necessária.'); const url = trackingHttpUrl(path); let response: Response; try { response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Tenant-Id': activeTenant.id, ...(init.headers || {}) } }); } catch (error) { if ((error as Error).name === 'AbortError') throw error; throw new TrackingApiError(`${friendlyHistoryError('NETWORK_ERROR')} (${new URL(url, window.location.origin).host})`, 'NETWORK_ERROR'); } const payload = await response.json().catch(() => ({})); if (!response.ok) { const code = String(payload.errorCode || 'TRACKING_UNAVAILABLE'); const message = code === 'TAG_REFRESH_FAILED' && typeof payload.error === 'string' ? payload.error : friendlyHistoryError(code); throw new TrackingApiError(message, code, payload.requestId, response.status); } return payload.data as T; }
 export const trackingApi = {
-  registerXadTag: async (input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) => {
+  registerXadTag: async (input: { model?: TraccarTagModel; name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) => {
     const result = await request<{ tag: XadTag }>('/api/integrations/traccar/xadtags', { method: 'POST', body: JSON.stringify(input) }); return result.tag;
   },
-  updateXadTag: (id: string, input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) => request<XadTag>(`/api/integrations/traccar/xadtags/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
+  updateXadTag: (id: string, input: { model?: TraccarTagModel; name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) => request<XadTag>(`/api/integrations/traccar/xadtags/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
   retryXadTag: (id: string) => request<XadTag>(`/api/integrations/traccar/xadtags/${encodeURIComponent(id)}/retry`, { method: 'POST', body: '{}' }),
   checkXadTag: (id: string) => request<{ found: boolean; status: XadTagCommunicationStatus; lastUpdate: string | null; hasPosition: boolean; position: TrackedPosition | null }>(`/api/xadtags/${encodeURIComponent(id)}/check`, { method: 'POST', body: '{}' }),
   xadTagHistory: (id: string, from: string, to: string) => request<TrackedPosition[]>(`/api/xadtags/${encodeURIComponent(id)}/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
@@ -62,7 +62,7 @@ export const trackingApi = {
     return { requestId, points, warnings, partial };
   },
   tagHistory: (tagId: string, from: string, to: string, cursor?: string, signal?: AbortSignal) => request<TrackingHistoryPage>(`/api/livemap/tags/${encodeURIComponent(tagId)}/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal }),
-  importCommit: (rows: unknown[]) => request<{ total: number; created: number; existing: number; invalid: number; unavailable: number }>('/api/xadtags/import/commit', { method: 'POST', body: JSON.stringify({ rows }) }),
+  importCommit: (rows: unknown[], model: TraccarTagModel = 'XADTAG') => request<{ total: number; created: number; existing: number; pending: number; invalid: number; unavailable: number; rows: Array<{ index: number; status: string; error?: string }> }>('/api/xadtags/import/commit', { method: 'POST', body: JSON.stringify({ rows, model }) }),
   liveMap: () => request<LiveMapTrackedAsset[]>('/api/livemap'), adminStatus: () => request<any>('/api/admin/integrations/traccar/status'),
   refreshFleet: () => request<FleetRefreshReport>('/api/livemap/refresh', { method: 'POST', body: '{}' }),
   refreshTag: (tagId: string) => request<{ position: any | null; status: 'updated' | 'unchanged' | 'no_position' | 'error'; attemptedAt: number; ageMinutes: number | null; provider: 'ktag' | 'traccar'; error?: string }>(`/api/livemap/tags/${encodeURIComponent(tagId)}/refresh`, { method: 'POST', body: '{}' }),

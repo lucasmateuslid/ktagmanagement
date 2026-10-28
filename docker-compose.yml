@@ -66,6 +66,7 @@ services:
       - "5023:5023"   # GT06 / Suntech ST300
       - "5027:5027"   # Teltonika (FMB920, FMB140, FMC130)
       - "5055:5055"   # OsmAnd (app celular — ideal para testes)
+      - "5056:5056"   # EasyTrack — E3+ / E3+4G (H-TAG)
       # ── 8082 exposta só em localhost para dev/validate — NÃO expor em produção ──
       - "127.0.0.1:8082:8082"
     volumes:

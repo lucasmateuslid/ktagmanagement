@@ -162,28 +162,28 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
         className="modal-card sm:max-w-6xl"
       >
         {/* Header */}
-        <div className="modal-card-header p-4 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/50">
+        <div className="modal-card-header p-4 sm:p-6 border-b border-line flex items-center justify-between bg-surface-2">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20 shrink-0">
               <Activity size={20} className="text-black" />
             </div>
             <div className="min-w-0">
-              <h2 id="kpi-modal-title" className="text-lg md:text-xl font-display font-black text-zinc-900 dark:text-white uppercase tracking-tight truncate">Relatório de KPIs</h2>
-              <p className="text-[9px] font-medium text-zinc-500 uppercase tracking-widest truncate">Indicadores de desempenho da frota</p>
+              <h2 id="kpi-modal-title" className="text-lg md:text-xl font-display font-black text-fg-1 uppercase tracking-tight truncate">Relatório de KPIs</h2>
+              <p className="text-2xs font-medium text-fg-2 uppercase tracking-widest truncate">Indicadores de desempenho da frota</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 md:gap-2">
             <button 
               onClick={handleExportExcel}
               title="Exportar Excel"
-              className="p-2.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-all flex items-center gap-2 font-black text-[9px] uppercase tracking-widest"
+              className="p-2.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-all flex items-center gap-2 font-black text-2xs uppercase tracking-widest"
             >
               <FileSpreadsheet size={16} /> <span className="hidden sm:inline">Excel</span>
             </button>
             <button 
               onClick={handleExportPDF}
               title="Exportar PDF"
-              className="p-2.5 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-xl hover:scale-105 transition-all flex items-center gap-2 font-black text-[9px] uppercase tracking-widest"
+              className="p-2.5 bg-fg-1 text-surface rounded-xl hover:scale-105 transition-all flex items-center gap-2 font-black text-2xs uppercase tracking-widest"
             >
               <Download size={16} /> <span className="hidden sm:inline">PDF</span>
             </button>
@@ -191,7 +191,7 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
               type="button"
               aria-label="Fechar"
               onClick={onClose}
-              className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-xl transition-colors"
+              className="p-2.5 bg-surface-2 text-fg-2 hover:text-fg-1 rounded-xl transition-colors"
             >
               <X size={20} />
             </button>
@@ -213,35 +213,35 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
 
           {/* Detailed Table */}
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-zinc-400 mb-1">
+            <div className="flex items-center gap-2 text-fg-3 mb-1">
               <Building2 size={16} />
-              <h3 className="text-[10px] font-black uppercase tracking-widest">Distribuição por Responsável (Regional)</h3>
+              <h3 className="text-2xs font-black uppercase tracking-widest">Distribuição por Responsável (Regional)</h3>
             </div>
             
-            <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-[24px] border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div className="bg-surface-2 rounded-card border border-line overflow-hidden">
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
-                    <tr className="bg-zinc-100 dark:bg-zinc-800/50">
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500">Regional</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Total</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Ativos</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Comodato</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Adquirido</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Rast</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag+Rast</th>
+                    <tr className="bg-surface-2">
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2">Regional</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Total</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Ativos</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Comodato</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Adquirido</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Tag</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Rast</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Tag+Rast</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  <tbody className="divide-y divide-line">
                     {stats.byCompany.map((c, i) => (
-                      <tr key={i} className="hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 transition-colors">
-                        <td className="px-5 py-3 font-bold text-xs text-zinc-900 dark:text-white">{c.name}</td>
+                      <tr key={i} className="hover:bg-surface-2 transition-colors">
+                        <td className="px-5 py-3 font-bold text-xs text-fg-1">{c.name}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs">{c.total}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-emerald-500">{c.active}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-blue-500">{c.leased}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-purple-500">{c.purchased}</td>
-                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-amber-500">{c.tagOnly}</td>
+                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{c.tagOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-sky-500">{c.trackerOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{c.tagTracker}</td>
                       </tr>
@@ -254,31 +254,31 @@ export const VehicleKPIModal: React.FC<VehicleKPIModalProps> = ({
 
           {/* Responsible Table */}
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-zinc-400 mb-1">
+            <div className="flex items-center gap-2 text-fg-3 mb-1">
               <Activity size={16} />
-              <h3 className="text-[10px] font-black uppercase tracking-widest">Distribuição por Responsável (Cadastro)</h3>
+              <h3 className="text-2xs font-black uppercase tracking-widest">Distribuição por Responsável (Cadastro)</h3>
             </div>
             
-            <div className="bg-zinc-50 dark:bg-zinc-950/50 rounded-[24px] border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div className="bg-surface-2 rounded-card border border-line overflow-hidden">
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead>
-                    <tr className="bg-zinc-100 dark:bg-zinc-800/50">
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500">Responsável</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Total</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Ativos</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Rast</th>
-                      <th className="px-5 py-3 text-[9px] font-black uppercase tracking-widest text-zinc-500 text-center">Tag+Rast</th>
+                    <tr className="bg-surface-2">
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2">Responsável</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Total</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Ativos</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Tag</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Rast</th>
+                      <th className="px-5 py-3 text-2xs font-black uppercase tracking-widest text-fg-2 text-center">Tag+Rast</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  <tbody className="divide-y divide-line">
                     {stats.byResponsible.map((r, i) => (
-                      <tr key={i} className="hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 transition-colors">
-                        <td className="px-5 py-3 font-bold text-xs text-zinc-900 dark:text-white">{r.name}</td>
+                      <tr key={i} className="hover:bg-surface-2 transition-colors">
+                        <td className="px-5 py-3 font-bold text-xs text-fg-1">{r.name}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs">{r.total}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-emerald-500">{r.active}</td>
-                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-amber-500">{r.tagOnly}</td>
+                        <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{r.tagOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-sky-500">{r.trackerOnly}</td>
                         <td className="px-5 py-3 text-center font-mono font-bold text-xs text-primary-500">{r.tagTracker}</td>
                       </tr>
@@ -303,22 +303,22 @@ interface KPICardProps {
 
 const KPICard: React.FC<KPICardProps> = ({ icon, label, value, color }) => {
   const colorClasses = {
-    zinc: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+    zinc: 'bg-surface-2 text-fg-2',
     emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
     purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-    amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    amber: 'bg-primary-500/10 text-primary-600 dark:text-primary-400',
     primary: 'bg-primary-500/10 text-primary-600 dark:text-primary-400',
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col items-center text-center gap-1.5">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
+    <div className="bg-surface p-3 rounded-2xl border border-line shadow-sm flex flex-col items-center text-center gap-1.5">
+      <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
         {icon}
       </div>
       <div className="space-y-0.5">
-        <p className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{label}</p>
-        <p className="text-lg font-display font-black text-zinc-900 dark:text-white leading-none">{value}</p>
+        <p className="text-2xs font-black uppercase text-fg-2 tracking-widest">{label}</p>
+        <p className="text-lg font-display font-black text-fg-1 leading-none">{value}</p>
       </div>
     </div>
   );

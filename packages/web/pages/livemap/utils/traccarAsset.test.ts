@@ -37,6 +37,12 @@ describe('identidade dos pontos Traccar no LiveMap', () => {
     expect(traccarAssetLocation(asset({ equipmentType: 'K_TAG', equipmentId: 'unknown', linkedEntityId: 'vehicle-1' }), tags, 'tenant-a')).toBeNull();
     expect(traccarAssetLocation(asset({ equipmentType: 'K_TAG', equipmentId: 'ktag-1', linkedEntityId: null }), tags, 'tenant-a')).toBeNull();
   });
+  it('associa H-TAG pelo equipmentType e não confunde com XADTAG', () => {
+    const htags = [...tags, { id: 'htag-1', type: 'H_TAG', identifierNormalized: '490154203237518', traccarUniqueId: '490154203237518' }] as Tag[];
+    const htagAsset = asset({ id: 'xadtag_490154203237518', equipmentType: 'H_TAG', uniqueId: '490154203237518' });
+    expect(traccarAssetLocation(htagAsset, htags, 'tenant-a')).toMatchObject({ tagId: 'htag-1', provider: 'traccar' });
+    expect(traccarAssetLocation(asset({ equipmentType: 'H_TAG', equipmentId: 'xad-1' }), htags, 'tenant-a')).toBeNull();
+  });
   it('rejeita outro tenant e identificação ambígua', () => {
     expect(traccarAssetLocation(asset({ tenantId: 'other' }), tags, 'tenant-a')).toBeNull();
     expect(traccarAssetLocation(asset(), [...tags, { ...tags[1], id: 'xad-2' }], 'tenant-a')).toBeNull();

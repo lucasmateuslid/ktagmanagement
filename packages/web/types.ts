@@ -240,7 +240,7 @@ export interface VehicleCategory {
   fipeType: 'carros' | 'motos' | 'caminhoes' | 'none';
 }
 
-export type TagType = 'K_TAG' | 'XADTAG';
+export type TagType = 'K_TAG' | 'XADTAG' | 'H_TAG';
 
 export interface Tag {
   id: string;
@@ -514,6 +514,10 @@ export interface Vehicle {
   updatedBy?: string;
   updatedByName?: string;
   chassis?: string;
+  /** Onde o equipamento foi instalado no veículo (ex.: painel, porta-malas). */
+  installationLocation?: string;
+  /** Observações livres do operador. */
+  notes?: string;
   createdBy?: string;
   createdByName?: string;
   requiresTagReview?: boolean;

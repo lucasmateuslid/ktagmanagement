@@ -102,7 +102,7 @@ export function Modal({
                   'sm:w-[calc(100vw-2rem)] sm:rounded-card',
                   SIZE[size],
                   /* Casca visual */
-                  'bg-surface-raised border border-border shadow-modal',
+                  'bg-surface border border-line shadow-2xl',
                   /* Altura mobile: ocupa até 92dvh; desktop: até 100vh - 2rem */
                   'max-h-[92dvh] sm:max-h-[calc(100vh-2rem)]',
                   'overflow-hidden flex flex-col',
@@ -110,15 +110,15 @@ export function Modal({
                 )}
               >
                 {(title || !hideCloseButton) && (
-                  <div className="flex items-start justify-between gap-4 p-6 pb-4 border-b border-border">
+                  <div className="flex items-start justify-between gap-4 p-6 pb-4 border-b border-line">
                     <div className="min-w-0 flex-1">
                       {title && (
-                        <Dialog.Title className="font-display text-lg font-black text-content uppercase tracking-tight truncate">
+                        <Dialog.Title className="font-display text-lg font-black text-fg-1 uppercase tracking-tight truncate">
                           {title}
                         </Dialog.Title>
                       )}
                       {description && (
-                        <Dialog.Description className="mt-1 text-sm text-content-muted">
+                        <Dialog.Description className="mt-1 text-sm text-fg-2">
                           {description}
                         </Dialog.Description>
                       )}
@@ -126,7 +126,7 @@ export function Modal({
                     {!hideCloseButton && (
                       <Dialog.Close
                         aria-label="Fechar"
-                        className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-lg text-content-muted hover:bg-surface-sunken hover:text-content transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50"
+                        className="shrink-0 h-10 w-10 inline-flex items-center justify-center rounded-lg text-fg-2 hover:bg-surface-2 hover:text-fg-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
                       >
                         <X size={16} />
                       </Dialog.Close>
@@ -153,7 +153,7 @@ Modal.Footer = function ModalFooter({
   return (
     <div
       className={cn(
-        '-mx-6 -mb-6 mt-6 px-6 py-4 border-t border-border bg-surface-sunken/40 flex items-center justify-end gap-3',
+        '-mx-6 -mb-6 mt-6 px-6 py-4 border-t border-line bg-surface-2/40 flex items-center justify-end gap-3',
         className,
       )}
     >

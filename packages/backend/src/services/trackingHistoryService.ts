@@ -3,6 +3,7 @@ import type {
   TrackingAssignment, TrackingBattery, TrackingHistoryPage, TrackingHistoryPoint,
   TrackingHistoryProvider, TrackingHistoryWarning, TraccarPosition,
 } from '@ktag/shared';
+import { isTraccarTagModel } from '@ktag/shared';
 import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from './firebaseAdmin.js';
 import { decryptKtagSecret, KtagConfigurationError, KtagHttpError, ktagClient, type KtagClient } from './ktagClient.js';
@@ -234,7 +235,7 @@ export class TrackingHistoryService {
     const range = parseHistoryRange(query); const tag = await adminDb.doc(`tenants/${tenantId}/tags/${tagId}`).get();
     if (!tag.exists) throw new HistoryRequestError('Tag não encontrada.', 404, 'TAG_NOT_FOUND');
     const type = tagType(tag); let points: TrackingHistoryPoint[];
-    if (type === 'XADTAG') points = await this.traccar.load({ tenantId, tagId, vehicleId: tag.get('linkedEntityId') || null, deviceId: tag.get('traccarDeviceId'), from: range.from, to: range.to, range });
+    if (isTraccarTagModel(type)) points = await this.traccar.load({ tenantId, tagId, vehicleId: tag.get('linkedEntityId') || null, deviceId: tag.get('traccarDeviceId'), from: range.from, to: range.to, range });
     else if (type === 'K_TAG') {
       const deviceId = tag.get('traccarDeviceId');
       if (tag.get('integrationStatus') === 'registered' && Number.isInteger(deviceId)) {
@@ -268,7 +269,7 @@ export class TrackingHistoryService {
       if (!tag.exists) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'TAG_NOT_FOUND', message: 'Uma tag vinculada ao período não foi encontrada.' }); continue; }
       const type = tagType(tag);
       const traccarKtag = type === 'K_TAG' && tag.get('integrationStatus') === 'registered' && Number.isInteger(tag.get('traccarDeviceId'));
-      const provider = traccarKtag || type === 'XADTAG' ? this.traccar : type === 'K_TAG' ? this.ktag : null;
+      const provider = traccarKtag || isTraccarTagModel(type) ? this.traccar : type === 'K_TAG' ? this.ktag : null;
       if (!provider) { warnings.push({ provider: 'traccar', tagId: assignment.tagId, code: 'UNKNOWN_DEVICE_TYPE', message: 'Uma tag possui tipo incompatível com histórico.' }); continue; }
       const input = { tenantId, tagId: assignment.tagId, vehicleId, deviceId: tag.get('traccarDeviceId'), from: Math.max(range.from, assignment.startedAt), to: Math.min(range.to, assignment.endedAt ?? range.to), range };
       try {

@@ -3,8 +3,8 @@ import React, { useState, useCallback } from 'react';
 import { Vehicle, Client, User } from '../../../types';
 import { storage } from '../../../services/storage';
 import { useNotification } from '../../../contexts/NotificationContext';
-import { validateBrazilianPlate } from '../utils/plateValidation';
-import { isValidPhone, normalizeCPF, validateCPF } from '@ktag/shared';
+import { normalizeCPF } from '@ktag/shared';
+import { VehicleFormErrors, validateVehicleForm } from '../utils/vehicleForm';
 import { authenticatedFetch } from '../../../services/authenticatedFetch';
 
 export const useVehicleForm = (
@@ -14,7 +14,7 @@ export const useVehicleForm = (
   onSuccess: () => void
 ) => {
   const { addNotification } = useNotification();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [errors, setErrors] = useState<VehicleFormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Vehicle>>({ status: 'active', installationType: 'tag_only', ownershipStatus: 'leased' });
   const [clientData, setClientData] = useState<Partial<Client>>({ hasAccess: false });
@@ -47,29 +47,14 @@ export const useVehicleForm = (
     // duplicados em vez de sobrescrever o mesmo doc.
     if (isSaving) return;
 
-    const isPlateValid = validateBrazilianPlate(formData.plate || '');
-
-    if (!isPlateValid) {
-      addNotification('error', 'Placa Inválida', 'Por favor, corrija o formato da placa (ex: AAA0000).');
-      return;
-    }
-    if (!formData.plate || !formData.model || !clientData.cpf) return;
-    const cpfValidation = validateCPF(clientData.cpf);
-    if (!cpfValidation.valid) {
-      const message = !cpfValidation.complete
-        ? 'CPF deve conter exatamente 11 dígitos.'
-        : cpfValidation.reason === 'repeated'
-          ? 'CPF não pode ter todos os dígitos iguais.'
-          : 'CPF inválido. Verifique os dígitos informados.';
-      addNotification('error', 'CPF inválido', message);
-      return;
-    }
-    if (clientData.phone && !isValidPhone(clientData.phone)) {
-      addNotification('error', 'Telefone inválido', 'Informe o DDD e um telefone com 10 ou 11 dígitos.');
+    const validation = validateVehicleForm(formData, clientData);
+    setErrors(validation);
+    if (Object.keys(validation).length > 0) {
+      addNotification('error', 'Revise o formulário', 'Corrija os campos destacados para salvar.');
       return;
     }
 
-    const currentPlate = formData.plate.toUpperCase();
+    const currentPlate = (formData.plate as string).toUpperCase();
     const samePlates = vehicles.filter(v => v.plate === currentPlate && v.id !== formData.id);
 
     if (samePlates.length > 0) {
@@ -80,7 +65,7 @@ export const useVehicleForm = (
       }
     }
 
-    const cleanCpf = normalizeCPF(clientData.cpf);
+    const cleanCpf = normalizeCPF(clientData.cpf as string);
     const existingClient = clients.find(c => normalizeCPF(c.cpf) === cleanCpf);
 
     // GUARD DE INTEGRIDADE (anti cross-cliente):
@@ -172,7 +157,6 @@ export const useVehicleForm = (
       }
 
       addNotification('success', 'Sucesso', 'Veículo gravado no sistema.');
-      setIsModalOpen(false);
       onSuccess();
     } catch (err: any) {
       console.error('Falha ao salvar veículo:', err);
@@ -182,22 +166,22 @@ export const useVehicleForm = (
     }
   };
 
-  const openNew = () => {
+  const openNew = useCallback(() => {
       setFormData({ status: 'active', installationType: 'tag_only', type: 'cat-car', ownershipStatus: 'leased' }); 
       setClientData({ hasAccess: false }); 
       setTagSearch(''); 
-      setIsModalOpen(true);
-  };
+      setErrors({});
+  }, []);
 
-  const openEdit = (v: Vehicle, tags: any[]) => {
+  const openEdit = useCallback((v: Vehicle, tags: any[]) => {
       setFormData(v); 
       setClientData(clients.find(c => c.id === v.clientId) || {}); 
       setTagSearch(tags.find(t => t.id === v.tagId)?.accessoryId || ''); 
-      setIsModalOpen(true);
-  };
+      setErrors({});
+  }, [clients]);
 
   return {
-    isModalOpen, setIsModalOpen,
+    errors, setErrors,
     isSaving,
     formData, setFormData,
     clientData, setClientData,

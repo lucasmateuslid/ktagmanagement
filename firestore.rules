@@ -235,11 +235,11 @@ service cloud.firestore {
       allow read: if isInternalMember(tenantId);
       // Metadados do provider externo são escritos apenas pelo backend (Admin SDK).
       allow create: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
-                    && request.resource.data.type != 'XADTAG'
+                    && !(request.resource.data.type in ['XADTAG', 'H_TAG'])
                     && !request.resource.data.keys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition', 'imei', 'traccarUniqueId', 'traccarDeviceId', 'integrationStatus', 'communicationValidatedAt']);
       allow update, delete: if hasTenantPermission(tenantId, 'ACTION_TAGS_MANAGE')
-                            && resource.data.type != 'XADTAG'
-                            && request.resource.data.type != 'XADTAG'
+                            && !(resource.data.type in ['XADTAG', 'H_TAG'])
+                            && !(request.resource.data.type in ['XADTAG', 'H_TAG'])
                             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkedEntityType', 'linkedEntityId', 'linkedEntityName', 'linkedAt', 'linkedBy', 'activeTrackingAssignmentId', 'lastPosition', 'imei', 'traccarUniqueId', 'traccarDeviceId', 'integrationStatus', 'communicationValidatedAt']);
     }
     match /tenants/{tenantId}/trackers/{docId} {

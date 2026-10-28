@@ -158,8 +158,27 @@ Nunca deixe os dois workers realtime ativos ao mesmo tempo: isso duplica process
 - Health: `curl -H "X-Origin-Secret: $CF_ORIGIN_SECRET" http://127.0.0.1:4000/api/health`.
 - O mapa recebe todas as mensagens; o Firestore recebe checkpoints conforme
   `TRACCAR_POSITION_PERSIST_INTERVAL_MS` ou quando a posição supera
-  `TRACCAR_POSITION_PERSIST_DISTANCE_METERS` (padrão: 30 m).
+  `TRACCAR_POSITION_PERSIST_DISTANCE_METERS` (padrão: 100 m). O WebSocket
+  continua transmitindo cada posição válida; esses limites controlam apenas a
+  persistência no Firestore.
 - O worker da VPS é responsável por K-TAG, retenção de histórico e fiscalização diária de inadimplência.
+
+## Habilitar H-TAG (E3+ / easytrack, porta 5056)
+
+A H-TAG usa o rastreador E3+ / E3+4G, que fala o protocolo `easytrack` do
+Traccar na porta **5056/TCP**. Como este stack não altera o container do
+Traccar, faça uma única vez na VPS:
+
+1. No `traccar.xml` do container Traccar, adicione
+   `<entry key='easytrack.port'>5056</entry>`.
+2. Publique a porta no container Traccar (`5056:5056/tcp` no compose dele).
+3. Libere `5056/tcp` no firewall da VPS (ex.: `ufw allow 5056/tcp`).
+4. Reinicie o Traccar e confirme a escuta: `ss -ltn | grep 5056`.
+5. No `.env.vps`, mantenha `TRACCAR_EASYTRACK_PORT=5056` (metadado gravado na tag).
+6. Configure cada E3+ (SMS/app do fabricante) para `IP_DA_VPS:5056`.
+
+O cadastro (manual ou importação `nome`/`imei`) cria o device no Traccar com
+`uniqueId` = IMEI; a partir daí as posições seguem o mesmo fluxo realtime da XADTAG.
 
 ## Permissões da service account
 

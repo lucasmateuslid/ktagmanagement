@@ -139,17 +139,17 @@ export function DataTable<T extends Record<string, any>>({
   };
   if (loading) {
     return (
-      <div className={cn("w-full bg-card rounded-2xl ", className)}>
+      <div className={cn("w-full bg-surface rounded-2xl ", className)}>
         <div className="animate-pulse p-6">
           {/* Search skeleton */}
           {searchable && <div className="mb-6 h-11 bg-muted rounded-2xl"></div>}
           {/* Table skeleton */}
-          <div className="border border-border  overflow-hidden">
+          <div className="border border-line  overflow-hidden">
             <div className="bg-muted/30 h-14"></div>
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
-                className="h-14 border-t border-border bg-card"
+                className="h-14 border-t border-line bg-surface"
               ></div>
             ))}
           </div>

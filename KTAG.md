@@ -1,8 +1,8 @@
 # K-Tag Manager Pro — Documentação Unificada
 
 > Documento único de referência: o que é o KTAG, suas funcionalidades, rotas (frontend + backend),
-> modelo de dados, integrações, segurança e deploy. Substitui os antigos docs fragmentados
-> (`CODEBASE_SUMMARY`, `MULTITENANT_*`, `PROMPT_*`, `INSTRUCOES/INSTRUCTIONS`, `SECURITY_AUDIT`).
+> modelo de dados, integrações, segurança e deploy. Substitui os antigos documentos fragmentados
+> de arquitetura, multi-tenant, prompts de implementação e auditorias de segurança.
 
 ---
 
@@ -93,7 +93,7 @@ quando a conexão volta. Dados sensíveis (CPF/CNPJ) são criptografados antes d
 | **Dashboard** | KPIs e gráficos analíticos da operação (frota, agendamentos, financeiro). Tem variante específica para técnicos (`TechnicianDashboard`). |
 | **Mapa ao Vivo** (`LiveMap`) | Rastreamento da frota em tempo real (polling ~30s), clusterização de marcadores, histórico de trajeto, busca, HUD de status da frota, exportação. |
 | **Veículos** | CRUD de veículos, filtros, importação/exportação, lookup FIPE e lookup de placa (Hinova/SGA), KPIs por veículo. |
-| **Tags / Rastreadores** | Cadastro de hardware (K-Tag e XADTAG), vínculo com veículos, atualização em lote. |
+| **Tags / Rastreadores** | Cadastro de hardware (K-Tag, XADTAG e H-TAG), vínculo com veículos, atualização em lote. |
 | **Clientes** | Cadastro de clientes/associados e vínculo com veículos. |
 | **Agendamentos** | Módulo central: criação de ordens de serviço, fluxo de status, cálculo de margem/SLA, filtros, cards admin/usuário, dashboards de tipos de serviço/dispositivo e resumo financeiro. |
 | **Calendário** | Visão de calendário dos agendamentos. |
@@ -222,7 +222,7 @@ Definidas em `services/storage.ts` (`COLLECTIONS`):
 - `/push_subscriptions/{auto}` — inscrições Web Push.
 
 ### Principais entidades (`types.ts`)
-`Tenant`, `TenantBilling`, `Invoice`, `PlanConfig`, `User`, `CustomRole`, `Tag` (`K_TAG`|`XADTAG`),
+`Tenant`, `TenantBilling`, `Invoice`, `PlanConfig`, `User`, `CustomRole`, `Tag` (`K_TAG`|`XADTAG`|`H_TAG`),
 `Tracker`, `Vehicle`, `Client`, `Schedule` (+ `ScheduleStatus`, `ChecklistItem`), `Technician`
 (+ `TechnicianPayment`), `Shipment` (+ `ShipmentItem`, `ShipmentStatus`), `StolenRecord`,
 `AuditLog`, `Feedback`, `AppSettings`, `AppAnnouncement`, `LocationHistory`, `KTagLocationResult`.
@@ -249,6 +249,7 @@ Além dos roles, há **permissões granulares** (`ROUTE_*`) e **custom roles** p
 |---|---|---|
 | **K-Tag (telemetria legada)** | Localização de rastreadores (via proxy) | `services/api.ts` → `/api/proxy` |
 | **XADTAG** | Tipo alternativo de Tag/telemetria | `services/xadtag.ts` |
+| **H-TAG** | Tag Traccar via protocolo easytrack (porta 5056), identificada por IMEI | `domain/traccarTagModel.ts` |
 | **Hinova / SGA** | ERP associativo: lookup de placa/veículo | `services/hinova.ts` |
 | **Melhor Envio** | Frete, etiquetas e rastreio de envios | `services/melhorEnvio.ts` → `/api/melhorenvio/*` |
 | **Asaas** | Billing recorrente (assinatura/fatura/PIX/boleto/cartão) | `functions/asaas.js` + webhook |
@@ -273,7 +274,7 @@ Além dos roles, há **permissões granulares** (`ROUTE_*`) e **custom roles** p
 - **Auditoria**: `audit_logs` por tenant registra ações sensíveis (ex.: deleções).
 - **Firestore Rules**: regras restritas por tenant (`firestore.rules`); `trackers`/`stolen_records`
   com escrita controlada.
-- Histórico completo da auditoria OWASP estava em `SECURITY_AUDIT_2026-05.md` (consolidado aqui).
+- O histórico das auditorias OWASP anteriores foi consolidado nesta seção.
 
 ---
 

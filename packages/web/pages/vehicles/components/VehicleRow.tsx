@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { trackingApi } from '../../../services/trackingApi';
 import { useNotification } from '../../../contexts/NotificationContext';
 
+const ACTION_BTN = 'inline-flex h-10 w-10 items-center justify-center rounded-lg text-fg-3 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500';
+
 interface VehicleRowProps {
   vehicle: Vehicle;
   tags: Tag[];
@@ -88,60 +90,66 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
   return (
     <div 
         onClick={() => !isReadOnly && toggleSelect && toggleSelect(vehicle.id)}
-        className={`flex flex-col md:flex-row items-start md:items-center px-4 md:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors group gap-3 md:gap-0 ${isReadOnly ? 'cursor-default' : 'cursor-pointer'} ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30'}`}
+        className={`grid grid-cols-1 md:items-center px-4 md:px-6 py-4 border-b border-line last:border-b-0 transition-colors group even:bg-surface-2/40 gap-3 md:gap-4 ${isReadOnly ? 'md:grid-cols-[minmax(11rem,1.2fr)_minmax(14rem,2fr)_minmax(12rem,1.3fr)_minmax(12rem,1fr)] cursor-default' : 'md:grid-cols-[minmax(12rem,1.3fr)_minmax(15rem,2fr)_minmax(12rem,1.3fr)_minmax(10rem,1fr)_7rem] cursor-pointer'} ${isSelected ? 'bg-primary-500/5 dark:bg-primary-500/10' : 'hover:bg-primary-500/5'}`}
     >
       {/* PLACA & STATUS */}
-      <div className="w-full md:w-[20%] shrink-0 flex items-center justify-between md:justify-start gap-4">
+    <div className="w-full min-w-0 flex items-center justify-between md:justify-start gap-4">
         {!isReadOnly && (
-            <div className="hidden md:flex items-center text-zinc-400 group-hover:text-primary-500 transition-colors">
-                {isSelected ? <CheckSquare size={18} className="text-primary-500" /> : <Square size={18} />}
+            <div className="hidden md:flex items-center text-fg-3 group-hover:text-primary-500 transition-colors">
+                {isSelected ? <CheckSquare size={18} className="text-accent" /> : <Square size={18} />}
             </div>
         )}
         <div className="flex items-center gap-3 md:gap-4">
             <div className="flex flex-col gap-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    <div className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white font-mono font-black text-[12px] md:text-xs">
+                    <button
+                        type="button"
+                        title="Abrir ficha do veículo"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/vehicles/${encodeURIComponent(vehicle.id)}`); }}
+                        className="bg-surface-2 px-2.5 py-1 rounded-lg border border-line text-fg-1 font-mono font-black text-sm tracking-wide hover:border-primary-500/50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    >
                         {vehicle.plate}
-                    </div>
+                    </button>
                     {tag && (
-                        <div className="text-[9px] font-mono font-bold text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-700">
+                        <div className="text-2xs font-mono font-bold text-fg-2 bg-surface-2 px-1.5 py-0.5 rounded border border-line">
                             TAG: {tag.accessoryId || tag.imei || tag.name}
                         </div>
                     )}
-                    {vehicle.trackerId && <div className="text-[9px] font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-100 dark:border-sky-900" title={`Rastreador ${vehicle.trackerId}`}>RASTREADOR</div>}
+                    {vehicle.trackerId && <div className="text-2xs font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-100 dark:border-sky-900" title={`Rastreador ${vehicle.trackerId}`}>RASTREADOR</div>}
                 </div>
                 <div className="flex gap-1">
-                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
-                        vehicle.status === 'active' ? 'bg-emerald-500' : vehicle.status === 'stolen' ? 'bg-red-500' : 'bg-amber-500'
+                    <span className={`text-2xs font-black uppercase px-1.5 py-0.5 rounded text-center tracking-widest text-white shrink-0 ${
+                        vehicle.status === 'active' ? 'bg-emerald-500' : vehicle.status === 'stolen' ? 'bg-red-500' : 'bg-primary-500'
                     }`}>
                         {vehicle.status === 'active' ? 'ATIVO' : vehicle.status === 'stolen' ? 'ROUBO' : 'MANUT.'}
                     </span>
                 </div>
             </div>
-            <div className="hidden sm:block p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 group-hover:text-primary-500 transition-colors">
-                {getIcon(14)}
-            </div>
         </div>
         {/* Mobile Actions - Ocultar se readonly */}
         {!isReadOnly && (
             <div className="flex md:hidden gap-1">
-                {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500"><History size={16}/></button>}
-                <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500"><Edit2 size={16}/></button>
-                <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500"><Trash2 size={16}/></button>
+                {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="p-2 bg-surface-2 rounded-lg text-fg-3 hover:text-cyan-500"><History size={16}/></button>}
+                <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-2 bg-surface-2 rounded-lg text-fg-3 hover:text-primary-500"><Edit2 size={16}/></button>
+                <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-2 bg-surface-2 rounded-lg text-fg-3 hover:text-red-500"><Trash2 size={16}/></button>
             </div>
         )}
       </div>
 
       {/* VEÍCULO */}
-      <div className="w-full md:flex-1 md:w-[30%] px-0 md:px-3 overflow-hidden">
-        <div className="flex items-center gap-2 md:hidden mb-1">
-            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Veículo:</span>
+    <div className="w-full min-w-0 px-0 overflow-hidden flex items-start gap-3">
+        <div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-surface-2 text-fg-3 group-hover:text-accent transition-colors">
+            {getIcon(16)}
         </div>
-        <h3 className="font-black text-zinc-900 dark:text-white uppercase text-sm md:text-xs truncate leading-tight">{vehicle.model}</h3>
+        <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 md:hidden mb-1">
+            <span className="text-2xs font-black text-fg-3 uppercase tracking-widest">Veículo:</span>
+        </div>
+        <h3 className="font-black text-fg-1 uppercase text-sm truncate leading-tight">{vehicle.model}</h3>
         <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
+            <p className="text-2xs font-bold text-fg-2 uppercase tracking-widest truncate">{cat?.name || 'VEÍCULO'}</p>
             {vehicle.ownershipStatus && (
-                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600'}`}>
+                <span className={`text-2xs font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.ownershipStatus === 'purchased' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
                     {vehicle.ownershipStatus === 'purchased' ? 'ADQUIRIDO' : 'COMODATO'}
                 </span>
             )}
@@ -149,19 +157,19 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
         
         {/* NOVO CÓDIGO - INÍCIO */}
         {vehicle.lastPosition && (
-            <div className="flex items-center gap-3 mt-1.5 bg-zinc-50 dark:bg-zinc-800/50 p-1.5 rounded-lg border border-zinc-100 dark:border-zinc-800 w-fit">
+            <div className="flex items-center gap-3 mt-1.5 bg-surface-2 p-1.5 rounded-lg border border-line w-fit">
                 {vehicle.lastPosition.battery && (
                     <div className="flex items-center gap-1" title="Bateria">
-                        <BatteryCharging size={10} className="text-zinc-500" />
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                        <BatteryCharging size={10} className="text-fg-2" />
+                        <span className={`text-2xs font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
                             Bat: {vehicle.lastPosition.battery.label}
                         </span>
                     </div>
                 )}
                 {vehicle.lastPosition.conf !== undefined && (
                     <div className="flex items-center gap-1" title="Sinal Confidência">
-                        <Wifi size={10} className="text-zinc-500" />
-                        <span className="text-[8px] font-black uppercase text-zinc-500">
+                        <Wifi size={10} className="text-fg-2" />
+                        <span className="text-2xs font-black uppercase text-fg-2">
                             Sinal: {vehicle.lastPosition.conf}
                         </span>
                     </div>
@@ -169,76 +177,77 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
             </div>
         )}
         {/* NOVO CÓDIGO - FIM */}
+        </div>
       </div>
 
       {/* CLIENTE (Apenas Operadores) */}
       {!isReadOnly && (
-          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
+          <div className="w-full min-w-0 px-0 overflow-hidden mt-1 md:mt-0">
             <div className="flex items-center gap-2 md:hidden mb-1">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cliente:</span>
+                <span className="text-2xs font-black text-fg-3 uppercase tracking-widest">Cliente:</span>
             </div>
-            <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
-            {client && <p className="text-[10px] md:text-[8px] text-zinc-400 font-mono tracking-tighter truncate">{client.cpf}</p>}
+            <p className="text-sm font-black text-fg-1 uppercase truncate">{client?.name || 'SEM VÍNCULO'}</p>
+            {client && <p className="text-caption text-fg-2 font-mono truncate">{client.cpf}</p>}
           </div>
       )}
 
       {/* DISPOSITIVO (Apenas Cliente) */}
       {isReadOnly && (
-          <div className="w-full md:w-[25%] px-0 md:px-2 overflow-hidden mt-1 md:mt-0">
+          <div className="w-full min-w-0 px-0 overflow-hidden mt-1 md:mt-0">
             <div className="flex items-center gap-2 md:hidden mb-1">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dispositivo:</span>
+                <span className="text-2xs font-black text-fg-3 uppercase tracking-widest">Dispositivo:</span>
             </div>
             {tag || vehicle.trackerId ? (
                 <>
-                    {tag && <p className="text-xs md:text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">TAG: {tag.accessoryId || tag.imei || tag.name}</p>}
-                    {vehicle.trackerId && <p className="text-xs md:text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase truncate">RASTREADOR: {vehicle.trackerId}</p>}
+                    {tag && <p className="text-sm font-black text-fg-1 uppercase truncate">TAG: {tag.accessoryId || tag.imei || tag.name}</p>}
+                    {vehicle.trackerId && <p className="text-sm font-black text-sky-600 dark:text-sky-400 uppercase truncate">RASTREADOR: {vehicle.trackerId}</p>}
                     {tag && vehicle.lastPosition?.battery && (
                         <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Bateria:</span>
-                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
+                            <span className="text-2xs md:text-2xs font-bold text-fg-3 uppercase tracking-widest">Bateria:</span>
+                            <span className={`text-2xs font-black uppercase px-1.5 py-0.5 rounded tracking-widest ${vehicle.lastPosition.battery.color}`}>
                                 {vehicle.lastPosition.battery.label}
                             </span>
                         </div>
                     )}
                 </>
             ) : (
-                <p className="text-xs md:text-[10px] font-black text-zinc-400 uppercase truncate">Sem Dispositivo</p>
+                <p className="text-sm font-black text-fg-3 uppercase truncate">Sem Dispositivo</p>
             )}
           </div>
       )}
 
       {/* RESPONSÁVEL E DATA - Visível só para operadores */}
       {!isReadOnly && (
-          <div className="w-full md:w-[15%] flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800">
-             <span className="text-[10px] font-black text-zinc-900 dark:text-white uppercase truncate">
+          <div className="w-full min-w-0 flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-line">
+             <span className="text-xs font-black text-fg-1 uppercase truncate">
                {vehicle.updatedByName || vehicle.createdByName || 'SISTEMA'}
              </span>
-             <span className="text-[10px] md:text-[8px] font-bold text-zinc-400 uppercase tracking-widest md:mt-0.5 flex items-center gap-1">
-               <Calendar size={10} className="md:w-2 md:h-2" /> {new Date(vehicle.createdAt).toLocaleDateString()}
+             <span className="text-caption font-semibold text-fg-2 md:mt-0.5 flex items-center gap-1">
+               <Calendar size={12} aria-hidden /> {new Date(vehicle.createdAt).toLocaleDateString()}
              </span>
           </div>
       )}
 
       {/* AÇÕES DESKTOP */}
       {!isReadOnly && (
-          <div className="hidden md:flex w-[10%] justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-cyan-500 transition-colors" title="Histórico"><History size={14}/></button>}
-            <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-primary-500 transition-colors"><Edit2 size={14}/></button>
-            <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className="p-1.5 md:p-2 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+          <div className="hidden md:flex w-full justify-end gap-1 opacity-100 transition-opacity">
+            {trackingId && <button type="button" aria-label={`Histórico de ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className={ACTION_BTN + " hover:text-info"} title="Histórico"><History size={16} aria-hidden/></button>}
+            <button type="button" aria-label={`Editar ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onEdit(vehicle); }} className={ACTION_BTN + " hover:text-accent"} title="Editar"><Edit2 size={16} aria-hidden/></button>
+            <button type="button" aria-label={`Excluir ${vehicle.plate}`} onClick={(e) => { e.stopPropagation(); onDelete(vehicle.id); }} className={ACTION_BTN + " hover:text-danger"} title="Excluir"><Trash2 size={16} aria-hidden/></button>
           </div>
       )}
 
       {/* AÇÕES CLIENTE */}
       {isReadOnly && (
-          <div className="w-full md:w-[25%] flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800 gap-2">
-             <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1 font-medium">
+          <div className="w-full min-w-0 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-line gap-2">
+             <span className="text-2xs text-fg-2 flex items-center gap-1 font-medium">
                  <Clock size={12} /> {timeAgo}
              </span>
              {trackingId && (
-                 <div className="flex gap-2"><button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-zinc-100 dark:bg-zinc-800 text-zinc-500"><History size={12}/> Histórico</button>{tag && <button
+                 <div className="flex gap-2"><button onClick={(e) => { e.stopPropagation(); navigate(`/map?tagId=${encodeURIComponent(trackingId)}&history=1`); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-2xs font-bold uppercase bg-surface-2 text-fg-2"><History size={12}/> Histórico</button>{tag && <button
                      onClick={handleUpdateLocation}
                      disabled={isUpdating}
-                     className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all ${
+                     className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-2xs font-bold uppercase tracking-wider transition-all ${
                          updateSuccess 
                              ? 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' 
                              : 'bg-primary-500 text-white hover:bg-primary-600 shadow-sm'
@@ -259,3 +268,4 @@ export const VehicleRow = React.memo(({ vehicle, tags, categories, clients, onEd
     </div>
   );
 });
+VehicleRow.displayName = 'VehicleRow';

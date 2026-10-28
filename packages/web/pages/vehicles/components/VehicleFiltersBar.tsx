@@ -1,10 +1,7 @@
-
 import React from 'react';
-import { Search, ListChecks, FileText, FileSpreadsheet, FileCode, CheckSquare, Square, Filter, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { CheckSquare, Download, FileCode, FileSpreadsheet, FileText, Filter, Square } from 'lucide-react';
 import { Company } from '../../../types';
-
-const MotionDiv = motion.div as any;
+import { Button, DropdownMenu, Field, SearchBar, Select } from '../../../components/ui';
 
 interface VehicleFiltersBarProps {
   searchTerm: string;
@@ -31,7 +28,7 @@ interface VehicleFiltersBarProps {
 }
 
 export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
-  searchTerm, setSearchTerm, 
+  searchTerm, setSearchTerm,
   statusFilter, setStatusFilter,
   companyFilter, setCompanyFilter,
   ownershipFilter, setOwnershipFilter,
@@ -39,175 +36,128 @@ export const VehicleFiltersBar: React.FC<VehicleFiltersBarProps> = ({
   tagFilter, setTagFilter,
   companies,
   isClientView, selectedCount, totalCount,
-  handleSelectAll, handleExportPDF, handleExportExcel, handleExportCSV, searchPlaceholder
+  handleSelectAll, handleExportPDF, handleExportExcel, handleExportCSV, searchPlaceholder,
 }) => {
   const [showFilters, setShowFilters] = React.useState(false);
+  const activeFilters = [statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter].filter(value => value !== 'all').length;
+  const allSelected = selectedCount === totalCount && totalCount > 0;
 
   return (
-    <div className="sticky top-4 z-20 space-y-2">
-      <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-2 pl-4 rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-xl flex flex-col md:flex-row gap-3 items-center transition-all">
-        <div className="relative flex-1 w-full">
-          <Search size={18} className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input 
-            type="text" 
-            placeholder={searchPlaceholder} 
-            value={searchTerm} 
-            onChange={e => setSearchTerm(e.target.value)} 
-            className="w-full pl-8 pr-4 py-3 bg-transparent border-none text-sm font-bold outline-none text-zinc-900 dark:text-white placeholder:text-zinc-400" 
-          />
-        </div>
+    <div className="space-y-3">
+      <SearchBar
+        value={searchTerm}
+        onChange={setSearchTerm}
+        placeholder={searchPlaceholder}
+        label="Buscar veículos"
+        actions={
+          <>
+            {!isClientView && selectedCount > 0 && (
+              <DropdownMenu
+                trigger={
+                  <Button type="button" variant="outline" size="sm">
+                    <Download size={14} aria-hidden /> Exportar ({selectedCount})
+                  </Button>
+                }
+                items={[
+                  { key: 'pdf', label: 'PDF', icon: <FileText size={14} />, onSelect: handleExportPDF },
+                  { key: 'xlsx', label: 'Excel', icon: <FileSpreadsheet size={14} />, onSelect: handleExportExcel },
+                  { key: 'csv', label: 'CSV', icon: <FileCode size={14} />, onSelect: handleExportCSV },
+                ]}
+              />
+            )}
+            <Button
+              type="button"
+              variant={showFilters || activeFilters > 0 ? 'secondary' : 'outline'}
+              size="sm"
+              aria-expanded={showFilters}
+              onClick={() => setShowFilters(open => !open)}
+            >
+              <Filter size={14} aria-hidden /> Filtros{activeFilters > 0 ? ` (${activeFilters})` : ''}
+            </Button>
+            {!isClientView && (
+              <Button type="button" variant="outline" size="sm" aria-pressed={allSelected} onClick={handleSelectAll}>
+                {allSelected ? <CheckSquare size={14} aria-hidden /> : <Square size={14} aria-hidden />}
+                {allSelected ? 'Desmarcar' : 'Todos'}
+              </Button>
+            )}
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2 px-2 border-l border-zinc-100 dark:border-zinc-800 pl-4">
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 rounded-xl transition-all flex items-center gap-2 ${showFilters ? 'bg-primary-500 text-black' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700'}`}
-          >
-            <Filter size={18} />
-            <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Filtros</span>
-          </button>
-
-          {/* SELECTION ACTIONS */}
+      {showFilters && (
+        <div className="grid grid-cols-1 gap-4 rounded-card border border-line bg-surface p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
+          <Field label="Status">
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: 'Todos os status' },
+                { value: 'active', label: 'Ativo' },
+                { value: 'stolen', label: 'Roubo/Furto' },
+                { value: 'maintenance', label: 'Manutenção' },
+              ]}
+            />
+          </Field>
           {!isClientView && (
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-hidden">
-                  <AnimatePresence mode="popLayout">
-                      {selectedCount > 0 && (
-                          <MotionDiv 
-                              initial={{ opacity: 0, x: 20 }} 
-                              animate={{ opacity: 1, x: 0 }} 
-                              exit={{ opacity: 0, x: 20 }}
-                              className="flex items-center gap-2"
-                          >
-                              <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-500/10 text-primary-600 rounded-xl border border-primary-500/20">
-                                  <ListChecks size={16} />
-                                  <span className="text-[10px] font-black uppercase tracking-widest">{selectedCount}</span>
-                              </div>
-                              
-                              <button onClick={handleExportPDF} title="Exportar PDF" className="p-2.5 bg-red-500/10 text-red-600 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-colors"><FileText size={18}/></button>
-                              <button onClick={handleExportExcel} title="Exportar Excel" className="p-2.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-colors"><FileSpreadsheet size={18}/></button>
-                              <button onClick={handleExportCSV} title="Exportar CSV" className="p-2.5 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl transition-colors"><FileCode size={18}/></button>
-                              
-                              <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-1" />
-                          </MotionDiv>
-                      )}
-                  </AnimatePresence>
-
-                  <button 
-                      onClick={handleSelectAll} 
-                      className={`px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest flex items-center gap-2 transition-all border ${
-                          selectedCount === totalCount && totalCount > 0 
-                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-black border-transparent shadow-md' 
-                          : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
-                      }`}
-                  >
-                      {selectedCount === totalCount && totalCount > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
-                      {selectedCount === totalCount && totalCount > 0 ? 'Desmarcar' : 'Todos'}
-                  </button>
-              </div>
+            <Field label="Responsável (regional)">
+              <Select
+                value={companyFilter}
+                onChange={setCompanyFilter}
+                options={[{ value: 'all', label: 'Todas as regionais' }, ...companies.map(c => ({ value: c.id, label: c.name }))]}
+              />
+            </Field>
+          )}
+          <Field label="Modalidade">
+            <Select
+              value={ownershipFilter}
+              onChange={setOwnershipFilter}
+              options={[
+                { value: 'all', label: 'Todas as modalidades' },
+                { value: 'leased', label: 'Comodato' },
+                { value: 'purchased', label: 'Adquirido' },
+              ]}
+            />
+          </Field>
+          <Field label="Tipo de instalação">
+            <Select
+              value={installationFilter}
+              onChange={setInstallationFilter}
+              options={[
+                { value: 'all', label: 'Todos os tipos' },
+                { value: 'tag_only', label: 'Apenas tag' },
+                { value: 'tracker_only', label: 'Apenas rastreador' },
+                { value: 'tag_tracker', label: 'Tag + rastreador' },
+              ]}
+            />
+          </Field>
+          <Field label="Status da tag">
+            <Select
+              value={tagFilter}
+              onChange={setTagFilter}
+              options={[
+                { value: 'all', label: 'Todas' },
+                { value: 'c_tag', label: 'Com tag' },
+                { value: 's_tag', label: 'Sem tag' },
+              ]}
+            />
+          </Field>
+          {activeFilters > 0 && (
+            <div className="flex items-end sm:col-span-2 lg:col-span-5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStatusFilter('all'); setCompanyFilter('all'); setOwnershipFilter('all');
+                  setInstallationFilter('all'); setTagFilter('all');
+                }}
+              >
+                Limpar filtros
+              </Button>
+            </div>
           )}
         </div>
-      </div>
-
-      <AnimatePresence>
-        {showFilters && (
-          <MotionDiv
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="bg-white dark:bg-zinc-900 p-4 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-lg grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Status Filter */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Status</label>
-                <div className="relative">
-                  <select 
-                    value={statusFilter} 
-                    onChange={e => setStatusFilter(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
-                  >
-                    <option value="all">Todos os Status</option>
-                    <option value="active">Ativo</option>
-                    <option value="stolen">Roubo/Furto</option>
-                    <option value="maintenance">Manutenção</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Company Filter */}
-              {!isClientView && (
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Responsável (Regional)</label>
-                  <div className="relative">
-                    <select 
-                      value={companyFilter} 
-                      onChange={e => setCompanyFilter(e.target.value)}
-                      className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
-                    >
-                      <option value="all">Todas Regionais</option>
-                      {companies.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                  </div>
-                </div>
-              )}
-
-              {/* Ownership Filter */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Modalidade</label>
-                <div className="relative">
-                  <select 
-                    value={ownershipFilter} 
-                    onChange={e => setOwnershipFilter(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
-                  >
-                    <option value="all">Todas Modalidades</option>
-                    <option value="leased">Comodato</option>
-                    <option value="purchased">Adquirido</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Installation Filter */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Tipo de Instalação</label>
-                <div className="relative">
-                  <select 
-                    value={installationFilter} 
-                    onChange={e => setInstallationFilter(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
-                  >
-                    <option value="all">Todos os Tipos</option>
-                    <option value="tag_only">Apenas Tag</option>
-                    <option value="tag_tracker">Tag + Rastreador</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Tag Status Filter */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Status da Tag</label>
-                <div className="relative">
-                  <select 
-                    value={tagFilter} 
-                    onChange={e => setTagFilter(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-xs font-bold outline-none appearance-none focus:border-primary-500"
-                  >
-                    <option value="all">Todas</option>
-                    <option value="c_tag">C/Tag</option>
-                    <option value="s_tag">S/Tag</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                </div>
-              </div>
-            </div>
-          </MotionDiv>
-        )}
-      </AnimatePresence>
+      )}
     </div>
   );
 };

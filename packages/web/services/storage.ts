@@ -457,6 +457,25 @@ export const storage = {
     });
   },
 
+  // Assina só os veículos pendentes de revisão de tag. Evita receber cada
+  // atualização de lastPosition da frota inteira (cada uma é cobrada como leitura).
+  subscribeVehiclesNeedingReview: (callback: (vehicles: Vehicle[]) => void) => {
+    if (!db) return () => {};
+    return onSnapshot(
+      query(tenantCollection(COLLECTIONS.VEHICLES), where('requiresTagReview', '==', true)),
+      async (snap) => {
+        const raw = snap.docs.map(d => ({ ...d.data(), id: d.id })) as Vehicle[];
+        await encryption.waitReady();
+        callback(await Promise.all(raw.map(async v => ({
+          ...v,
+          plate: await encryption.decrypt(v.plate),
+          chassis: v.chassis ? await encryption.decrypt(v.chassis) : undefined,
+        }))));
+      },
+      () => callback([]),
+    );
+  },
+
   deleteVehicle: async (id: string) => {
     if (db) {
       await deleteDoc(tenantDoc(COLLECTIONS.VEHICLES, id));

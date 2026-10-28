@@ -188,14 +188,22 @@ export type XadTagCommunicationStatus = 'online' | 'delayed' | 'offline' | 'unkn
 export type XadTagIntegrationStatus = 'linked' | 'pending' | 'unavailable';
 export type TraccarRealtimeStatus = 'connected' | 'reconnecting' | 'rest_fallback' | 'disconnected';
 
+/** Modelos de tag cujo rastreamento é feito integralmente pelo Traccar. */
+export const TRACCAR_TAG_MODELS = ['XADTAG', 'H_TAG'] as const;
+export type TraccarTagModel = typeof TRACCAR_TAG_MODELS[number];
+export const TRACCAR_TAG_LABELS: Record<TraccarTagModel, string> = { XADTAG: 'XADTAG', H_TAG: 'H-TAG' };
+export function isTraccarTagModel(value: unknown): value is TraccarTagModel {
+  return typeof value === 'string' && (TRACCAR_TAG_MODELS as readonly string[]).includes(value);
+}
+
 export interface XadTag {
   id: string;
   name: string;
-  type: 'XADTAG';
+  type: TraccarTagModel;
   accessoryId: string;
   tenantId: string;
-  equipmentType: 'XADTAG';
-  model: 'XADTAG';
+  equipmentType: TraccarTagModel;
+  model: TraccarTagModel;
   identifierKind: EquipmentIdentifierKind;
   identifierProfile?: EquipmentIdentifierProfile;
   identifierOriginal: string;
@@ -210,9 +218,9 @@ export interface XadTag {
   batteryStartedAt?: number;
   batteryStartSource?: 'first_communication' | 'manual';
   traccarUniqueId: string;
-  protocol: 'gt06';
+  protocol: 'gt06' | 'easytrack';
   traccarPort: number;
-  usesSimCard: false;
+  usesSimCard: boolean;
   trackingProvider: 'traccar';
   traccarDeviceId: number | null;
   traccarDeviceName: string;

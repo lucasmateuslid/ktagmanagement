@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isTraccarTagModel } from '@ktag/shared';
 import rateLimit from 'express-rate-limit';
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { createHmac } from 'node:crypto';
@@ -187,6 +188,20 @@ vehiclesRouter.get('/', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator
   }
 });
 
+// Totais da frota via agregação count() (1 leitura por 1000 docs) — alimenta o
+// resumo "com tag / sem tag" e a paginação da lista sem varrer a coleção.
+vehiclesRouter.get('/summary', requirePermission('ROUTE_VEHICLES', ['admin', 'moderator', 'user']), async (req, res) => {
+  try {
+    const tid = tenantId(req); const collection = adminDb.collection(`tenants/${tid}/vehicles`);
+    const [total, withTag] = await Promise.all([
+      collection.count().get(),
+      collection.where('tagId', '>', '').count().get(),
+    ]);
+    const totalCount = total.data().count; const withTagCount = withTag.data().count;
+    res.json({ ok: true, data: { total: totalCount, withTag: withTagCount, withoutTag: Math.max(0, totalCount - withTagCount) } });
+  } catch (error: any) { res.status(error.status || 500).json({ ok: false, error: error.message || 'Falha ao resumir a frota.' }); }
+});
+
 vehiclesRouter.post('/reindex-client/:clientId', requirePermission('ACTION_VEHICLES_MANAGE', ['admin', 'moderator']), async (req, res) => {
   try {
     const tid = tenantId(req); const clientId = String(req.params.clientId || '');
@@ -368,7 +383,7 @@ vehiclesRouter.get('/:vehicleId/position', async (req, res) => {
       }
     }
     const tagId = String(doc.get('tagId') || ''); if (!tagId) return res.status(409).json({ ok: false, error: 'Veículo sem equipamento com posição.' });
-    const tag = await adminDb.doc(`tenants/${tid}/tags/${tagId}`).get(); if (!tag.exists || tag.get('type') !== 'XADTAG') return res.status(422).json({ ok: false, error: 'A tag vinculada não é XADTAG.' });
+    const tag = await adminDb.doc(`tenants/${tid}/tags/${tagId}`).get(); if (!tag.exists || !isTraccarTagModel(tag.get('type'))) return res.status(422).json({ ok: false, error: 'A tag vinculada não é XADTAG/H-TAG.' });
     const deviceId = tag.get('traccarDeviceId'); if (!Number.isInteger(deviceId)) return res.status(409).json({ ok: false, error: 'XADTAG sem traccarDeviceId válido.' });
     try {
       const tracked = await coalescedPosition(`${tid}:${deviceId}`, async () => { const raw = await traccarClient.getLatestPositionForDevice(deviceId); if (!raw || raw.deviceId !== deviceId || raw.valid === false) throw new Error('POSITION_NOT_FOUND'); return xadTagService.resolvePosition(raw); });

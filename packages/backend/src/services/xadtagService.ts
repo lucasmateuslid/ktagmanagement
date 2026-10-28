@@ -1,6 +1,7 @@
-import { normalizeEquipmentIdentifier, type EquipmentIdentifierKind, type EquipmentIdentifierProfile, type LiveMapTrackedAsset, type TraccarDevice, type TraccarPosition, type TrackedPosition, type XadTag } from '@ktag/shared';
+import { normalizeEquipmentIdentifier, type EquipmentIdentifierKind, type EquipmentIdentifierProfile, type LiveMapTrackedAsset, type TraccarDevice, type TraccarPosition, type TraccarTagModel, type TrackedPosition, type XadTag } from '@ktag/shared';
 import { getTraccarConfig } from '../config/traccar.js';
-import { buildTraccarDeviceName, normalizeXadTagIdentity, originalXadTagIdentifier } from '../domain/xadtag.js';
+import { originalXadTagIdentifier } from '../domain/xadtag.js';
+import { buildTraccarTagDeviceName, traccarTagProfile } from '../domain/traccarTagModel.js';
 import { communicationStatus } from '../domain/communicationStatus.js';
 import { XadTagConflictError, xadTagRepository } from '../repositories/xadtagRepository.js';
 import { traccarClient, TraccarHttpError } from './traccarClient.js';
@@ -25,9 +26,10 @@ export const toTrackedPosition = (position: TraccarPosition, address?: string | 
 });
 
 export class XadTagService {
-  async register(input: { tenantId: string; tenantSlug: string; name: string; identifierKind: EquipmentIdentifierKind; identifierOriginal: string; traccarUniqueId: string; identifierProfile?: EquipmentIdentifierProfile; requestId?: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) {
+  async register(input: { model?: TraccarTagModel; tenantId: string; tenantSlug: string; name: string; identifierKind: EquipmentIdentifierKind; identifierOriginal: string; traccarUniqueId: string; identifierProfile?: EquipmentIdentifierProfile; requestId?: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) {
     const { tenantId, tenantSlug } = input;
-    if (!input.name?.trim()) throw new Error('Informe o nome da XADTag.');
+    const profile = traccarTagProfile(input.model);
+    if (!input.name?.trim()) throw new Error(`Informe o nome da ${profile.label}.`);
     if (!input.traccarUniqueId || input.traccarUniqueId !== input.traccarUniqueId.trim()) throw new Error('traccarUniqueId deve ser informado exatamente, sem espaços externos.');
     if (input.traccarUniqueId.length > 128) throw new Error('traccarUniqueId não pode ultrapassar 128 caracteres.');
     const canonicalOriginal = input.identifierProfile === 'xadtag_legacy_numeric_10_to_15'
@@ -38,13 +40,13 @@ export class XadTagService {
     const pending: Omit<XadTag, 'id'> = {
       // O SN patrimonial permanece exatamente como foi informado. O padding
       // para 15 dígitos pertence somente ao uniqueId enviado ao Traccar.
-      tenantId, name: input.name.trim(), type: 'XADTAG', accessoryId: normalized.original,
-      equipmentType: 'XADTAG', model: 'XADTAG', identifierKind: normalized.kind,
+      tenantId, name: input.name.trim(), type: profile.model, accessoryId: normalized.original,
+      equipmentType: profile.model, model: profile.model, identifierKind: normalized.kind,
       identifierProfile: normalized.profile, identifierOriginal: normalized.original,
       identifierNormalized: normalized.normalized, traccarUniqueId: input.traccarUniqueId,
       ...(normalized.kind === 'imei' ? { imei: normalized.normalized, imeiOriginal: normalized.original } : {}),
       ...(normalized.kind === 'mac' ? { macAddress: normalized.normalized } : {}),
-      protocol: 'gt06', traccarPort: getTraccarConfig().gt06Port, usesSimCard: false,
+      protocol: profile.protocol, traccarPort: profile.port(), usesSimCard: profile.usesSimCard,
       trackingProvider: 'traccar', traccarDeviceId: null, traccarDeviceName: '', traccarPositionId: null,
       traccarStatus: 'unknown', integrationStatus: 'pending', lastIntegrationCheckAt: null,
       ...(input.traqcareId !== undefined ? { traqcareId: input.traqcareId } : {}),
@@ -67,8 +69,8 @@ export class XadTagService {
     let externalCreated = false;
     if (!device) try {
       device = await traccarClient.createDevice({
-        name: buildTraccarDeviceName(tenantSlug, normalized.original), uniqueId: input.traccarUniqueId, disabled: false,
-        model: 'XADTAG', category: 'XADTAG', attributes: { equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false, identifierKind: normalized.kind, identifierNormalized: normalized.normalized },
+        name: buildTraccarTagDeviceName(profile.model, tenantSlug, normalized.original), uniqueId: input.traccarUniqueId, disabled: false,
+        model: profile.model, category: profile.model, attributes: { equipmentType: profile.model, protocol: profile.protocol, tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: profile.usesSimCard, identifierKind: normalized.kind, identifierNormalized: normalized.normalized },
       });
       externalCreated = true;
     } catch (error) {
@@ -80,8 +82,8 @@ export class XadTagService {
     }
     if (device.uniqueId !== input.traccarUniqueId) throw new Error('O Traccar retornou um uniqueId diferente do solicitado.');
     const externalTenant = typeof device.attributes?.tenantSlug === 'string' ? device.attributes.tenantSlug : null;
-    if (externalTenant && externalTenant !== tenantSlug) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
-    const desiredAttributes = { ...(device.attributes || {}), equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false, identifierKind: normalized.kind, identifierNormalized: normalized.normalized };
+    if (externalTenant && externalTenant !== tenantSlug) throw new XadTagConflictError(`Esta ${profile.label} já está vinculada a outra empresa.`);
+    const desiredAttributes = { ...(device.attributes || {}), equipmentType: profile.model, protocol: profile.protocol, tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: profile.usesSimCard, identifierKind: normalized.kind, identifierNormalized: normalized.normalized };
     if (!externalCreated && (device.attributes?.tenantSlug !== tenantSlug || device.attributes?.identifierNormalized !== normalized.normalized)) {
       await traccarClient.updateDevice(device.id, { ...device, attributes: desiredAttributes });
       device = await traccarClient.getDevice(device.id);
@@ -95,7 +97,8 @@ export class XadTagService {
   }
 
   async reconcile(item: XadTag, input: { name: string; identifierOriginal: string; traqcareId?: string; powerType?: 'battery' | '12v'; batteryWarrantyYears?: number; batteryStartedAt?: number }) {
-    const normalized = normalizeXadTagIdentity(input.identifierOriginal);
+    const profile = traccarTagProfile(item.equipmentType);
+    const normalized = profile.normalizeIdentity(input.identifierOriginal);
     const desiredUniqueId = normalized.normalized;
     const tenantSlug = item.tenantId;
     let device = Number.isInteger(item.traccarDeviceId) ? await traccarClient.getDevice(item.traccarDeviceId as number).catch(() => null) : null;
@@ -103,18 +106,18 @@ export class XadTagService {
     if (byCorrectUniqueId && device && byCorrectUniqueId.id !== device.id) throw new XadTagConflictError('O uniqueId correto já está cadastrado em outro dispositivo no Traccar.');
     if (!device) device = byCorrectUniqueId;
     const name = input.name.trim();
-    if (!name) throw new Error('Informe o nome da XADTag.');
-    const traccarName = buildTraccarDeviceName(tenantSlug, normalized.original);
-    const attributes = { ...(device?.attributes || {}), equipmentType: 'XADTAG', tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: false, identifierKind: normalized.kind, identifierNormalized: normalized.normalized };
+    if (!name) throw new Error(`Informe o nome da ${profile.label}.`);
+    const traccarName = buildTraccarTagDeviceName(profile.model, tenantSlug, normalized.original);
+    const attributes = { ...(device?.attributes || {}), equipmentType: profile.model, protocol: profile.protocol, tenantSlug, platformSource: getTraccarConfig().platformSource, usesSimCard: profile.usesSimCard, identifierKind: normalized.kind, identifierNormalized: normalized.normalized };
     const externalTenant = typeof device?.attributes?.tenantSlug === 'string' ? device.attributes.tenantSlug : null;
-    if (externalTenant && externalTenant !== tenantSlug) throw new XadTagConflictError('Esta XADTAG já está vinculada a outra empresa.');
+    if (externalTenant && externalTenant !== tenantSlug) throw new XadTagConflictError(`Esta ${profile.label} já está vinculada a outra empresa.`);
     if (device) {
       if (device.uniqueId !== desiredUniqueId || device.name !== traccarName || device.attributes?.identifierNormalized !== normalized.normalized) {
         await traccarClient.updateDevice(device.id, { ...device, name: traccarName, uniqueId: desiredUniqueId, attributes });
         device = await traccarClient.getDevice(device.id);
       }
     } else {
-      device = await traccarClient.createDevice({ name: traccarName, uniqueId: desiredUniqueId, disabled: false, model: 'XADTAG', category: 'XADTAG', attributes });
+      device = await traccarClient.createDevice({ name: traccarName, uniqueId: desiredUniqueId, disabled: false, model: profile.model, category: profile.model, attributes });
     }
     const rawPosition = device.positionId ? await traccarClient.getPositionById(device.positionId).catch(() => null) : null;
     const position = rawPosition ? await this.resolvePosition(rawPosition) : null;
@@ -136,7 +139,7 @@ export class XadTagService {
   }
 
   async check(item: XadTag) {
-    if (!Number.isInteger(item.traccarDeviceId)) throw new Error('XADTag ainda não possui traccarDeviceId válido.');
+    if (!Number.isInteger(item.traccarDeviceId)) throw new Error(`${traccarTagProfile(item.equipmentType).label} ainda não possui traccarDeviceId válido.`);
     const deviceId = item.traccarDeviceId as number;
     const device = await traccarClient.getDevice(deviceId);
     const raw = device.positionId ? await traccarClient.getPositionById(device.positionId) : null;
@@ -146,7 +149,7 @@ export class XadTagService {
     return { found: true, status, lastUpdate: device.lastUpdate ?? raw?.serverTime ?? raw?.fixTime ?? null, hasPosition: Boolean(position), position };
   }
   async history(item: XadTag, from: string, to: string) {
-    if (!Number.isInteger(item.traccarDeviceId)) throw new Error('XADTag ainda não possui traccarDeviceId válido.');
+    if (!Number.isInteger(item.traccarDeviceId)) throw new Error(`${traccarTagProfile(item.equipmentType).label} ainda não possui traccarDeviceId válido.`);
     const positions = await traccarClient.getRoute(item.traccarDeviceId as number, from, to);
     return Promise.all(positions.map(position => this.resolvePosition(position)));
   }
@@ -162,7 +165,7 @@ export class XadTagService {
   }
   toLiveMap(item: XadTag): LiveMapTrackedAsset | null {
     if (!item.lastPosition || !Number.isInteger(item.traccarDeviceId)) return null;
-    return { ...item.lastPosition, id: `xadtag_${item.identifierNormalized}`, equipmentId: item.id, source: 'traccar', equipmentType: 'XADTAG', tenantId: item.tenantId,
+    return { ...item.lastPosition, id: `xadtag_${item.identifierNormalized}`, equipmentId: item.id, source: 'traccar', equipmentType: item.equipmentType || 'XADTAG', tenantId: item.tenantId,
       imei: item.imei || '', uniqueId: item.traccarUniqueId, traccarDeviceId: item.traccarDeviceId!,
       linkedEntityId: item.linkedEntityId, linkedEntityName: item.linkedEntityName, status: item.traccarStatus, lastUpdate: item.lastPosition.serverTime };
   }

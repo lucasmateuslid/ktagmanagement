@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from './firebaseAdmin.js';
 import { traccarClient } from './traccarClient.js';
-import type { ManagedTracker, TraccarDevice } from '@ktag/shared';
+import { isTraccarTagModel, type ManagedTracker, type TraccarDevice } from '@ktag/shared';
 
 export type BlockingCommand = { type: string; attributes?: Record<string, string | number | boolean> };
 export type BlockingProfile = {
@@ -53,7 +53,7 @@ export async function syncManagedTracker(tenantId: string, imei: string): Promis
     });
     let device = await traccarClient.findDeviceByUniqueId(imei);
     if (device?.attributes?.tenantSlug && device.attributes.tenantSlug !== tenantId) throw conflict('Dispositivo Traccar pertence a outra empresa.');
-    if (device?.attributes?.equipmentType === 'XADTAG') throw conflict('IMEI já utilizado por uma XADTAG.');
+    if (isTraccarTagModel(device?.attributes?.equipmentType)) throw conflict('IMEI já utilizado por uma XADTAG/H-TAG.');
     if (!device) device = await traccarClient.createDevice({
       name: `${tenantId} - ${tracker.manufacturer} ${tracker.modelName} - ${imei.slice(-4)}`,
       uniqueId: imei, disabled: false, model: tracker.modelName, category: 'tracker',

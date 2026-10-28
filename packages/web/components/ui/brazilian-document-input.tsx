@@ -14,6 +14,8 @@ type DocumentKind = 'cpf' | 'cnpj' | 'cpf-cnpj';
 interface BrazilianDocumentInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type' | 'inputMode' | 'maxLength'> {
   kind: DocumentKind;
+  /** Injetado por <Field error>. */
+  invalid?: boolean;
   value?: string;
   onValueChange: (formattedValue: string, validation: BrazilianDocumentValidation) => void;
 }
@@ -31,6 +33,7 @@ export function BrazilianDocumentInput({
   onValueChange,
   className,
   id,
+  invalid,
   ...inputProps
 }: BrazilianDocumentInputProps) {
   const validation = kind === 'cpf'
@@ -68,12 +71,12 @@ export function BrazilianDocumentInput({
               : validateCpfCnpj(formatted);
           onValueChange(formatted, nextValidation);
         }}
-        aria-invalid={error ? true : undefined}
+        aria-invalid={error || invalid ? true : undefined}
         aria-describedby={error ? errorId : inputProps['aria-describedby']}
-        className={`${className ?? ''} ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`.trim()}
+        className={`${className ?? ''} ${error ? 'border-danger' : ''}`.trim()}
       />
       {error && (
-        <p id={errorId} role="alert" className="mt-1 text-xs font-bold text-red-500">
+        <p id={errorId} role="alert" className="mt-1 text-caption font-bold text-danger">
           {error}
         </p>
       )}

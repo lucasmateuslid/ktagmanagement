@@ -25,6 +25,10 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { storage } from '../services/storage';
 
+/** Item de menu ativo na rota exata ou em subrotas (ex.: /clients/new marca /clients). */
+const isPathActive = (pathname: string, itemPath: string) =>
+  pathname === itemPath || (itemPath !== '/' && pathname.startsWith(`${itemPath}/`));
+
 const MotionDiv = motion.div as any;
 
 // === Animações para a Sidebar (Prompt 1) ===
@@ -48,7 +52,7 @@ const itemVariants = {
 const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) => {
   const [isOpen, setIsOpen] = useState(true);
   
-  const hasActiveItem = section.items.some((item: any) => location.pathname === item.path);
+  const hasActiveItem = section.items.some((item: any) => isPathActive(location.pathname, item.path));
 
   // Mantém aberto se tiver item ativo (opcional, pode só iniciar aberto)
   useEffect(() => {
@@ -83,7 +87,7 @@ const NavSection = ({ section, isCollapsed, location, setIsSidebarOpen }: any) =
             className="space-y-1 overflow-hidden"
           >
             {section.items.map((item: any) => {
-              const isActive = location.pathname === item.path;
+              const isActive = isPathActive(location.pathname, item.path);
               if (item.disabled) {
                 return (
                   <div 
@@ -177,7 +181,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const isLockedMode = isUrgentPending;
 
   useEffect(() => {
-      if (isLockedMode && location.pathname !== '/vehicles' && location.pathname !== '/tags' && location.pathname !== '/schedules') {
+      if (isLockedMode && !location.pathname.startsWith('/vehicles') && location.pathname !== '/tags' && location.pathname !== '/schedules') {
           navigate('/vehicles');
       }
   }, [isLockedMode, location.pathname, navigate]);
@@ -220,7 +224,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
         const checkReview = async () => {
            try {
               const { storage } = await import('../services/storage');
-              const unsub = storage.subscribeVehicles((vehicles) => {
+              const unsub = storage.subscribeVehiclesNeedingReview((vehicles) => {
                  if (!isM) return;
                  const needReview = vehicles.filter((v: any) => 
                      (v.createdBy === user.id || v.createdByName === user.name || v.updatedBy === user.name) 
@@ -760,8 +764,8 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           {/* BOTTOM BAR */}
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-zinc-900/90 border border-zinc-800/50 backdrop-blur-xl rounded-full shadow-2xl px-10 py-3.5 flex items-center gap-12 z-[2000] ring-1 ring-white/10">
               <Link to="/vehicles" className={`relative p-2 transition-all group flex flex-col items-center gap-1`}>
-                  <CarFront size={22} className={`transition-colors duration-300 ${location.pathname === '/vehicles' ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname === '/vehicles' ? 2.5 : 2}/>
-                  {location.pathname === '/vehicles' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>}
+                  <CarFront size={22} className={`transition-colors duration-300 ${location.pathname.startsWith('/vehicles') ? 'text-primary-500' : 'text-zinc-500 group-hover:text-zinc-300'}`} strokeWidth={location.pathname.startsWith('/vehicles') ? 2.5 : 2}/>
+                  {location.pathname.startsWith('/vehicles') && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-primary-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"/>}
               </Link>
               <div className="w-px h-6 bg-zinc-800 opacity-50"></div>
               {isLockedMode ? (

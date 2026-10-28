@@ -7,6 +7,7 @@ export interface TraccarConfig {
   password?: string;
   requestTimeoutMs: number;
   gt06Port: number;
+  easytrackPort: number;
   platformSource: string;
   reconnectMinMs: number;
   reconnectMaxMs: number;
@@ -42,14 +43,15 @@ export function getTraccarConfig(): TraccarConfig {
     password: process.env.TRACCAR_PASSWORD || undefined,
     requestTimeoutMs: positive('TRACCAR_REQUEST_TIMEOUT_MS', 10_000),
     gt06Port: positive('TRACCAR_GT06_PORT', 5023),
+    easytrackPort: positive('TRACCAR_EASYTRACK_PORT', 5056),
     platformSource: process.env.TRACCAR_PLATFORM_SOURCE || 'KTagFinder',
     reconnectMinMs: positive('TRACCAR_WS_RECONNECT_MIN_MS', 1_000),
     reconnectMaxMs: positive('TRACCAR_WS_RECONNECT_MAX_MS', 30_000),
     restFallbackIntervalMs: positive('TRACCAR_REST_FALLBACK_INTERVAL_MS', 30_000),
     addressCacheTtlMs: positive('TRACCAR_ADDRESS_CACHE_TTL_MS', 300_000),
     positionCacheTtlMs: positive('TRACCAR_POSITION_CACHE_TTL_MS', 15_000),
-    positionPersistIntervalMs: positive('TRACCAR_POSITION_PERSIST_INTERVAL_MS', 300_000),
-    positionPersistDistanceMeters: positive('TRACCAR_POSITION_PERSIST_DISTANCE_METERS', 30),
+    positionPersistIntervalMs: positive('TRACCAR_POSITION_PERSIST_INTERVAL_MS', 1_800_000),
+    positionPersistDistanceMeters: positive('TRACCAR_POSITION_PERSIST_DISTANCE_METERS', 100),
     writeTestEnabled: process.env.TRACCAR_WRITE_TEST_ENABLED === 'true',
   };
 }

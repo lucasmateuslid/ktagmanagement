@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import webpush from 'web-push';
+import { isTraccarTagModel } from '@ktag/shared';
 import { adminDb } from './services/firebaseAdmin.js';
 import { traccarClient, TraccarHttpError } from './services/traccarClient.js';
 import { xadTagRepository } from './repositories/xadtagRepository.js';
@@ -17,7 +18,7 @@ dotenvConfig({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../
 const positive = (name: string, fallback: number) => { const value = Number(process.env[name] ?? fallback); return Number.isFinite(value) && value > 0 ? value : fallback; };
 const RETENTION_DAYS = positive('KTAG_HISTORY_RETENTION_DAYS', 30);
 const RETENTION_MS = RETENTION_DAYS * 86_400_000;
-const POLL_MS = positive('KTAG_POLL_INTERVAL_MS', 5 * 60_000);
+const POLL_MS = positive('KTAG_POLL_INTERVAL_MS', 60 * 60_000);
 async function deleteSnapshotInChunks(docs: FirebaseFirestore.QueryDocumentSnapshot[]) {
   for (let offset = 0; offset < docs.length; offset += 450) {
     const batch = adminDb.batch();
@@ -36,11 +37,14 @@ async function cleanup() {
       const expired = await tenant.ref.collection('tag_history').where('savedAt', '<', cutoff).get();
       await deleteSnapshotInChunks(expired.docs);
     }
-    // Compatibilidade até todos os registros antigos por veículo expirarem.
-    const vehicles = await tenant.ref.collection('vehicles').get();
-    for (const vehicle of vehicles.docs) {
-      const legacy = await vehicle.ref.collection('history').where('savedAt', '<', cutoff).get();
-      await deleteSnapshotInChunks(legacy.docs);
+    // Compatibilidade com registros antigos por veículo. Custa ~2 leituras por
+    // veículo por dia; ligue só se ainda houver vehicles/*/history a expirar.
+    if (process.env.LEGACY_VEHICLE_HISTORY_CLEANUP === 'true') {
+      const vehicles = await tenant.ref.collection('vehicles').get();
+      for (const vehicle of vehicles.docs) {
+        const legacy = await vehicle.ref.collection('history').where('savedAt', '<', cutoff).get();
+        await deleteSnapshotInChunks(legacy.docs);
+      }
     }
   }
 }
@@ -111,7 +115,7 @@ async function retryPendingDeletions() {
       const data = doc.data(); try {
         if (Number.isInteger(data.traccarDeviceId)) { try { await traccarClient.deleteDevice(data.traccarDeviceId); } catch (error) { if (!(error instanceof TraccarHttpError && error.status === 404)) throw error; } }
         const vehicles = await tenant.ref.collection('vehicles').where('tagId', '==', doc.id).get(); const batch = adminDb.batch(); vehicles.docs.forEach(vehicle => { const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || data.activeTrackingAssignmentId || ''); if (assignmentId) batch.update(tenant.ref.collection('tracking_assignments').doc(assignmentId), { endedAt: Date.now(), endedBy: 'vps-worker', endReason: 'tag_deleted_retry' }); batch.update(vehicle.ref, { tagId: FieldValue.delete(), activeTrackingAssignmentId: null, lastPosition: FieldValue.delete(), updatedAt: Date.now() }); }); await batch.commit();
-        if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: doc.id, ...data } as any); else {
+        if (isTraccarTagModel(data.type) || isTraccarTagModel(data.equipmentType)) await xadTagRepository.remove({ id: doc.id, ...data } as any); else {
           await doc.ref.delete();
           if (data.imei) {
             const ownerRef = adminDb.doc(`traccar_ktag_identifiers/${data.imei}`);

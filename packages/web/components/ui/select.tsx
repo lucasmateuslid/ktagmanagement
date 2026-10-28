@@ -162,12 +162,12 @@ export function Select<V extends string = string>({
   }, [activeIndex, open]);
 
   const triggerClasses = cn(
-    'group flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-all',
-    'bg-white/[0.03] border border-white/5 hover:border-white/10',
-    'focus:outline-none focus-visible:border-amber-500/40 focus-visible:bg-white/[0.05]',
-    open && 'border-amber-500/40 bg-white/[0.05]',
+    'group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+    'min-h-11 bg-surface-2 border border-line hover:border-fg-3 text-fg-1',
+    'focus:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-primary-500/30',
+    open && 'border-accent',
     disabled && 'opacity-50 cursor-not-allowed',
-    error && 'border-red-500/40 focus-visible:border-red-500/60',
+    error && 'border-danger focus-visible:border-danger',
     className,
   );
 
@@ -186,18 +186,18 @@ export function Select<V extends string = string>({
         aria-invalid={!!error || undefined}
         className={triggerClasses}
       >
-        {leftIcon && <span className="shrink-0 text-zinc-400">{leftIcon}</span>}
-        {selected?.icon && <span className="shrink-0 text-zinc-400">{selected.icon}</span>}
-        <span className={cn('flex-1 truncate', !selected && 'text-zinc-500')}>
+        {leftIcon && <span className="shrink-0 text-fg-3">{leftIcon}</span>}
+        {selected?.icon && <span className="shrink-0 text-fg-3">{selected.icon}</span>}
+        <span className={cn('flex-1 truncate', !selected && 'text-fg-3')}>
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown
           size={14}
-          className={cn('shrink-0 text-zinc-500 transition-transform', open && 'rotate-180 text-amber-400')}
+          className={cn('shrink-0 text-fg-3 transition-transform', open && 'rotate-180 text-accent')}
         />
       </button>
       {error && (
-        <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-red-400">{error}</p>
+        <p className="mt-1 text-caption font-bold text-danger">{error}</p>
       )}
 
       {typeof window !== 'undefined' && createPortal(
@@ -218,7 +218,7 @@ export function Select<V extends string = string>({
                 width: rect.width,
                 zIndex: 4300, /* z-popover — acima de modais (z-modal=4100) p/ não sumir atrás deles */
               }}
-              className="rounded-xl border border-white/10 bg-zinc-950/95 backdrop-blur-xl shadow-2xl shadow-black/60 overflow-hidden"
+              className="rounded-xl border border-line bg-surface shadow-2xl overflow-hidden"
             >
               <ul
                 role="listbox"
@@ -226,7 +226,7 @@ export function Select<V extends string = string>({
                 className="max-h-80 overflow-y-auto py-1.5"
               >
                 {options.length === 0 && (
-                  <li className="px-3 py-2 text-xs text-zinc-500 uppercase tracking-widest">Sem opções</li>
+                  <li className="px-3 py-2 text-label-xs text-fg-3 uppercase">Sem opções</li>
                 )}
                 {options.map((opt, i) => {
                   const isSelected = opt.value === value;
@@ -243,19 +243,19 @@ export function Select<V extends string = string>({
                       className={cn(
                         'mx-1.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
                         opt.disabled && 'opacity-40 cursor-not-allowed',
-                        !opt.disabled && isActive && 'bg-amber-500/10 text-amber-300',
-                        !opt.disabled && !isActive && 'text-zinc-200 hover:bg-white/[0.04]',
-                        isSelected && !isActive && 'text-amber-400',
+                        !opt.disabled && isActive && 'bg-primary-500/10 text-accent',
+                        !opt.disabled && !isActive && 'text-fg-1 hover:bg-surface-2',
+                        isSelected && !isActive && 'text-accent',
                       )}
                     >
                       {opt.icon && <span className="shrink-0 opacity-70">{opt.icon}</span>}
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{opt.label}</div>
                         {opt.description && (
-                          <div className="text-[10px] text-zinc-500 truncate">{opt.description}</div>
+                          <div className="text-caption text-fg-3 truncate">{opt.description}</div>
                         )}
                       </div>
-                      {isSelected && <Check size={13} className="shrink-0 text-amber-400" />}
+                      {isSelected && <Check size={13} className="shrink-0 text-accent" />}
                     </li>
                   );
                 })}

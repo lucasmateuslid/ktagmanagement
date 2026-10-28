@@ -58,6 +58,17 @@ export default {
         'fg-3': 'var(--fg-3)',
         'surface': 'var(--bg-surface)',
         'surface-2': 'var(--bg-surface-2)',
+        'app': 'var(--bg-app)',
+        'fg-on-accent': 'var(--fg-on-accent)',
+        // Bordas semânticas (--border-1 / --border-2).
+        'line': 'var(--border-1)',
+        'line-2': 'var(--border-2)',
+      },
+      borderRadius: {
+        // Rampa de assinatura do DS: 6/12/16 = rounded-md/xl/2xl; 24 e 32 têm nome.
+        card: '24px',      // quick-access cards
+        'card-lg': '32px', // KPI cards (assinatura)
+        pill: '9999px',
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
@@ -66,6 +77,11 @@ export default {
       fontSize: {
         // O micro-label onipresente de 10px (assinatura da marca).
         '2xs': ['10px', { lineHeight: '1' }],
+        // Escala de micro-labels (eyebrows). Cor/uppercase ficam por conta de quem usa.
+        'label-xs': ['10px', { lineHeight: '1', letterSpacing: '0.3em', fontWeight: '900' }],
+        'label-sm': ['11px', { lineHeight: '1', letterSpacing: '0.16em', fontWeight: '800' }],
+        'label': ['12px', { lineHeight: '1', letterSpacing: '0.12em', fontWeight: '700' }],
+        'caption': ['12px', { lineHeight: '1.4' }],
       },
       letterSpacing: {
         // Tracking "tático" 0.3em dos eyebrows.

@@ -3,6 +3,7 @@ import { Tag, KTagLocationResult, KTagBatteryInfo } from '../types';
 import { storage } from './storage';
 import { xadtagService } from './xadtag';
 import { trackingApi } from './trackingApi';
+import { isTraccarTagModel } from '@ktag/shared';
 
 // K-Tag API (api.gps308.com/feibao) — campo `status` = nível de bateria.
 // A telemetria observada em produção usa 0=Alta … 3=Muito baixa. Esta tabela
@@ -82,7 +83,8 @@ export const fetchXadTagLocation = async (tag: Tag): Promise<KTagLocationResult[
     traccarError = error;
   }
 
-  if (await xadtagService.isConfigured()) {
+  // TraqCare é fallback exclusivo da XADTAG; H-TAG só existe no Traccar.
+  if (tag.type === 'XADTAG' && await xadtagService.isConfigured()) {
     const fallback = await xadtagService.fetchLocation(tag);
     if (fallback.length > 0) return fallback.map(location => ({ ...location, tagId: tag.id }));
   }
@@ -106,10 +108,10 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProg
   const results: KTagLocationResult[] = [];
   let processed = 0;
 
-  const ktagTags = tags.filter(t => t.type !== 'XADTAG' && t.accessoryId && t.hashedAdvKey && t.privateKey);
-  const xadtagTags = tags.filter(t => t.type === 'XADTAG');
+  const ktagTags = tags.filter(t => !isTraccarTagModel(t.type) && t.accessoryId && t.hashedAdvKey && t.privateKey);
+  const xadtagTags = tags.filter(t => isTraccarTagModel(t.type));
 
-  // ---- XADTAG: Traccar primeiro; TraqCare apenas como fallback configurado ----
+  // ---- XADTAG/H-TAG: Traccar primeiro; TraqCare apenas como fallback configurado (XADTAG) ----
   for (const tag of xadtagTags) {
     if (onProgress) onProgress(processed + 1, total, tag);
     try {
@@ -200,7 +202,7 @@ export const fetchTagsLocationBatch = async (tags: Tag[], chunkSize = 50, onProg
 
 export const fetchTagLocation = async (tag: Tag): Promise<KTagLocationResult[]> => {
   // Dispatcher Baseado no Tipo de Dispositivo
-  if (tag.type === 'XADTAG') {
+  if (isTraccarTagModel(tag.type)) {
       return fetchXadTagLocation(tag);
   }
 

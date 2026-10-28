@@ -46,23 +46,23 @@ export const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
             onChange?.(v === true);
           }}
           className={cn(
-            'shrink-0 h-4 w-4 rounded border border-border-strong bg-surface-sunken',
+            'shrink-0 h-5 w-5 rounded border border-line bg-surface-2',
             'inline-flex items-center justify-center transition-colors',
-            'data-[state=checked]:bg-brand-500 data-[state=checked]:border-brand-500',
-            'data-[state=indeterminate]:bg-brand-500 data-[state=indeterminate]:border-brand-500',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
-            'group-hover:border-brand-500/50',
+            'data-[state=checked]:bg-primary-500 data-[state=checked]:border-primary-500',
+            'data-[state=indeterminate]:bg-primary-500 data-[state=indeterminate]:border-primary-500',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
+            'group-hover:border-primary-500/50',
           )}
         >
           <RxCheckbox.Indicator>
             {indeterminate ? (
-              <Minus size={12} strokeWidth={3} className="text-content-inverse" />
+              <Minus size={12} strokeWidth={3} className="text-fg-on-accent" />
             ) : (
-              <Check size={12} strokeWidth={3} className="text-content-inverse" />
+              <Check size={12} strokeWidth={3} className="text-fg-on-accent" />
             )}
           </RxCheckbox.Indicator>
         </RxCheckbox.Root>
-        {children && <span className="text-[13px] text-content">{children}</span>}
+        {children && <span className="text-sm text-fg-1">{children}</span>}
       </label>
     );
   },

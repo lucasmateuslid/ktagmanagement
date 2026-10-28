@@ -71,10 +71,10 @@ module.exports = {
           "Não use rounded-[Npx]. Use 'rounded-card', 'rounded-card-lg', 'rounded-pill' ou um raio da escala (rounded-md/lg/xl/2xl).",
       },
       {
-        // bg-amber-500 (deve usar bg-brand-500 pra respeitar whitelabel)
+        // bg-amber-500 (deve usar bg-primary-500 / bg-accent pra respeitar whitelabel)
         selector: 'Literal[value=/\\b(bg|text|border|ring|from|to|via)-amber-[0-9]+/]',
         message:
-          "Use 'brand-*' em vez de 'amber-*' para respeitar whitelabel. Ex: bg-brand-500.",
+          "Use 'primary-*' (tint) ou 'accent' (sólido) em vez de 'amber-*' para respeitar whitelabel. Ex: bg-accent, bg-primary-500/10.",
       },
       {
         // z-[N] fora dos tokens (qualquer número que não seja 10/20/30/...)

@@ -1,3 +1,5 @@
+import { recordFirestoreRead } from './firestoreReadTelemetry';
+
 const DEFAULT_TTL_MS = 45_000;
 
 interface CacheEntry<T> {
@@ -22,6 +24,10 @@ export function cachedFirestoreRead<T>(
   if (running) return running as Promise<T>;
 
   const request = loader().then((value) => {
+    const readCount = typeof value === 'object' && value !== null && 'docs' in value && Array.isArray((value as { docs?: unknown }).docs)
+      ? (value as { docs: unknown[] }).docs.length
+      : 1;
+    recordFirestoreRead(key, readCount);
     entries.set(key, { value, expiresAt: Date.now() + ttlMs });
     return value;
   });

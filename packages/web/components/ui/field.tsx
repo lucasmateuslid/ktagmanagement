@@ -43,19 +43,24 @@ export function Field({
   const describedBy =
     [errorId, hintId].filter(Boolean).join(' ') || undefined;
 
-  const child = React.cloneElement(children, {
-    id,
-    'aria-describedby': describedBy,
-    'aria-required': required || undefined,
-    invalid: !!error,
-  } as any);
+  // Wrappers DOM (ex.: <div> com Input + Button) não recebem id/aria: o controle
+  // interno deve declarar o `id` igual ao `htmlFor` do Field.
+  const isDomWrapper = typeof children.type === 'string';
+  const child = isDomWrapper
+    ? children
+    : React.cloneElement(children, {
+        id,
+        'aria-describedby': describedBy,
+        'aria-required': required || undefined,
+        invalid: !!error,
+      } as any);
 
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       {label && (
         <label
           htmlFor={id}
-          className="text-label-xs text-content-muted uppercase select-none"
+          className="text-label-xs text-fg-2 uppercase select-none"
         >
           {label}
           {required && <span className="text-danger ml-1" aria-hidden>*</span>}
@@ -63,11 +68,11 @@ export function Field({
       )}
       {child}
       {error ? (
-        <p id={errorId} role="alert" className="text-[11px] font-bold text-danger">
+        <p id={errorId} role="alert" className="text-caption font-bold text-danger">
           {error}
         </p>
       ) : hint ? (
-        <p id={hintId} className="text-[11px] text-content-subtle">
+        <p id={hintId} className="text-caption text-fg-3">
           {hint}
         </p>
       ) : null}

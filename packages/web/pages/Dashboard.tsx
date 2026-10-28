@@ -175,8 +175,8 @@ export const Dashboard = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                  { to: "/tags?action=new", icon: Plus, label: "Novo Equipamento", sub: "Estoque" },
-                  { to: "/vehicles?action=new", icon: CarFront, label: "Novo Veículo", sub: "Frota" },
+                  { to: "/tags/new", icon: Plus, label: "Novo Equipamento", sub: "Estoque" },
+                  { to: "/vehicles/new", icon: CarFront, label: "Novo Veículo", sub: "Frota" },
                   { to: "/schedule/new", icon: Calendar, label: "Agendar Serviço", sub: "Agenda" },
                   { to: "/map", icon: MapIcon, label: "Monitoramento", sub: "Tempo Real" }
               ].map((item, idx) => (

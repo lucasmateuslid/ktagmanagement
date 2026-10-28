@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { LiveMapTrackedAsset } from '@ktag/shared';
+import { isTraccarTagModel, type LiveMapTrackedAsset } from '@ktag/shared';
 import type { Tag, Vehicle, LocationHistory } from '../../../types';
 import { activeTenant } from '../../../services/activeTenant';
 import { traccarAssetLocation } from '../utils/traccarAsset';
@@ -54,7 +54,7 @@ export const useFleetTracking = (tags: Tag[], vehicles: Vehicle[]) => {
         stopFallback();
         poll(true);
       };
-      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (!disposed && message.type === 'remove') setFleetLocations(previous => previous.filter(item => item.provider !== 'traccar' || `xadtag_${tagsRef.current.find(tag => tag.type === 'XADTAG' && tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
+      ws.onmessage = event => { try { const message = JSON.parse(event.data); if (message.type === 'position') mergeAsset(message.data); if (!disposed && message.type === 'remove') setFleetLocations(previous => previous.filter(item => item.provider !== 'traccar' || `xadtag_${tagsRef.current.find(tag => isTraccarTagModel(tag.type) && tag.id === item.tagId)?.identifierNormalized}` !== message.id)); } catch { /* mensagem inválida */ } };
       ws.onclose = () => { socket = null; if (!disposed) startFallback(); };
       ws.onerror = () => { if (!disposed) startFallback(); };
     }).catch(() => { if (!disposed) startFallback(); });

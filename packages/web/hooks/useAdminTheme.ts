@@ -70,8 +70,8 @@ export function AdminThemeProvider({ children }: { children: React.ReactNode }) 
   }, [theme]);
 
   const rootClass = theme === 'light'
-    ? 'admin-light bg-surface text-content'
-    : 'dark bg-surface text-content';
+    ? 'admin-light bg-surface text-fg-1'
+    : 'dark bg-surface text-fg-1';
 
   const ctx = React.useMemo(
     () => ({ theme, toggle, setTheme, rootClass }),

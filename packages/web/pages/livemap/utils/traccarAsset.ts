@@ -1,8 +1,8 @@
-import type { LiveMapTrackedAsset } from '@ktag/shared';
+import { isTraccarTagModel, type LiveMapTrackedAsset } from '@ktag/shared';
 import type { LocationHistory, Tag } from '../../../types';
 import { safeLocationAddress } from './livemapLocations';
 
-/** Só associa telemetria Traccar a uma XADTAG identificada no tenant atual. */
+/** Só associa telemetria Traccar a uma XADTAG/H-TAG identificada no tenant atual. */
 export function traccarAssetLocation(asset: LiveMapTrackedAsset, tags: Tag[], tenantId: string): LocationHistory | null {
   if (asset.tenantId !== tenantId || !['traccar', 'ktag'].includes(asset.source)) return null;
   if (asset.equipmentType === 'K_TAG') {
@@ -24,8 +24,8 @@ export function traccarAssetLocation(asset: LiveMapTrackedAsset, tags: Tag[], te
       conf: asset.valid ? 100 : 0, status: asset.status === 'online' ? 1 : 0, speed: asset.speed, course: asset.course,
       altitude: asset.altitude, address: safeLocationAddress(asset.address, asset.addressResolutionProvider, asset.addressVerifiedAt) };
   }
-  if (asset.equipmentType !== 'XADTAG') return null;
-  const candidates = tags.filter(tag => tag.type === 'XADTAG' && (
+  if (!isTraccarTagModel(asset.equipmentType)) return null;
+  const candidates = tags.filter(tag => tag.type === asset.equipmentType && (
     asset.equipmentId
       ? tag.id === asset.equipmentId
       : Boolean(asset.uniqueId && (tag.traccarUniqueId === asset.uniqueId || tag.identifierNormalized === asset.uniqueId))

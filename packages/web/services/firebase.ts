@@ -1,5 +1,5 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAuth, Auth, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
 import { getFunctions, Functions, connectFunctionsEmulator } from 'firebase/functions';
 
@@ -21,50 +21,69 @@ let functions: Functions | null = null;
 
 try {
   app = initializeApp(firebaseConfig);
-
-  db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-    ignoreUndefinedProperties: true,
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  });
-
-  auth = getAuth(app);
-  if (useEmulators) {
-    const emulatorHost = import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1';
-    const firestorePort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080);
-    const authPort = Number(import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099);
-    connectFirestoreEmulator(db, emulatorHost, firestorePort);
-    connectAuthEmulator(auth, `http://${emulatorHost}:${authPort}`, { disableWarnings: true });
-  }
-  // Persistência local — mantém o usuário logado entre abas/refresh; alinha com
-  // o comportamento offline-first do app.
-  setPersistence(auth, browserLocalPersistence).catch((err) => {
-    console.warn("Firebase Auth persistence fallback (memory):", err?.message);
-  });
-
-  // Todas as chamadas same-origin para /api carregam a identidade Firebase.
-  // O servidor continua sendo a fonte de autorização; este interceptor apenas
-  // padroniza o transporte do token para serviços/componentes legados.
-  const nativeFetch = window.fetch.bind(window);
-  window.fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    if (!url.startsWith('/api/')) return nativeFetch(input, init);
-    const token = await auth?.currentUser?.getIdToken();
-    const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    return nativeFetch(input, { ...init, headers });
-  };
-
-  functions = getFunctions(app);
-  if (useEmulators) connectFunctionsEmulator(functions, import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1', Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT || 5001));
-
-  console.log("Firebase initialized: Auth + Firestore (Long Polling + Offline) + Functions.");
 } catch (e: any) {
   console.error("Firebase App initialization error:", e);
-  console.warn("Falling back to LocalStorage (Offline Mode Only)");
-  db = null;
-  auth = null;
-  functions = null;
+}
+
+if (app) {
+  try {
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      ignoreUndefinedProperties: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+    if (useEmulators) {
+      connectFirestoreEmulator(
+        db,
+        import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1',
+        Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080),
+      );
+    }
+  } catch (error) {
+    console.warn('Firestore offline persistence unavailable; using the default Firestore client.', error);
+    try { db = getFirestore(app); } catch (fallbackError) { console.error('Firestore initialization failed:', fallbackError); }
+  }
+
+  try {
+    auth = getAuth(app);
+    if (useEmulators) {
+      const emulatorHost = import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1';
+      const authPort = Number(import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099);
+      connectAuthEmulator(auth, `http://${emulatorHost}:${authPort}`, { disableWarnings: true });
+    }
+    setPersistence(auth, browserLocalPersistence).catch((error) => {
+      console.warn('Firebase Auth persistence fallback (memory):', error?.message);
+    });
+
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (!url.startsWith('/api/')) return nativeFetch(input, init);
+      const token = await auth?.currentUser?.getIdToken();
+      const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return nativeFetch(input, { ...init, headers });
+    };
+  } catch (error) {
+    console.error('Firebase Auth initialization error:', error);
+  }
+
+  try {
+    functions = getFunctions(app);
+    if (useEmulators) {
+      connectFunctionsEmulator(
+        functions,
+        import.meta.env.VITE_FIREBASE_EMULATOR_HOST || '127.0.0.1',
+        Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT || 5001),
+      );
+    }
+  } catch (error) {
+    console.error('Firebase Functions initialization error:', error);
+  }
+
+  console.log('Firebase initialized: Auth + Firestore + Functions.');
+} else {
+  console.warn('Firebase app unavailable; falling back to local storage.');
 }
 
 export { app, db, auth, functions };

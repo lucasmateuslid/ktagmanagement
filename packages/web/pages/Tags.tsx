@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { xadtagService } from '../services/xadtag';
 import { geocodingService } from '../services/geocoding'; 
 import { 
-  Plus, Trash2, Edit2, Save, X, Upload, CheckSquare, Square, 
+  Plus, Trash2, Edit2, X, Upload, CheckSquare, Square, 
   Wifi, Search, Car, Activity, BatteryCharging, 
   Check, Cpu, ListChecks, FileSpreadsheet, 
   Loader2, Terminal, RefreshCw, ChevronRight, FileText,
@@ -18,17 +18,17 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { ResponsiveModal, ModalSection } from '../components/ui/responsive-modal';
 import { ktagBatteryStatus } from '../services/api';
 import { trackingApi } from '../services/trackingApi';
 import { exportRowsToXlsx, readTabularFile } from '../utils/excel';
+import { HTAG_IMPORT_FILE, HTAG_IMPORT_SHEET, HTAG_IMPORT_TEMPLATE, parseHtagImportRows } from '../utils/htagImport';
+import { displayTagSerial, tagTypeLabel } from './tags/utils/tagForm';
+import { isTraccarTagModel } from '@ktag/shared';
+import { SegmentedControl, type SegmentedOption } from '../components/ui';
 import { authenticatedFetch, readApiResponse } from '../services/authenticatedFetch';
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 
 const MotionDiv = motion.div as any;
-const toLocalDateTimeInput = (timestamp?: number) => timestamp
-  ? new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-  : '';
 const batteryUsageLabel = (tag: Tag) => {
   if (!tag.batteryStartedAt) return 'Aguardando comunicação';
   const days = Math.max(0, Math.floor((Date.now() - tag.batteryStartedAt) / 86_400_000));
@@ -36,24 +36,11 @@ const batteryUsageLabel = (tag: Tag) => {
   return `${days} dias${warrantyEndsAt ? ` • garantia até ${new Date(warrantyEndsAt).toLocaleDateString('pt-BR')}` : ''}`;
 };
 
-/** SN exibido/persistido localmente; remove padding apenas de registros legados. */
-const displayTagSerial = (tag: Partial<Tag>): string => {
-  if (tag.type !== 'XADTAG') return tag.accessoryId || tag.imei || '';
-  if (tag.identifierOriginal) return tag.identifierOriginal;
-  const legacy = tag.accessoryId || tag.identifierNormalized || tag.traccarUniqueId || '';
-  return /^0{5}\d{10}$/.test(legacy) ? legacy.slice(5) : legacy;
-};
-
-const xadTagEditData = (tag: Tag): Partial<Tag> => tag.type === 'XADTAG'
-  ? { ...tag, identifierOriginal: displayTagSerial(tag) }
-  : tag;
-
-const canonicalXadTagInput = (input: unknown): string | null => {
-  const value = String(input || '');
-  if (/^\d{10}$/.test(value)) return value;
-  if (/^\d{15}$/.test(value)) return value;
-  return null;
-};
+const TAG_TYPE_OPTIONS: SegmentedOption<TagType>[] = [
+  { value: 'K_TAG', label: 'K-Tag' },
+  { value: 'XADTAG', label: 'XADTAG', activeClassName: 'bg-cyan-500 text-white shadow-sm' },
+  { value: 'H_TAG', label: 'H-TAG', activeClassName: 'bg-info text-white shadow-sm' },
+];
 
 const SkeletonStats = () => (
   <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between animate-pulse">
@@ -139,8 +126,6 @@ export const Tags = () => {
   const [tags, setTags] = useState<Tag[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isConfirmMassDeleteOpen, setIsConfirmMassDeleteOpen] = useState(false);
   const [isMassActionMenuOpen, setIsMassActionMenuOpen] = useState(false);
@@ -166,7 +151,6 @@ export const Tags = () => {
   const [testResults, setTestResults] = useState<Record<string, { status: 'success' | 'error' | 'loading', code?: number, timestamp: number, battery?: any }>>({});
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const [formData, setFormData] = useState<Partial<Tag>>({ batteryWarrantyYears: 1, type: 'K_TAG' });
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -191,11 +175,11 @@ export const Tags = () => {
   };
 
   useEffect(() => {
-    loadData();
     if (searchParams.get('action') === 'new' && canManageTags) {
-        setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' });
-        setIsModalOpen(true);
+        navigate('/tags/new', { replace: true });
+        return;
     }
+    loadData();
   }, [searchParams, canManageTags]);
 
   useEffect(() => {
@@ -227,7 +211,8 @@ export const Tags = () => {
           freePercent: total > 0 ? Math.round((free / total) * 100) : 0,
           totalKTag: tags.filter(t => t.type === 'K_TAG').length,
           totalXadTag: tags.filter(t => t.type === 'XADTAG').length,
-          totalUnknown: tags.filter(t => t.type !== 'K_TAG' && t.type !== 'XADTAG').length
+          totalHTag: tags.filter(t => t.type === 'H_TAG').length,
+          totalUnknown: tags.filter(t => t.type !== 'K_TAG' && !isTraccarTagModel(t.type)).length
       };
   }, [tags, vehicles]);
 
@@ -247,7 +232,7 @@ export const Tags = () => {
 
       if (!matchesText) return false;
       if (filterType === 'UNKNOWN') {
-          if (tag.type === 'K_TAG' || tag.type === 'XADTAG') return false;
+          if (tag.type === 'K_TAG' || isTraccarTagModel(tag.type)) return false;
       } else if (filterType !== 'all' && tag.type !== filterType) {
           return false;
       }
@@ -466,7 +451,7 @@ export const Tags = () => {
   // COMMAND HANDLER FOR XADTAG
   const handleXadCommand = async (command: 'ping' | 'location' | 'history', tag?: Tag) => {
       const targetTag = tag || activeTestTag;
-      if (!targetTag || targetTag.type !== 'XADTAG') return;
+      if (!targetTag || !isTraccarTagModel(targetTag.type)) return;
       setTesting(true);
 
       const label = command === 'ping' ? 'Teste de Conectividade (Ping)' : 
@@ -552,8 +537,8 @@ export const Tags = () => {
       setActiveTestTag(tag);
       setIsConsoleOpen(true);
       
-      // Se for XADTAG, executa o Ping
-      if (tag.type === 'XADTAG') {
+      // Tags Traccar (XADTAG/H-TAG) executam o Ping via integração
+      if (isTraccarTagModel(tag.type)) {
           await handleXadCommand('ping', tag);
           return;
       }
@@ -569,66 +554,6 @@ export const Tags = () => {
       } finally {
           setTesting(false);
       }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Idempotência: impede reentrância (duplo-clique / rede lenta) que, com o id
-    // via crypto.randomUUID() a cada submit, cadastrava o mesmo equipamento 2x.
-    if (isSaving) return;
-    // id estável: gera UMA vez e fixa no estado para que retry reuse o mesmo doc.
-    const tagId = formData.id || crypto.randomUUID();
-    setIsSaving(true);
-    try {
-        const tag: Tag = {
-            id: tagId,
-            name: formData.name || '',
-            type: formData.type || 'K_TAG',
-            accessoryId: formData.accessoryId || '',
-            createdAt: formData.createdAt || Date.now(),
-            hashedAdvKey: formData.hashedAdvKey,
-            privateKey: formData.privateKey,
-            imei: formData.imei,
-            macAddress: formData.macAddress,
-            traqcareId: formData.traqcareId,
-            powerType: formData.powerType,
-            batteryWarrantyYears: formData.batteryWarrantyYears
-            ,batteryStartedAt: formData.batteryStartedAt,
-            batteryStartSource: formData.batteryStartSource,
-        };
-
-        if (!tag.name) throw new Error("Nome é obrigatório");
-        if (tag.type === 'K_TAG' && !tag.accessoryId) throw new Error("Serial Number é obrigatório para K-TAG");
-        const identifierOriginal = formData.type === 'XADTAG' ? canonicalXadTagInput(formData.identifierOriginal || displayTagSerial(formData)) : '';
-        if (tag.type === 'XADTAG' && !identifierOriginal) throw new Error("Informe um serial de 10 dígitos ou um IMEI de 15 dígitos");
-
-        setFormData(prev => ({ ...prev, id: tagId }));
-        if (tag.type === 'XADTAG') {
-            const input = { name: tag.name, identifierOriginal: identifierOriginal!, traqcareId: formData.traqcareId, powerType: formData.powerType, batteryWarrantyYears: formData.batteryWarrantyYears, batteryStartedAt: formData.batteryStartedAt };
-            const registered = formData.id
-              ? await trackingApi.updateXadTag(formData.id, input)
-              : await trackingApi.registerXadTag(input);
-            tag.id = registered.id; tag.accessoryId = registered.identifierOriginal; tag.imei = registered.imei;
-            tag.macAddress = registered.macAddress || tag.macAddress;
-            tag.identifierNormalized = registered.identifierNormalized; tag.traccarDeviceId = registered.traccarDeviceId;
-            tag.identifierKind = registered.identifierKind; tag.identifierOriginal = registered.identifierOriginal; tag.traccarUniqueId = registered.traccarUniqueId;
-            tag.traccarDeviceName = registered.traccarDeviceName; tag.traccarPositionId = registered.traccarPositionId;
-            tag.traccarStatus = registered.traccarStatus; tag.integrationStatus = registered.integrationStatus;
-        } else {
-            const response = await authenticatedFetch(formData.id ? `/api/tags/${encodeURIComponent(formData.id)}` : '/api/tags', {
-              method: formData.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tag),
-            });
-            const payload = await readApiResponse(response); if (!response.ok) throw new Error(payload.error || 'Falha ao salvar equipamento.');
-        }
-
-        addNotification('success', 'Sucesso', 'Equipamento salvo com sucesso.');
-        setIsModalOpen(false);
-        loadData();
-    } catch (error: any) {
-        addNotification('error', 'Erro', error.message);
-    } finally {
-        setIsSaving(false);
-    }
   };
 
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
@@ -659,7 +584,11 @@ export const Tags = () => {
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = async (type: TagType = 'K_TAG') => {
+    if (type === 'H_TAG') {
+      await exportRowsToXlsx(HTAG_IMPORT_TEMPLATE, HTAG_IMPORT_SHEET, HTAG_IMPORT_FILE);
+      return;
+    }
     const headers = [
       {
         "Identificacao": "Tag Exemplo 01",
@@ -683,7 +612,9 @@ export const Tags = () => {
           return;
         }
 
-        const validatedData = data.map((row: any) => {
+        const validatedData = importConfig.type === 'H_TAG'
+          ? parseHtagImportRows(data).map(row => ({ nome: row.name, _valid: row.valid, _serial: row.imei, _error: row.error }))
+          : data.map((row: any) => {
             const serial = row['Serial/IMEI'] || row['serial'] || row['imei'] || row['sn'] || row['SN码'];
             return {
                 ...row,
@@ -713,9 +644,13 @@ export const Tags = () => {
     const total = validRows.length;
 
     try {
-      if (importConfig.type === 'XADTAG') {
+      if (isTraccarTagModel(importConfig.type)) {
           const rows = validRows.map(row => ({ imei: row._serial, description: row['Identificacao'] || row.nome || row.name || '' }));
-          const summary = await trackingApi.importCommit(rows); successCount = summary.created; setImportProgress(100);
+          const summary = await trackingApi.importCommit(rows, importConfig.type); successCount = summary.created; setImportProgress(100);
+          const failed = summary.invalid + summary.unavailable;
+          if (summary.existing || summary.pending || failed) {
+            addNotification('info', `Importação ${tagTypeLabel(importConfig.type)}`, `${summary.created} criadas, ${summary.existing} já existentes, ${summary.pending} pendentes no Traccar, ${failed} com erro.`);
+          }
       } else for (let i = 0; i < total; i++) {
           const row = validRows[i];
           const name = row['Identificacao'] || row['nome'] || row['name'] || `Equip-${Math.floor(Math.random()*10000)}`;
@@ -771,7 +706,7 @@ export const Tags = () => {
         
         <div className="flex items-center gap-3">
             {canManageTags && <div className="flex bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-1 shadow-sm">
-                <button onClick={handleDownloadTemplate} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
+                <button onClick={() => handleDownloadTemplate()} title="Baixar Template Excel" className="p-3 text-zinc-400 hover:text-emerald-500 transition-colors border-r border-zinc-100 dark:border-zinc-800">
                     <FileSpreadsheet size={18} />
                 </button>
                 <button onClick={() => { setImportStep('upload'); setImportConfig({ type: 'K_TAG', warranty: 1, powerType: 'battery' }); setIsImportModalOpen(true); }} className="px-5 py-3 flex items-center gap-3 font-black uppercase text-[10px] tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all">
@@ -779,7 +714,7 @@ export const Tags = () => {
                 </button>
             </div>}
             
-            {canManageTags && <button onClick={() => { setFormData({ batteryWarrantyYears: 1, type: 'K_TAG' }); setIsModalOpen(true); }} className="bg-primary-500 hover:bg-primary-400 text-black px-8 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-widest transition-all shadow-2xl shadow-primary-500/20 active:scale-95">
+            {canManageTags && <button onClick={() => navigate('/tags/new')} className="bg-primary-500 hover:bg-primary-400 text-black px-8 py-4 rounded-[20px] flex items-center gap-3 font-black uppercase text-[10px] tracking-widest transition-all shadow-2xl shadow-primary-500/20 active:scale-95">
               <Plus size={18} strokeWidth={3} /> NOVO EQUIPAMENTO
             </button>}
         </div>
@@ -805,6 +740,7 @@ export const Tags = () => {
                         <div className="flex flex-wrap gap-2 mt-2">
                             <span className="text-[10px] font-bold text-primary-600 bg-primary-500/10 px-2 py-0.5 rounded">K-Tag: {stats.totalKTag}</span>
                             <span className="text-[10px] font-bold text-cyan-600 bg-cyan-500/10 px-2 py-0.5 rounded">XadTag: {stats.totalXadTag}</span>
+                            <span className="text-2xs font-bold text-info bg-blue-500/10 px-2 py-0.5 rounded">H-TAG: {stats.totalHTag}</span>
                             {stats.totalUnknown > 0 && (
                                 <span className="text-[10px] font-bold text-zinc-600 bg-zinc-500/10 px-2 py-0.5 rounded">Outros/Sem Tipo: {stats.totalUnknown}</span>
                             )}
@@ -863,6 +799,7 @@ export const Tags = () => {
                 <option value="all">Todos Tipos</option>
                 <option value="K_TAG">K-Tag</option>
                 <option value="XADTAG">XADTAG</option>
+                <option value="H_TAG">H-TAG</option>
                 <option value="UNKNOWN">Sem Tipo / Outros</option>
             </select>
             <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-500 outline-none min-w-[120px]">
@@ -1013,13 +950,13 @@ export const Tags = () => {
                             </td>
                             <td className="p-4">
                               <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
-                                  {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'H_TAG' ? 'bg-blue-500/10 text-info' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                  {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'H_TAG' ? <Signal size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
                                 </div>
                                 <div>
                                   <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
-                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>
-                                      {tag.type || 'Sem Tipo'} {tag.type === 'XADTAG' && tag.powerType === '12v' ? '(12V)' : tag.type === 'XADTAG' && tag.powerType === 'battery' ? '(Bateria)' : ''}
+                                  <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'H_TAG' ? 'text-info' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>
+                                      {tagTypeLabel(tag.type) || 'Sem Tipo'} {isTraccarTagModel(tag.type) && tag.powerType === '12v' ? '(12V)' : isTraccarTagModel(tag.type) && tag.powerType === 'battery' ? '(Bateria)' : ''}
                                   </div>
                                 </div>
                               </div>
@@ -1034,7 +971,7 @@ export const Tags = () => {
                             </td>
                             <td className="p-4">
                               <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                                {tag.type === 'XADTAG' ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
+                                {isTraccarTagModel(tag.type) ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
                               </div>
                             </td>
                             <td className="p-4">
@@ -1088,7 +1025,7 @@ export const Tags = () => {
                                 <button onClick={() => navigate(`/map?tagId=${encodeURIComponent(tag.id)}&history=1`)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-cyan-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Histórico de localização">
                                     <History size={14}/>
                                 </button>
-                                {canManageTags && <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                {canManageTags && <button onClick={() => navigate(`/tags/${encodeURIComponent(tag.id)}/edit`)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                     <Edit2 size={14}/>
                                 </button>}
                                 {canManageTags && <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
@@ -1150,16 +1087,16 @@ export const Tags = () => {
                                     <button className={`mt-1 ${isSelected ? 'text-primary-500' : 'text-zinc-300 dark:text-zinc-700'}`}>
                                         {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
                                     </button>
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
-                                        {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tag.type === 'XADTAG' ? 'bg-cyan-500/10 text-cyan-600' : tag.type === 'H_TAG' ? 'bg-blue-500/10 text-info' : tag.type === 'K_TAG' ? 'bg-primary-500/10 text-primary-600' : 'bg-zinc-500/10 text-zinc-600'}`}>
+                                        {tag.type === 'XADTAG' ? <Cpu size={20} /> : tag.type === 'H_TAG' ? <Signal size={20} /> : tag.type === 'K_TAG' ? <Wifi size={20} /> : <Box size={20} />}
                                     </div>
                                     <div>
                                         <div className="font-bold text-sm text-zinc-900 dark:text-white">{tag.name}</div>
                                         <div className="flex items-center gap-2 mt-1">
-                                            <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tag.type || 'Sem Tipo'}</div>
+                                            <div className={`text-[9px] font-black uppercase tracking-widest ${tag.type === 'XADTAG' ? 'text-cyan-600' : tag.type === 'H_TAG' ? 'text-info' : tag.type === 'K_TAG' ? 'text-primary-600' : 'text-zinc-500'}`}>{tagTypeLabel(tag.type) || 'Sem Tipo'}</div>
                                             <span className="text-zinc-300 dark:text-zinc-700 text-[10px]">•</span>
                                             <div className="font-mono text-[10px] text-zinc-500 font-medium">
-                                                {tag.type === 'XADTAG' ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
+                                                {isTraccarTagModel(tag.type) ? `${tag.identifierKind === 'mac' ? 'MAC' : tag.identifierKind === 'imei' ? 'IMEI' : 'SN'}: ${displayTagSerial(tag) || 'não informado'}` : `SN: ${tag.accessoryId}`}
                                             </div>
                                         </div>
                                     </div>
@@ -1214,7 +1151,7 @@ export const Tags = () => {
                                     <button onClick={() => handleTestConnection(tag)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Testar Conexão">
                                         <Activity size={14}/>
                                     </button>
-                                    {canManageTags && <button onClick={() => { setFormData(xadTagEditData(tag)); setIsModalOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
+                                    {canManageTags && <button onClick={() => navigate(`/tags/${encodeURIComponent(tag.id)}/edit`)} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-primary-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Editar">
                                         <Edit2 size={14}/>
                                     </button>}
                                     {canManageTags && <button onClick={(e) => { e.stopPropagation(); setTagToDelete(tag.id); setIsConfirmDeleteOpen(true); }} className="p-2 bg-white dark:bg-zinc-800 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-700 shadow-sm transition-colors" title="Excluir">
@@ -1244,7 +1181,7 @@ export const Tags = () => {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        {activeTestTag?.type === 'XADTAG' && (
+                        {isTraccarTagModel(activeTestTag?.type) && (
                             <div className="flex items-center gap-1 mr-4 bg-zinc-800 rounded-lg p-1 border border-zinc-700">
                                 <button onClick={() => handleXadCommand('ping')} disabled={testing} className="px-4 py-2 bg-zinc-700 hover:bg-cyan-600 hover:text-white text-zinc-300 rounded-md transition-all font-bold uppercase tracking-wider disabled:opacity-50 flex items-center gap-2 text-[10px]">
                                     <Activity size={12}/> Ping
@@ -1295,91 +1232,6 @@ export const Tags = () => {
         )}
       </AnimatePresence>
 
-      <ResponsiveModal
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        size="lg"
-        title={formData.id ? 'Editar Equipamento' : 'Novo Equipamento'}
-        footer={
-          <button type="submit" form="tag-equip-form" disabled={isSaving} className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed">
-            <Save size={16} /> {isSaving ? 'Salvando...' : 'Salvar Equipamento'}
-          </button>
-        }
-      >
-        <ModalSection>
-                <form id="tag-equip-form" onSubmit={handleSave} className="space-y-5">
-                    <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                        <button type="button" onClick={() => setFormData({...formData, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
-                            K-Tag (Padrão)
-                        </button>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}>
-                            XADTAG (Satélite)
-                        </button>
-                    </div>
-
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Identificação (Nome/Apelido) <span className="text-red-500">*</span></label>
-                        <input type="text" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: Tag 01 - Reserva" />
-                    </div>
-
-                    {formData.type === 'K_TAG' ? (
-                        <>
-            <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Serial Number (SN) <span className="text-red-500">*</span></label>
-                <input type="text" required value={formData.accessoryId || ''} onChange={e => setFormData({...formData, accessoryId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="Ex: KTAG-12345" />
-            </div>
-            <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">IMEI GT06 da K-TAG</label>
-                <input type="text" inputMode="numeric" pattern="[0-9]{15}" maxLength={15} value={formData.imei || ''} onChange={e => setFormData({...formData, imei: e.target.value.replace(/\D/g, '').slice(0, 15)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-primary-500" placeholder="15 dígitos; separado do serial Feibao" />
-                <p className="text-[10px] text-zinc-500">Sem IMEI, esta tag continua usando a Feibao. Confirme o identificador transmitido no login GT06.</p>
-            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                    <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Chave Pública (Hashed)</label>
-                                    <input type="text" value={formData.hashedAdvKey || ''} onChange={e => setFormData({...formData, hashedAdvKey: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono text-[10px] outline-none" placeholder="Opcional" />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Chave Privada</label>
-                                    <input type="text" value={formData.privateKey || ''} onChange={e => setFormData({...formData, privateKey: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono text-[10px] outline-none" placeholder="Opcional" />
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Identificador original <span className="text-red-500">*</span></label>
-                                <input type="text" inputMode="numeric" pattern="(?:[0-9]{10}|[0-9]{15})" minLength={10} maxLength={15} required value={formData.identifierOriginal || ''} onChange={e => setFormData({...formData, identifierOriginal: e.target.value.replace(/\D/g, '').slice(0, 15), traccarUniqueId: undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="7260412520 ou 869731052727815" />
-                                <p className="text-xs text-zinc-500">10 dígitos: serial preenchido automaticamente com 00000. 15 dígitos: IMEI preservado integralmente.</p>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">ID TraqCare</label>
-                                <input type="text" value={formData.traqcareId || ''} onChange={e => setFormData({...formData, traqcareId: e.target.value})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono font-bold text-sm outline-none focus:border-cyan-500" placeholder="Deixe em branco para preencher automaticamente na ativação" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Power size={12}/> Tipo de Alimentação</label>
-                                <select value={formData.powerType || 'battery'} onChange={e => setFormData({...formData, powerType: e.target.value as 'battery' | '12v'})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-cyan-500">
-                                    <option value="battery">Com Bateria</option>
-                                    <option value="12v">Alimentado 12V</option>
-                                </select>
-                            </div>
-                        </>
-                    )}
-
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><BatteryCharging size={12}/> Garantia Bateria (Anos)</label>
-                        <input type="number" min="1" max="10" value={formData.batteryWarrantyYears || 1} onChange={e => setFormData({...formData, batteryWarrantyYears: parseInt(e.target.value)})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
-                    </div>
-                    {(formData.type === 'K_TAG' || formData.powerType === 'battery') && (
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Início manual da bateria</label>
-                        <input type="datetime-local" value={toLocalDateTimeInput(formData.batteryStartedAt)} onChange={e => setFormData({...formData, batteryStartedAt: e.target.value ? new Date(e.target.value).getTime() : undefined, batteryStartSource: e.target.value ? 'manual' : undefined})} className="w-full px-4 py-3.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none focus:border-primary-500" />
-                        <p className="text-[10px] text-zinc-500">Deixe vazio para iniciar automaticamente na primeira comunicação GPS válida.</p>
-                      </div>
-                    )}
-
-                </form>
-        </ModalSection>
-      </ResponsiveModal>
 
       {isImportModalOpen && (
           <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/90 backdrop-blur-md p-4 overflow-y-auto">
@@ -1398,14 +1250,22 @@ export const Tags = () => {
                       {importStep === 'upload' && (
                           <div className="space-y-6">
                               <div className="space-y-2">
-                                  <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Tipo de Equipamento na Planilha</label>
-                                  <div className="bg-zinc-100 dark:bg-zinc-950 p-1.5 rounded-2xl flex gap-1 border border-zinc-200 dark:border-zinc-800">
-                                      <button onClick={() => setImportConfig({...importConfig, type: 'K_TAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'K_TAG' ? 'bg-primary-500 text-black shadow-md' : 'text-zinc-500'}`}>K-Tag</button>
-                                      <button onClick={() => setImportConfig({...importConfig, type: 'XADTAG'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importConfig.type === 'XADTAG' ? 'bg-cyan-500 text-white shadow-md' : 'text-zinc-500'}`}>XADTAG</button>
-                                  </div>
+                                  <p className="text-2xs font-black uppercase text-zinc-500 tracking-wider">Tipo de Equipamento na Planilha</p>
+                                  <SegmentedControl
+                                      aria-label="Tipo de equipamento na planilha"
+                                      value={importConfig.type}
+                                      onChange={type => setImportConfig({ ...importConfig, type, ...(type === 'H_TAG' ? { powerType: '12v' as const } : {}) })}
+                                      options={TAG_TYPE_OPTIONS}
+                                  />
+                                  {importConfig.type === 'H_TAG' && (
+                                      <p className="text-caption text-fg-2">
+                                          Planilha com as colunas <span className="font-mono">nome</span> e <span className="font-mono">imei</span> (15 dígitos, formatado como texto).{' '}
+                                          <button type="button" onClick={() => handleDownloadTemplate('H_TAG')} className="font-bold text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 rounded">Baixar modelo H-TAG</button>
+                                      </p>
+                                  )}
                               </div>
                               
-                              {importConfig.type === 'XADTAG' && (
+                              {isTraccarTagModel(importConfig.type) && (
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider flex items-center gap-2"><Power size={12}/> Tipo de Alimentação</label>
                                     <select value={importConfig.powerType || 'battery'} onChange={e => setImportConfig({...importConfig, powerType: e.target.value as 'battery' | '12v'})} className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-bold text-sm outline-none">
@@ -1449,7 +1309,7 @@ export const Tags = () => {
                                       <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold"><AlertTriangle size={20}/></div>
                                       <div>
                                           <p className="text-2xl font-black text-red-600 dark:text-red-400">{validationSummary.invalid}</p>
-                                          <p className="text-[9px] font-black uppercase tracking-widest text-red-600/70 dark:text-red-400/70">Inválidos (Sem Serial)</p>
+                                          <p className="text-[9px] font-black uppercase tracking-widest text-red-600/70 dark:text-red-400/70">Inválidos</p>
                                       </div>
                                   </div>
                               </div>
@@ -1470,7 +1330,7 @@ export const Tags = () => {
                                                       {row._valid ? <CheckCircle2 size={14} className="text-emerald-500"/> : <XCircle size={14} className="text-red-500"/>}
                                                   </td>
                                                   <td className="p-3 font-medium truncate max-w-[150px]">{row['Identificacao'] || row['nome'] || row['Key名称'] || 'Sem Nome'}</td>
-                                                  <td className="p-3 font-mono text-zinc-500">{row._serial || '-'}</td>
+                                                  <td className="p-3 font-mono text-zinc-500">{row._serial || '-'}{row._error && <span className="block font-sans text-red-500">{row._error}</span>}</td>
                                               </tr>
                                           ))}
                                           {importData.length > 50 && (

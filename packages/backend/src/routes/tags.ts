@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isTraccarTagModel } from '@ktag/shared';
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
@@ -16,7 +17,7 @@ const clean = (value: Record<string, unknown>) => Object.fromEntries(Object.entr
 
 tagsRouter.post('/', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderator']), async (req, res) => {
   try {
-    const tid = tenant(req); const body = req.body || {}; if (body.type === 'XADTAG') return res.status(400).json({ ok: false, error: 'Use a integração XADTAG para este tipo.' });
+    const tid = tenant(req); const body = req.body || {}; if (isTraccarTagModel(body.type)) return res.status(400).json({ ok: false, error: 'Use a integração Traccar (XADTAG/H-TAG) para este tipo.' });
     const id = String(body.id || crypto.randomUUID()); const name = String(body.name || '').trim(); const accessoryId = String(body.accessoryId || '').trim();
     if (!name || !accessoryId) return res.status(400).json({ ok: false, error: 'Nome e Serial Number são obrigatórios.' });
     const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(1).get(); if (!duplicate.empty) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
@@ -50,7 +51,7 @@ tagsRouter.post('/', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderato
 tagsRouter.put('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'moderator']), async (req, res) => {
   try {
     const tid = tenant(req); const ref = adminDb.doc(`tenants/${tid}/tags/${req.params.id}`); const current = await ref.get(); if (!current.exists) return res.status(404).json({ ok: false, error: 'Tag não encontrada.' });
-    if (current.get('type') === 'XADTAG' || current.get('equipmentType') === 'XADTAG') return res.status(400).json({ ok: false, error: 'Use a integração XADTAG para este tipo.' });
+    if (isTraccarTagModel(current.get('type')) || isTraccarTagModel(current.get('equipmentType'))) return res.status(400).json({ ok: false, error: 'Use a integração Traccar (XADTAG/H-TAG) para este tipo.' });
     const body = req.body || {}; const accessoryId = String(body.accessoryId || current.get('accessoryId') || '').trim(); const duplicate = await adminDb.collection(`tenants/${tid}/tags`).where('accessoryId', '==', accessoryId).limit(2).get(); if (duplicate.docs.some(doc => doc.id !== ref.id)) return res.status(409).json({ ok: false, error: 'Serial Number já cadastrado.' });
     const manualBatteryStartedAt = Number(body.batteryStartedAt);
     const imei = body.imei ? normalizeKtagImei(String(body.imei)) : undefined;
@@ -80,7 +81,7 @@ tagsRouter.delete('/:id', requirePermission('ACTION_TAGS_MANAGE', ['admin', 'mod
       if (vehicle) { const assignmentId = String(vehicle.get('activeTrackingAssignmentId') || data.activeTrackingAssignmentId || ''); if (assignmentId) { const assignmentRef = adminDb.doc(`tenants/${tid}/tracking_assignments/${assignmentId}`); const assignment = await tx.get(assignmentRef); if (assignment.exists && assignment.get('endedAt') === null) tx.update(assignmentRef, { endedAt: now, endedBy: req.authUser!.uid, endReason: 'tag_deleted' }); } tx.update(vehicle.ref, { tagId: FieldValue.delete(), activeTrackingAssignmentId: null, lastPosition: FieldValue.delete(), updatedAt: now }); }
       tx.set(adminDb.collection(`tenants/${tid}/audit_logs`).doc(), { userId: req.authUser!.uid, action: 'DELETE', entity: 'Tag', entityId: ref.id, providerDeviceDeleted: Boolean(data.traccarDeviceId), timestamp: FieldValue.serverTimestamp() });
     });
-    if (data.type === 'XADTAG' || data.equipmentType === 'XADTAG') await xadTagRepository.remove({ id: ref.id, ...data } as any); else {
+    if (isTraccarTagModel(data.type) || isTraccarTagModel(data.equipmentType)) await xadTagRepository.remove({ id: ref.id, ...data } as any); else {
       await ref.delete();
       if (data.imei) {
         const ownerRef = adminDb.doc(`traccar_ktag_identifiers/${data.imei}`);
