@@ -689,7 +689,7 @@ export const Tags = () => {
       setIsImportModalOpen(false);
       loadData();
     } catch (e) {
-      addNotification('error', 'Erro Crítico', 'Falha durante o processamento.');
+      addNotification('error', 'Erro Crítico', e instanceof Error && e.message ? e.message : 'Falha durante o processamento.');
     } finally {
       setImporting(false);
       setImportStep('upload');
