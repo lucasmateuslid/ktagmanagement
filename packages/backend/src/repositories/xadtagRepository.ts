@@ -116,7 +116,7 @@ export class XadTagRepository {
       const now = Date.now();
       transaction.set(nextGlobalRef, { tenantId: item.tenantId, equipmentId: item.id, traccarUniqueId: data.traccarUniqueId, traccarDeviceId: data.traccarDeviceId ?? item.traccarDeviceId, updatedAt: now });
       transaction.set(nextLocalRef, { equipmentId: item.id, identifierKind: data.identifierKind, identifierNormalized: data.identifierNormalized, updatedAt: now });
-      transaction.update(tagRef, { ...data, updatedAt: now });
+      transaction.update(tagRef, { ...data, ...(data.identifierProfile ? {} : { identifierProfile: FieldValue.delete() }), updatedAt: now });
       if (oldGlobalRef.path !== nextGlobalRef.path && oldGlobal.exists && String(oldGlobal.get('equipmentId')) === item.id) transaction.delete(oldGlobalRef);
       if (oldLocalRef.path !== nextLocalRef.path && oldLocal.exists && String(oldLocal.get('equipmentId')) === item.id) transaction.delete(oldLocalRef);
     });

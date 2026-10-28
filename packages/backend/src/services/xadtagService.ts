@@ -42,7 +42,8 @@ export class XadTagService {
       // para 15 dígitos pertence somente ao uniqueId enviado ao Traccar.
       tenantId, name: input.name.trim(), type: profile.model, accessoryId: normalized.original,
       equipmentType: profile.model, model: profile.model, identifierKind: normalized.kind,
-      identifierProfile: normalized.profile, identifierOriginal: normalized.original,
+      // Firestore rejeita `undefined`: H-TAG (IMEI) não tem perfil de identificador.
+      ...(normalized.profile ? { identifierProfile: normalized.profile } : {}), identifierOriginal: normalized.original,
       identifierNormalized: normalized.normalized, traccarUniqueId: input.traccarUniqueId,
       ...(normalized.kind === 'imei' ? { imei: normalized.normalized, imeiOriginal: normalized.original } : {}),
       ...(normalized.kind === 'mac' ? { macAddress: normalized.normalized } : {}),
@@ -123,7 +124,7 @@ export class XadTagService {
     const position = rawPosition ? await this.resolvePosition(rawPosition) : null;
     await xadTagRepository.replaceIdentity(item, {
       name, accessoryId: normalized.original, identifierKind: normalized.kind,
-      identifierProfile: normalized.profile, identifierOriginal: normalized.original,
+      ...(normalized.profile ? { identifierProfile: normalized.profile } : {}), identifierOriginal: normalized.original,
       identifierNormalized: normalized.normalized, traccarUniqueId: desiredUniqueId,
       traccarDeviceId: device.id, traccarDeviceName: device.name,
       traccarPositionId: device.positionId ?? null, traccarStatus: communicationStatus(device, rawPosition),
