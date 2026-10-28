@@ -15,7 +15,7 @@ let flushing = false;
 function collectionFromCacheKey(key: string): string {
   const path = key.replace(/^(collection|doc):/, '');
   const segments = path.split('/');
-  return segments.slice(0, -1).at(-1) || segments.at(-1) || 'unknown';
+  return segments[segments.length - 2] || segments[segments.length - 1] || 'unknown';
 }
 
 function sourceFromCacheKey(key: string): string {
