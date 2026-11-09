@@ -54,20 +54,21 @@ export const VehiclesPage = () => {
     installationFilter, setInstallationFilter,
     tagFilter, setTagFilter
   } = useVehicleFilters([], []);
-  const { vehicles, tags, companies, categories, clients, loading, searching, error: loadError, reload, removeVehicle, page, pageSize, hasMore, nextPage, previousPage, firstPage } = useVehiclesData(currentUser, {
+  const { vehicles, tags, companies, categories, clients, loading, searching, debouncing, error: loadError, reload, removeVehicle, page, pageSize, hasMore, nextPage, previousPage, firstPage } = useVehiclesData(currentUser, {
     search: searchTerm, status: statusFilter, companyId: companyFilter, ownershipStatus: ownershipFilter,
     installationType: installationFilter, tag: tagFilter === 'c_tag' ? 'linked' : tagFilter === 's_tag' ? 'unlinked' : 'all',
   });
-  // Filtra imediatamente a página que já está em memória. A consulta remota
-  // continua sendo a fonte de verdade e encontra resultados fora da página,
-  // mas placas visíveis não precisam aguardar o debounce + rede.
+  // Enquanto o debounce (300ms) não dispara, filtra a página em memória para
+  // dar resposta imediata. Depois disso o backend é a fonte de verdade: refiltrar
+  // aqui esconderia resultados válidos (acento/hífen, nome de cliente fora da lista local).
+  const normalizeSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
   const filteredVehicles = React.useMemo(() => {
-    const term = searchTerm.trim().toLocaleLowerCase('pt-BR');
+    const term = debouncing ? normalizeSearch(searchTerm) : '';
     return vehicles.filter(vehicle => {
       const clientName = clients.find(client => client.id === vehicle.clientId)?.name || '';
       const tag = tags.find(item => item.id === vehicle.tagId);
-      const searchable = [vehicle.plate, vehicle.model, clientName, tag?.accessoryId, tag?.imei]
-        .filter(Boolean).join(' ').toLocaleLowerCase('pt-BR');
+      const searchable = normalizeSearch([vehicle.plate, vehicle.model, clientName, tag?.accessoryId, tag?.imei]
+        .filter(Boolean).join(' '));
       return (!term || searchable.includes(term))
         && (statusFilter === 'all' || vehicle.status === statusFilter)
         && (companyFilter === 'all' || vehicle.companyId === companyFilter)
@@ -75,7 +76,7 @@ export const VehiclesPage = () => {
         && (installationFilter === 'all' || vehicle.installationType === installationFilter)
         && (tagFilter === 'all' || (tagFilter === 'c_tag' ? Boolean(vehicle.tagId) : !vehicle.tagId));
     });
-  }, [vehicles, clients, tags, searchTerm, statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter]);
+  }, [vehicles, clients, tags, searchTerm, debouncing, statusFilter, companyFilter, ownershipFilter, installationFilter, tagFilter]);
 
   const isFiltered = Boolean(searchTerm.trim()) || statusFilter !== 'all' || companyFilter !== 'all'
     || ownershipFilter !== 'all' || installationFilter !== 'all' || tagFilter !== 'all';

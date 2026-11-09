@@ -6,21 +6,22 @@ import { authenticatedFetch } from '../../../services/authenticatedFetch';
 interface VehicleQuery { search?: string; status?: string; companyId?: string; ownershipStatus?: string; installationType?: string; tag?: string }
 interface VehiclePage { items: Vehicle[]; nextCursor: string | null }
 const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery) => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [tags, setTags] = useState<Tag[]>([]); const [companies, setCompanies] = useState<Company[]>([]); const [categories, setCategories] = useState<VehicleCategory[]>([]); const [clients, setClients] = useState<Client[]>([]); const [loading, setLoading] = useState(true);
   const [error, setError] = useState(''); const requestRef = useRef<AbortController | null>(null);
   const queryCacheRef = useRef(new Map<string, { expiresAt: number; page: VehiclePage }>());
   const [auxiliaryRevision, setAuxiliaryRevision] = useState(0);
-  const [nextCursor, setNextCursor] = useState<string | null>(null); const [cursor, setCursor] = useState<string | null>(null);
-  // Pilha de cursores das páginas anteriores: permite voltar numa paginação só-para-frente.
-  const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const rawFilterKey = JSON.stringify(filters); const [filterKey, setFilterKey] = useState(rawFilterKey);
-  useEffect(() => { const timer = window.setTimeout(() => setFilterKey(rawFilterKey), 350); return () => window.clearTimeout(timer); }, [rawFilterKey]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mudar filtros invalida os cursores assinados do backend
-    setCursor(null);
-    setCursorHistory([]);
-  }, [filterKey]);
+  useEffect(() => { const timer = window.setTimeout(() => setFilterKey(rawFilterKey), SEARCH_DEBOUNCE_MS); return () => window.clearTimeout(timer); }, [rawFilterKey]);
+  // Cursor e histórico ficam atrelados à chave de filtros que os gerou. Quando
+  // os filtros mudam, valem automaticamente como página 1 — sem um render
+  // intermediário que enviaria o cursor antigo e receberia 400 do backend.
+  const [paging, setPaging] = useState<{ key: string; cursor: string | null; history: (string | null)[] }>({ key: filterKey, cursor: null, history: [] });
+  const cursor = paging.key === filterKey ? paging.cursor : null;
+  // Pilha de cursores das páginas anteriores: permite voltar numa paginação só-para-frente.
+  const cursorHistory = paging.key === filterKey ? paging.history : [];
 
   // Os dados auxiliares não dependem da pesquisa. Mantê-los em um efeito
   // separado evita quatro leituras completas do Firestore a cada debounce.
@@ -62,12 +63,7 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
       if (controller.signal.aborted) return;
       const incoming: Vehicle[] = payload.data.items || [];
       queryCacheRef.current.set(queryKey, { expiresAt: Date.now() + 30_000, page: { items: incoming, nextCursor: payload.data.nextCursor || null } });
-      setVehicles(previous => {
-        // Enquanto documentos antigos aguardam o backfill, não deixa uma
-        // resposta remota vazia apagar um resultado local já visível.
-        const searching = Boolean(activeFilters.search?.trim());
-        return searching && incoming.length === 0 ? previous : incoming;
-      }); setNextCursor(payload.data.nextCursor);
+      setVehicles(incoming); setNextCursor(payload.data.nextCursor || null);
     } catch (failure) { if ((failure as Error).name !== 'AbortError') setError((failure as Error).message || 'Não foi possível consultar os veículos agora.'); }
     finally { if (requestRef.current === controller) setLoading(false); }
   }, [currentUser, cursor, filterKey]);
@@ -76,16 +72,16 @@ export const useVehiclesData = (currentUser: User | null, filters: VehicleQuery)
     void loadData();
   }, [loadData]);
   useEffect(() => () => requestRef.current?.abort(), []);
-  const nextPage = () => { if (!nextCursor || loading) return; setCursorHistory(history => [...history, cursor]); setCursor(nextCursor); };
-  const previousPage = () => { if (cursorHistory.length === 0 || loading) return; setCursor(cursorHistory[cursorHistory.length - 1]); setCursorHistory(history => history.slice(0, -1)); };
-  const firstPage = () => { if (cursorHistory.length === 0) return; setCursor(null); setCursorHistory([]); };
+  const nextPage = () => { if (!nextCursor || loading) return; setPaging({ key: filterKey, cursor: nextCursor, history: [...cursorHistory, cursor] }); };
+  const previousPage = () => { if (cursorHistory.length === 0 || loading) return; setPaging({ key: filterKey, cursor: cursorHistory[cursorHistory.length - 1], history: cursorHistory.slice(0, -1) }); };
+  const firstPage = () => { if (cursorHistory.length === 0) return; setPaging({ key: filterKey, cursor: null, history: [] }); };
   const reload = useCallback(() => { queryCacheRef.current.clear(); setAuxiliaryRevision(value => value + 1); void loadData(); }, [loadData]);
   const removeVehicle = useCallback((id: string) => {
     setVehicles(previous => previous.filter(vehicle => vehicle.id !== id));
   }, []);
-  const searching = rawFilterKey !== filterKey || loading;
+  const debouncing = rawFilterKey !== filterKey; const searching = debouncing || loading;
   return {
-    vehicles, tags, companies, categories, clients, loading, searching, error, reload, removeVehicle,
+    vehicles, tags, companies, categories, clients, loading, searching, debouncing, error, reload, removeVehicle,
     page: cursorHistory.length + 1, pageSize: PAGE_SIZE, hasMore: Boolean(nextCursor), nextPage, previousPage, firstPage,
   };
 };
